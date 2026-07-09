@@ -110,7 +110,7 @@
 						dominant-baseline="middle"
 						fill="white"
 						font-family="-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif"
-						font-size="10.5"
+						font-size="11"
 						font-weight="700"
 						letter-spacing="1.5"
 					>VEENT</text>
@@ -122,9 +122,9 @@
 						dominant-baseline="middle"
 						fill="white"
 						font-family="-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif"
-						font-size="12"
+						font-size="11"
 						font-weight="700"
-						letter-spacing="2"
+						letter-spacing="1.5"
 					>HRIS</text>
 				</svg>
 			</a>
