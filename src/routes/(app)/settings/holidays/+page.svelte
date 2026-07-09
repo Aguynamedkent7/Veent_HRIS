@@ -1,0 +1,238 @@
+<script lang="ts">
+	import { enhance } from '$app/forms'
+	import { formatShortDate } from '$lib/utils/format'
+	import type { PageData, ActionData } from './$types'
+
+	let { data, form }: { data: PageData; form: ActionData } = $props()
+
+	let showAddForm = $state(false)
+	let editingId = $state<string | null>(null)
+
+	function typeBadgeClass(type: string) {
+		if (type === 'REGULAR') return 'bg-red-100 text-red-700'
+		return 'bg-blue-100 text-blue-700'
+	}
+
+	function typeLabel(type: string) {
+		if (type === 'REGULAR') return 'Regular'
+		return 'Special Non-Working'
+	}
+</script>
+
+<svelte:head>
+	<title>Public Holidays — Settings — Veent HRIS</title>
+</svelte:head>
+
+<div class="space-y-6">
+	<div class="flex items-center justify-between">
+		<div>
+			<h1 class="text-2xl font-bold tracking-tight">Public Holidays</h1>
+			<p class="text-sm text-muted-foreground">Manage public holidays for payroll computation.</p>
+		</div>
+		<button
+			onclick={() => { showAddForm = !showAddForm; editingId = null }}
+			class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+		>
+			{showAddForm ? 'Cancel' : 'Add Holiday'}
+		</button>
+	</div>
+
+	{#if form?.error}
+		<div class="rounded-md border border-destructive bg-destructive/10 px-4 py-3 text-sm text-destructive">
+			{form.error}
+		</div>
+	{/if}
+
+	<!-- Add Holiday Form -->
+	{#if showAddForm}
+		<form
+			method="POST"
+			action="?/create"
+			use:enhance={() => {
+				return ({ result, update }) => {
+					if (result.type === 'success' || result.type === 'redirect') {
+						showAddForm = false
+					}
+					update()
+				}
+			}}
+			class="rounded-lg border p-4 space-y-4"
+		>
+			<h2 class="font-semibold">Add New Holiday</h2>
+			<div class="grid gap-4 sm:grid-cols-3">
+				<div>
+					<label for="date" class="text-sm font-medium">
+						Date <span class="text-destructive">*</span>
+					</label>
+					<input
+						id="date"
+						name="date"
+						type="date"
+						required
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					/>
+				</div>
+				<div>
+					<label for="name" class="text-sm font-medium">
+						Holiday Name <span class="text-destructive">*</span>
+					</label>
+					<input
+						id="name"
+						name="name"
+						required
+						placeholder="e.g. New Year's Day"
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					/>
+				</div>
+				<div>
+					<label for="type" class="text-sm font-medium">
+						Type <span class="text-destructive">*</span>
+					</label>
+					<select
+						id="type"
+						name="type"
+						required
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					>
+						<option value="REGULAR">Regular</option>
+						<option value="SPECIAL_NON_WORKING">Special Non-Working</option>
+					</select>
+				</div>
+			</div>
+			<div class="flex justify-end gap-2">
+				<button
+					type="button"
+					onclick={() => (showAddForm = false)}
+					class="rounded-md border px-4 py-2 text-sm hover:bg-accent"
+				>
+					Cancel
+				</button>
+				<button
+					type="submit"
+					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+				>
+					Save Holiday
+				</button>
+			</div>
+		</form>
+	{/if}
+
+	<!-- Holiday List -->
+	<div class="rounded-lg border">
+		<table class="w-full text-sm">
+			<thead class="border-b bg-muted/50">
+				<tr>
+					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Date</th>
+					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Holiday Name</th>
+					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Type</th>
+					<th class="px-4 py-3"></th>
+				</tr>
+			</thead>
+			<tbody class="divide-y">
+				{#each data.holidays as holiday (holiday.id)}
+					{#if editingId === holiday.id}
+						<tr>
+							<td colspan="4" class="px-4 py-3">
+								<form
+									method="POST"
+									action="?/update"
+									use:enhance={() => {
+										return ({ result, update }) => {
+											if (result.type === 'success' || result.type === 'redirect') {
+												editingId = null
+											}
+											update()
+										}
+									}}
+									class="flex flex-wrap gap-3 items-end"
+								>
+									<input type="hidden" name="id" value={holiday.id} />
+									<div>
+										<label class="text-xs font-medium text-muted-foreground">Date</label>
+										<input
+											name="date"
+											type="date"
+											required
+											value={new Date(holiday.date).toISOString().slice(0, 10)}
+											class="mt-0.5 flex h-8 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+										/>
+									</div>
+									<div class="flex-1 min-w-48">
+										<label class="text-xs font-medium text-muted-foreground">Name</label>
+										<input
+											name="name"
+											required
+											value={holiday.name}
+											class="mt-0.5 flex h-8 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+										/>
+									</div>
+									<div>
+										<label class="text-xs font-medium text-muted-foreground">Type</label>
+										<select
+											name="type"
+											class="mt-0.5 flex h-8 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+										>
+											<option value="REGULAR" selected={holiday.type === 'REGULAR'}>Regular</option>
+											<option value="SPECIAL_NON_WORKING" selected={holiday.type === 'SPECIAL_NON_WORKING'}>Special Non-Working</option>
+										</select>
+									</div>
+									<div class="flex gap-2">
+										<button
+											type="submit"
+											class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+										>
+											Save
+										</button>
+										<button
+											type="button"
+											onclick={() => (editingId = null)}
+											class="rounded-md border px-3 py-1.5 text-xs hover:bg-accent"
+										>
+											Cancel
+										</button>
+									</div>
+								</form>
+							</td>
+						</tr>
+					{:else}
+						<tr class="hover:bg-muted/30">
+							<td class="px-4 py-3 text-muted-foreground">{formatShortDate(holiday.date)}</td>
+							<td class="px-4 py-3 font-medium">{holiday.name}</td>
+							<td class="px-4 py-3">
+								<span class="rounded-full px-2 py-0.5 text-xs font-medium {typeBadgeClass(holiday.type)}">
+									{typeLabel(holiday.type)}
+								</span>
+							</td>
+							<td class="px-4 py-3">
+								<div class="flex items-center justify-end gap-2">
+									<button
+										onclick={() => (editingId = holiday.id)}
+										class="text-xs text-primary hover:underline"
+									>
+										Edit
+									</button>
+									<form method="POST" action="?/delete" use:enhance>
+										<input type="hidden" name="id" value={holiday.id} />
+										<button
+											type="submit"
+											onclick={(e) => { if (!confirm(`Delete "${holiday.name}"?`)) e.preventDefault() }}
+											class="text-xs text-destructive hover:underline"
+										>
+											Delete
+										</button>
+									</form>
+								</div>
+							</td>
+						</tr>
+					{/if}
+				{:else}
+					<tr>
+						<td colspan="4" class="px-4 py-8 text-center text-muted-foreground">
+							No public holidays configured yet.
+						</td>
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	</div>
+</div>

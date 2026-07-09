@@ -1,0 +1,113 @@
+import { db } from '$lib/server/db'
+import { writeAuditLog } from '$lib/server/audit'
+import { error } from '@sveltejs/kit'
+import { requireRole } from '$lib/server/rbac'
+import type { AuditContext } from '../types'
+
+export async function listRuns(
+	organizationId: string,
+	filters?: { status?: string }
+) {
+	return db.payrollRun.findMany({
+		where: {
+			organizationId,
+			...(filters?.status && { status: filters.status as 'DRAFT' | 'COMPUTED' | 'APPROVED' | 'VOIDED' })
+		},
+		include: {
+			_count: { select: { entries: true } }
+		},
+		orderBy: { createdAt: 'desc' }
+	})
+}
+
+export async function getRunWithEntries(id: string, organizationId: string) {
+	const run = await db.payrollRun.findFirst({
+		where: { id, organizationId },
+		include: {
+			entries: {
+				include: {
+					employee: {
+						select: {
+							firstName: true,
+							lastName: true,
+							employeeNumber: true
+						}
+					}
+				},
+				orderBy: { employee: { lastName: 'asc' } }
+			}
+		}
+	})
+	if (!run) error(404, 'Payroll run not found')
+	return run
+}
+
+export async function approveRun(
+	id: string,
+	organizationId: string,
+	overrideNote: string | undefined,
+	ctx: AuditContext
+) {
+	const run = await db.payrollRun.findFirst({
+		where: { id, organizationId },
+		include: { entries: { select: { isFlagged: true } } }
+	})
+	if (!run) error(404, 'Payroll run not found')
+	if (run.status !== 'DRAFT') error(400, 'Only draft payroll runs can be approved')
+
+	const hasFlagged = run.entries.some((e) => e.isFlagged)
+	if (hasFlagged && !overrideNote) {
+		error(400, 'Override note required for flagged entries')
+	}
+
+	const updated = await db.payrollRun.update({
+		where: { id },
+		data: {
+			status: 'APPROVED',
+			approvedAt: new Date(),
+			approvedById: ctx.actorId,
+			...(overrideNote && { overrideNote, hasOverride: true })
+		}
+	})
+
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'PayrollRun',
+		entityId: id,
+		oldValue: { status: run.status },
+		newValue: { status: 'APPROVED', approvedAt: updated.approvedAt }
+	})
+
+	if (overrideNote) {
+		await writeAuditLog(ctx, {
+			action: 'PAYROLL_OVERRIDE',
+			entityType: 'PayrollRun',
+			entityId: id,
+			newValue: { overrideNote }
+		})
+	}
+
+	return updated
+}
+
+export async function voidRun(id: string, organizationId: string, ctx: AuditContext) {
+	requireRole(ctx.actorRole, 'SUPER_ADMIN')
+
+	const run = await db.payrollRun.findFirst({ where: { id, organizationId } })
+	if (!run) error(404, 'Payroll run not found')
+
+	const updated = await db.payrollRun.update({
+		where: { id },
+		data: { status: 'VOIDED' }
+	})
+
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'PayrollRun',
+		entityId: id,
+		oldValue: { status: run.status },
+		newValue: { status: 'VOIDED' }
+	})
+
+	return updated
+}

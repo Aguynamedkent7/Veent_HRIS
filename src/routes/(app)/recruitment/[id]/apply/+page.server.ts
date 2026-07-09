@@ -1,0 +1,72 @@
+import { fail, redirect } from '@sveltejs/kit'
+import { z } from 'zod'
+import { db } from '$lib/server/db'
+import { applyToPosting } from '$lib/server/services/recruitment'
+import type { Actions, PageServerLoad } from './$types'
+
+export const load: PageServerLoad = async ({ params }) => {
+	const posting = await db.jobPosting.findUnique({
+		where: { id: params.id },
+		include: { department: { select: { name: true } } }
+	})
+
+	if (!posting || posting.status !== 'OPEN') {
+		return redirect(302, '/recruitment')
+	}
+
+	return { posting }
+}
+
+const applySchema = z.object({
+	firstName: z.string().min(1, 'First name is required'),
+	lastName: z.string().min(1, 'Last name is required'),
+	email: z.string().email('A valid email address is required'),
+	phone: z.string().optional(),
+	coverLetter: z.string().optional(),
+	resumeUrl: z.string().optional()
+})
+
+export const actions: Actions = {
+	apply: async ({ request, params }) => {
+		const raw = Object.fromEntries(await request.formData())
+
+		// Clean up empty optional fields
+		const cleaned = {
+			...raw,
+			phone: raw.phone || undefined,
+			coverLetter: raw.coverLetter || undefined,
+			resumeUrl: raw.resumeUrl || undefined
+		}
+
+		const parsed = applySchema.safeParse(cleaned)
+		if (!parsed.success) {
+			return fail(400, {
+				error: 'Please correct the errors below.',
+				fieldErrors: parsed.error.flatten().fieldErrors,
+				values: raw as Record<string, string>
+			})
+		}
+
+		// Check for duplicate application (same email, same posting)
+		const existing = await db.applicant.findFirst({
+			where: { jobPostingId: params.id, email: parsed.data.email }
+		})
+
+		if (existing) {
+			return fail(409, {
+				error: 'You have already applied for this position.',
+				values: raw as Record<string, string>
+			})
+		}
+
+		await applyToPosting(params.id, {
+			firstName: parsed.data.firstName,
+			lastName: parsed.data.lastName,
+			email: parsed.data.email,
+			phone: parsed.data.phone,
+			coverLetter: parsed.data.coverLetter
+		})
+
+		return { success: true }
+	}
+}
