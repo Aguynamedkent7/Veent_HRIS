@@ -46,12 +46,12 @@
 			</a>
 
 			<!-- Nav links -->
-			<nav class="flex items-center gap-0.5 overflow-x-auto scrollbar-none">
+			<nav class="flex items-center gap-px overflow-x-auto scrollbar-none">
 				{#each navItems as item (item.href)}
 					{@const active = $page.url.pathname.startsWith(item.href) && (item.href !== '/dashboard' || $page.url.pathname === '/dashboard')}
 					<a
 						href={item.href}
-						class="shrink-0 rounded px-2.5 py-1.5 text-sm font-medium transition-colors
+						class="shrink-0 rounded px-2 py-1 text-xs font-medium transition-colors
 							{active
 								? 'bg-primary/15 text-primary'
 								: 'text-muted-foreground hover:bg-accent hover:text-foreground'}"
