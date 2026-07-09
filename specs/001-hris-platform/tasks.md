@@ -27,16 +27,16 @@ description: "Task list for Veent HRIS Core Platform"
 
 **Purpose**: Initialize the SvelteKit project and install all dependencies.
 
-- [ ] T001 Scaffold SvelteKit 2 project with TypeScript template via `npm create svelte@latest` — select TypeScript, ESLint, Prettier
-- [ ] T002 Install and configure Tailwind CSS v3: run `npx svelte-add@latest tailwindcss`, verify `tailwind.config.ts` and `src/app.css`
-- [ ] T003 [P] Initialise shadcn-svelte: run `npx shadcn-svelte@latest init`, add Button, Input, Table, Card, Dialog, Badge, Select, Dropdown, Skeleton components
-- [ ] T004 [P] Install Prisma 5: `npm install prisma @prisma/client`, run `npx prisma init`, set `DATABASE_URL` in `.env`
-- [ ] T005 [P] Install Lucia v3 and Prisma adapter: `npm install lucia @lucia-auth/adapter-prisma`
-- [ ] T006 [P] Install Redis client and layerchart: `npm install ioredis layerchart`
-- [ ] T007 [P] Install Vitest and Svelte Testing Library: `npm install -D vitest @testing-library/svelte @testing-library/jest-dom`, create `vitest.config.ts`
-- [ ] T008 [P] Install Playwright: `npm install -D @playwright/test`, run `npx playwright install`, create `playwright.config.ts` targeting `http://localhost:5173`
-- [ ] T009 Configure `@sveltejs/adapter-node` in `svelte.config.js` (replace auto adapter)
-- [ ] T010 [P] Create `.env.example` with: `DATABASE_URL`, `REDIS_URL`, `LUCIA_SECRET`, `NODE_ENV`, `PORT=3000`
+- [X] T001 Scaffold SvelteKit 2 project with TypeScript template via `npm create svelte@latest` — select TypeScript, ESLint, Prettier
+- [X] T002 Install and configure Tailwind CSS v3: run `npx svelte-add@latest tailwindcss`, verify `tailwind.config.ts` and `src/app.css`
+- [X] T003 [P] Initialise shadcn-svelte: run `npx shadcn-svelte@latest init`, add Button, Input, Table, Card, Dialog, Badge, Select, Dropdown, Skeleton components
+- [X] T004 [P] Install Prisma 5: `npm install prisma @prisma/client`, run `npx prisma init`, set `DATABASE_URL` in `.env`
+- [X] T005 [P] Install Lucia v3 and Prisma adapter: `npm install lucia @lucia-auth/adapter-prisma`
+- [X] T006 [P] Install Redis client and layerchart: `npm install ioredis layerchart`
+- [X] T007 [P] Install Vitest and Svelte Testing Library: `npm install -D vitest @testing-library/svelte @testing-library/jest-dom`, create `vitest.config.ts`
+- [X] T008 [P] Install Playwright: `npm install -D @playwright/test`, run `npx playwright install`, create `playwright.config.ts` targeting `http://localhost:5173`
+- [X] T009 Configure `@sveltejs/adapter-node` in `svelte.config.js` (replace auto adapter)
+- [X] T010 [P] Create `.env.example` with: `DATABASE_URL`, `REDIS_URL`, `LUCIA_SECRET`, `NODE_ENV`, `PORT=3000`
 
 ---
 
@@ -46,26 +46,26 @@ description: "Task list for Veent HRIS Core Platform"
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T011 Write full Prisma schema in `prisma/schema.prisma`: all 15 HR entities (Organization, Department, User, Employee, Timesheet, TimesheetEntry, LeaveType, LeaveBalance, LeaveRequest, PublicHoliday, PayrollConfig, PayrollRun, PayrollEntry, JobPosting, Applicant, ApplicantStageHistory, AuditLog) plus Lucia's `Session` and `Key` models — include all fields, relations, unique constraints, and enums from `data-model.md`
+- [X] T011 Write full Prisma schema in `prisma/schema.prisma`: all 15 HR entities (Organization, Department, User, Employee, Timesheet, TimesheetEntry, LeaveType, LeaveBalance, LeaveRequest, PublicHoliday, PayrollConfig, PayrollRun, PayrollEntry, JobPosting, Applicant, ApplicantStageHistory, AuditLog) plus Lucia's `Session` and `Key` models — include all fields, relations, unique constraints, and enums from `data-model.md`
 - [ ] T012 Run `npx prisma migrate dev --name init` to generate initial migration and apply to dev database
-- [ ] T013 [P] Create `src/lib/server/db.ts`: Prisma client singleton with `globalThis` cache to prevent hot-reload connection exhaustion
-- [ ] T014 [P] Create `src/lib/server/redis.ts`: ioredis client singleton, export `getCache(key)` and `setCache(key, value, ttlSeconds)` helpers
-- [ ] T015 Create `src/lib/server/auth.ts`: initialise Lucia with `PrismaAdapter`, configure session cookie name `auth_session`, set `sessionExpiresIn` to 30 days
-- [ ] T016 Create `src/hooks.server.ts`: read `auth_session` cookie, call `lucia.validateSession()`, set `locals.user` and `locals.session`, call `lucia.createBlankSessionCookie()` on invalid session
-- [ ] T017 Update `src/app.d.ts`: declare `App.Locals` with `{ user: User | null; session: Session | null }` using Lucia types
-- [ ] T018 Create `src/lib/server/rbac.ts`: export `requireRole(...roles: Role[])` that reads `locals.user.role`, throws SvelteKit `error(403)` if role not in allowed list; export `isOwner(locals, employeeId)` for ownership checks
-- [ ] T019 Create `src/lib/server/audit.ts`: export `writeAuditLog(db, entry: AuditLogEntry)` that inserts into `AuditLog` table via a separate Prisma call (outside the caller's transaction)
-- [ ] T020 Create `src/lib/server/api-error.ts`: export `apiError(status, title, detail)` returning RFC 7807 `application/problem+json` Response object
+- [X] T013 [P] Create `src/lib/server/db.ts`: Prisma client singleton with `globalThis` cache to prevent hot-reload connection exhaustion
+- [X] T014 [P] Create `src/lib/server/redis.ts`: ioredis client singleton, export `getCache(key)` and `setCache(key, value, ttlSeconds)` helpers
+- [X] T015 Create `src/lib/server/auth.ts`: initialise Lucia with `PrismaAdapter`, configure session cookie name `auth_session`, set `sessionExpiresIn` to 30 days
+- [X] T016 Create `src/hooks.server.ts`: read `auth_session` cookie, call `lucia.validateSession()`, set `locals.user` and `locals.session`, call `lucia.createBlankSessionCookie()` on invalid session
+- [X] T017 Update `src/app.d.ts`: declare `App.Locals` with `{ user: User | null; session: Session | null }` using Lucia types
+- [X] T018 Create `src/lib/server/rbac.ts`: export `requireRole(...roles: Role[])` that reads `locals.user.role`, throws SvelteKit `error(403)` if role not in allowed list; export `isOwner(locals, employeeId)` for ownership checks
+- [X] T019 Create `src/lib/server/audit.ts`: export `writeAuditLog(db, entry: AuditLogEntry)` that inserts into `AuditLog` table via a separate Prisma call (outside the caller's transaction)
+- [X] T020 Create `src/lib/server/api-error.ts`: export `apiError(status, title, detail)` returning RFC 7807 `application/problem+json` Response object
 - [ ] T021 [P] Create `src/lib/utils/dates.ts`: `getWeekStart(date)`, `getWeekEnd(date)`, `computeWorkingDays(start, end, holidays)`, `formatDateISO(date)`, `formatDateDisplay(date)`
-- [ ] T022 [P] Create `src/lib/utils/format.ts`: `formatPHP(amount)` (Philippine Peso formatter), `formatPercent(value)`, `formatHours(decimal)`
-- [ ] T023 Create login page `src/routes/(auth)/login/+page.svelte`: email + password form with validation feedback, uses shadcn-svelte Card + Input + Button
-- [ ] T024 Create `src/routes/(auth)/login/+page.server.ts`: form action — find User by email, verify bcrypt password hash, call `lucia.createSession()`, set session cookie, redirect to `/dashboard`; write `LOGIN` / `LOGIN_FAILED` AuditLog entry
-- [ ] T025 Create `src/routes/(app)/+layout.server.ts`: check `locals.user`, redirect to `/login` if null; pass `user` to layout data
-- [ ] T026 Create `src/routes/(app)/+layout.svelte`: app shell with role-aware sidebar (employee sees: Dashboard, Timesheets, Leave, Profile, Payslips; manager adds: Approvals, Team; admin adds: Employees, Departments, Payroll, Reports, Recruitment)
-- [ ] T027 Create `src/routes/+page.server.ts`: redirect authenticated users to `/dashboard`, unauthenticated to `/login`
-- [ ] T028 Create `src/routes/(auth)/logout/+page.server.ts`: form action — invalidate Lucia session, clear cookie, redirect to `/login`
-- [ ] T029 Create `prisma/seed.ts`: seed one Organization, one Department ("Engineering"), and one User+Employee per role (super_admin, hr_admin, manager, employee) with known passwords for local testing
-- [ ] T030 Add `"prisma": { "seed": "ts-node prisma/seed.ts" }` to `package.json` and run `npx prisma db seed`
+- [X] T022 [P] Create `src/lib/utils/format.ts`: `formatPHP(amount)` (Philippine Peso formatter), `formatPercent(value)`, `formatHours(decimal)`
+- [X] T023 Create login page `src/routes/(auth)/login/+page.svelte`: email + password form with validation feedback, uses shadcn-svelte Card + Input + Button
+- [X] T024 Create `src/routes/(auth)/login/+page.server.ts`: form action — find User by email, verify bcrypt password hash, call `lucia.createSession()`, set session cookie, redirect to `/dashboard`; write `LOGIN` / `LOGIN_FAILED` AuditLog entry
+- [X] T025 Create `src/routes/(app)/+layout.server.ts`: check `locals.user`, redirect to `/login` if null; pass `user` to layout data
+- [X] T026 Create `src/routes/(app)/+layout.svelte`: app shell with role-aware sidebar (employee sees: Dashboard, Timesheets, Leave, Profile, Payslips; manager adds: Approvals, Team; admin adds: Employees, Departments, Payroll, Reports, Recruitment)
+- [X] T027 Create `src/routes/+page.server.ts`: redirect authenticated users to `/dashboard`, unauthenticated to `/login`
+- [X] T028 Create `src/routes/(auth)/logout/+page.server.ts`: form action — invalidate Lucia session, clear cookie, redirect to `/login`
+- [X] T029 Create `prisma/seed.ts`: seed one Organization, one Department ("Engineering"), and one User+Employee per role (super_admin, hr_admin, manager, employee) with known passwords for local testing
+- [X] T030 Add `"prisma": { "seed": "ts-node prisma/seed.ts" }` to `package.json` and run `npx prisma db seed`
 
 **Checkpoint**: Auth works — `npm run dev`, navigate to `/`, redirected to `/login`, can log in, sees sidebar, logs out. Foundation ready for all user stories.
 
@@ -77,22 +77,22 @@ description: "Task list for Veent HRIS Core Platform"
 
 **Independent Test**: Log in as seeded employee → submit a timesheet for current week → verify status is `SUBMITTED` → file a 2-day leave request → verify it appears as `PENDING`. No other story required.
 
-- [ ] T031 Create `src/lib/server/services/employees.ts`: `getById(db, id)`, `getProfile(db, userId)`, `updateContactDetails(db, id, data, actor)` — includes `writeAuditLog` call on update
-- [ ] T032 Create `src/lib/server/services/timesheets.ts`: `listByEmployee(db, employeeId, filters)`, `getById(db, id)`, `create(db, employeeId, data)`, `submit(db, id, actor)` — enforces no-duplicate constraint, sets status to `SUBMITTED`
-- [ ] T033 Create `src/lib/server/services/leave.ts`: `listLeaveTypes(db)`, `getBalances(db, employeeId, year)`, `listRequests(db, employeeId, filters)`, `createRequest(db, employeeId, data)` — validates balance, sets status `PENDING`
+- [X] T031 Create `src/lib/server/services/employees.ts`: `getById(db, id)`, `getProfile(db, userId)`, `updateContactDetails(db, id, data, actor)` — includes `writeAuditLog` call on update
+- [X] T032 Create `src/lib/server/services/timesheets.ts`: `listByEmployee(db, employeeId, filters)`, `getById(db, id)`, `create(db, employeeId, data)`, `submit(db, id, actor)` — enforces no-duplicate constraint, sets status to `SUBMITTED`
+- [X] T033 Create `src/lib/server/services/leave.ts`: `listLeaveTypes(db)`, `getBalances(db, employeeId, year)`, `listRequests(db, employeeId, filters)`, `createRequest(db, employeeId, data)` — validates balance, sets status `PENDING`
 - [ ] T034 [P] [US1] Create `src/lib/components/timesheets/WeeklyGrid.svelte`: reusable hours-per-day input grid (Mon–Fri), accepts `entries` prop, emits change events, validates 0–24 range per day
 - [ ] T035 [P] [US1] Create `src/lib/components/leave/BalanceSummary.svelte`: displays leave balance cards (leave type name, allocated, used, remaining) using shadcn-svelte Card
-- [ ] T036 [P] [US1] Create `src/routes/(app)/timesheets/+page.svelte`: list of employee's timesheets with status badges, link to submit new timesheet
-- [ ] T037 [US1] Create `src/routes/(app)/timesheets/+page.server.ts`: `load` — fetch own timesheets via `timesheets.listByEmployee`; `action: submit` — call `timesheets.submit()`
+- [X] T036 [P] [US1] Create `src/routes/(app)/timesheets/+page.svelte`: list of employee's timesheets with status badges, link to submit new timesheet
+- [X] T037 [US1] Create `src/routes/(app)/timesheets/+page.server.ts`: `load` — fetch own timesheets via `timesheets.listByEmployee`; `action: submit` — call `timesheets.submit()`
 - [ ] T038 [P] [US1] Create `src/routes/(app)/timesheets/new/+page.svelte`: week picker + WeeklyGrid component, submit button
 - [ ] T039 [US1] Create `src/routes/(app)/timesheets/new/+page.server.ts`: `load` — resolve current week dates; `action: create` — validate entries with Zod, call `timesheets.create()`, then auto-submit if user confirms; return 409 on duplicate
-- [ ] T040 [P] [US1] Create `src/routes/(app)/leave/+page.svelte`: leave request list with status, BalanceSummary at top, link to new request
-- [ ] T041 [US1] Create `src/routes/(app)/leave/+page.server.ts`: `load` — fetch own requests + balances; `action: cancel` — set request to `CANCELLED` (own pending only)
+- [X] T040 [P] [US1] Create `src/routes/(app)/leave/+page.svelte`: leave request list with status, BalanceSummary at top, link to new request
+- [X] T041 [US1] Create `src/routes/(app)/leave/+page.server.ts`: `load` — fetch own requests + balances; `action: cancel` — set request to `CANCELLED` (own pending only)
 - [ ] T042 [P] [US1] Create `src/routes/(app)/leave/new/+page.svelte`: leave type selector, date range picker, reason textarea, balance preview showing impact
 - [ ] T043 [US1] Create `src/routes/(app)/leave/new/+page.server.ts`: `action: create` — Zod validate, call `leave.createRequest()`, return 422 with `{ remaining, requested }` on balance error
 - [ ] T044 [P] [US1] Create `src/routes/(app)/profile/+page.svelte`: read-only employment fields + editable contact fields (phone, address), save button
 - [ ] T045 [US1] Create `src/routes/(app)/profile/+page.server.ts`: `load` — own Employee record; `action: update` — Zod validate, call `employees.updateContactDetails()` (writes AuditLog)
-- [ ] T046 [P] [US1] Create `src/routes/api/v1/timesheets/+server.ts`: `GET` (list with filters), `POST` (create + submit); enforce ownership via `requireRole` + `isOwner`
+- [X] T046 [P] [US1] Create `src/routes/api/v1/timesheets/+server.ts`: `GET` (list with filters), `POST` (create + submit); enforce ownership via `requireRole` + `isOwner`
 
 **Checkpoint**: Employee self-service is fully functional and independently testable without any other story being complete.
 
@@ -104,18 +104,18 @@ description: "Task list for Veent HRIS Core Platform"
 
 **Independent Test**: Log in as hr_admin → create new employee → verify user receives seeded credentials → update department → offboard → verify account deactivated and record is read-only.
 
-- [ ] T047 Extend `src/lib/server/services/employees.ts`: add `list(db, filters, pagination)`, `create(db, data, actor)`, `update(db, id, data, actor)`, `offboard(db, id, endDate, reason, actor)`, `search(db, query)` — all mutation functions call `writeAuditLog`
+- [X] T047 Extend `src/lib/server/services/employees.ts`: add `list(db, filters, pagination)`, `create(db, data, actor)`, `update(db, id, data, actor)`, `offboard(db, id, endDate, reason, actor)`, `search(db, query)` — all mutation functions call `writeAuditLog`
 - [ ] T048 Create `src/lib/server/services/departments.ts`: `list(db)`, `create(db, data, actor)`, `update(db, id, data, actor)` — calls `writeAuditLog` on mutations
 - [ ] T049 [P] [US2] Create `src/lib/components/employees/EmployeeCard.svelte`: compact employee card showing name, number, title, department, status badge — used in list views
-- [ ] T050 [P] [US2] Create `src/routes/(app)/employees/+page.svelte`: paginated employee list with search bar, department filter, status filter, EmployeeCard grid, "Add Employee" button (HR Admin only)
-- [ ] T051 [US2] Create `src/routes/(app)/employees/+page.server.ts`: `load` — `requireRole(HR_ADMIN, SUPER_ADMIN, MANAGER)`, call `employees.list()` with filters; MANAGER sees only direct reports
+- [X] T050 [P] [US2] Create `src/routes/(app)/employees/+page.svelte`: paginated employee list with search bar, department filter, status filter, EmployeeCard grid, "Add Employee" button (HR Admin only)
+- [X] T051 [US2] Create `src/routes/(app)/employees/+page.server.ts`: `load` — `requireRole(HR_ADMIN, SUPER_ADMIN, MANAGER)`, call `employees.list()` with filters; MANAGER sees only direct reports
 - [ ] T052 [P] [US2] Create `src/routes/(app)/employees/new/+page.svelte`: onboarding form — all required Employee + User fields, department selector, reports-to selector
 - [ ] T053 [US2] Create `src/routes/(app)/employees/new/+page.server.ts`: `requireRole(HR_ADMIN, SUPER_ADMIN)`; `action: create` — Zod validate, call `employees.create()`, auto-generate `EMP-XXXX` number, call `notifications.sendWelcomeEmail()` stub
-- [ ] T054 [P] [US2] Create `src/routes/(app)/employees/[id]/+page.svelte`: full employee profile — employment details (read-only for non-admin), editable fields for HR Admin, offboard button
-- [ ] T055 [US2] Create `src/routes/(app)/employees/[id]/+page.server.ts`: `load` — `employees.getById()`, ownership check for EMPLOYEE role; `action: update` — `requireRole(HR_ADMIN, SUPER_ADMIN)`, call `employees.update()`; `action: offboard` — call `employees.offboard()`, deactivate linked User
+- [X] T054 [P] [US2] Create `src/routes/(app)/employees/[id]/+page.svelte`: full employee profile — employment details (read-only for non-admin), editable fields for HR Admin, offboard button
+- [X] T055 [US2] Create `src/routes/(app)/employees/[id]/+page.server.ts`: `load` — `employees.getById()`, ownership check for EMPLOYEE role; `action: update` — `requireRole(HR_ADMIN, SUPER_ADMIN)`, call `employees.update()`; `action: offboard` — call `employees.offboard()`, deactivate linked User
 - [ ] T056 [P] [US2] Create `src/routes/(app)/departments/+page.svelte`: department list with create form inline, edit capability
 - [ ] T057 [US2] Create `src/routes/(app)/departments/+page.server.ts`: `requireRole(HR_ADMIN, SUPER_ADMIN)` for mutations; `load` — `departments.list()`; `action: create`, `action: update`
-- [ ] T058 [P] [US2] Create `src/routes/api/v1/employees/+server.ts`: `GET` (list, filterable), `POST` (create); role enforcement
+- [X] T058 [P] [US2] Create `src/routes/api/v1/employees/+server.ts`: `GET` (list, filterable), `POST` (create); role enforcement
 - [ ] T059 [P] [US2] Create `src/routes/api/v1/employees/[id]/+server.ts`: `GET`, `PATCH` (update), `POST` offboard action
 - [ ] T060 [P] [US2] Create `src/lib/server/notifications.ts`: stub functions `sendWelcomeEmail(employee, tempPassword)`, `sendTimesheetStatusEmail(employee, status)`, `sendLeaveStatusEmail(employee, status, reason?)` — log to console in v1
 
@@ -129,8 +129,8 @@ description: "Task list for Veent HRIS Core Platform"
 
 **Independent Test**: Log in as manager → view approvals queue → approve a seeded SUBMITTED timesheet → verify employee's timesheet status changes to APPROVED → reject a leave request with reason → verify employee sees rejection reason.
 
-- [ ] T061 Extend `src/lib/server/services/timesheets.ts`: add `getPendingForManager(db, managerId)`, `approve(db, id, actor)`, `reject(db, id, reason, actor)` — all write AuditLog; `approve` also notifies employee
-- [ ] T062 Extend `src/lib/server/services/leave.ts`: add `getPendingForManager(db, managerId)`, `approve(db, id, actor)` (deducts LeaveBalance), `reject(db, id, reason, actor)`, `overrideApprove(db, id, note, actor)` — writes `LEAVE_OVERRIDE` AuditLog entry
+- [X] T061 Extend `src/lib/server/services/timesheets.ts`: add `getPendingForManager(db, managerId)`, `approve(db, id, actor)`, `reject(db, id, reason, actor)` — all write AuditLog; `approve` also notifies employee
+- [X] T062 Extend `src/lib/server/services/leave.ts`: add `getPendingForManager(db, managerId)`, `approve(db, id, actor)` (deducts LeaveBalance), `reject(db, id, reason, actor)`, `overrideApprove(db, id, note, actor)` — writes `LEAVE_OVERRIDE` AuditLog entry
 - [ ] T063 [P] [US3] Create `src/lib/components/approvals/ApprovalCard.svelte`: card showing submitter name, period/dates, hours/days, approve + reject buttons; reject reveals inline reason textarea
 - [ ] T064 [P] [US3] Create `src/routes/(app)/approvals/+page.svelte`: tabbed layout (Timesheets | Leave), lists ApprovalCards for each pending item, shows count badge per tab
 - [ ] T065 [US3] Create `src/routes/(app)/approvals/+page.server.ts`: `requireRole(MANAGER, HR_ADMIN, SUPER_ADMIN)`; `load` — call `getPendingForManager` / all pending for admin; `action: approveTimesheet`, `action: rejectTimesheet`, `action: approveLeave`, `action: rejectLeave`, `action: overrideLeave`
@@ -149,22 +149,22 @@ description: "Task list for Veent HRIS Core Platform"
 
 **Independent Test**: Log in as hr_admin → compute payroll for current period → verify SSS/PhilHealth/Pag-IBIG/BIR amounts for a PHP 30,000 salary employee → approve run → log in as employee → view itemized payslip.
 
-- [ ] T070 Create `src/lib/server/services/payroll/ph-statutory.ts`: `computeSSS(monthlySalary, sssTable)`, `computePhilHealth(monthlySalary, config)`, `computePagIbig(monthlySalary, config)`, `computeBIRWithholding(taxableMonthly, birTable)`, `computeNetPay(gross, sssEe, philhealthEe, pagibigEe, tax)` — all pure functions with no side effects
-- [ ] T071 Write Vitest unit tests in `tests/unit/ph-statutory.test.ts`: test each function with PHP 15,000, 30,000, and 100,000 monthly salaries; assert expected SSS, PhilHealth, Pag-IBIG, and BIR values; tests MUST fail before T070 is implemented
-- [ ] T072 Create `src/lib/server/services/payroll/index.ts`: `computePayrollRun(db, organizationId, periodStart, periodEnd)` — load PayrollConfig, iterate active employees, collect approved timesheets, call ph-statutory functions, create PayrollRun + PayrollEntries, flag employees with missing/unapproved timesheets; return run with `warnings[]`
+- [X] T070 Create `src/lib/server/services/payroll/ph-statutory.ts`: `computeSSS(monthlySalary, sssTable)`, `computePhilHealth(monthlySalary, config)`, `computePagIbig(monthlySalary, config)`, `computeBIRWithholding(taxableMonthly, birTable)`, `computeNetPay(gross, sssEe, philhealthEe, pagibigEe, tax)` — all pure functions with no side effects
+- [X] T071 Write Vitest unit tests in `tests/unit/ph-statutory.test.ts`: test each function with PHP 15,000, 30,000, and 100,000 monthly salaries; assert expected SSS, PhilHealth, Pag-IBIG, and BIR values; tests MUST fail before T070 is implemented
+- [X] T072 Create `src/lib/server/services/payroll/index.ts`: `computePayrollRun(db, organizationId, periodStart, periodEnd)` — load PayrollConfig, iterate active employees, collect approved timesheets, call ph-statutory functions, create PayrollRun + PayrollEntries, flag employees with missing/unapproved timesheets; return run with `warnings[]`
 - [ ] T073 [P] [US4] Create `src/lib/server/services/payroll/runs.ts`: `listRuns(db, organizationId, filters)`, `getRunWithEntries(db, id)`, `approveRun(db, id, actor, overrideNote?)` — validates overrideNote required when flagged entries exist, writes `PAYROLL_OVERRIDE` AuditLog, triggers payslip visibility
 - [ ] T074 [P] [US4] Create `src/lib/components/payroll/PayslipDetail.svelte`: itemized payslip component — earnings table (basic pay, gross), deductions table (SSS, PhilHealth, Pag-IBIG, tax, total), net pay highlight
-- [ ] T075 [P] [US4] Create `src/routes/(app)/payroll/+page.svelte`: payroll runs list with status badges, period dates, total net pay, "Compute New Run" button
-- [ ] T076 [US4] Create `src/routes/(app)/payroll/+page.server.ts`: `requireRole(HR_ADMIN, SUPER_ADMIN)`; `load` — `listRuns()`; `action: compute` — Zod validate period, call `computePayrollRun()`, redirect to run detail
-- [ ] T077 [P] [US4] Create `src/routes/(app)/payroll/[id]/+page.svelte`: run detail — summary totals, employee entries table with flagged warning rows, approve button (shows override note textarea when warnings exist)
-- [ ] T078 [US4] Create `src/routes/(app)/payroll/[id]/+page.server.ts`: `requireRole(HR_ADMIN, SUPER_ADMIN)`; `load` — `getRunWithEntries()`; `action: approve` — Zod validate overrideNote when flags exist, call `approveRun()`; `action: void` — `requireRole(SUPER_ADMIN)` only
+- [X] T075 [P] [US4] Create `src/routes/(app)/payroll/+page.svelte`: payroll runs list with status badges, period dates, total net pay, "Compute New Run" button
+- [X] T076 [US4] Create `src/routes/(app)/payroll/+page.server.ts`: `requireRole(HR_ADMIN, SUPER_ADMIN)`; `load` — `listRuns()`; `action: compute` — Zod validate period, call `computePayrollRun()`, redirect to run detail
+- [X] T077 [P] [US4] Create `src/routes/(app)/payroll/[id]/+page.svelte`: run detail — summary totals, employee entries table with flagged warning rows, approve button (shows override note textarea when warnings exist)
+- [X] T078 [US4] Create `src/routes/(app)/payroll/[id]/+page.server.ts`: `requireRole(HR_ADMIN, SUPER_ADMIN)`; `load` — `getRunWithEntries()`; `action: approve` — Zod validate overrideNote when flags exist, call `approveRun()`; `action: void` — `requireRole(SUPER_ADMIN)` only
 - [ ] T079 [P] [US4] Create `src/routes/(app)/payroll/config/+page.svelte`: config form — pay frequency, cutoff dates, PhilHealth/Pag-IBIG rate inputs, SSS table JSON editor, BIR table JSON editor
 - [ ] T080 [US4] Create `src/routes/(app)/payroll/config/+page.server.ts`: `requireRole(SUPER_ADMIN)`; `load` — PayrollConfig; `action: update` — Zod validate, update config, writeAuditLog UPDATE
 - [ ] T081 [P] [US4] Create `src/routes/(app)/payslips/+page.svelte`: employee's payslip list — period, gross, net per row, link to detail
 - [ ] T082 [US4] Create `src/routes/(app)/payslips/+page.server.ts`: `load` — fetch own PayrollEntries from APPROVED runs, sorted by period descending
 - [ ] T083 [P] [US4] Create `src/routes/(app)/payslips/[id]/+page.svelte`: renders PayslipDetail component with data
 - [ ] T084 [US4] Create `src/routes/(app)/payslips/[id]/+page.server.ts`: `load` — fetch PayrollEntry, ownership check (employee can only see own payslip)
-- [ ] T085 [P] [US4] Create `src/routes/api/v1/payroll/+server.ts`: `GET` (list runs), `POST` (compute run)
+- [X] T085 [P] [US4] Create `src/routes/api/v1/payroll/+server.ts`: `GET` (list runs), `POST` (compute run)
 - [ ] T086 [P] [US4] Create `src/routes/api/v1/payroll/[id]/+server.ts`: `GET` (run + entries), `POST` (approve / void)
 - [ ] T087 [P] [US4] Create `src/routes/api/v1/payroll/payslips/[id]/+server.ts`: `GET` itemized payslip JSON with ownership enforcement
 
@@ -179,13 +179,13 @@ description: "Task list for Veent HRIS Core Platform"
 **Independent Test**: Log in as hr_admin → open dashboard → verify headcount and next payroll date are correct → generate headcount report for last 3 months → export CSV → open file and verify columns and data.
 
 - [ ] T088 Create `src/lib/server/services/dashboard.ts`: `getEmployeeMetrics(db, userId)`, `getManagerMetrics(db, managerId)`, `getAdminMetrics(db, organizationId)` — each function checks Redis cache (`dashboard:{role}:{id}`, 5-min TTL) before querying DB
-- [ ] T089 Create `src/lib/server/services/reports.ts`: `generateHeadcount(db, filters)`, `generateAttendance(db, filters)`, `generatePayrollCosts(db, filters)`, `generateLeaveUtilization(db, filters)`, `exportToCSV(data, columns)` — returns structured data objects and CSV string respectively
+- [X] T089 Create `src/lib/server/services/reports.ts`: `generateHeadcount(db, filters)`, `generateAttendance(db, filters)`, `generatePayrollCosts(db, filters)`, `generateLeaveUtilization(db, filters)`, `exportToCSV(data, columns)` — returns structured data objects and CSV string respectively
 - [ ] T090 [P] [US5] Create `src/lib/components/charts/HeadcountTrend.svelte`: layerchart line chart for headcount over time, accepts `{ period, headcount }[]` prop
 - [ ] T091 [P] [US5] Create `src/lib/components/charts/PayrollCostBar.svelte`: layerchart bar chart for payroll costs by department, accepts `{ department, totalGross }[]` prop
-- [ ] T092 [P] [US5] Create `src/routes/(app)/dashboard/+page.svelte`: role-conditional layout — employee panel (timesheet status, leave balance, next payroll), manager panel (pending approvals count, team headcount), admin panel (total headcount, on-leave today, pending approvals, open job postings, charts)
-- [ ] T093 [US5] Create `src/routes/(app)/dashboard/+page.server.ts`: `load` — call the appropriate `dashboard.*Metrics()` function based on `locals.user.role`
-- [ ] T094 [P] [US5] Create `src/routes/(app)/reports/+page.svelte`: report type selector cards (Headcount, Attendance, Payroll Costs, Leave Utilization, Audit Log)
-- [ ] T095 [US5] Create `src/routes/(app)/reports/+page.server.ts`: `requireRole(HR_ADMIN, SUPER_ADMIN)`; `load` — pass available report types to page
+- [X] T092 [P] [US5] Create `src/routes/(app)/dashboard/+page.svelte`: role-conditional layout — employee panel (timesheet status, leave balance, next payroll), manager panel (pending approvals count, team headcount), admin panel (total headcount, on-leave today, pending approvals, open job postings, charts)
+- [X] T093 [US5] Create `src/routes/(app)/dashboard/+page.server.ts`: `load` — call the appropriate `dashboard.*Metrics()` function based on `locals.user.role`
+- [X] T094 [P] [US5] Create `src/routes/(app)/reports/+page.svelte`: report type selector cards (Headcount, Attendance, Payroll Costs, Leave Utilization, Audit Log)
+- [X] T095 [US5] Create `src/routes/(app)/reports/+page.server.ts`: `requireRole(HR_ADMIN, SUPER_ADMIN)`; `load` — pass available report types to page
 - [ ] T096 [P] [US5] Create `src/routes/(app)/reports/[type]/+page.svelte`: filter controls (date range, department), data table with pagination, "Export CSV" button
 - [ ] T097 [US5] Create `src/routes/(app)/reports/[type]/+page.server.ts`: `requireRole(HR_ADMIN, SUPER_ADMIN)`; `load` — call the matching `reports.generate*()` function with filters from URL params
 - [ ] T098 [P] [US5] Create `src/routes/(app)/reports/audit-log/+page.svelte`: audit log viewer — actor filter, entity type filter, action filter, date range, paginated table
@@ -203,10 +203,10 @@ description: "Task list for Veent HRIS Core Platform"
 
 **Independent Test**: Log in as hr_admin → create an "OPEN" job posting → submit a test application with resume → advance applicant through all stages to HIRED → convert to employee → verify new employee record exists with pre-populated data.
 
-- [ ] T102 Create `src/lib/server/services/recruitment.ts`: `listPostings(db, filters)`, `createPosting(db, data, actor)`, `updatePosting(db, id, data, actor)`, `listApplicants(db, postingId, filters)`, `createApplicant(db, postingId, data)`, `advanceStage(db, applicantId, stage, notes, actor)`, `convertToEmployee(db, applicantId, employmentData, actor)` — calls `writeAuditLog` on mutations and `employees.create()` on conversion
+- [X] T102 Create `src/lib/server/services/recruitment.ts`: `listPostings(db, filters)`, `createPosting(db, data, actor)`, `updatePosting(db, id, data, actor)`, `listApplicants(db, postingId, filters)`, `createApplicant(db, postingId, data)`, `advanceStage(db, applicantId, stage, notes, actor)`, `convertToEmployee(db, applicantId, employmentData, actor)` — calls `writeAuditLog` on mutations and `employees.create()` on conversion
 - [ ] T103 [P] [US6] Create `src/lib/components/recruitment/ApplicantKanban.svelte`: kanban board with columns per stage (Applied, Screening, Interview, Offer, Hired, Rejected), draggable applicant cards (or click-to-advance for simplicity in v1)
-- [ ] T104 [P] [US6] Create `src/routes/(app)/recruitment/+page.svelte`: job postings list with status badges (DRAFT, OPEN, CLOSED), applicant count per posting, "New Posting" button
-- [ ] T105 [US6] Create `src/routes/(app)/recruitment/+page.server.ts`: `load` — `listPostings()`; employees see OPEN only, HR Admin sees all; `action: create` — `requireRole(HR_ADMIN, SUPER_ADMIN)`, Zod validate, call `createPosting()`
+- [X] T104 [P] [US6] Create `src/routes/(app)/recruitment/+page.svelte`: job postings list with status badges (DRAFT, OPEN, CLOSED), applicant count per posting, "New Posting" button
+- [X] T105 [US6] Create `src/routes/(app)/recruitment/+page.server.ts`: `load` — `listPostings()`; employees see OPEN only, HR Admin sees all; `action: create` — `requireRole(HR_ADMIN, SUPER_ADMIN)`, Zod validate, call `createPosting()`
 - [ ] T106 [P] [US6] Create `src/routes/(app)/recruitment/[id]/+page.svelte`: posting detail header, ApplicantKanban, "Add Applicant" button, "Close Posting" button
 - [ ] T107 [US6] Create `src/routes/(app)/recruitment/[id]/+page.server.ts`: `load` — posting + applicants grouped by stage; `action: updateStatus` — `requireRole(HR_ADMIN, SUPER_ADMIN)`, call `updatePosting()`; `action: advanceStage` — call `recruitment.advanceStage()`; `action: convert` — call `convertToEmployee()`, redirect to new employee profile
 - [ ] T108 [P] [US6] Create `src/routes/(app)/recruitment/[id]/apply/+page.svelte`: public-style application form (name, email, phone, cover letter, resume upload)

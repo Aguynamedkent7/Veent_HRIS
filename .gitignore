@@ -1,0 +1,34 @@
+node_modules/
+build/
+.svelte-kit/
+dist/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Prisma
+prisma/migrations/**/migration_lock.toml
+
+# Uploads
+static/uploads/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test artifacts
+playwright-report/
+test-results/
+coverage/
