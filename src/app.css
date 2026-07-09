@@ -3,42 +3,72 @@
 @tailwind utilities;
 
 @layer base {
+	/* Light theme (default) */
 	:root {
-		/* Veent brand dark theme */
-		--background: 0 0% 7%;            /* #111111 */
-		--foreground: 0 0% 94%;           /* #F0F0F0 */
+		--background: 0 0% 98%;
+		--foreground: 0 0% 9%;
 
-		--card: 0 0% 10%;                 /* #1A1A1A */
-		--card-foreground: 0 0% 94%;
+		--card: 0 0% 100%;
+		--card-foreground: 0 0% 9%;
 
-		--popover: 0 0% 12%;              /* #1E1E1E */
-		--popover-foreground: 0 0% 94%;
+		--popover: 0 0% 100%;
+		--popover-foreground: 0 0% 9%;
 
 		--primary: 0 79% 45%;             /* #CC1515 — Veent Red */
 		--primary-foreground: 0 0% 100%;
 
-		--secondary: 0 0% 14%;            /* #242424 */
-		--secondary-foreground: 0 0% 94%;
+		--secondary: 0 0% 96%;
+		--secondary-foreground: 0 0% 9%;
 
-		--muted: 0 0% 14%;                /* #242424 */
-		--muted-foreground: 0 0% 52%;     /* #858585 */
+		--muted: 0 0% 96%;
+		--muted-foreground: 0 0% 45%;
 
-		--accent: 0 0% 16%;               /* #292929 */
-		--accent-foreground: 0 0% 94%;
+		--accent: 0 0% 94%;
+		--accent-foreground: 0 0% 9%;
 
-		--destructive: 0 70% 50%;         /* bright red for errors */
+		--destructive: 0 70% 50%;
 		--destructive-foreground: 0 0% 100%;
 
-		--border: 0 0% 18%;               /* #2E2E2E */
-		--input: 0 0% 13%;                /* #212121 */
-		--ring: 0 79% 45%;                /* Veent Red focus ring */
+		--border: 0 0% 89%;
+		--input: 0 0% 94%;
+		--ring: 0 79% 45%;
 		--radius: 0.375rem;
 
-		/* Status colors */
 		--success: 142 71% 45%;
 		--success-foreground: 0 0% 100%;
 		--warning: 38 92% 50%;
 		--warning-foreground: 0 0% 10%;
+	}
+
+	/* Dark theme */
+	.dark {
+		--background: 0 0% 7%;
+		--foreground: 0 0% 94%;
+
+		--card: 0 0% 10%;
+		--card-foreground: 0 0% 94%;
+
+		--popover: 0 0% 12%;
+		--popover-foreground: 0 0% 94%;
+
+		--primary: 0 79% 45%;
+		--primary-foreground: 0 0% 100%;
+
+		--secondary: 0 0% 14%;
+		--secondary-foreground: 0 0% 94%;
+
+		--muted: 0 0% 14%;
+		--muted-foreground: 0 0% 52%;
+
+		--accent: 0 0% 16%;
+		--accent-foreground: 0 0% 94%;
+
+		--destructive: 0 70% 50%;
+		--destructive-foreground: 0 0% 100%;
+
+		--border: 0 0% 18%;
+		--input: 0 0% 13%;
+		--ring: 0 79% 45%;
 	}
 }
 
@@ -48,6 +78,9 @@
 	}
 
 	html {
+		color-scheme: light;
+	}
+	html.dark {
 		color-scheme: dark;
 	}
 
