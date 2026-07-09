@@ -36,17 +36,17 @@
 <div class="flex min-h-screen flex-col bg-background">
 	<!-- Top nav -->
 	<header class="sticky top-0 z-50 border-b border-border bg-card/95 backdrop-blur">
-		<div class="container mx-auto flex h-14 max-w-screen-xl items-center gap-4">
-			<!-- Logo -->
-			<a href="/dashboard" class="flex shrink-0 items-center gap-1.5 mr-2">
+		<div class="flex h-14 w-full items-center px-4 lg:px-6">
+			<!-- Logo — far left -->
+			<a href="/dashboard" class="flex shrink-0 items-center gap-1.5 pr-4">
 				<span class="rounded bg-primary px-2 py-0.5 text-sm font-bold tracking-tight text-white">
 					VEENT
 				</span>
 				<span class="text-sm font-semibold tracking-wider text-foreground">HRIS</span>
 			</a>
 
-			<!-- Nav links -->
-			<nav class="flex flex-1 h-full items-stretch justify-between overflow-x-auto scrollbar-none">
+			<!-- Nav links — fills remaining space, full bar height -->
+			<nav class="flex flex-1 self-stretch items-stretch justify-between overflow-x-auto scrollbar-none">
 				{#each navItems as item (item.href)}
 					{@const active = $page.url.pathname.startsWith(item.href) && (item.href !== '/dashboard' || $page.url.pathname === '/dashboard')}
 					<a
@@ -61,8 +61,8 @@
 				{/each}
 			</nav>
 
-			<!-- User info -->
-			<div class="flex shrink-0 items-center gap-3">
+			<!-- User info — far right -->
+			<div class="flex shrink-0 items-center gap-3 pl-4">
 				<div class="hidden flex-col items-end sm:flex">
 					<span class="text-xs font-medium text-foreground">{data.user.email}</span>
 					<span class="text-[10px] text-muted-foreground">{roleLabel[role] ?? role}</span>
