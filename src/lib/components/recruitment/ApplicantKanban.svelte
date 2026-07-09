@@ -96,8 +96,8 @@
 							</p>
 
 							{#if !readonly}
+								{@const nextStage = getNextStage(stage as Stage)}
 								<div class="mt-2 flex flex-wrap gap-1">
-									{@const nextStage = getNextStage(stage as Stage)}
 									{#if nextStage}
 										<form method="POST" action="?/advanceStage" use:enhance>
 											<input type="hidden" name="applicantId" value={applicant.id} />
