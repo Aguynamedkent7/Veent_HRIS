@@ -46,7 +46,7 @@
 			</a>
 
 			<!-- Nav links -->
-			<nav class="flex items-center gap-px overflow-x-auto scrollbar-none">
+			<nav class="flex flex-1 items-center justify-between overflow-x-auto scrollbar-none px-2">
 				{#each navItems as item (item.href)}
 					{@const active = $page.url.pathname.startsWith(item.href) && (item.href !== '/dashboard' || $page.url.pathname === '/dashboard')}
 					<a
@@ -62,7 +62,7 @@
 			</nav>
 
 			<!-- User info -->
-			<div class="ml-auto flex shrink-0 items-center gap-3">
+			<div class="flex shrink-0 items-center gap-3">
 				<div class="hidden flex-col items-end sm:flex">
 					<span class="text-xs font-medium text-foreground">{data.user.email}</span>
 					<span class="text-[10px] text-muted-foreground">{roleLabel[role] ?? role}</span>
