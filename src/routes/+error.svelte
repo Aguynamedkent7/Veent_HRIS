@@ -1,18 +1,13 @@
 <script lang="ts">
 	import { page } from '$app/stores'
+
+	const title = $derived(
+		$page.status === 403 ? 'Access Denied' : $page.status === 404 ? 'Page Not Found' : 'Server Error'
+	)
 </script>
 
 <svelte:head>
-	<title>
-		{#if $page.status === 403}
-			Access Denied
-		{:else if $page.status === 404}
-			Page Not Found
-		{:else}
-			Server Error
-		{/if}
-		— Veent HRIS
-	</title>
+	<title>{title} — Veent HRIS</title>
 </svelte:head>
 
 <div class="flex min-h-screen flex-col items-center justify-center bg-background px-4">
