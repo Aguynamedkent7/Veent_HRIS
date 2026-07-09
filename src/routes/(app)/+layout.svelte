@@ -92,11 +92,41 @@
 
 		<!-- Logo -->
 		<div class="flex h-14 shrink-0 items-center border-b border-border px-5">
-			<a href="/dashboard" class="flex items-center gap-2">
-				<span class="rounded bg-primary px-2 py-0.5 text-sm font-bold tracking-tight text-white">
-					VEENT
-				</span>
-				<span class="text-sm font-semibold tracking-wider text-foreground">HRIS</span>
+			<a href="/dashboard" class="flex items-center">
+				<!-- Ticket-stub logo: VEENT left | HRIS right -->
+				<svg class="h-9 w-auto" viewBox="0 0 130 42" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Veent HRIS">
+					<!-- Ticket body with semicircle notches on left and right edges -->
+					<path
+						d="M 3,0 L 127,0 Q 130,0 130,3 L 130,15 A 6,6 0 0,0 130,27 L 130,39 Q 130,42 127,42 L 3,42 Q 0,42 0,39 L 0,27 A 6,6 0 0,0 0,15 L 0,3 Q 0,0 3,0 Z"
+						fill="#CC1515"
+					/>
+					<!-- Perforation dashes down the center -->
+					<line x1="65" y1="5" x2="65" y2="37" stroke="white" stroke-width="1.5" stroke-dasharray="3,2.5" />
+					<!-- Left stub: VEENT -->
+					<text
+						x="32"
+						y="21"
+						text-anchor="middle"
+						dominant-baseline="middle"
+						fill="white"
+						font-family="-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif"
+						font-size="10.5"
+						font-weight="700"
+						letter-spacing="1.5"
+					>VEENT</text>
+					<!-- Right stub: HRIS -->
+					<text
+						x="97"
+						y="21"
+						text-anchor="middle"
+						dominant-baseline="middle"
+						fill="white"
+						font-family="-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif"
+						font-size="12"
+						font-weight="700"
+						letter-spacing="2"
+					>HRIS</text>
+				</svg>
 			</a>
 		</div>
 
