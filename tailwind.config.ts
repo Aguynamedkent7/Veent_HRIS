@@ -4,6 +4,14 @@ import plugin from 'tailwindcss/plugin'
 export default {
 	content: ['./src/**/*.{html,js,svelte,ts}'],
 	theme: {
+		container: {
+			center: true,
+			padding: {
+				DEFAULT: '1rem',
+				sm: '1.5rem',
+				lg: '2rem'
+			}
+		},
 		extend: {
 			fontFamily: {
 				sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'sans-serif']

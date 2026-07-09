@@ -36,7 +36,7 @@
 <div class="flex min-h-screen flex-col bg-background">
 	<!-- Top nav -->
 	<header class="sticky top-0 z-50 border-b border-border bg-card/95 backdrop-blur">
-		<div class="container flex h-14 items-center gap-4">
+		<div class="container mx-auto flex h-14 max-w-screen-xl items-center gap-4">
 			<!-- Logo -->
 			<a href="/dashboard" class="flex shrink-0 items-center gap-1.5 mr-2">
 				<span class="rounded bg-primary px-2 py-0.5 text-sm font-bold tracking-tight text-white">
@@ -80,7 +80,7 @@
 	</header>
 
 	<!-- Page content -->
-	<main class="container flex-1 py-6">
+	<main class="container mx-auto flex-1 py-8 max-w-screen-xl">
 		{@render children()}
 	</main>
 </div>
