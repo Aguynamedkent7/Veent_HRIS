@@ -10,62 +10,72 @@
 	<title>Sign In — Veent HRIS</title>
 </svelte:head>
 
-<div class="flex min-h-screen items-center justify-center bg-background px-4">
-	<div class="w-full max-w-sm space-y-6">
-		<div class="space-y-2 text-center">
-			<h1 class="text-2xl font-bold tracking-tight">Veent HRIS</h1>
-			<p class="text-sm text-muted-foreground">Sign in to your account</p>
+<div class="flex min-h-screen flex-col items-center justify-center bg-background px-4">
+	<!-- Brand -->
+	<div class="mb-8 flex flex-col items-center gap-3">
+		<div class="flex items-center gap-2">
+			<span class="rounded bg-primary px-3 py-1 text-lg font-bold tracking-tight text-white">VEENT</span>
+			<span class="text-lg font-semibold tracking-wider text-foreground">HRIS</span>
 		</div>
+		<p class="text-sm text-muted-foreground">Human Resource Information System</p>
+	</div>
+
+	<!-- Card -->
+	<div class="w-full max-w-sm rounded-lg border border-border bg-card p-6 shadow-xl">
+		<div class="mb-5">
+			<h1 class="text-base font-semibold">Sign in to your account</h1>
+			<p class="mt-1 text-xs text-muted-foreground">Enter your work credentials to continue</p>
+		</div>
+
+		{#if form?.error}
+			<div class="mb-4 rounded bg-destructive/15 px-3 py-2 text-sm text-red-400">
+				{form.error}
+			</div>
+		{/if}
 
 		<form
 			method="POST"
 			class="space-y-4"
 			use:enhance={() => {
 				loading = true
-				return async ({ update }) => {
-					loading = false
-					update()
-				}
+				return async ({ update }) => { loading = false; update() }
 			}}
 		>
-			{#if form?.error}
-				<div class="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
-					{form.error}
-				</div>
-			{/if}
-
-			<div class="space-y-2">
-				<label for="email" class="text-sm font-medium leading-none">Email</label>
+			<div class="space-y-1.5">
+				<label for="email" class="text-sm font-medium">Email</label>
 				<input
 					id="email"
 					name="email"
 					type="email"
 					autocomplete="email"
 					required
-					class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					placeholder="you@company.com"
+					class="input"
 				/>
 			</div>
 
-			<div class="space-y-2">
-				<label for="password" class="text-sm font-medium leading-none">Password</label>
+			<div class="space-y-1.5">
+				<label for="password" class="text-sm font-medium">Password</label>
 				<input
 					id="password"
 					name="password"
 					type="password"
 					autocomplete="current-password"
 					required
-					class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					placeholder="••••••••"
+					class="input"
 				/>
 			</div>
 
 			<button
 				type="submit"
 				disabled={loading}
-				class="inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+				class="btn-primary w-full h-10 disabled:opacity-60"
 			>
-				{loading ? 'Signing in…' : 'Sign in'}
+				{loading ? 'Signing in…' : 'Sign In'}
 			</button>
 		</form>
 	</div>
+
+	<p class="mt-6 text-xs text-muted-foreground">Veent HRIS · {new Date().getFullYear()}</p>
 </div>
