@@ -13,10 +13,7 @@
 <div class="flex min-h-screen flex-col items-center justify-center bg-background px-4">
 	<!-- Brand -->
 	<div class="mb-8 flex flex-col items-center gap-3">
-		<div class="flex items-center gap-2">
-			<span class="rounded bg-primary px-3 py-1 text-lg font-bold tracking-tight text-white">VEENT</span>
-			<span class="text-lg font-semibold tracking-wider text-foreground">HRIS</span>
-		</div>
+		<img src="/veent-logo.png" alt="Veent HRIS" class="h-14 w-auto" />
 		<p class="text-sm text-muted-foreground">Human Resource Information System</p>
 	</div>
 
