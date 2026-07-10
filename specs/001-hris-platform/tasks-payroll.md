@@ -23,12 +23,12 @@ every mutation calls `writeAuditLog`; **tests are written before implementation*
 ## Slice 1 — Schema + pure compute engine (no UI, fully unit-testable) 🎯 foundation
 
 - [ ] PAY-001 Schema (`prisma/schema.prisma`): add `PayrollPeriod`, `PayrollEarning`, `PayrollDeduction`, `Loan`, `LoanPayment`, `CashAdvance`, `EarningType`, `DeductionType`, `PayRateRule`; expand `PayrollRunStatus` → `OPEN, IMPORTED, GENERATED, LOCKED, RELEASED, VOIDED`; add `PayrollRun.periodId` + `PayrollEntry.earnings[]/deductions[]`. Apply via `pnpm db:migrate` (db push) + generate.
-- [ ] PAY-002 [P] Engine types `payroll/types.ts`: `AttendanceInput` (regular/ot/nightDiff/holiday/restDay hours, late/undertime mins), `EmployeeComp` (rate, rateType), `PayComponent`, `RateConfig`, `EngineResult`.
-- [ ] PAY-003 [P] Rate config accessor `payroll/rates.ts`: load an org's `PayRateRule`/`EarningType` multipliers, falling back to DOLE defaults (OT ×1.25, night diff +10%, rest-day/special-holiday ×1.30, regular-holiday ×2.00 worked / ×1.00 unworked, + stacked combos).
-- [ ] PAY-004 **Test-first** `tests/unit/payroll-earnings.test.ts` (MUST fail before PAY-005): OT, night diff, holiday (regular/special, worked/unworked), rest-day, and stacked cases (OT-on-holiday, holiday-on-rest-day) for PHP 15k / 30k / 100k monthly rates.
-- [ ] PAY-005 Implement `payroll/earnings.ts` pure fns (`computeOvertime`, `computeNightDiff`, `computeHoliday`, `computeRestDay`, `sumAllowancesIncentives`, `computeEarnings`) reading rates from config → green.
-- [ ] PAY-006 **Test-first** `tests/unit/payroll-deductions.test.ts`: fixed installment capped at balance; skip when net insufficient; correct statutory + tax ordering (taxable-gross → BIR → net).
-- [ ] PAY-007 Implement `payroll/deductions.ts` (`computeLoanDeduction`, `computeCashAdvanceDeduction`, `composeDeductions` with statutory + tax) → green.
+- [X] PAY-002 [P] Engine types `payroll/types.ts`: `AttendanceInput` (regular/ot/nightDiff/holiday/restDay hours, late/undertime mins), `EmployeeComp` (rate, rateType), `PayComponent`, `RateConfig`, `EngineResult`.
+- [X] PAY-003 [P] Rate config accessor `payroll/rates.ts`: load an org's `PayRateRule`/`EarningType` multipliers, falling back to DOLE defaults (OT ×1.25, night diff +10%, rest-day/special-holiday ×1.30, regular-holiday ×2.00 worked / ×1.00 unworked, + stacked combos).
+- [X] PAY-004 **Test-first** `tests/unit/payroll-earnings.test.ts` (MUST fail before PAY-005): OT, night diff, holiday (regular/special, worked/unworked), rest-day, and stacked cases (OT-on-holiday, holiday-on-rest-day) for PHP 15k / 30k / 100k monthly rates.
+- [X] PAY-005 Implement `payroll/earnings.ts` pure fns (`computeOvertime`, `computeNightDiff`, `computeHoliday`, `computeRestDay`, `sumAllowancesIncentives`, `computeEarnings`) reading rates from config → green.
+- [X] PAY-006 **Test-first** `tests/unit/payroll-deductions.test.ts`: fixed installment capped at balance; skip when net insufficient; correct statutory + tax ordering (taxable-gross → BIR → net).
+- [X] PAY-007 Implement `payroll/deductions.ts` (`computeLoanDeduction`, `computeCashAdvanceDeduction`, `composeDeductions` with statutory + tax) → green.
 - [ ] PAY-008 Compose in `payroll/index.ts` `computePayrollRun`: earnings → taxable gross → BIR (reuse `ph-statutory.ts`) → deductions → net; persist `PayrollEntry` + line items. Extends the existing run compute.
 - [ ] PAY-009 [P] Seed default `EarningType`/`DeductionType`/`PayRateRule` (DOLE) in `prisma/seed.ts` (idempotent).
 
