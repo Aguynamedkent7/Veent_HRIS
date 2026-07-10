@@ -5,11 +5,12 @@ import {
 	generateAttendance,
 	generatePayrollCosts,
 	generateLeaveUtilization,
+	generatePayrollRegister,
 	exportToCSV
 } from '$lib/server/services/reports'
 import type { RequestHandler } from './$types'
 
-const VALID_TYPES = ['headcount', 'attendance', 'payroll-costs', 'leave-utilization'] as const
+const VALID_TYPES = ['headcount', 'attendance', 'payroll-costs', 'leave-utilization', 'payroll-register'] as const
 
 export const GET: RequestHandler = async ({ locals, params, url }) => {
 	if (!locals.user) error(401, 'Unauthorized')
@@ -41,6 +42,8 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
 		results = await generatePayrollCosts(user.organizationId, { startDate, endDate })
 	} else if (type === 'leave-utilization') {
 		results = await generateLeaveUtilization(user.organizationId, { startDate, endDate })
+	} else if (type === 'payroll-register') {
+		results = await generatePayrollRegister(user.organizationId, { startDate, endDate })
 	}
 
 	if (exportCsv) {

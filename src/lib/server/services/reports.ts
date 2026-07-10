@@ -295,6 +295,50 @@ export async function generateLeaveUtilization(
 	}))
 }
 
+// ─── generatePayrollRegister ──────────────────────────────────────────────────
+// One row per payroll entry in the range: gross, itemized statutory, other
+// deductions (loans/cash advances/tardiness), and net — the standard payroll register.
+
+export async function generatePayrollRegister(
+	organizationId: string,
+	{ startDate, endDate }: { startDate: Date; endDate: Date }
+) {
+	const entries = await db.payrollEntry.findMany({
+		where: {
+			payrollRun: { organizationId, periodStart: { gte: startDate }, periodEnd: { lte: endDate } }
+		},
+		select: {
+			grossPay: true,
+			sssEe: true,
+			philhealthEe: true,
+			pagibigEe: true,
+			withholdingTax: true,
+			totalDeductions: true,
+			netPay: true,
+			payrollRun: { select: { periodStart: true, periodEnd: true } },
+			employee: { select: { firstName: true, lastName: true, employeeNumber: true } }
+		},
+		orderBy: [{ payrollRun: { periodStart: 'asc' } }, { employee: { lastName: 'asc' } }]
+	})
+
+	const fmt = (d: Date) => d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+	return entries.map((e) => {
+		const statutory = Number(e.sssEe) + Number(e.philhealthEe) + Number(e.pagibigEe) + Number(e.withholdingTax)
+		const other = Math.round((Number(e.totalDeductions) - statutory) * 100) / 100
+		return {
+			Employee: `${e.employee.lastName}, ${e.employee.firstName} (${e.employee.employeeNumber})`,
+			Period: `${fmt(e.payrollRun.periodStart)} – ${fmt(e.payrollRun.periodEnd)}`,
+			Gross: Number(e.grossPay),
+			SSS: Number(e.sssEe),
+			PhilHealth: Number(e.philhealthEe),
+			PagIBIG: Number(e.pagibigEe),
+			Tax: Number(e.withholdingTax),
+			OtherDeductions: other,
+			Net: Number(e.netPay)
+		}
+	})
+}
+
 // ─── exportToCSV ──────────────────────────────────────────────────────────────
 
 export function exportToCSV(rows: Record<string, unknown>[]): string {

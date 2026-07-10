@@ -15,7 +15,8 @@
 		headcount: 'Headcount Report',
 		attendance: 'Attendance Report',
 		'payroll-costs': 'Payroll Costs Report',
-		'leave-utilization': 'Leave Utilization Report'
+		'leave-utilization': 'Leave Utilization Report',
+		'payroll-register': 'Payroll Register'
 	}
 
 	const title = $derived(REPORT_LABELS[data.reportType] ?? 'Report')
@@ -37,7 +38,7 @@
 	})
 
 	// Currency columns
-	const CURRENCY_COLS = new Set(['TotalGross', 'TotalNet'])
+	const CURRENCY_COLS = new Set(['TotalGross', 'TotalNet', 'Gross', 'SSS', 'PhilHealth', 'PagIBIG', 'Tax', 'OtherDeductions', 'Net'])
 
 	function formatCell(col: string, val: unknown): string {
 		if (val === null || val === undefined) return '—'

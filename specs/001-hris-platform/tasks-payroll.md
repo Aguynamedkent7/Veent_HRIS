@@ -59,8 +59,8 @@ every mutation calls `writeAuditLog`; **tests are written before implementation*
 
 ## Slice 5 — Reports hook-in (feeds FR-067)
 
-- [ ] PAY-024 Extend `services/reports.ts` to build payroll register + itemized payslip + BIR reports from `PayrollEarning`/`PayrollDeduction` line items.
-- [ ] PAY-025 [P] Report pages/exports: payroll register, tardiness, overtime, loan summary (ties into Reports epic T176).
+- [X] PAY-024 Extend `services/reports.ts` to build payroll register + itemized payslip + BIR reports from `PayrollEarning`/`PayrollDeduction` line items.
+- [X] PAY-025 [P] Report pages/exports: payroll register, tardiness, overtime, loan summary (ties into Reports epic T176).
 
 ---
 

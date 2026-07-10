@@ -24,6 +24,25 @@
 		</form>
 	</div>
 
+	<!-- Detailed reports (filterable + CSV export) -->
+	<section class="space-y-3">
+		<h2 class="text-lg font-semibold">Detailed Reports</h2>
+		<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+			{#each [
+				{ href: '/reports/payroll-register', label: 'Payroll Register', desc: 'Per-employee gross, deductions & net' },
+				{ href: '/reports/headcount', label: 'Headcount', desc: 'Monthly headcount by department' },
+				{ href: '/reports/attendance', label: 'Attendance', desc: 'Timesheet hours by employee' },
+				{ href: '/reports/payroll-costs', label: 'Payroll Costs', desc: 'Gross/net by department' },
+				{ href: '/reports/leave-utilization', label: 'Leave Utilization', desc: 'Days used by leave type' }
+			] as r (r.href)}
+				<a href={r.href} class="rounded-lg border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-card/80">
+					<p class="font-medium">{r.label}</p>
+					<p class="mt-0.5 text-xs text-muted-foreground">{r.desc}</p>
+				</a>
+			{/each}
+		</div>
+	</section>
+
 	<!-- Attrition summary -->
 	<section class="space-y-3">
 		<h2 class="text-lg font-semibold">Workforce — {data.year}</h2>
