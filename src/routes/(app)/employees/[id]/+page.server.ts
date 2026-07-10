@@ -1,6 +1,7 @@
 import { fail } from '@sveltejs/kit'
 import { requireMinRole } from '$lib/server/rbac'
 import { getEmployee, updateEmployee, offboardEmployee } from '$lib/server/services/employees'
+import { listLoans, listCashAdvances, createLoan, createCashAdvance } from '$lib/server/services/payroll/loans'
 import { db } from '$lib/server/db'
 import { z } from 'zod'
 import type { Actions, PageServerLoad } from './$types'
@@ -10,16 +11,28 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 
 	const canManage = ['HR_ADMIN', 'SUPER_ADMIN'].includes(locals.user!.role)
 
-	const [employee, departments] = await Promise.all([
+	const [employee, departments, loans, cashAdvances] = await Promise.all([
 		getEmployee(params.id, locals.user!.organizationId, locals.user!.role),
 		db.department.findMany({
 			where: { organizationId: locals.user!.organizationId },
 			orderBy: { name: 'asc' }
-		})
+		}),
+		canManage ? listLoans(params.id) : Promise.resolve([]),
+		canManage ? listCashAdvances(params.id) : Promise.resolve([])
 	])
 
-	return { employee, departments, canManage }
+	return { employee, departments, canManage, loans, cashAdvances }
 }
+
+const loanSchema = z.object({
+	type: z.string().optional(),
+	principal: z.coerce.number().positive(),
+	installment: z.coerce.number().positive()
+})
+const cashAdvanceSchema = z.object({
+	amount: z.coerce.number().positive(),
+	installment: z.coerce.number().positive()
+})
 
 const updateSchema = z.object({
 	jobTitle: z.string().min(1).optional(),
@@ -75,5 +88,33 @@ export const actions: Actions = {
 			actorRole: user.role,
 			ipAddress: getClientAddress()
 		})
+	},
+
+	addLoan: async ({ request, locals, params, getClientAddress }) => {
+		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		const user = locals.user!
+		const parsed = loanSchema.safeParse(Object.fromEntries(await request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Invalid loan details' })
+		await createLoan(params.id, user.organizationId, parsed.data, {
+			organizationId: user.organizationId,
+			actorId: user.id,
+			actorRole: user.role,
+			ipAddress: getClientAddress()
+		})
+		return { success: true }
+	},
+
+	addCashAdvance: async ({ request, locals, params, getClientAddress }) => {
+		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		const user = locals.user!
+		const parsed = cashAdvanceSchema.safeParse(Object.fromEntries(await request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Invalid cash-advance details' })
+		await createCashAdvance(params.id, user.organizationId, parsed.data, {
+			organizationId: user.organizationId,
+			actorId: user.id,
+			actorRole: user.role,
+			ipAddress: getClientAddress()
+		})
+		return { success: true }
 	}
 }

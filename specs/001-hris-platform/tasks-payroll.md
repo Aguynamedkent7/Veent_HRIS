@@ -51,11 +51,11 @@ every mutation calls `writeAuditLog`; **tests are written before implementation*
 
 ## Slice 4 — Loans & cash advances
 
-- [ ] PAY-019 `payroll/loans.ts`: list/create/update `Loan`/`CashAdvance` with balance tracking, audited.
-- [ ] PAY-020 [P] UI to manage loans/cash advances (employee detail or Settings) with `PAYROLL_OFFICER`/HR access.
-- [ ] PAY-021 Wire amortization into `generate()` (PAY-010): create `PayrollDeduction`, decrement balance in the run transaction; reverse on `void`.
-- [ ] PAY-022 [P] API `api/v1/payroll/loans` (+ `[id]`) and `.../cash-advances`.
-- [ ] PAY-023 Test: multi-period amortization to zero; skip on insufficient net; void reversal restores balance.
+- [X] PAY-019 `payroll/loans.ts`: list/create/update `Loan`/`CashAdvance` with balance tracking, audited.
+- [X] PAY-020 [P] UI to manage loans/cash advances (employee detail or Settings) with `PAYROLL_OFFICER`/HR access.
+- [X] PAY-021 Wire amortization into `generate()` (PAY-010): create `PayrollDeduction`, decrement balance in the run transaction; reverse on `void`.
+- [X] PAY-022 [P] API `api/v1/payroll/loans` (+ `[id]`) and `.../cash-advances`.
+- [X] PAY-023 Test: multi-period amortization to zero; skip on insufficient net; void reversal restores balance.
 
 ## Slice 5 — Reports hook-in (feeds FR-067)
 

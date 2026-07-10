@@ -112,5 +112,63 @@
 				</div>
 			</form>
 		{/if}
+
+		{#if canManage}
+			<section class="rounded-lg border bg-card p-6 space-y-4 lg:col-span-2">
+				<h2 class="font-semibold">Loans &amp; Cash Advances</h2>
+				<p class="text-xs text-muted-foreground">Active items amortize automatically each payroll period (fixed installment, capped at balance).</p>
+				<div class="grid gap-6 lg:grid-cols-2">
+					<!-- Loans -->
+					<div class="space-y-3">
+						<h3 class="text-sm font-semibold text-muted-foreground">Loans</h3>
+						{#if data.loans.length}
+							<table class="w-full text-sm">
+								<tbody class="divide-y">
+									{#each data.loans as l (l.id)}
+										<tr>
+											<td class="py-1.5">{l.type ?? 'Loan'}</td>
+											<td class="py-1.5 text-right font-mono">{formatCurrency(Number(l.balance))}<span class="ml-1 text-xs text-muted-foreground">/ {formatCurrency(Number(l.installment))}·pd</span></td>
+											<td class="py-1.5 text-right"><span class="rounded-full px-2 py-0.5 text-xs {l.status === 'PAID' ? 'bg-green-100 text-green-700' : l.status === 'CANCELLED' ? 'bg-gray-100 text-gray-600' : 'bg-blue-100 text-blue-700'}">{l.status}</span></td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						{:else}
+							<p class="text-xs text-muted-foreground">No loans on record.</p>
+						{/if}
+						<form method="POST" action="?/addLoan" use:enhance class="flex flex-wrap items-end gap-2">
+							<input name="type" placeholder="Type" class="h-8 w-24 rounded-md border border-input bg-background px-2 text-xs" />
+							<input name="principal" type="number" min="0" step="0.01" placeholder="Principal" required class="h-8 w-24 rounded-md border border-input bg-background px-2 text-xs" />
+							<input name="installment" type="number" min="0" step="0.01" placeholder="Per period" required class="h-8 w-24 rounded-md border border-input bg-background px-2 text-xs" />
+							<button class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90">Add Loan</button>
+						</form>
+					</div>
+					<!-- Cash advances -->
+					<div class="space-y-3">
+						<h3 class="text-sm font-semibold text-muted-foreground">Cash Advances</h3>
+						{#if data.cashAdvances.length}
+							<table class="w-full text-sm">
+								<tbody class="divide-y">
+									{#each data.cashAdvances as a (a.id)}
+										<tr>
+											<td class="py-1.5">Cash advance</td>
+											<td class="py-1.5 text-right font-mono">{formatCurrency(Number(a.balance))}<span class="ml-1 text-xs text-muted-foreground">/ {formatCurrency(Number(a.installment))}·pd</span></td>
+											<td class="py-1.5 text-right"><span class="rounded-full px-2 py-0.5 text-xs {a.status === 'PAID' ? 'bg-green-100 text-green-700' : a.status === 'CANCELLED' ? 'bg-gray-100 text-gray-600' : 'bg-blue-100 text-blue-700'}">{a.status}</span></td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						{:else}
+							<p class="text-xs text-muted-foreground">No cash advances on record.</p>
+						{/if}
+						<form method="POST" action="?/addCashAdvance" use:enhance class="flex flex-wrap items-end gap-2">
+							<input name="amount" type="number" min="0" step="0.01" placeholder="Amount" required class="h-8 w-24 rounded-md border border-input bg-background px-2 text-xs" />
+							<input name="installment" type="number" min="0" step="0.01" placeholder="Per period" required class="h-8 w-24 rounded-md border border-input bg-background px-2 text-xs" />
+							<button class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90">Add Advance</button>
+						</form>
+					</div>
+				</div>
+			</section>
+		{/if}
 	</div>
 </div>
