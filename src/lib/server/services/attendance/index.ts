@@ -162,6 +162,38 @@ export async function deriveRange(
 	return { derived, flagged }
 }
 
+/** HR correction of a single AttendanceDay. Rejected if the day is locked. */
+export async function correctDay(
+	id: string,
+	organizationId: string,
+	data: {
+		status?: import('./derive').AttendanceStatus
+		timeIn?: Date | null
+		timeOut?: Date | null
+		regularHours?: number
+		overtimeHours?: number
+		nightDiffHours?: number
+		lateMinutes?: number
+		undertimeMinutes?: number
+		note?: string
+	},
+	ctx: AuditContext
+) {
+	const day = await db.attendanceDay.findFirst({ where: { id, employee: { user: { organizationId } } } })
+	if (!day) error(404, 'Attendance day not found')
+	if (day.isLocked) error(409, 'This attendance day is locked and cannot be edited')
+
+	const updated = await db.attendanceDay.update({ where: { id }, data })
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'AttendanceDay',
+		entityId: id,
+		oldValue: { regularHours: Number(day.regularHours), overtimeHours: Number(day.overtimeHours), status: day.status },
+		newValue: data as Record<string, unknown>
+	})
+	return updated
+}
+
 /** Lock AttendanceDays in a range so payroll can import them (read-only thereafter). */
 export async function lockRange(
 	organizationId: string,
