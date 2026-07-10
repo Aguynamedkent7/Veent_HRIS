@@ -18,7 +18,8 @@ mirroring the existing `ph-statutory.ts` pattern; routes/actions stay thin.
 **Language/Version**: TypeScript 5 · Node 20 · SvelteKit 2 / Svelte 5 (unchanged)
 **Primary Dependencies**: Prisma 5 + PostgreSQL 16, Zod, Lucia (unchanged) — no new runtime deps
 **Storage**: PostgreSQL. New tables: `PayrollPeriod`, `PayrollEarning`, `PayrollDeduction`, `Loan`,
-`LoanPayment`, `CashAdvance`, `EarningType`, `DeductionType` (see data-model.md "Phase 11 — Proposed Entities").
+`LoanPayment`, `CashAdvance`, `EarningType`, `DeductionType`, `PayRateRule` (config multipliers)
+(see data-model.md "Phase 11 — Proposed Entities").
 Money as `Decimal`; serialized via the existing transport hook.
 **Testing**: Vitest units for every compute function (Red-Green like `ph-statutory.test.ts`); a period-lifecycle integration test.
 **Project Type**: Full-stack SvelteKit web app (unchanged).
@@ -33,11 +34,15 @@ Money as `Decimal`; serialized via the existing transport hook.
 - **Roles foundation (11.1, T161)** — `PAYROLL_OFFICER` (manage payroll) and `FINANCE` (read-only reports).
 - **Settings codes (11.1, T163)** — `EarningType`/`DeductionType` catalogs + configurable rate table.
 
-**NEEDS CLARIFICATION** (carry to /speckit-clarify before build):
-1. Exact PH multipliers to encode as defaults (OT 125%, rest-day 130%, special/regular holiday 130%/200%,
-   night diff 10% — confirm the company's actual rates and whether they're org-configurable).
-2. Loan amortization model: fixed installment vs. balance %; behavior on skipped/partial periods.
-3. Does `PayrollPeriod` replace `PayrollRun`, or wrap it? (Recommended below: evolve `PayrollRun`.)
+**Resolved** (clarified 2026-07-10):
+1. **Multipliers live in a config table.** A `PayRateRule` / `EarningType`-backed config (in Settings)
+   holds the premium rates, seeded with DOLE defaults (OT ×1.25, night diff +10%, rest-day / special
+   holiday ×1.30, regular holiday ×2.00 worked / ×1.00 unworked, plus the stacked combinations). Rates
+   are editable per org — no code deploy to change them. The engine reads rates from config, never constants.
+2. **Loan amortization = fixed installment per period**, capped at the outstanding balance, and **skipped**
+   (not carried or compounded) when net pay can't cover it. Same model for cash advances.
+3. **`PayrollPeriod` wraps `PayrollRun`** (does not replace it) — reuses the working statutory engine, and
+   naturally supports multiple runs per period later (e.g. a regular run + a 13th-month / bonus run).
 
 ## Key Decisions (Phase 0 research)
 
@@ -55,8 +60,13 @@ Money as `Decimal`; serialized via the existing transport hook.
   fully unit-testable, guarantees calculator == actual run.
 - **D4 — Withholding order.** Gross = basic + earnings; taxable-gross = gross − (statutory EE + non-taxable items);
   then BIR withholding; then net = gross − all deductions (statutory + tax + loans + cash advances). Encode explicitly and test.
-- **D5 — Loans/cash advances.** `Loan`/`CashAdvance` carry a `balance`; each run creates a `PayrollDeduction`
-  and decrements balance **inside the run transaction**; `VOID`/unlock reverses it. Never go negative (cap at balance).
+- **D5 — Loans/cash advances.** `Loan`/`CashAdvance` carry a `balance` + a **fixed `installment` per period**.
+  Each run deducts `min(installment, balance)` as a `PayrollDeduction` and decrements the balance **inside the
+  run transaction**; `VOID`/unlock reverses it. Installment is **skipped** (not carried/compounded) when net pay
+  can't cover it. Never goes negative.
+- **D7 — Configurable pay rates.** Premium multipliers live in config (`EarningType.multiplier` /
+  a `PayRateRule` table), seeded with DOLE defaults and editable in Settings. The earnings engine **reads rates
+  from config**, so rate changes need no deploy and support per-org / per-client differences.
 - **D6 — Immutability & adjustments.** `LOCKED`/`RELEASED` runs reject edits (409); corrections are new
   adjustment entries in a later period (honors FR-022 + FR-063). Lock, release, and void are audited events.
 
