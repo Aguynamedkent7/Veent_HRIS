@@ -14,6 +14,7 @@
  *   TIMELOG_API_SECRET  – shared secret, identical to the HRIS env value
  */
 
+import 'dotenv/config'
 import {
 	Client,
 	GatewayIntentBits,

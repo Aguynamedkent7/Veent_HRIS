@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit'
 import { z } from 'zod'
+import { env } from '$env/dynamic/private'
 import { verifyHmac } from '$lib/server/hmac'
 import { recordPunch } from '$lib/server/services/timelog'
 import { apiError, badRequest } from '$lib/server/api-error'
@@ -28,7 +29,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 		rawBody,
 		signature: request.headers.get('x-hris-signature'),
 		timestamp: request.headers.get('x-hris-timestamp'),
-		secret: process.env.TIMELOG_API_SECRET
+		secret: env.TIMELOG_API_SECRET
 	})
 	if (!verification.valid) return apiError(401, 'Invalid or missing signature', verification.reason)
 
