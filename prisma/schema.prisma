@@ -109,6 +109,59 @@ enum AuditAction {
   LEAVE_OVERRIDE
 }
 
+// ─── Time Tracking Enums ─────────────────────────────────────────────────────
+
+enum PunchType {
+  IN
+  OUT
+}
+
+enum PunchSource {
+  DISCORD
+  WEB
+  MANUAL
+}
+
+// ─── Benefits Enums ──────────────────────────────────────────────────────────
+
+enum BenefitPlanType {
+  HMO
+  INSURANCE
+  RETIREMENT
+  ALLOWANCE
+  LEAVE_CREDIT
+  OTHER
+}
+
+enum BenefitEnrollmentStatus {
+  ACTIVE
+  WAIVED
+  TERMINATED
+}
+
+// ─── Performance Enums ───────────────────────────────────────────────────────
+
+enum ReviewCycleStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
+enum ReviewStatus {
+  PENDING
+  SELF_ASSESSMENT
+  MANAGER_REVIEW
+  COMPLETED
+  ACKNOWLEDGED
+}
+
+enum GoalStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
 // ─── Organization ─────────────────────────────────────────────────────────────
 
 model Organization {
@@ -127,6 +180,9 @@ model Organization {
   jobPostings   JobPosting[]
   publicHolidays PublicHoliday[]
   auditLogs     AuditLog[]
+  benefitPlans  BenefitPlan[]
+  reviewCycles  ReviewCycle[]
+  positions     Position[]
 
   @@map("organizations")
 }
@@ -146,6 +202,7 @@ model Department {
   subDepartments   Department[]  @relation("DeptHierarchy")
   employees        Employee[]
   jobPostings      JobPosting[]
+  positions        Position[]
 
   @@unique([organizationId, name])
   @@map("departments")
@@ -193,6 +250,8 @@ model Employee {
   startDate          DateTime
   endDate            DateTime?
   reportsToId        String?
+  positionId         String?
+  discordId          String?          @unique
   basicMonthlySalary Decimal          @db.Decimal(12, 2)
   rateType           RateType         @default(MONTHLY)
   sssNumber          String?
@@ -204,13 +263,19 @@ model Employee {
 
   user           User           @relation(fields: [userId], references: [id])
   department     Department     @relation(fields: [departmentId], references: [id])
+  position       Position?      @relation(fields: [positionId], references: [id])
   reportsTo      Employee?      @relation("EmployeeHierarchy", fields: [reportsToId], references: [id])
   directReports  Employee[]     @relation("EmployeeHierarchy")
   timesheets     Timesheet[]
+  timeLogs       TimeLog[]
   leaveBalances  LeaveBalance[]
   leaveRequests  LeaveRequest[]
   payrollEntries PayrollEntry[]
   convertedApplicant Applicant? @relation("ConvertedEmployee")
+  benefitEnrollments BenefitEnrollment[]
+  performanceReviews PerformanceReview[] @relation("ReviewSubject")
+  reviewsGiven       PerformanceReview[] @relation("Reviewer")
+  goals              Goal[]
 
   @@unique([organizationId, employeeNumber])
   @@map("employees")
@@ -234,6 +299,7 @@ model Timesheet {
 
   employee   Employee          @relation(fields: [employeeId], references: [id])
   entries    TimesheetEntry[]
+  timeLogs   TimeLog[]
 
   @@unique([employeeId, periodStart])
   @@map("timesheets")
@@ -468,4 +534,150 @@ model AuditLog {
   actor        User         @relation(fields: [actorId], references: [id])
 
   @@map("audit_logs")
+}
+
+// ─── Time Tracking ────────────────────────────────────────────────────────────
+// Raw IN/OUT punches (e.g. from the Discord bot). Timestamps are stored in UTC
+// (timestamptz); day/week bucketing is done in Philippine Standard Time (UTC+8)
+// by the aggregation service. A punch is linked to a Timesheet once aggregated.
+
+model TimeLog {
+  id               String      @id @default(cuid())
+  employeeId       String
+  punchType        PunchType
+  source           PunchSource @default(DISCORD)
+  timestamp        DateTime    @db.Timestamptz(3)
+  discordMessageId String?
+  note             String?
+  timesheetId      String?
+  createdAt        DateTime    @default(now())
+
+  employee  Employee   @relation(fields: [employeeId], references: [id])
+  timesheet Timesheet? @relation(fields: [timesheetId], references: [id])
+
+  @@index([employeeId, timestamp])
+  @@index([timesheetId])
+  @@map("time_logs")
+}
+
+// ─── Benefits Administration ──────────────────────────────────────────────────
+
+model BenefitPlan {
+  id             String          @id @default(cuid())
+  organizationId String
+  name           String
+  type           BenefitPlanType
+  provider       String?
+  description    String?         @db.Text
+  employeeCost   Decimal?        @db.Decimal(12, 2)
+  employerCost   Decimal?        @db.Decimal(12, 2)
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organization Organization        @relation(fields: [organizationId], references: [id])
+  enrollments  BenefitEnrollment[]
+
+  @@map("benefit_plans")
+}
+
+model BenefitEnrollment {
+  id            String                  @id @default(cuid())
+  employeeId    String
+  benefitPlanId String
+  status        BenefitEnrollmentStatus @default(ACTIVE)
+  coverageLevel String?
+  effectiveDate DateTime
+  endedAt       DateTime?
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+
+  employee Employee    @relation(fields: [employeeId], references: [id])
+  plan     BenefitPlan @relation(fields: [benefitPlanId], references: [id])
+
+  @@unique([employeeId, benefitPlanId])
+  @@map("benefit_enrollments")
+}
+
+// ─── Performance Management ───────────────────────────────────────────────────
+
+model ReviewCycle {
+  id             String            @id @default(cuid())
+  organizationId String
+  name           String
+  startDate      DateTime
+  endDate        DateTime
+  status         ReviewCycleStatus @default(DRAFT)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  organization Organization        @relation(fields: [organizationId], references: [id])
+  reviews      PerformanceReview[]
+
+  @@map("review_cycles")
+}
+
+model PerformanceReview {
+  id              String       @id @default(cuid())
+  cycleId         String
+  employeeId      String
+  reviewerId      String
+  status          ReviewStatus @default(PENDING)
+  selfAssessment  String?      @db.Text
+  managerComments String?      @db.Text
+  overallRating   Int?
+  submittedAt     DateTime?
+  completedAt     DateTime?
+  acknowledgedAt  DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  cycle    ReviewCycle @relation(fields: [cycleId], references: [id])
+  employee Employee    @relation("ReviewSubject", fields: [employeeId], references: [id])
+  reviewer Employee    @relation("Reviewer", fields: [reviewerId], references: [id])
+
+  @@unique([cycleId, employeeId])
+  @@map("performance_reviews")
+}
+
+model Goal {
+  id          String     @id @default(cuid())
+  employeeId  String
+  cycleId     String?
+  title       String
+  description String?    @db.Text
+  category    String?
+  status      GoalStatus @default(ACTIVE)
+  progress    Int        @default(0)
+  targetDate  DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId])
+  @@map("goals")
+}
+
+// ─── Org Structure (Positions) ────────────────────────────────────────────────
+// Lightweight job/role catalog backing org charts. Org hierarchy otherwise
+// reuses Department.parentDepartmentId and Employee.reportsToId; role management
+// edits User.role (audited) — no dedicated RBAC table.
+
+model Position {
+  id             String   @id @default(cuid())
+  organizationId String
+  title          String
+  departmentId   String?
+  level          Int?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  department   Department?  @relation(fields: [departmentId], references: [id])
+  employees    Employee[]
+
+  @@unique([organizationId, title])
+  @@map("positions")
 }
