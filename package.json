@@ -11,7 +11,7 @@
     "test:e2e": "playwright test",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "db:migrate": "prisma migrate dev",
+    "db:migrate": "prisma db push",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
