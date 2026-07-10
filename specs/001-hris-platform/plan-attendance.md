@@ -46,13 +46,17 @@ and `generate` reads them (falling back to the current timesheet path when no At
 - **D6 — Stacking reuses payroll.** Rest-day/holiday + OT combinations map to the existing payroll bucket set
   (restDayOt, regularHolidayOt, …); attendance only classifies hours into buckets, payroll prices them.
 
-**NEEDS CLARIFICATION** (carry to /speckit-clarify):
-1. **Night-differential window** — default DOLE **22:00–06:00 PHT**; make it org-configurable (like pay rates)?
-2. **Overtime source** — auto-derive OT from `workedHours > scheduledHours`, or only count OT that has an
-   **approved OT request** (Requests module, FR-056)? (Recommend: derive now, gate on approvals when 11.4 lands.)
-3. **Breaks** — fixed **scheduled** unpaid break (`breakMinutes`), or real **break punches** (BREAK_IN/OUT)?
-   (Recommend: scheduled break for MVP; punch-based later.)
-4. **Half-day / leave interplay** — when an approved leave covers a day, mark `ON_LEAVE` and zero worked hours?
+**Resolved** (clarified 2026-07-10):
+1. **Night-differential window is org-configurable**, defaulting to DOLE **22:00–06:00 PHT** (stored alongside
+   the pay-rate config). The derivation reads the window from config.
+2. **Overtime is gated on approval.** The engine computes `rawOvertimeHours` (worked beyond scheduled) for HR
+   visibility, but the payroll-facing `overtimeHours` bucket = `min(rawOvertime, approvedOvertimeHours)`, where
+   approved OT comes from an approved OT **Request** (Phase 11.4). `deriveAttendanceDay` takes `approvedOtHours`
+   as an injected input (0 until Requests lands), so it stays pure/testable and OT simply stays 0 for now.
+3. **Breaks are punch-based.** `PunchType` gains `BREAK_START`/`BREAK_END`; the bot's `/break` toggles between
+   them. Worked hours = paired IN/OUT hours − paired break hours. (No scheduled-break assumption.)
+4. **Leave overlaps set `ON_LEAVE`.** When an approved `LeaveRequest` covers a day, status = `ON_LEAVE` and
+   worked/OT hours are zero (leave is paid via the leave module, not attendance). Injected as an `onLeave` flag.
 
 ## Constitution Check
 
