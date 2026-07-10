@@ -95,6 +95,15 @@
 						<input name="discordId" value={employee.discordId ?? ''} placeholder="e.g. 123456789012345678 — for the time-tracking bot" class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
 						<p class="mt-1 text-xs text-muted-foreground">In Discord: enable Developer Mode → right-click the user → Copy User ID. Leave blank to unlink.</p>
 					</div>
+					<div>
+						<label class="text-sm font-medium">Work Schedule</label>
+						<select name="workScheduleId" class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+							<option value="">Default (Mon–Fri 9–6)</option>
+							{#each data.schedules as s (s.id)}
+								<option value={s.id} selected={s.id === employee.workScheduleId}>{s.name}</option>
+							{/each}
+						</select>
+					</div>
 				</div>
 				<div class="flex justify-end">
 					<button type="submit" class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">Save Changes</button>

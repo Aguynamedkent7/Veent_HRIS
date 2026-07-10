@@ -2,6 +2,7 @@ import { fail } from '@sveltejs/kit'
 import { requireMinRole } from '$lib/server/rbac'
 import { getEmployee, updateEmployee, offboardEmployee } from '$lib/server/services/employees'
 import { listLoans, listCashAdvances, createLoan, createCashAdvance } from '$lib/server/services/payroll/loans'
+import { listSchedules } from '$lib/server/services/attendance/schedules'
 import { db } from '$lib/server/db'
 import { z } from 'zod'
 import type { Actions, PageServerLoad } from './$types'
@@ -20,8 +21,9 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		canManage ? listLoans(params.id) : Promise.resolve([]),
 		canManage ? listCashAdvances(params.id) : Promise.resolve([])
 	])
+	const schedules = canManage ? await listSchedules(locals.user!.organizationId) : []
 
-	return { employee, departments, canManage, loans, cashAdvances }
+	return { employee, departments, canManage, loans, cashAdvances, schedules }
 }
 
 const loanSchema = z.object({
@@ -44,6 +46,10 @@ const updateSchema = z.object({
 	discordId: z
 		.string()
 		.trim()
+		.optional()
+		.transform((v) => (v ? v : null)),
+	workScheduleId: z
+		.string()
 		.optional()
 		.transform((v) => (v ? v : null))
 })
