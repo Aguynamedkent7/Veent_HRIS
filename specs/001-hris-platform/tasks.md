@@ -327,11 +327,11 @@ their own `/speckit-plan` pass before task breakdown — this is a module-level 
 - [ ] T169 Configurable multi-stage routing (`ApprovalStep`: Employee→Supervisor→HR→Payroll) with Approve/Reject/Return; auto-apply approved requests to attendance/payroll
 
 ### 11.5 Payroll expansion (FR-060–FR-066) — needs a plan pass (largest epic)
-- [ ] T170 `PayrollPeriod` lifecycle (create→import→review→generate→lock→release) replacing/wrapping `PayrollRun`
-- [ ] T171 Earnings engine: OT, night diff, holiday pay, rest-day pay, allowances, incentives (`PayrollEarning`)
-- [ ] T172 Deductions engine: loans + amortization, cash advances (`Loan`/`CashAdvance`/`PayrollDeduction`) atop statutory
-- [ ] T173 Payslip release gating + immutability on lock (FR-063)
-- [ ] T174 Payroll Calculator (what-if preview, non-persisting) (FR-066)
+- [X] T170 `PayrollPeriod` lifecycle (create→import→review→generate→lock→release) replacing/wrapping `PayrollRun`
+- [X] T171 Earnings engine: OT, night diff, holiday pay, rest-day pay, allowances, incentives (`PayrollEarning`)
+- [X] T172 Deductions engine: loans + amortization, cash advances (`Loan`/`CashAdvance`/`PayrollDeduction`) atop statutory
+- [X] T173 Payslip release gating + immutability on lock (FR-063)
+- [X] T174 Payroll Calculator (what-if preview, non-persisting) (FR-066)
 - [ ] T175 [P] *(integration, deferred)* Disbursement: bank-file export / GCash (FR-065)
 
 ### 11.6 Reports (FR-067)
