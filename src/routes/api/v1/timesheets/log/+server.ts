@@ -17,7 +17,8 @@ import type { RequestHandler } from './$types'
 
 const punchSchema = z.object({
 	discordId: z.string().min(1),
-	punchType: z.enum(['IN', 'OUT']),
+	// IN / OUT, or BREAK (toggles break start/end server-side).
+	punchType: z.enum(['IN', 'OUT', 'BREAK']),
 	timestamp: z.string().datetime().optional(),
 	messageId: z.string().optional()
 })
@@ -59,7 +60,7 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 			{
 				data: {
 					id: result.timeLog.id,
-					punchType: result.timeLog.punchType,
+					punchType: result.punchType,
 					timestamp: result.timeLog.timestamp,
 					employee: result.employee,
 					previousType: result.previousType

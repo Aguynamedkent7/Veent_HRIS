@@ -20,7 +20,8 @@ function round2(n: number): number {
 export async function recordPunch(
 	input: {
 		discordId: string
-		punchType: PunchType
+		/** `BREAK` is a toggle resolved to BREAK_START/BREAK_END from the last punch. */
+		punchType: 'IN' | 'OUT' | 'BREAK'
 		timestamp: Date
 		discordMessageId?: string
 		source?: PunchSource
@@ -36,17 +37,25 @@ export async function recordPunch(
 		error(404, 'No active employee is linked to this Discord account')
 	}
 
-	// The most recent punch, so the caller can tell the user their new state.
+	// The most recent punch — used to tell the user their new state and to resolve /break.
 	const previous = await db.timeLog.findFirst({
 		where: { employeeId: employee.id },
 		orderBy: { timestamp: 'desc' },
 		select: { punchType: true }
 	})
 
+	// /break toggles: end a break if one is open, otherwise start one.
+	const resolvedType: PunchType =
+		input.punchType === 'BREAK'
+			? previous?.punchType === 'BREAK_START'
+				? 'BREAK_END'
+				: 'BREAK_START'
+			: input.punchType
+
 	const timeLog = await db.timeLog.create({
 		data: {
 			employeeId: employee.id,
-			punchType: input.punchType,
+			punchType: resolvedType,
 			source: input.source ?? 'DISCORD',
 			timestamp: input.timestamp,
 			discordMessageId: input.discordMessageId
@@ -64,13 +73,14 @@ export async function recordPunch(
 			action: 'CREATE',
 			entityType: 'TimeLog',
 			entityId: timeLog.id,
-			newValue: { punchType: input.punchType, timestamp: input.timestamp.toISOString() }
+			newValue: { punchType: resolvedType, timestamp: input.timestamp.toISOString() }
 		}
 	)
 
 	return {
 		timeLog,
 		employee: { id: employee.id, firstName: employee.firstName, lastName: employee.lastName },
+		punchType: resolvedType,
 		previousType: previous?.punchType ?? null
 	}
 }

@@ -129,6 +129,8 @@ enum AuditAction {
 enum PunchType {
   IN
   OUT
+  BREAK_START
+  BREAK_END
 }
 
 enum PunchSource {

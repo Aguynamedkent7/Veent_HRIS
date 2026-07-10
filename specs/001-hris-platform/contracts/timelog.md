@@ -17,12 +17,13 @@
 ```json
 {
   "discordId": "string",
-  "punchType": "IN | OUT",
+  "punchType": "IN | OUT | BREAK",
   "timestamp": "ISO8601 | null",
   "messageId": "string | null"
 }
 ```
-`timestamp` defaults to server now.
+`timestamp` defaults to server now. `BREAK` is a toggle — the server resolves it to
+`BREAK_START`/`BREAK_END` from the member's last punch and returns the resolved `punchType`.
 
 **Behavior**: Resolves the Employee by `discordId` (must be `ACTIVE`); inserts a raw `TimeLog` (stored UTC). Timestamps are bucketed to Philippine Standard Time (UTC+8) at aggregation.
 
