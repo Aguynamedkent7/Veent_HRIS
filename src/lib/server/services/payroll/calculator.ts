@@ -1,0 +1,132 @@
+import { db } from '$lib/server/db'
+import { error } from '@sveltejs/kit'
+import { computeEarnings } from './earnings'
+import { computeDeductions, type AmortItem } from './deductions'
+import { computeStatutoryDeductions } from './ph-statutory'
+import { hourlyRateOf, round2, type AttendanceInput, type EmployeeComp, type PayAdjustments, type PayComponent } from './types'
+
+/**
+ * Shared per-employee payroll computation (PAY-015). Both the real run (`computePayrollRun`)
+ * and the what-if Payroll Calculator call this, so a preview is byte-for-byte identical to what a
+ * run would produce for the same inputs — that is the guarantee PAY-018 tests.
+ */
+
+export interface EmployeeComputeConfig {
+	/** Code → taxable, from EarningType config. Overrides the engine defaults. */
+	taxableByCode: Map<string, boolean>
+	/** Monthly-statutory proration: 0.5 for semi-monthly, 1 for monthly. */
+	periodShare: number
+	loans: AmortItem[]
+	cashAdvances: AmortItem[]
+}
+
+export interface ProratedStatutory {
+	sssEe: number
+	sssEr: number
+	philhealthEe: number
+	philhealthEr: number
+	pagibigEe: number
+	pagibigEr: number
+	withholdingTax: number
+}
+
+export interface EmployeeComputeResult {
+	earnings: PayComponent[]
+	deductions: PayComponent[]
+	basicPay: number
+	grossPay: number
+	taxableGross: number
+	totalDeductions: number
+	netPay: number
+	statutory: ProratedStatutory
+}
+
+export function computeEmployeeResult(
+	comp: EmployeeComp,
+	attendance: AttendanceInput,
+	adjustments: PayAdjustments,
+	cfg: EmployeeComputeConfig
+): EmployeeComputeResult {
+	const earnings = computeEarnings(comp, attendance, adjustments)
+	// Requirement: taxability from EarningType config.
+	for (const c of earnings.components) {
+		const configured = cfg.taxableByCode.get(c.code)
+		if (configured !== undefined) c.taxable = configured
+	}
+	const taxableGross = round2(earnings.components.filter((c) => c.taxable).reduce((s, c) => s + c.amount, 0))
+
+	const m = computeStatutoryDeductions(comp.basicMonthlySalary)
+	const statutory: ProratedStatutory = {
+		sssEe: round2(m.sssEe * cfg.periodShare),
+		sssEr: round2(m.sssEr * cfg.periodShare),
+		philhealthEe: round2(m.philhealthEe * cfg.periodShare),
+		philhealthEr: round2(m.philhealthEr * cfg.periodShare),
+		pagibigEe: round2(m.pagibigEe * cfg.periodShare),
+		pagibigEr: round2(m.pagibigEr * cfg.periodShare),
+		withholdingTax: round2(m.withholdingTax * cfg.periodShare)
+	}
+
+	const ded = computeDeductions({
+		gross: earnings.gross,
+		hourlyRate: hourlyRateOf(comp),
+		lateMinutes: attendance.lateMinutes,
+		undertimeMinutes: attendance.undertimeMinutes,
+		statutory: {
+			sssEe: statutory.sssEe,
+			philhealthEe: statutory.philhealthEe,
+			pagibigEe: statutory.pagibigEe,
+			withholdingTax: statutory.withholdingTax
+		},
+		loans: cfg.loans,
+		cashAdvances: cfg.cashAdvances
+	})
+
+	return {
+		earnings: earnings.components,
+		deductions: ded.components,
+		basicPay: earnings.components.find((c) => c.code === 'BASIC')?.amount ?? 0,
+		grossPay: earnings.gross,
+		taxableGross,
+		totalDeductions: ded.total,
+		netPay: ded.net,
+		statutory
+	}
+}
+
+/**
+ * What-if preview for one employee (PAY-016 / PAY-017). Loads the employee's compensation and the
+ * org's rate/frequency + active loans, then runs the shared engine WITHOUT persisting anything.
+ */
+export async function previewPayroll(
+	employeeId: string,
+	organizationId: string,
+	input: { attendance: AttendanceInput; adjustments?: PayAdjustments }
+) {
+	const employee = await db.employee.findFirst({
+		where: { id: employeeId, user: { organizationId } },
+		select: { id: true, firstName: true, lastName: true, basicMonthlySalary: true, rateType: true }
+	})
+	if (!employee) error(404, 'Employee not found')
+
+	const [config, earningTypes, loansAll, advancesAll] = await Promise.all([
+		db.payrollConfig.findUnique({ where: { organizationId } }),
+		db.earningType.findMany({ where: { organizationId }, select: { code: true, taxable: true } }),
+		db.loan.findMany({ where: { employeeId, status: 'ACTIVE', balance: { gt: 0 } } }),
+		db.cashAdvance.findMany({ where: { employeeId, status: 'ACTIVE', balance: { gt: 0 } } })
+	])
+
+	const cfg: EmployeeComputeConfig = {
+		taxableByCode: new Map(earningTypes.map((e) => [e.code, e.taxable])),
+		periodShare: (config?.payFrequency ?? 'SEMI_MONTHLY') === 'MONTHLY' ? 1 : 0.5,
+		loans: loansAll.map((l) => ({ refId: l.id, label: l.type ?? 'Loan', installment: Number(l.installment), balance: Number(l.balance) })),
+		cashAdvances: advancesAll.map((a) => ({ refId: a.id, label: 'Cash advance', installment: Number(a.installment), balance: Number(a.balance) }))
+	}
+
+	const comp: EmployeeComp = { basicMonthlySalary: Number(employee.basicMonthlySalary), rateType: employee.rateType }
+	const result = computeEmployeeResult(comp, input.attendance, input.adjustments ?? {}, cfg)
+
+	return {
+		employee: { id: employee.id, firstName: employee.firstName, lastName: employee.lastName },
+		...result
+	}
+}

@@ -2,10 +2,9 @@ import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import { Prisma } from '@prisma/client'
-import { computeStatutoryDeductions } from './ph-statutory'
-import { computeEarnings } from './earnings'
-import { computeDeductions, type AmortItem } from './deductions'
-import { hourlyRateOf, emptyAttendance, round2, type EmployeeComp } from './types'
+import { computeEmployeeResult } from './calculator'
+import { type AmortItem } from './deductions'
+import { emptyAttendance, round2, type EmployeeComp } from './types'
 import { computeWorkingDays } from '$lib/utils/dates'
 import type { AuditContext } from '../types'
 
@@ -88,7 +87,6 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 
 	for (const emp of employees) {
 		const comp: EmployeeComp = { basicMonthlySalary: Number(emp.basicMonthlySalary), rateType: emp.rateType }
-		const hr = hourlyRateOf(comp)
 
 		const timesheets = await db.timesheet.findMany({
 			where: {
@@ -105,20 +103,6 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		const scheduledHours = workingDays * (comp.dailyWorkingHours ?? 8)
 		const regularHours = approvedHours > 0 ? approvedHours : scheduledHours
 
-		const earnings = computeEarnings(comp, { ...emptyAttendance(), regularHours })
-		for (const c of earnings.components) {
-			const configured = taxableByCode.get(c.code)
-			if (configured !== undefined) c.taxable = configured
-		}
-
-		const monthlyStat = computeStatutoryDeductions(Number(emp.basicMonthlySalary))
-		const statutory = {
-			sssEe: round2(monthlyStat.sssEe * periodShare),
-			philhealthEe: round2(monthlyStat.philhealthEe * periodShare),
-			pagibigEe: round2(monthlyStat.pagibigEe * periodShare),
-			withholdingTax: round2(monthlyStat.withholdingTax * periodShare)
-		}
-
 		const loans: AmortItem[] = (loansByEmp.get(emp.id) ?? []).map((l) => ({
 			refId: l.id,
 			label: l.type ?? 'Loan',
@@ -132,17 +116,13 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			balance: Number(a.balance)
 		}))
 
-		const ded = computeDeductions({
-			gross: earnings.gross,
-			hourlyRate: hr,
-			lateMinutes: 0,
-			undertimeMinutes: 0,
-			statutory,
+		// Shared engine — identical to the Payroll Calculator for the same inputs.
+		const result = computeEmployeeResult(comp, { ...emptyAttendance(), regularHours }, {}, {
+			taxableByCode,
+			periodShare,
 			loans,
 			cashAdvances
 		})
-
-		const basicPay = earnings.components.find((c) => c.code === 'BASIC')?.amount ?? 0
 		const isFlagged = approvedHours === 0
 
 		perEmployee.push({
@@ -150,27 +130,27 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 				payrollRunId: runId,
 				employeeId: emp.id,
 				hoursWorked: round2(regularHours),
-				basicPay,
-				grossPay: earnings.gross,
-				sssEe: statutory.sssEe,
-				sssEr: round2(monthlyStat.sssEr * periodShare),
-				philhealthEe: statutory.philhealthEe,
-				philhealthEr: round2(monthlyStat.philhealthEr * periodShare),
-				pagibigEe: statutory.pagibigEe,
-				pagibigEr: round2(monthlyStat.pagibigEr * periodShare),
-				withholdingTax: statutory.withholdingTax,
-				totalDeductions: ded.total,
-				netPay: ded.net,
+				basicPay: result.basicPay,
+				grossPay: result.grossPay,
+				sssEe: result.statutory.sssEe,
+				sssEr: result.statutory.sssEr,
+				philhealthEe: result.statutory.philhealthEe,
+				philhealthEr: result.statutory.philhealthEr,
+				pagibigEe: result.statutory.pagibigEe,
+				pagibigEr: result.statutory.pagibigEr,
+				withholdingTax: result.statutory.withholdingTax,
+				totalDeductions: result.totalDeductions,
+				netPay: result.netPay,
 				isFlagged,
 				flagReason: isFlagged ? 'No approved timesheet for period' : null
 			},
-			earnings: earnings.components.map((c) => ({ code: c.code, label: c.label, amount: c.amount, taxable: c.taxable })),
-			deductions: ded.components.map((c) => ({ code: c.code, label: c.label, amount: c.amount, refId: c.refId ?? null }))
+			earnings: result.earnings.map((c) => ({ code: c.code, label: c.label, amount: c.amount, taxable: c.taxable })),
+			deductions: result.deductions.map((c) => ({ code: c.code, label: c.label, amount: c.amount, refId: c.refId ?? null }))
 		})
 
-		totalGross += earnings.gross
-		totalDeductions += ded.total
-		totalNet += ded.net
+		totalGross += result.grossPay
+		totalDeductions += result.totalDeductions
+		totalNet += result.netPay
 	}
 
 	await db.$transaction(async (tx: Prisma.TransactionClient) => {

@@ -44,10 +44,10 @@ every mutation calls `writeAuditLog`; **tests are written before implementation*
 
 ## Slice 3 — Payroll Calculator (what-if, non-persisting)
 
-- [ ] PAY-015 `payroll/calculator.ts`: `preview(employeeId, AttendanceInput, adjustments)` reusing `earnings.ts`/`deductions.ts`, **no DB writes**.
-- [ ] PAY-016 [P] `api/v1/payroll/calculator/+server.ts` (POST) per contract.
-- [ ] PAY-017 [P] `(app)/payroll/calculator/+page.{server.ts,svelte}`: HR what-if form + itemized preview; nav entry.
-- [ ] PAY-018 Test: calculator output **==** a real run's entry for identical inputs (guards engine drift).
+- [X] PAY-015 `payroll/calculator.ts`: `preview(employeeId, AttendanceInput, adjustments)` reusing `earnings.ts`/`deductions.ts`, **no DB writes**.
+- [X] PAY-016 [P] `api/v1/payroll/calculator/+server.ts` (POST) per contract.
+- [X] PAY-017 [P] `(app)/payroll/calculator/+page.{server.ts,svelte}`: HR what-if form + itemized preview; nav entry.
+- [X] PAY-018 Test: calculator output **==** a real run's entry for identical inputs (guards engine drift).
 
 ## Slice 4 — Loans & cash advances
 
