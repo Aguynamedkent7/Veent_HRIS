@@ -36,11 +36,11 @@ every mutation calls `writeAuditLog`; **tests are written before implementation*
 
 ## Slice 2 — Period lifecycle (open → import → generate → lock → release)
 
-- [ ] PAY-010 `payroll/periods.ts`: `openPeriod`, `importAttendance`, `generate`, `lock`, `release`, `void` — audited; guards (lock needs no unresolved flags or an override note; release requires `LOCKED`; void = `SUPER_ADMIN`, reverses balances).
-- [ ] PAY-011 Gate payslip visibility on run status **`RELEASED`** (was `APPROVED`): `payroll/runs.ts` + `(app)/payslips/*` + `api/v1/payroll/payslips/[id]`.
+- [X] PAY-010 `payroll/periods.ts`: `openPeriod`, `importAttendance`, `generate`, `lock`, `release`, `void` — audited; guards (lock needs no unresolved flags or an override note; release requires `LOCKED`; void = `SUPER_ADMIN`, reverses balances).
+- [X] PAY-011 Gate payslip visibility on run status **`RELEASED`** (was `APPROVED`): `payroll/runs.ts` + `(app)/payslips/*` + `api/v1/payroll/payslips/[id]`.
 - [ ] PAY-012 [P] Page actions `(app)/payroll/[id]/+page.server.ts` (+ list): import/generate/lock/release/void with `requireRole(HR_ADMIN, SUPER_ADMIN, PAYROLL_OFFICER)` (void = SUPER_ADMIN).
-- [ ] PAY-013 [P] API routes per `contracts/payroll-v2.md`: `api/v1/payroll/periods/+server.ts` and `[id]/{import,generate,lock,release,void}`.
-- [ ] PAY-014 Integration test: open→import→generate→lock→release; a locked-run edit → 409; employee sees only `RELEASED` payslips.
+- [X] PAY-013 [P] API routes per `contracts/payroll-v2.md`: `api/v1/payroll/periods/+server.ts` and `[id]/{import,generate,lock,release,void}`.
+- [X] PAY-014 Integration test: open→import→generate→lock→release; a locked-run edit → 409; employee sees only `RELEASED` payslips.
 
 ## Slice 3 — Payroll Calculator (what-if, non-persisting)
 

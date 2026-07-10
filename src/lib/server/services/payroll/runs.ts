@@ -4,6 +4,19 @@ import { error } from '@sveltejs/kit'
 import { requireRole } from '$lib/server/rbac'
 import type { AuditContext } from '../types'
 
+/**
+ * A payslip is visible to the employee when the run is legacy-`APPROVED` (old flow) OR its
+ * PayrollPeriod is `RELEASED` (new lifecycle). Use `payslipVisibleRunFilter` in Prisma `where`
+ * clauses and `isPayslipVisible` for in-memory checks.
+ */
+export const payslipVisibleRunFilter = {
+	OR: [{ status: 'APPROVED' as const }, { period: { status: 'RELEASED' as const } }]
+}
+
+export function isPayslipVisible(run: { status: string; period?: { status: string } | null }): boolean {
+	return run.status === 'APPROVED' || run.period?.status === 'RELEASED'
+}
+
 export async function listRuns(
 	organizationId: string,
 	filters?: { status?: string }

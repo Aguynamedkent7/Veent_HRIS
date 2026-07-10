@@ -1,5 +1,6 @@
 import { error, redirect } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
+import { isPayslipVisible } from '$lib/server/services/payroll/runs'
 import type { PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals, params }) => {
@@ -30,7 +31,8 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 					periodStart: true,
 					periodEnd: true,
 					status: true,
-					approvedAt: true
+					approvedAt: true,
+					period: { select: { status: true } }
 				}
 			}
 		}
@@ -38,7 +40,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 
 	if (!entry) error(404, 'Payslip not found')
 	if (entry.employeeId !== myEmployee.id) error(403, 'Access denied')
-	if (entry.payrollRun.status !== 'APPROVED') error(403, 'Payslip not yet available')
+	if (!isPayslipVisible(entry.payrollRun)) error(403, 'Payslip not yet available')
 
 	return { entry }
 }
