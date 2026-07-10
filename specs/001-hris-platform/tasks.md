@@ -303,6 +303,54 @@ routes are deferred and enumerated below. `[X]` = done this pass, `[ ]` = follow
 
 ---
 
+## Phase 11: Full HRIS & Payroll Expansion (HR requirements, FR-047–FR-076)
+
+**Status**: requirements captured (spec.md FR-047–FR-076, data-model "Phase 11 — Proposed Entities").
+All items below are **not started**. The large epics (Payroll, Attendance, Requests) each warrant
+their own `/speckit-plan` pass before task breakdown — this is a module-level backlog, not final tasks.
+
+### 11.1 Foundations (do first — many epics depend on these)
+- [ ] T161 Add `Role` values `PAYROLL_OFFICER`, `FINANCE`; extend RBAC + nav gating + role-management UI (FR-073/074)
+- [ ] T162 File uploads: storage strategy + `EmployeeDocument`/supporting-docs (contracts, IDs) (FR-049/056/071/072)
+- [ ] T163 Settings master data: company info, salary structures, work schedules, payroll cutoffs, earnings/deduction codes (FR-075)
+
+### 11.2 Employee 201 File (FR-047–FR-051)
+- [ ] T164 Emergency contacts, bank/GCash details (sensitive, HR-only), document uploads on the employee record
+- [ ] T165 Assign Position + Work Schedule to employees; surface employment history from the audit trail
+
+### 11.3 Attendance engine (FR-052–FR-055) — needs a plan pass
+- [ ] T166 `AttendanceDay` derivation from `TimeLog` + `WorkSchedule` (late/undertime/OT/night-diff/breaks/missing), PHT-aware
+- [ ] T167 HR attendance-review workflow: flag no-time-in / incomplete, correct, and per-period **lock** before payroll
+
+### 11.4 Requests & multi-stage approvals (FR-056–FR-059) — needs a plan pass
+- [ ] T168 Generalize `LeaveRequest` → `Request` (7 types) with typed payloads + supporting docs (Employee Kiosk)
+- [ ] T169 Configurable multi-stage routing (`ApprovalStep`: Employee→Supervisor→HR→Payroll) with Approve/Reject/Return; auto-apply approved requests to attendance/payroll
+
+### 11.5 Payroll expansion (FR-060–FR-066) — needs a plan pass (largest epic)
+- [ ] T170 `PayrollPeriod` lifecycle (create→import→review→generate→lock→release) replacing/wrapping `PayrollRun`
+- [ ] T171 Earnings engine: OT, night diff, holiday pay, rest-day pay, allowances, incentives (`PayrollEarning`)
+- [ ] T172 Deductions engine: loans + amortization, cash advances (`Loan`/`CashAdvance`/`PayrollDeduction`) atop statutory
+- [ ] T173 Payslip release gating + immutability on lock (FR-063)
+- [ ] T174 Payroll Calculator (what-if preview, non-persisting) (FR-066)
+- [ ] T175 [P] *(integration, deferred)* Disbursement: bank-file export / GCash (FR-065)
+
+### 11.6 Reports (FR-067)
+- [ ] T176 Payroll register, payslips, tardiness, overtime, loan summary, government/BIR reports (required layouts) + exports
+
+### 11.7 Recruitment & onboarding (FR-068–FR-071)
+- [ ] T177 Interview scheduling + notes; issue offers; offer→onboarding transition
+- [ ] T178 Onboarding checklist (contract upload, account gen, payroll registration, start attendance)
+- [ ] T179 [P] *(integration, deferred)* Publish postings to external job boards (FR-070)
+
+### 11.8 Separation (FR-072)
+- [ ] T180 `SeparationRecord` + clearance checklist + exit docs + final-pay computation + separation report
+
+### 11.9 Dashboard & comms (FR-076)
+- [ ] T181 Add attendance summary + payroll status to the HR dashboard
+- [ ] T182 [P] Announcements + notifications (`Announcement`/`Notification`)
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies

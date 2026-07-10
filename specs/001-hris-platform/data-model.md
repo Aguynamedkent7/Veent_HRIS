@@ -461,6 +461,43 @@ Lightweight job/role catalog backing org charts. Org hierarchy otherwise reuses
 
 ---
 
+## Phase 11 — Proposed Entities (HR full-HRIS/payroll expansion)
+
+> Proposed to satisfy FR-047–FR-076. Field lists are indicative; finalize at plan time.
+> New `Role` enum values: `PAYROLL_OFFICER`, `FINANCE`.
+
+**201 File**
+- `EmergencyContact` — `employeeId, name, relationship, phone, isPrimary`.
+- `BankAccount` — `employeeId, method (BANK|GCASH), bankName?, accountName, accountNumber` (sensitive PII, HR-only).
+- `EmployeeDocument` — `employeeId, type (CONTRACT|GOV_ID|CERTIFICATE|OTHER), fileUrl, uploadedById, uploadedAt`.
+
+**Scheduling & compensation setup**
+- `WorkSchedule` + `WorkScheduleDay` — named schedule with per-weekday start/end, break minutes; `Employee.workScheduleId`.
+- `SalaryStructure` — org-level pay components/rules; `EarningType` and `DeductionType` code tables (name, code, taxable?, formula/config).
+
+**Attendance (derived)**
+- `AttendanceDay` — computed per employee per PHT day from `TimeLog` + schedule: `timeIn, timeOut, lateMinutes, undertimeMinutes, overtimeHours, nightDiffHours, breakMinutes, status (PRESENT|LATE|ABSENT|INCOMPLETE|ON_LEAVE|HOLIDAY|REST_DAY), isLocked`. Feeds payroll; supersedes ad-hoc `TimesheetEntry` hours for attendance-driven payroll.
+
+**Requests & approvals (generalize LeaveRequest)**
+- `Request` — `employeeId, type (LEAVE|OVERTIME|UNDERTIME|OFFICIAL_BUSINESS|REST_DAY_WORK|HOLIDAY_WORK|INFO_UPDATE), payload (Json), status, supportingDocs`.
+- `ApprovalStep` — `requestId, stageOrder, approverRole/approverId, decision (APPROVED|REJECTED|RETURNED), comment, decidedAt` (multi-stage routing).
+
+**Payroll expansion**
+- `PayrollPeriod` — `organizationId, name, start, end, cutoff, status (OPEN|IMPORTED|REVIEWED|GENERATED|LOCKED|RELEASED)`.
+- `PayrollEarning` / `PayrollDeduction` — line items on `PayrollEntry` (typeCode, amount) for OT, night diff, holiday, rest-day, allowance, incentive; loan/CA repayments.
+- `Loan` (+ `LoanPayment`) — `employeeId, principal, balance, amortization, schedule`.
+- `CashAdvance` — `employeeId, amount, balance, deductPeriodId`.
+
+**Separation**
+- `SeparationRecord` — `employeeId, type (RESIGNATION|TERMINATION), effectiveDate, reason, finalPayEntryId?, status`.
+- `ClearanceItem` — `separationId, label, department, status (PENDING|CLEARED), clearedById?`.
+
+**Dashboard / comms**
+- `Announcement` — `organizationId, title, body, publishedAt, audienceRole?`.
+- `Notification` — `userId, type, message, read, createdAt`.
+
+---
+
 ## State Machine Summary
 
 | Entity | States |
