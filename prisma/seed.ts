@@ -165,6 +165,48 @@ async function main() {
 		}
 	})
 
+	// --- Payroll expansion config: earning/deduction codes + premium rate rule (DOLE defaults) ---
+	const earningTypes = [
+		{ code: 'BASIC', label: 'Basic pay', taxable: true, multiplier: 1.0 },
+		{ code: 'OT', label: 'Overtime', taxable: true, multiplier: 1.25 },
+		{ code: 'NIGHT_DIFF', label: 'Night differential', taxable: true, multiplier: 0.1 },
+		{ code: 'REST_DAY', label: 'Rest day', taxable: true, multiplier: 1.3 },
+		{ code: 'REG_HOLIDAY', label: 'Regular holiday', taxable: true, multiplier: 2.0 },
+		{ code: 'SPECIAL_HOLIDAY', label: 'Special holiday', taxable: true, multiplier: 1.3 },
+		{ code: 'ALLOWANCE', label: 'Allowances', taxable: false, multiplier: null },
+		{ code: 'INCENTIVE', label: 'Incentives', taxable: true, multiplier: null }
+	]
+	for (const et of earningTypes) {
+		await db.earningType.upsert({
+			where: { organizationId_code: { organizationId: org.id, code: et.code } },
+			update: {},
+			create: { organizationId: org.id, ...et }
+		})
+	}
+
+	const deductionTypes = [
+		{ code: 'SSS_EE', label: 'SSS', isStatutory: true },
+		{ code: 'PHILHEALTH_EE', label: 'PhilHealth', isStatutory: true },
+		{ code: 'PAGIBIG_EE', label: 'Pag-IBIG', isStatutory: true },
+		{ code: 'TAX', label: 'Withholding tax', isStatutory: true },
+		{ code: 'TARDINESS', label: 'Tardiness/undertime', isStatutory: false },
+		{ code: 'LOAN', label: 'Loan', isStatutory: false },
+		{ code: 'CASH_ADVANCE', label: 'Cash advance', isStatutory: false }
+	]
+	for (const dt of deductionTypes) {
+		await db.deductionType.upsert({
+			where: { organizationId_code: { organizationId: org.id, code: dt.code } },
+			update: {},
+			create: { organizationId: org.id, ...dt }
+		})
+	}
+
+	await db.payRateRule.upsert({
+		where: { organizationId: org.id },
+		update: {},
+		create: { organizationId: org.id } // schema defaults = DOLE rates
+	})
+
 	console.log('Seed complete. Logins:')
 	console.log('  Super Admin: admin@veent.ph / Admin@1234')
 	console.log('  Manager:     manager@veent.ph / Manager@1234')

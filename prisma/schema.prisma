@@ -79,6 +79,21 @@ enum PayFrequency {
   MONTHLY
 }
 
+enum PayrollPeriodStatus {
+  OPEN
+  IMPORTED
+  GENERATED
+  LOCKED
+  RELEASED
+  VOIDED
+}
+
+enum LoanStatus {
+  ACTIVE
+  PAID
+  CANCELLED
+}
+
 enum JobPostingStatus {
   DRAFT
   OPEN
@@ -183,6 +198,10 @@ model Organization {
   benefitPlans  BenefitPlan[]
   reviewCycles  ReviewCycle[]
   positions     Position[]
+  payrollPeriods PayrollPeriod[]
+  earningTypes  EarningType[]
+  deductionTypes DeductionType[]
+  payRateRule   PayRateRule?
 
   @@map("organizations")
 }
@@ -276,6 +295,8 @@ model Employee {
   performanceReviews PerformanceReview[] @relation("ReviewSubject")
   reviewsGiven       PerformanceReview[] @relation("Reviewer")
   goals              Goal[]
+  loans              Loan[]
+  cashAdvances       CashAdvance[]
 
   @@unique([organizationId, employeeNumber])
   @@map("employees")
@@ -413,6 +434,7 @@ model PayrollConfig {
 model PayrollRun {
   id             String          @id @default(cuid())
   organizationId String
+  periodId       String?
   periodStart    DateTime
   periodEnd      DateTime
   status         PayrollRunStatus @default(DRAFT)
@@ -427,6 +449,7 @@ model PayrollRun {
   updatedAt      DateTime        @updatedAt
 
   organization Organization   @relation(fields: [organizationId], references: [id])
+  period       PayrollPeriod? @relation(fields: [periodId], references: [id])
   entries      PayrollEntry[]
 
   @@unique([organizationId, periodStart, periodEnd])
@@ -454,6 +477,8 @@ model PayrollEntry {
 
   payrollRun PayrollRun @relation(fields: [payrollRunId], references: [id])
   employee   Employee   @relation(fields: [employeeId], references: [id])
+  earnings   PayrollEarning[]
+  deductions PayrollDeduction[]
 
   @@map("payroll_entries")
 }
@@ -680,4 +705,149 @@ model Position {
 
   @@unique([organizationId, title])
   @@map("positions")
+}
+
+// ─── Payroll Expansion (Phase 11 — FR-060–FR-066) ─────────────────────────────
+// Period lifecycle wraps the existing PayrollRun; earnings/deductions are itemized
+// line items on PayrollEntry; premium multipliers + earning/deduction codes are
+// configurable; loans and cash advances amortize per run.
+
+model PayrollPeriod {
+  id             String              @id @default(cuid())
+  organizationId String
+  name           String
+  startDate      DateTime
+  endDate        DateTime
+  cutoff         Int?
+  status         PayrollPeriodStatus @default(OPEN)
+  lockedAt       DateTime?
+  releasedAt     DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  runs         PayrollRun[]
+
+  @@map("payroll_periods")
+}
+
+model PayrollEarning {
+  id             String  @id @default(cuid())
+  payrollEntryId String
+  code           String
+  label          String
+  amount         Decimal @db.Decimal(12, 2)
+  taxable        Boolean @default(true)
+
+  entry PayrollEntry @relation(fields: [payrollEntryId], references: [id], onDelete: Cascade)
+
+  @@index([payrollEntryId])
+  @@map("payroll_earnings")
+}
+
+model PayrollDeduction {
+  id             String  @id @default(cuid())
+  payrollEntryId String
+  code           String
+  label          String
+  amount         Decimal @db.Decimal(12, 2)
+  refId          String?
+
+  entry PayrollEntry @relation(fields: [payrollEntryId], references: [id], onDelete: Cascade)
+
+  @@index([payrollEntryId])
+  @@map("payroll_deductions")
+}
+
+model EarningType {
+  id             String   @id @default(cuid())
+  organizationId String
+  code           String
+  label          String
+  taxable        Boolean  @default(true)
+  multiplier     Decimal? @db.Decimal(6, 4)
+  isActive       Boolean  @default(true)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, code])
+  @@map("earning_types")
+}
+
+model DeductionType {
+  id             String  @id @default(cuid())
+  organizationId String
+  code           String
+  label          String
+  isStatutory    Boolean @default(false)
+  isActive       Boolean @default(true)
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, code])
+  @@map("deduction_types")
+}
+
+model PayRateRule {
+  id              String  @id @default(cuid())
+  organizationId  String  @unique
+  overtime        Decimal @default(1.25) @db.Decimal(6, 4)
+  overtimePremium Decimal @default(1.30) @db.Decimal(6, 4)
+  nightDiff       Decimal @default(0.10) @db.Decimal(6, 4)
+  restDay         Decimal @default(1.30) @db.Decimal(6, 4)
+  regularHoliday  Decimal @default(2.00) @db.Decimal(6, 4)
+  specialHoliday  Decimal @default(1.30) @db.Decimal(6, 4)
+  updatedAt       DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@map("pay_rate_rules")
+}
+
+model Loan {
+  id          String     @id @default(cuid())
+  employeeId  String
+  type        String?
+  principal   Decimal    @db.Decimal(12, 2)
+  balance     Decimal    @db.Decimal(12, 2)
+  installment Decimal    @db.Decimal(12, 2)
+  status      LoanStatus @default(ACTIVE)
+  startDate   DateTime   @default(now())
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  employee Employee      @relation(fields: [employeeId], references: [id])
+  payments LoanPayment[]
+
+  @@index([employeeId])
+  @@map("loans")
+}
+
+model LoanPayment {
+  id             String   @id @default(cuid())
+  loanId         String
+  payrollEntryId String?
+  amount         Decimal  @db.Decimal(12, 2)
+  paidAt         DateTime @default(now())
+
+  loan Loan @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@index([loanId])
+  @@map("loan_payments")
+}
+
+model CashAdvance {
+  id          String     @id @default(cuid())
+  employeeId  String
+  amount      Decimal    @db.Decimal(12, 2)
+  balance     Decimal    @db.Decimal(12, 2)
+  installment Decimal    @db.Decimal(12, 2)
+  status      LoanStatus @default(ACTIVE)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId])
+  @@map("cash_advances")
 }
