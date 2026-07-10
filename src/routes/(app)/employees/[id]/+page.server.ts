@@ -8,15 +8,17 @@ import type { Actions, PageServerLoad } from './$types'
 export const load: PageServerLoad = async ({ locals, params }) => {
 	requireMinRole(locals.user!.role, 'MANAGER')
 
+	const canManage = ['HR_ADMIN', 'SUPER_ADMIN'].includes(locals.user!.role)
+
 	const [employee, departments] = await Promise.all([
-		getEmployee(params.id, locals.user!.organizationId),
+		getEmployee(params.id, locals.user!.organizationId, locals.user!.role),
 		db.department.findMany({
 			where: { organizationId: locals.user!.organizationId },
 			orderBy: { name: 'asc' }
 		})
 	])
 
-	return { employee, departments }
+	return { employee, departments, canManage }
 }
 
 const updateSchema = z.object({

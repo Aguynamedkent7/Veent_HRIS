@@ -97,9 +97,22 @@ export async function reviewLeaveRequest(
 	ctx: AuditContext
 ) {
 	const request = await db.leaveRequest.findFirst({
-		where: { id, employee: { user: { organizationId } } }
+		where: { id, employee: { user: { organizationId } } },
+		include: { employee: { select: { reportsToId: true } } }
 	})
 	if (!request) error(404, 'Leave request not found')
+
+	// A plain MANAGER may only review leave for their direct reports; HR_ADMIN+ act org-wide.
+	if (ctx.actorRole === 'MANAGER') {
+		const actorEmployee = await db.employee.findUnique({
+			where: { userId: ctx.actorId },
+			select: { id: true }
+		})
+		if (!actorEmployee || request.employee.reportsToId !== actorEmployee.id) {
+			error(403, 'You can only review leave for your direct reports')
+		}
+	}
+
 	if (request.status !== 'PENDING') error(400, 'Only pending requests can be reviewed')
 
 	const updated = await db.$transaction(async (tx: Prisma.TransactionClient) => {

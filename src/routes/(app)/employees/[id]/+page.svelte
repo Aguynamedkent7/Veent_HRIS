@@ -5,6 +5,7 @@
 
 	let { data }: { data: PageData } = $props()
 	const { employee } = data
+	const canManage = $derived(data.canManage)
 </script>
 
 <svelte:head>
@@ -37,30 +38,34 @@
 				<dd>{employee.employmentType.replace('_', ' ')}</dd>
 				<dt class="text-muted-foreground">Start Date</dt>
 				<dd>{formatShortDate(employee.startDate)}</dd>
-				<dt class="text-muted-foreground">Basic Salary</dt>
-				<dd class="font-medium">{formatCurrency(Number(employee.basicMonthlySalary))}/mo</dd>
+				{#if canManage}
+					<dt class="text-muted-foreground">Basic Salary</dt>
+					<dd class="font-medium">{formatCurrency(Number(employee.basicMonthlySalary))}/mo</dd>
+				{/if}
 				<dt class="text-muted-foreground">Role</dt>
 				<dd>{employee.user.role}</dd>
 			</dl>
 		</div>
 
-		<!-- Government IDs Card -->
-		<div class="rounded-lg border bg-card p-6 space-y-4">
-			<h2 class="font-semibold">Government IDs</h2>
-			<dl class="grid grid-cols-2 gap-3 text-sm">
-				<dt class="text-muted-foreground">SSS Number</dt>
-				<dd>{employee.sssNumber ?? '—'}</dd>
-				<dt class="text-muted-foreground">PhilHealth No.</dt>
-				<dd>{employee.philhealthNumber ?? '—'}</dd>
-				<dt class="text-muted-foreground">Pag-IBIG No.</dt>
-				<dd>{employee.pagibigNumber ?? '—'}</dd>
-				<dt class="text-muted-foreground">TIN</dt>
-				<dd>{employee.tinNumber ?? '—'}</dd>
-			</dl>
-		</div>
+		<!-- Government IDs Card (HR-only) -->
+		{#if canManage}
+			<div class="rounded-lg border bg-card p-6 space-y-4">
+				<h2 class="font-semibold">Government IDs</h2>
+				<dl class="grid grid-cols-2 gap-3 text-sm">
+					<dt class="text-muted-foreground">SSS Number</dt>
+					<dd>{employee.sssNumber ?? '—'}</dd>
+					<dt class="text-muted-foreground">PhilHealth No.</dt>
+					<dd>{employee.philhealthNumber ?? '—'}</dd>
+					<dt class="text-muted-foreground">Pag-IBIG No.</dt>
+					<dd>{employee.pagibigNumber ?? '—'}</dd>
+					<dt class="text-muted-foreground">TIN</dt>
+					<dd>{employee.tinNumber ?? '—'}</dd>
+				</dl>
+			</div>
+		{/if}
 
-		<!-- Edit Form -->
-		{#if employee.employmentStatus === 'ACTIVE'}
+		<!-- Edit Form (HR-only; the update/offboard actions require HR_ADMIN) -->
+		{#if canManage && employee.employmentStatus === 'ACTIVE'}
 			<form method="POST" action="?/update" use:enhance class="rounded-lg border p-6 space-y-4 lg:col-span-2">
 				<h2 class="font-semibold">Update Profile</h2>
 				<div class="grid gap-3 sm:grid-cols-3">

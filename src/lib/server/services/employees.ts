@@ -1,5 +1,6 @@
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
+import { ROLE_HIERARCHY } from '$lib/server/rbac'
 import { error } from '@sveltejs/kit'
 import bcrypt from 'bcrypt'
 import { Prisma } from '@prisma/client'
@@ -78,7 +79,7 @@ export async function listEmployees(organizationId: string, filters?: {
 	})
 }
 
-export async function getEmployee(id: string, organizationId: string) {
+export async function getEmployee(id: string, organizationId: string, viewerRole?: Role) {
 	const employee = await db.employee.findFirst({
 		where: { id, user: { organizationId } },
 		include: {
@@ -88,6 +89,19 @@ export async function getEmployee(id: string, organizationId: string) {
 		}
 	})
 	if (!employee) error(404, 'Employee not found')
+
+	// Compensation and government IDs are HR-only. A MANAGER may view a report's
+	// record but must not see salary or tax/government identifiers.
+	if (viewerRole && ROLE_HIERARCHY[viewerRole] < ROLE_HIERARCHY.HR_ADMIN) {
+		return {
+			...employee,
+			basicMonthlySalary: null,
+			sssNumber: null,
+			philhealthNumber: null,
+			pagibigNumber: null,
+			tinNumber: null
+		}
+	}
 	return employee
 }
 
