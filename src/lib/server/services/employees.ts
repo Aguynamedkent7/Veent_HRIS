@@ -29,6 +29,7 @@ interface CreateEmployeeInput {
 	pagibigNumber?: string
 	tinNumber?: string
 	reportsToId?: string
+	discordId?: string | null
 }
 
 interface UpdateEmployeeInput {
@@ -51,6 +52,7 @@ interface UpdateEmployeeInput {
 	pagibigNumber?: string
 	tinNumber?: string
 	reportsToId?: string
+	discordId?: string | null
 }
 
 export async function listEmployees(organizationId: string, filters?: {

@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
-	import type { PageData } from './$types'
+	import type { PageData, ActionData } from './$types'
 
-	let { data }: { data: PageData } = $props()
+	let { data, form }: { data: PageData; form: ActionData } = $props()
 	const { employee } = data
 	const canManage = $derived(data.canManage)
 </script>
@@ -68,6 +68,11 @@
 		{#if canManage && employee.employmentStatus === 'ACTIVE'}
 			<form method="POST" action="?/update" use:enhance class="rounded-lg border p-6 space-y-4 lg:col-span-2">
 				<h2 class="font-semibold">Update Profile</h2>
+				{#if form?.success}
+					<div class="rounded-md border border-green-500/20 bg-green-500/10 px-3 py-2 text-sm text-green-400">Saved.</div>
+				{:else if form?.error}
+					<div class="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-red-400">{form.error}</div>
+				{/if}
 				<div class="grid gap-3 sm:grid-cols-3">
 					<div>
 						<label class="text-sm font-medium">Job Title</label>
@@ -84,6 +89,11 @@
 					<div>
 						<label class="text-sm font-medium">Basic Monthly Salary</label>
 						<input name="basicMonthlySalary" type="number" value={Number(employee.basicMonthlySalary)} class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+					</div>
+					<div class="sm:col-span-3">
+						<label class="text-sm font-medium">Discord ID</label>
+						<input name="discordId" value={employee.discordId ?? ''} placeholder="e.g. 123456789012345678 — for the time-tracking bot" class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+						<p class="mt-1 text-xs text-muted-foreground">In Discord: enable Developer Mode → right-click the user → Copy User ID. Leave blank to unlink.</p>
 					</div>
 				</div>
 				<div class="flex justify-end">

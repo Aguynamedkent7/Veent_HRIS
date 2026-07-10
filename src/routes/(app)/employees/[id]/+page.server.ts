@@ -26,7 +26,13 @@ const updateSchema = z.object({
 	departmentId: z.string().optional(),
 	contactPhone: z.string().optional(),
 	contactAddress: z.string().optional(),
-	basicMonthlySalary: z.coerce.number().positive().optional()
+	basicMonthlySalary: z.coerce.number().positive().optional(),
+	// Empty string clears the link; a value sets it (unique per employee).
+	discordId: z
+		.string()
+		.trim()
+		.optional()
+		.transform((v) => (v ? v : null))
 })
 
 export const actions: Actions = {
@@ -38,12 +44,22 @@ export const actions: Actions = {
 		const parsed = updateSchema.safeParse(raw)
 		if (!parsed.success) return fail(400, { error: 'Invalid input' })
 
-		await updateEmployee(params.id, user.organizationId, parsed.data, {
-			organizationId: user.organizationId,
-			actorId: user.id,
-			actorRole: user.role,
-			ipAddress: getClientAddress()
-		})
+		try {
+			await updateEmployee(params.id, user.organizationId, parsed.data, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e: unknown) {
+			// Unique constraint on Employee.discordId
+			if (e && typeof e === 'object' && 'code' in e && (e as { code?: string }).code === 'P2002') {
+				return fail(409, { error: 'That Discord ID is already linked to another employee.' })
+			}
+			throw e
+		}
+
+		return { success: true }
 	},
 
 	offboard: async ({ request, locals, params, getClientAddress }) => {
