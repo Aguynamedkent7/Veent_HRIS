@@ -228,10 +228,10 @@ description: "Task list for Veent HRIS Core Platform"
 - [X] T113 [P] Add `src/routes/+error.svelte`: user-friendly error page with message and back-link for 403 (access denied), 404 (not found), and 500 (server error) using shadcn-svelte Card
 - [X] T114 [P] Add public holiday management: `src/routes/(app)/settings/holidays/+page.svelte` (date picker + name + type form, list of configured holidays) and `+page.server.ts` (`requireRole(HR_ADMIN, SUPER_ADMIN)`; CRUD on PublicHoliday table)
 - [X] T115 [P] ~~Redis rate limiting~~ — **SKIPPED**: Redis removed; login brute-force protection deferred to infrastructure layer (reverse proxy / WAF)
-- [ ] T116 [P] Add loading skeletons to all list pages: employees list, timesheets list, approvals queue, payroll runs list, reports table
+- [X] T116 [P] Add loading skeletons to all list pages — added `src/lib/components/ui/Skeleton.svelte` + `TableSkeleton.svelte`; converted employees/timesheets/approvals/payroll list `load` functions to stream the list query and render skeletons via `{#await}`; reports table uses a `$navigating`-based skeleton for the same-route "Generate" submit
 - [X] T117 [P] ~~Redis report caching~~ — **SKIPPED**: Redis removed; reports query DB directly (acceptable for current load)
-- [ ] T118 Security audit: review all `+server.ts` and `+page.server.ts` files — verify every mutating route has `requireRole()` call, every employee-scoped route has ownership check, no PII fields returned to unauthorized roles
-- [ ] T119 [P] Write Playwright E2E tests in `tests/e2e/` covering all 8 quickstart scenarios from `quickstart.md`: login, onboard employee, submit timesheet, approve timesheet, leave request, payroll run, dashboard metrics, audit log integrity
+- [X] T118 Security audit — reviewed all `+server.ts`/`+page.server.ts`. Fixed: manager-to-report ownership missing in `reviewTimesheet`/`reviewLeaveRequest` (a MANAGER could approve/reject ANY org member's items — IDOR); `getEmployee` leaked salary + government IDs to MANAGER viewers (now stripped below HR_ADMIN, employee detail UI gated on `canManage`); invalid `REGULAR` enum in recruitment API schema → `FULL_TIME`
+- [X] T119 [P] Playwright E2E tests in `tests/e2e/` covering quickstart scenarios: auth/RBAC (`auth.spec.ts`), employee self-service leave + profile (`employee.spec.ts`), timesheet submit → manager approval lifecycle (`timesheet-approval.spec.ts`), HR admin onboarding + dashboard + report + audit log (`admin.spec.ts`). Seed enriched with manager + employee (reports-to) users and leave balances; `global-setup.ts` resets transactional data per run. 11/11 passing
 
 ### Additional tasks completed post-plan
 
@@ -239,6 +239,8 @@ description: "Task list for Veent HRIS Core Platform"
 - [X] T121 Fix `{@const}` placement in `src/lib/components/recruitment/ApplicantKanban.svelte` — was inside `<div>`, must be immediate child of block tag
 - [X] T122 Fix `$derived` captured in `$state()` init in `src/routes/(app)/timesheets/new/+page.svelte` — initialize entries as `$state([])`, rely on `$effect` for population
 - [X] T123 Add `src/hooks.ts` transport hook to serialize Prisma `Decimal` objects across the server→client boundary — fixes 500 on `/leave`, `/profile`, `/employees`
+- [X] T124 Make `prisma/seed.ts` idempotent — `LeaveType` has no `@@unique([organizationId, name])`, so `createMany` duplicated 5 leave types on every re-seed; now only seeds when none exist. Cleaned existing duplicates from the dev DB
+- [X] T125 Enrich seed for E2E — added `manager@veent.ph` (MANAGER) and `employee@veent.ph` (EMPLOYEE, reportsTo manager) with leave balances, so approval/self-service flows are testable
 
 ---
 
