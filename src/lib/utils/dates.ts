@@ -49,3 +49,37 @@ export function formatDateDisplay(date: Date): string {
 		day: 'numeric'
 	})
 }
+
+// ─── Philippine Standard Time (UTC+8) helpers ────────────────────────────────
+// PHT has no daylight saving, so a fixed +8h offset is exact. Timestamps are
+// stored in UTC; these helpers bucket a UTC instant into PHT calendar days and
+// weeks. "Shift +8h then read the UTC parts" yields the PHT wall-clock values.
+
+export const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000
+
+/** Calendar day (YYYY-MM-DD) of `date` in Philippine Standard Time. */
+export function manilaDayKey(date: Date): string {
+	return new Date(date.getTime() + MANILA_OFFSET_MS).toISOString().slice(0, 10)
+}
+
+/** UTC instant corresponding to 00:00 PHT of the PHT day containing `date`. */
+export function manilaDayStart(date: Date): Date {
+	const [y, m, d] = manilaDayKey(date).split('-').map(Number)
+	return new Date(Date.UTC(y, m - 1, d) - MANILA_OFFSET_MS)
+}
+
+/** UTC instant of 00:00 PHT on the Monday of the PHT week containing `date`. */
+export function manilaWeekStart(date: Date): Date {
+	const shifted = new Date(date.getTime() + MANILA_OFFSET_MS)
+	const day = shifted.getUTCDay() // 0 = Sun … 6 = Sat, in PHT
+	const diff = day === 0 ? -6 : 1 - day
+	return new Date(
+		Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate() + diff) -
+			MANILA_OFFSET_MS
+	)
+}
+
+/** UTC instant of the last millisecond of the PHT week containing `date` (Sun 23:59:59.999 PHT). */
+export function manilaWeekEnd(date: Date): Date {
+	return new Date(manilaWeekStart(date).getTime() + 7 * 24 * 60 * 60 * 1000 - 1)
+}
