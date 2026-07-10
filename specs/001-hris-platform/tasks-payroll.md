@@ -29,7 +29,7 @@ every mutation calls `writeAuditLog`; **tests are written before implementation*
 - [X] PAY-005 Implement `payroll/earnings.ts` pure fns (`computeOvertime`, `computeNightDiff`, `computeHoliday`, `computeRestDay`, `sumAllowancesIncentives`, `computeEarnings`) reading rates from config → green.
 - [X] PAY-006 **Test-first** `tests/unit/payroll-deductions.test.ts`: fixed installment capped at balance; skip when net insufficient; correct statutory + tax ordering (taxable-gross → BIR → net).
 - [X] PAY-007 Implement `payroll/deductions.ts` (`computeLoanDeduction`, `computeCashAdvanceDeduction`, `composeDeductions` with statutory + tax) → green.
-- [ ] PAY-008 Compose in `payroll/index.ts` `computePayrollRun`: earnings → taxable gross → BIR (reuse `ph-statutory.ts`) → deductions → net; persist `PayrollEntry` + line items. Extends the existing run compute.
+- [X] PAY-008 Compose in `payroll/index.ts` `computePayrollRun`: earnings → taxable gross → BIR (reuse `ph-statutory.ts`) → deductions → net; persist `PayrollEntry` + line items. Extends the existing run compute.
 - [X] PAY-009 [P] Seed default `EarningType`/`DeductionType`/`PayRateRule` (DOLE) in `prisma/seed.ts` (idempotent).
 
 **Checkpoint**: `pnpm test` proves the full computation for sample salaries incl. OT/holiday/night-diff — no UI, no server needed.

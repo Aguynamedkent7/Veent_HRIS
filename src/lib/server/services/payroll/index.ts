@@ -1,8 +1,23 @@
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
+import { Prisma } from '@prisma/client'
 import { computeStatutoryDeductions } from './ph-statutory'
+import { computeEarnings } from './earnings'
+import { computeDeductions, type AmortItem } from './deductions'
+import { hourlyRateOf, emptyAttendance, round2, type EmployeeComp } from './types'
+import { computeWorkingDays } from '$lib/utils/dates'
 import type { AuditContext } from '../types'
+
+function groupByEmployee<T extends { employeeId: string }>(rows: T[]): Map<string, T[]> {
+	const map = new Map<string, T[]>()
+	for (const row of rows) {
+		const list = map.get(row.employeeId) ?? []
+		list.push(row)
+		map.set(row.employeeId, list)
+	}
+	return map
+}
 
 export async function createPayrollRun(
 	organizationId: string,
@@ -29,38 +44,51 @@ export async function createPayrollRun(
 	return run
 }
 
-export async function computePayroll(
-	runId: string,
-	organizationId: string,
-	ctx: AuditContext
-) {
+/**
+ * Compute a draft payroll run using the earnings/deductions engine and persist itemized
+ * PayrollEarning/PayrollDeduction line items (PAY-008).
+ *
+ * Interim attendance sourcing (until the Attendance engine, Phase 11.3): `regularHours` come
+ * from the employee's APPROVED timesheets for the period; when none exist, a monthly-salaried
+ * employee is paid for the full scheduled hours (working days × 8). OT/holiday/night-diff buckets
+ * are zero until real attendance is available. Statutory contributions are monthly, prorated to the
+ * period by pay frequency (semi-monthly ÷2). Loan/cash-advance balances are NOT mutated here —
+ * the deduction is computed from current balances and shown as a line item; the actual decrement +
+ * LoanPayment happens at lock time (Slice 2, PAY-021), which keeps compute safely re-runnable.
+ */
+export async function computePayroll(runId: string, organizationId: string, ctx: AuditContext) {
 	const run = await db.payrollRun.findFirst({ where: { id: runId, organizationId } })
 	if (!run) error(404, 'Payroll run not found')
 	if (run.status !== 'DRAFT') error(400, 'Only draft payroll runs can be computed')
 
-	const employees = await db.employee.findMany({
-		where: { user: { organizationId }, employmentStatus: 'ACTIVE' }
-	})
+	const [employees, config, earningTypes, loansAll, advancesAll] = await Promise.all([
+		db.employee.findMany({ where: { user: { organizationId }, employmentStatus: 'ACTIVE' } }),
+		db.payrollConfig.findUnique({ where: { organizationId } }),
+		db.earningType.findMany({ where: { organizationId }, select: { code: true, taxable: true } }),
+		db.loan.findMany({ where: { employee: { organizationId }, status: 'ACTIVE', balance: { gt: 0 } } }),
+		db.cashAdvance.findMany({ where: { employee: { organizationId }, status: 'ACTIVE', balance: { gt: 0 } } })
+	])
 
-	const WORKING_DAYS_PER_MONTH = 22
-	const periodDays = Math.ceil(
-		(run.periodEnd.getTime() - run.periodStart.getTime()) / (1000 * 60 * 60 * 24)
-	) + 1
+	// Requirement #1 (review): taxability comes from EarningType config, not hard-coded defaults.
+	const taxableByCode = new Map(earningTypes.map((e) => [e.code, e.taxable]))
+	// Requirement #5 (review): prorate monthly statutory to the period.
+	const periodShare = (config?.payFrequency ?? 'SEMI_MONTHLY') === 'MONTHLY' ? 1 : 0.5
+	const loansByEmp = groupByEmployee(loansAll)
+	const advancesByEmp = groupByEmployee(advancesAll)
+	const workingDays = computeWorkingDays(run.periodStart, run.periodEnd, [])
 
-	const entries = []
+	const perEmployee: Array<{
+		entry: Prisma.PayrollEntryUncheckedCreateWithoutEarningsInput
+		earnings: Array<{ code: string; label: string; amount: number; taxable: boolean }>
+		deductions: Array<{ code: string; label: string; amount: number; refId: string | null }>
+	}> = []
 	let totalGross = 0
 	let totalDeductions = 0
 	let totalNet = 0
 
 	for (const emp of employees) {
-		const dailyRate = Number(emp.basicMonthlySalary) / WORKING_DAYS_PER_MONTH
-		const grossPay = dailyRate * periodDays
-
-		const statutory = computeStatutoryDeductions(Number(emp.basicMonthlySalary))
-
-		const periodFraction = periodDays / WORKING_DAYS_PER_MONTH
-		const periodDeductions = statutory.totalDeductions * periodFraction
-		const periodNet = grossPay - periodDeductions
+		const comp: EmployeeComp = { basicMonthlySalary: Number(emp.basicMonthlySalary), rateType: emp.rateType }
+		const hr = hourlyRateOf(comp)
 
 		const timesheets = await db.timesheet.findMany({
 			where: {
@@ -71,56 +99,117 @@ export async function computePayroll(
 			},
 			include: { entries: true }
 		})
+		const approvedHours = timesheets
+			.flatMap((ts) => ts.entries)
+			.reduce((sum, e) => sum + Number(e.hoursWorked), 0)
+		const scheduledHours = workingDays * (comp.dailyWorkingHours ?? 8)
+		const regularHours = approvedHours > 0 ? approvedHours : scheduledHours
 
-		const hoursWorked = timesheets
-			.flatMap((ts: { entries: Array<{ hoursWorked: unknown }> }) => ts.entries)
-			.reduce((sum: number, e: { hoursWorked: unknown }) => sum + Number(e.hoursWorked), 0)
+		const earnings = computeEarnings(comp, { ...emptyAttendance(), regularHours })
+		for (const c of earnings.components) {
+			const configured = taxableByCode.get(c.code)
+			if (configured !== undefined) c.taxable = configured
+		}
 
-		const isFlagged = hoursWorked === 0 && emp.rateType === 'HOURLY'
+		const monthlyStat = computeStatutoryDeductions(Number(emp.basicMonthlySalary))
+		const statutory = {
+			sssEe: round2(monthlyStat.sssEe * periodShare),
+			philhealthEe: round2(monthlyStat.philhealthEe * periodShare),
+			pagibigEe: round2(monthlyStat.pagibigEe * periodShare),
+			withholdingTax: round2(monthlyStat.withholdingTax * periodShare)
+		}
 
-		entries.push({
-			payrollRunId: runId,
-			employeeId: emp.id,
-			hoursWorked,
-			basicPay: grossPay,
-			grossPay,
-			sssEe: statutory.sssEe * periodFraction,
-			sssEr: statutory.sssEr * periodFraction,
-			philhealthEe: statutory.philhealthEe * periodFraction,
-			philhealthEr: statutory.philhealthEr * periodFraction,
-			pagibigEe: statutory.pagibigEe * periodFraction,
-			pagibigEr: statutory.pagibigEr * periodFraction,
-			withholdingTax: statutory.withholdingTax * periodFraction,
-			totalDeductions: periodDeductions,
-			netPay: periodNet,
-			isFlagged,
-			flagReason: isFlagged ? 'No approved timesheet for period' : null
+		const loans: AmortItem[] = (loansByEmp.get(emp.id) ?? []).map((l) => ({
+			refId: l.id,
+			label: l.type ?? 'Loan',
+			installment: Number(l.installment),
+			balance: Number(l.balance)
+		}))
+		const cashAdvances: AmortItem[] = (advancesByEmp.get(emp.id) ?? []).map((a) => ({
+			refId: a.id,
+			label: 'Cash advance',
+			installment: Number(a.installment),
+			balance: Number(a.balance)
+		}))
+
+		const ded = computeDeductions({
+			gross: earnings.gross,
+			hourlyRate: hr,
+			lateMinutes: 0,
+			undertimeMinutes: 0,
+			statutory,
+			loans,
+			cashAdvances
 		})
 
-		totalGross += grossPay
-		totalDeductions += periodDeductions
-		totalNet += periodNet
+		const basicPay = earnings.components.find((c) => c.code === 'BASIC')?.amount ?? 0
+		const isFlagged = approvedHours === 0
+
+		perEmployee.push({
+			entry: {
+				payrollRunId: runId,
+				employeeId: emp.id,
+				hoursWorked: round2(regularHours),
+				basicPay,
+				grossPay: earnings.gross,
+				sssEe: statutory.sssEe,
+				sssEr: round2(monthlyStat.sssEr * periodShare),
+				philhealthEe: statutory.philhealthEe,
+				philhealthEr: round2(monthlyStat.philhealthEr * periodShare),
+				pagibigEe: statutory.pagibigEe,
+				pagibigEr: round2(monthlyStat.pagibigEr * periodShare),
+				withholdingTax: statutory.withholdingTax,
+				totalDeductions: ded.total,
+				netPay: ded.net,
+				isFlagged,
+				flagReason: isFlagged ? 'No approved timesheet for period' : null
+			},
+			earnings: earnings.components.map((c) => ({ code: c.code, label: c.label, amount: c.amount, taxable: c.taxable })),
+			deductions: ded.components.map((c) => ({ code: c.code, label: c.label, amount: c.amount, refId: c.refId ?? null }))
+		})
+
+		totalGross += earnings.gross
+		totalDeductions += ded.total
+		totalNet += ded.net
 	}
 
-	await db.$transaction([
-		db.payrollEntry.deleteMany({ where: { payrollRunId: runId } }),
-		db.payrollEntry.createMany({ data: entries }),
-		db.payrollRun.update({
+	await db.$transaction(async (tx: Prisma.TransactionClient) => {
+		// Cascade deletes the old entries' line items via onDelete: Cascade.
+		await tx.payrollEntry.deleteMany({ where: { payrollRunId: runId } })
+		for (const p of perEmployee) {
+			await tx.payrollEntry.create({
+				data: { ...p.entry, earnings: { create: p.earnings }, deductions: { create: p.deductions } }
+			})
+		}
+		await tx.payrollRun.update({
 			where: { id: runId },
-			data: { status: 'COMPUTED', totalGross, totalDeductions, totalNet }
+			data: {
+				status: 'COMPUTED',
+				totalGross: round2(totalGross),
+				totalDeductions: round2(totalDeductions),
+				totalNet: round2(totalNet)
+			}
 		})
-	])
+	})
 
 	await writeAuditLog(ctx, {
 		action: 'UPDATE',
 		entityType: 'PayrollRun',
 		entityId: runId,
-		newValue: { status: 'COMPUTED', totalGross, totalNet }
+		newValue: { status: 'COMPUTED', totalGross: round2(totalGross), totalNet: round2(totalNet) }
 	})
 
 	return db.payrollRun.findUnique({
 		where: { id: runId },
-		include: { entries: { include: { employee: { select: { firstName: true, lastName: true, employeeNumber: true } } } } }
+		include: {
+			entries: {
+				include: {
+					employee: { select: { firstName: true, lastName: true, employeeNumber: true } },
+					earnings: true,
+					deductions: true
+				}
+			}
+		}
 	})
 }
 
