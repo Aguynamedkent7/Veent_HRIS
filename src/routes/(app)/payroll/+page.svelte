@@ -15,9 +15,12 @@
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
 		<h1 class="text-2xl font-bold tracking-tight">Payroll Runs</h1>
-		<button onclick={() => (showCreate = !showCreate)} class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-			New Payroll Run
-		</button>
+		<div class="flex items-center gap-2">
+			<a href="/payroll/periods" class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">Payroll Periods</a>
+			<button onclick={() => (showCreate = !showCreate)} class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+				New Payroll Run
+			</button>
+		</div>
 	</div>
 
 	{#if showCreate}
