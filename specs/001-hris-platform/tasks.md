@@ -319,8 +319,8 @@ their own `/speckit-plan` pass before task breakdown — this is a module-level 
 - [ ] T165 Assign Position + Work Schedule to employees; surface employment history from the audit trail
 
 ### 11.3 Attendance engine (FR-052–FR-055) — needs a plan pass
-- [ ] T166 `AttendanceDay` derivation from `TimeLog` + `WorkSchedule` (late/undertime/OT/night-diff/breaks/missing), PHT-aware
-- [ ] T167 HR attendance-review workflow: flag no-time-in / incomplete, correct, and per-period **lock** before payroll
+- [X] T166 `AttendanceDay` derivation from `TimeLog` + `WorkSchedule` (late/undertime/OT/night-diff/breaks/missing), PHT-aware
+- [X] T167 HR attendance-review workflow: flag no-time-in / incomplete, correct, and per-period **lock** before payroll
 
 ### 11.4 Requests & multi-stage approvals (FR-056–FR-059) — needs a plan pass
 - [ ] T168 Generalize `LeaveRequest` → `Request` (7 types) with typed payloads + supporting docs (Employee Kiosk)
