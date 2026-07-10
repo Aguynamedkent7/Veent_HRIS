@@ -179,6 +179,25 @@ enum GoalStatus {
   CANCELLED
 }
 
+// ─── Attendance Enums ────────────────────────────────────────────────────────
+
+enum AttendanceStatus {
+  PRESENT
+  LATE
+  ABSENT
+  INCOMPLETE
+  ON_LEAVE
+  HOLIDAY
+  REST_DAY
+}
+
+enum DayType {
+  REGULAR
+  REST_DAY
+  REGULAR_HOLIDAY
+  SPECIAL_HOLIDAY
+}
+
 // ─── Organization ─────────────────────────────────────────────────────────────
 
 model Organization {
@@ -204,6 +223,7 @@ model Organization {
   earningTypes  EarningType[]
   deductionTypes DeductionType[]
   payRateRule   PayRateRule?
+  workSchedules WorkSchedule[]
 
   @@map("organizations")
 }
@@ -272,6 +292,7 @@ model Employee {
   endDate            DateTime?
   reportsToId        String?
   positionId         String?
+  workScheduleId     String?
   discordId          String?          @unique
   basicMonthlySalary Decimal          @db.Decimal(12, 2)
   rateType           RateType         @default(MONTHLY)
@@ -299,6 +320,8 @@ model Employee {
   goals              Goal[]
   loans              Loan[]
   cashAdvances       CashAdvance[]
+  workSchedule       WorkSchedule?  @relation(fields: [workScheduleId], references: [id])
+  attendanceDays     AttendanceDay[]
 
   @@unique([organizationId, employeeNumber])
   @@map("employees")
@@ -852,4 +875,74 @@ model CashAdvance {
 
   @@index([employeeId])
   @@map("cash_advances")
+}
+
+// ─── Attendance (Phase 11.3 — FR-052–FR-055) ──────────────────────────────────
+// Work schedules define per-weekday shift windows; AttendanceDay records are derived
+// from TimeLog punches + schedule + holidays, reviewed/locked by HR, then summed into
+// the payroll engine's AttendanceInput.
+
+model WorkSchedule {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  isDefault      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id])
+  days         WorkScheduleDay[]
+  employees    Employee[]
+
+  @@map("work_schedules")
+}
+
+model WorkScheduleDay {
+  id           String @id @default(cuid())
+  scheduleId   String
+  weekday      Int // 0 = Sunday … 6 = Saturday, in PHT
+  startMinutes Int // minutes from midnight (PHT), e.g. 540 = 09:00
+  endMinutes   Int
+  breakMinutes Int    @default(60)
+
+  schedule WorkSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduleId, weekday])
+  @@map("work_schedule_days")
+}
+
+model AttendanceDay {
+  id         String           @id @default(cuid())
+  employeeId String
+  date       DateTime         @db.Date
+  status     AttendanceStatus
+  dayType    DayType          @default(REGULAR)
+  timeIn     DateTime?
+  timeOut    DateTime?
+
+  workedHours            Decimal @default(0) @db.Decimal(5, 2)
+  regularHours           Decimal @default(0) @db.Decimal(5, 2)
+  overtimeHours          Decimal @default(0) @db.Decimal(5, 2)
+  rawOvertimeHours       Decimal @default(0) @db.Decimal(5, 2)
+  nightDiffHours         Decimal @default(0) @db.Decimal(5, 2)
+  restDayHours           Decimal @default(0) @db.Decimal(5, 2)
+  restDayOtHours         Decimal @default(0) @db.Decimal(5, 2)
+  regularHolidayHours    Decimal @default(0) @db.Decimal(5, 2)
+  regularHolidayOtHours  Decimal @default(0) @db.Decimal(5, 2)
+  specialHolidayHours    Decimal @default(0) @db.Decimal(5, 2)
+  specialHolidayOtHours  Decimal @default(0) @db.Decimal(5, 2)
+  lateMinutes            Int     @default(0)
+  undertimeMinutes       Int     @default(0)
+  breakMinutes           Int     @default(0)
+
+  isLocked  Boolean  @default(false)
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([employeeId, date])
+  @@index([employeeId, date])
+  @@map("attendance_days")
 }
