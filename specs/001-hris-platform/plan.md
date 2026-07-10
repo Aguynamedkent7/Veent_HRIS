@@ -159,3 +159,42 @@ CSV exports and any programmatic consumers. Business logic lives exclusively in
 
 No complexity justifications required. All architectural choices align with constitution
 principles. No extra projects, patterns, or abstractions beyond what is needed.
+
+## Addendum — Phase 10 Expansion (Benefits, Performance, Settings/Org, Discord Time Tracking)
+
+**Date**: 2026-07-10. Extends this feature; see spec.md FR-034–FR-046, data-model.md
+"Expansion Entities", contracts `benefits.md` / `performance.md` / `settings.md` / `timelog.md`,
+and tasks.md Phase 10.
+
+**Corrections to the original plan**: Redis was removed (dashboards query the DB directly);
+the frontend is **Svelte**, not React (line 37 is a template typo).
+
+**New models**: `TimeLog`, `BenefitPlan`, `BenefitEnrollment`, `ReviewCycle`, `PerformanceReview`,
+`Goal`, `Position`, plus `Employee.discordId`/`positionId`.
+
+**New source layout**:
+- `src/lib/server/services/{benefits,performance,timelog}.ts`, `services/settings/org.ts`
+- `src/lib/server/hmac.ts` (HMAC sign/verify), Manila UTC+8 helpers in `src/lib/utils/dates.ts`
+- `src/routes/(app)/{benefits,performance}/`, `(app)/settings/{org,roles}/`
+- `src/routes/api/v1/timesheets/log/+server.ts` (HMAC-authed punch ingestion)
+- `scripts/discord-bot.ts` + `scripts/README.md` (standalone `discord.js` bot)
+
+**Integration decisions**:
+- **Discord bot → API auth**: HMAC-SHA256 over `${timestamp}.${rawBody}` with `TIMELOG_API_SECRET`
+  and a ±5-min replay window (not Lucia sessions — it is server-to-server).
+- **Timezone**: punches stored UTC (`timestamptz`); all day/week bucketing in PHT (UTC+8, no DST).
+- **Timesheet reuse**: raw `TimeLog` punches aggregate into the existing DRAFT→SUBMITTED→APPROVED
+  `Timesheet` workflow, so payroll is unchanged.
+
+**Delivery**: this pass shipped the foundation (schema, docs, integration code + tests, service
+layers, route scaffolds). Rich page UIs and per-module REST routes are deferred (tasks T137–T160).
+
+### Constitution re-check (Phase 10)
+
+| Principle | Status |
+|-----------|--------|
+| I. Data Privacy & Security | ✅ Secret in env (`TIMELOG_API_SECRET`), HMAC + replay guard; Decimal transport hook. ⚠️ Add a PIA note for health/benefit + review PII (spec follow-up). |
+| II. RBAC | ✅ Every new endpoint/route declares roles; role changes audited (FR-042); self-role-change blocked. |
+| III. Spec-Driven | ✅ spec/data-model/contracts/tasks updated for FR-034–FR-046. |
+| IV. Audit Trail | ✅ Every new service mutation calls `writeAuditLog`. ⚠️ Note benefits compliance (DPA) in spec (follow-up). |
+| V. Test-First & Deliverability | ✅ Unit tests for HMAC + aggregation. ⚠️ RBAC integration tests for deferred REST routes tracked as T142. |

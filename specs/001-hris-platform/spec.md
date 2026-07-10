@@ -176,6 +176,36 @@ HR Admins can post open positions, receive and manage applications, track candid
 - **FR-032**: Audit logs MUST capture: actor, timestamp, entity type, entity ID, field changed, old value, and new value.
 - **FR-033**: Audit logs MUST be retained for a minimum of 3 years and accessible to HR Admins and Super Admins.
 
+**Benefits Administration**
+- **FR-034**: HR Admins MUST be able to define benefit plans (HMO, insurance, retirement, allowance, leave credit, other) with employee/employer cost shares.
+- **FR-035**: HR Admins MUST be able to enroll employees in benefit plans and change enrollment status (active / waived / terminated); an employee MUST NOT be enrolled twice in the same plan.
+- **FR-036**: Employees MUST be able to view their own benefit enrollments.
+
+**Performance Management**
+- **FR-037**: HR Admins MUST be able to create review cycles (period-bound) and open performance reviews pairing a subject employee with a reviewer.
+- **FR-038**: A performance review MUST follow the workflow: Pending → Self-Assessment → Manager Review → Completed → Acknowledged.
+- **FR-039**: The review subject MUST be able to submit a self-assessment; only the assigned reviewer MUST be able to submit manager comments and an overall rating (1–5).
+- **FR-040**: Employees MUST be able to create personal goals and track progress (0–100%); goals MAY be linked to a review cycle.
+
+**Settings & Org Structure**
+- **FR-041**: HR Admins MUST be able to maintain a catalog of positions (titles) and view an organizational chart derived from departments and reporting lines.
+- **FR-042**: Super Admins MUST be able to change a user's role; a user MUST NOT change their own role, and role changes MUST be recorded in the audit log with old and new values.
+
+**Time Tracking (Discord Integration)**
+- **FR-043**: The system MUST accept clock-in / clock-out punches from an external Discord bot via a dedicated endpoint authenticated by an HMAC signature (shared secret + timestamp, with replay protection); session cookies MUST NOT be required.
+- **FR-044**: Each punch MUST be attributed to the employee whose `discordId` matches; punches from unknown or inactive Discord accounts MUST be rejected.
+- **FR-045**: Punch timestamps MUST be stored in UTC and bucketed into calendar days/weeks using Philippine Standard Time (UTC+8).
+- **FR-046**: HR MUST be able to aggregate a week of raw punches into a DRAFT weekly timesheet (pairing IN/OUT per day, flagging missing/stray punches), then review, edit, and approve it through the existing timesheet approval workflow so it feeds payroll unchanged.
+
+**Privacy & Compliance note (Phase 10 — per Constitution §I and §IV)**
+- Benefit data (HMO/health, insurance) and performance reviews are sensitive PII; access is
+  restricted per the RBAC rules above (employees see only their own; HR/Super Admin manage),
+  handled under the Philippine Data Privacy Act (RA 10173) alongside existing employee PII.
+- The Discord integration stores only a `discordId` mapping and raw punch timestamps; the punch
+  endpoint carries no other PII and is authenticated by shared-secret HMAC (no session/credential
+  exposure). All benefit, review, goal, role, and punch mutations are recorded in the immutable
+  audit log with actor, timestamp, and before/after values.
+
 ### Key Entities
 
 - **Organization**: Top-level entity; holds company details, payroll configuration, leave policies.

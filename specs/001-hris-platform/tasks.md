@@ -244,6 +244,65 @@ description: "Task list for Veent HRIS Core Platform"
 
 ---
 
+## Phase 10: HR Module Expansion & Discord Time Tracking
+
+**Scope**: Benefits Administration, Performance Management, Settings & Org Structure, and a
+Discord-driven time-tracking integration. This pass delivered the **foundation** (schema,
+spec-kit docs, integration code, service layers, route scaffolds); rich page UIs and REST
+routes are deferred and enumerated below. `[X]` = done this pass, `[ ]` = follow-up.
+
+### 10.1 Schema & spec-kit artifacts
+
+- [X] T126 Add enums `PunchType`, `PunchSource`, `BenefitPlanType`, `BenefitEnrollmentStatus`, `ReviewCycleStatus`, `ReviewStatus`, `GoalStatus` in `prisma/schema.prisma`
+- [X] T127 Add models `TimeLog`, `BenefitPlan`, `BenefitEnrollment`, `ReviewCycle`, `PerformanceReview`, `Goal`, `Position`; add `Employee.discordId` (unique) + `Employee.positionId` + back-relations; `Position ↔ Department` relation; apply via `prisma db push` + `generate`
+- [X] T128 [P] Update `data-model.md` (expansion entities + state-machine rows) and `spec.md` (FR-034–FR-046)
+- [X] T129 [P] Author contracts `contracts/{benefits,performance,settings,timelog}.md` and extend `contracts/timesheets.md`
+- [ ] T130 [P] Seed sample data: one `BenefitPlan`, one `ReviewCycle`, a few `Position` rows, and a `discordId` on the demo employee (`prisma/seed.ts`)
+
+### 10.2 Discord time tracking
+
+- [X] T131 Manila (UTC+8) helpers in `src/lib/utils/dates.ts` (`manilaDayKey`, `manilaDayStart`, `manilaWeekStart`, `manilaWeekEnd`)
+- [X] T132 HMAC sign/verify with replay window in `src/lib/server/hmac.ts`
+- [X] T133 `src/lib/server/services/timelog.ts` — `recordPunch`, `listPunches`, `pairPunchesToDailyHours` (pure), `aggregateTimeLogsToTimesheet`
+- [X] T134 HMAC-authed `POST src/routes/api/v1/timesheets/log/+server.ts`
+- [X] T135 [P] Standalone `scripts/discord-bot.ts` (persistent Clock In/Out buttons) + `scripts/README.md` + `.env.example` + `package.json` `bot` script + `discord.js` dependency
+- [X] T136 [P] Unit tests `tests/unit/hmac.test.ts`, `tests/unit/timelog-aggregate.test.ts`
+- [ ] T137 `GET /api/v1/timesheets/[employeeId]/punches` route (list raw punches; owner/manager/HR)
+- [ ] T138 `POST /api/v1/timesheets/aggregate` route wrapping `aggregateTimeLogsToTimesheet` (HR_ADMIN+)
+- [ ] T139 HR "Time Logs → Timesheet" review UI on `(app)/timesheets` — per-PHT-day punch table with computed hours + warnings, an "Aggregate week" action, inline edit of `TimesheetEntry.hoursWorked`, then Approve via existing flow
+- [ ] T140 [P] Employee read-only punch view + `discordId` field in the employee profile / onboarding forms
+- [ ] T141 [P] Bot production hardening (pm2/systemd unit) and optional slash-command fallback — docs only for now
+- [ ] T142 [P] E2E: signed punch → aggregate → approve happy path (`tests/e2e/`)
+
+### 10.3 Benefits Administration
+
+- [X] T143 Service `src/lib/server/services/benefits.ts` (plans + enrollments CRUD, audited)
+- [X] T144 Scaffold `(app)/benefits/+page.{server.ts,svelte}` (plan list + create; HR_ADMIN+) and nav entry
+- [ ] T145 REST routes `src/routes/api/v1/benefits/plans/+server.ts` (+ `[id]`) and `.../enrollments/+server.ts` (+ `[id]`)
+- [ ] T146 Enrollment management UI (enroll employee, change status, coverage level)
+- [ ] T147 [P] Employee "My Benefits" read-only view (`(app)/benefits/me` or profile section)
+- [ ] T148 [P] Optional: fold employee benefit costs into payroll deductions
+
+### 10.4 Performance Management
+
+- [X] T149 Service `src/lib/server/services/performance.ts` (cycles, reviews, goals, audited)
+- [X] T150 Scaffold `(app)/performance/+page.{server.ts,svelte}` (my goals + reviews; create/update goal) and nav entry
+- [ ] T151 REST routes under `src/routes/api/v1/performance/` (cycles, reviews, goals)
+- [ ] T152 Review detail page `(app)/performance/reviews/[id]` with self-assessment and manager-review forms + acknowledge step
+- [ ] T153 Cycle management UI for HR (create/activate/close cycles, open reviews for a cycle)
+- [ ] T154 [P] Manager view of direct reports' reviews and goals
+
+### 10.5 Settings & Org Structure
+
+- [X] T155 Service `src/lib/server/services/settings/org.ts` (positions, org chart, `setUserRole` with guardrails, audited)
+- [X] T156 Scaffold `(app)/settings/org/+page.*` (positions + org list; HR_ADMIN+) and `(app)/settings/roles/+page.*` (role management; SUPER_ADMIN) + nav entries
+- [ ] T157 REST routes under `src/routes/api/v1/settings/` (positions, org-chart, users/role)
+- [ ] T158 Interactive org-chart visualization (tree with reporting lines) rather than the flat list
+- [ ] T159 [P] Position edit UI + employee ↔ position assignment (in employee detail/onboarding)
+- [ ] T160 [P] Last-super-admin guardrail on role changes; optional per-user permission overrides
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
