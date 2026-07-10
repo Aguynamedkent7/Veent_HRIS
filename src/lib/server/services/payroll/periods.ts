@@ -4,6 +4,7 @@ import { error } from '@sveltejs/kit'
 import { Prisma } from '@prisma/client'
 import { computePayroll } from './index'
 import { round2 } from './types'
+import { deriveRange, lockRange } from '../attendance'
 import type { AuditContext } from '../types'
 
 /**
@@ -74,6 +75,11 @@ export async function openPeriod(
 export async function importAttendance(id: string, organizationId: string, ctx: AuditContext) {
 	const period = await requirePeriod(id, organizationId)
 	if (period.status !== 'OPEN') error(400, `Cannot import into a ${period.status} period`)
+
+	// Derive AttendanceDay records from punches for the period, then lock them so payroll reads a fixed set.
+	const range = { from: period.startDate, to: period.endDate }
+	await deriveRange(organizationId, range, ctx)
+	await lockRange(organizationId, range, ctx)
 
 	const updated = await db.payrollPeriod.update({ where: { id }, data: { status: 'IMPORTED' } })
 	await writeAuditLog(ctx, { action: 'UPDATE', entityType: 'PayrollPeriod', entityId: id, newValue: { status: 'IMPORTED' } })

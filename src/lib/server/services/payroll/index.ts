@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client'
 import { computeEmployeeResult } from './calculator'
 import { type AmortItem } from './deductions'
 import { emptyAttendance, round2, type EmployeeComp } from './types'
+import { buildAttendanceInput } from '../attendance/input'
 import { computeWorkingDays } from '$lib/utils/dates'
 import type { AuditContext } from '../types'
 
@@ -116,20 +117,33 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			balance: Number(a.balance)
 		}))
 
+		// Prefer derived attendance (OT/holiday/night-diff buckets); fall back to timesheet hours.
+		const attInput = await buildAttendanceInput(emp.id, run.periodStart, run.periodEnd)
+		const attendance = attInput ?? { ...emptyAttendance(), regularHours }
+
 		// Shared engine — identical to the Payroll Calculator for the same inputs.
-		const result = computeEmployeeResult(comp, { ...emptyAttendance(), regularHours }, {}, {
+		const result = computeEmployeeResult(comp, attendance, {}, {
 			taxableByCode,
 			periodShare,
 			loans,
 			cashAdvances
 		})
-		const isFlagged = approvedHours === 0
+		const paidHours =
+			attendance.regularHours +
+			attendance.overtimeHours +
+			attendance.restDayHours +
+			attendance.restDayOtHours +
+			attendance.regularHolidayHours +
+			attendance.regularHolidayOtHours +
+			attendance.specialHolidayHours +
+			attendance.specialHolidayOtHours
+		const isFlagged = paidHours === 0
 
 		perEmployee.push({
 			entry: {
 				payrollRunId: runId,
 				employeeId: emp.id,
-				hoursWorked: round2(regularHours),
+				hoursWorked: round2(paidHours),
 				basicPay: result.basicPay,
 				grossPay: result.grossPay,
 				sssEe: result.statutory.sssEe,
@@ -142,7 +156,7 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 				totalDeductions: result.totalDeductions,
 				netPay: result.netPay,
 				isFlagged,
-				flagReason: isFlagged ? 'No approved timesheet for period' : null
+				flagReason: isFlagged ? 'No hours recorded for period' : null
 			},
 			earnings: result.earnings.map((c) => ({ code: c.code, label: c.label, amount: c.amount, taxable: c.taxable })),
 			deductions: result.deductions.map((c) => ({ code: c.code, label: c.label, amount: c.amount, refId: c.refId ?? null }))
