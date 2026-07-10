@@ -13,7 +13,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
 
-	const timesheets = await listTimesheets({
+	// Stream the timesheet list so the page renders a skeleton while it loads.
+	const timesheets = listTimesheets({
 		organizationId: user.organizationId,
 		employeeId: isManager ? undefined : myEmployee?.id,
 		status

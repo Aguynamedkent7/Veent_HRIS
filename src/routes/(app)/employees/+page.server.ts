@@ -11,13 +11,13 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const search = url.searchParams.get('search') ?? undefined
 	const departmentId = url.searchParams.get('department') ?? undefined
 
-	const [employees, departments] = await Promise.all([
-		listEmployees(locals.user!.organizationId, { search, departmentId }),
-		db.department.findMany({
-			where: { organizationId: locals.user!.organizationId },
-			orderBy: { name: 'asc' }
-		})
-	])
+	// Stream the (potentially large) employee list so the page can render a
+	// skeleton immediately; departments are small and needed for the filter/form.
+	const employees = listEmployees(locals.user!.organizationId, { search, departmentId })
+	const departments = await db.department.findMany({
+		where: { organizationId: locals.user!.organizationId },
+		orderBy: { name: 'asc' }
+	})
 
 	return { employees, departments }
 }

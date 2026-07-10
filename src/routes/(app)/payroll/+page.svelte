@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
+	import TableSkeleton from '$lib/components/ui/TableSkeleton.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -38,6 +39,9 @@
 		</form>
 	{/if}
 
+	{#await data.runs}
+		<TableSkeleton rows={5} cols={6} />
+	{:then runs}
 	<div class="rounded-lg border">
 		<table class="w-full text-sm">
 			<thead class="border-b bg-muted/50">
@@ -51,7 +55,7 @@
 				</tr>
 			</thead>
 			<tbody class="divide-y">
-				{#each data.runs as run (run.id)}
+				{#each runs as run (run.id)}
 					<tr class="hover:bg-muted/30">
 						<td class="px-4 py-3">{formatShortDate(run.periodStart)} – {formatShortDate(run.periodEnd)}</td>
 						<td class="px-4 py-3 text-right font-mono">{formatCurrency(Number(run.totalGross))}</td>
@@ -87,4 +91,5 @@
 			</tbody>
 		</table>
 	</div>
+	{/await}
 </div>

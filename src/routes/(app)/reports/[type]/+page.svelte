@@ -1,8 +1,15 @@
 <script lang="ts">
 	import { formatCurrency, formatDate } from '$lib/utils/format'
+	import { navigating } from '$app/stores'
+	import TableSkeleton from '$lib/components/ui/TableSkeleton.svelte'
 	import type { PageData } from './$types'
 
 	let { data }: { data: PageData } = $props()
+
+	// True while a report is being (re)generated via the same-route GET filter form.
+	const isGenerating = $derived(
+		!!$navigating && $navigating.to?.route.id === '/(app)/reports/[type]'
+	)
 
 	const REPORT_LABELS: Record<string, string> = {
 		headcount: 'Headcount Report',
@@ -128,7 +135,9 @@
 	</form>
 
 	<!-- Results -->
-	{#if data.results.length === 0}
+	{#if isGenerating}
+		<TableSkeleton rows={8} cols={data.columns.length || 4} />
+	{:else if data.results.length === 0}
 		<div
 			class="flex h-40 items-center justify-center rounded-lg border bg-muted/30 text-muted-foreground"
 		>

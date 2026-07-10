@@ -15,7 +15,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	// pendingTimesheets: SUBMITTED timesheets
 	//   For MANAGER: only direct reports (reportsToId = myEmployee.id)
 	//   For HR_ADMIN/SUPER_ADMIN: all in org
-	const pendingTimesheets = await db.timesheet.findMany({
+	const pendingTimesheets = db.timesheet.findMany({
 		where: {
 			status: 'SUBMITTED',
 			employee: {
@@ -30,7 +30,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	})
 
 	// pendingLeave: PENDING leave requests (same scoping)
-	const pendingLeave = await db.leaveRequest.findMany({
+	const pendingLeave = db.leaveRequest.findMany({
 		where: {
 			status: 'PENDING',
 			employee: {
@@ -45,7 +45,13 @@ export const load: PageServerLoad = async ({ locals }) => {
 		orderBy: { createdAt: 'asc' }
 	})
 
-	return { pendingTimesheets, pendingLeave }
+	// Stream both lists together so the approvals content renders a skeleton
+	// while the queries resolve.
+	const pending = Promise.all([pendingTimesheets, pendingLeave]).then(
+		([timesheets, leave]) => ({ timesheets, leave })
+	)
+
+	return { pending }
 }
 
 export const actions: Actions = {

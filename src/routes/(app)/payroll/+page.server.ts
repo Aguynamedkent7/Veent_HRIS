@@ -6,7 +6,8 @@ import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
 	requireMinRole(locals.user!.role, 'HR_ADMIN')
-	const runs = await listPayrollRuns(locals.user!.organizationId)
+	// Stream the runs list so the page renders a skeleton while it loads.
+	const runs = listPayrollRuns(locals.user!.organizationId)
 	return { runs }
 }
 
