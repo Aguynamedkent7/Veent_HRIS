@@ -24,15 +24,15 @@
 		</div>
 
 		<div class="card flex flex-col gap-3">
-			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Pending Leave</p>
-			<p class="text-4xl font-bold {metrics.pendingLeave > 0 ? 'text-yellow-400' : 'text-foreground'}">{metrics.pendingLeave}</p>
-			<p class="text-xs text-muted-foreground">requests awaiting review</p>
+			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">On Leave Today</p>
+			<p class="text-4xl font-bold {metrics.onLeaveToday > 0 ? 'text-yellow-400' : 'text-foreground'}">{metrics.onLeaveToday}</p>
+			<p class="text-xs text-muted-foreground">employees on approved leave</p>
 		</div>
 
 		<div class="card flex flex-col gap-3">
-			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Timesheets for Review</p>
-			<p class="text-4xl font-bold {metrics.pendingTimesheets > 0 ? 'text-blue-400' : 'text-foreground'}">{metrics.pendingTimesheets}</p>
-			<p class="text-xs text-muted-foreground">submitted, awaiting approval</p>
+			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Pending Approvals</p>
+			<p class="text-4xl font-bold {metrics.pendingApprovals > 0 ? 'text-blue-400' : 'text-foreground'}">{metrics.pendingApprovals}</p>
+			<p class="text-xs text-muted-foreground">{metrics.pendingRequests} requests · {metrics.pendingTimesheets} timesheets</p>
 		</div>
 
 		<div class="card flex flex-col gap-3">
@@ -50,6 +50,24 @@
 				<p class="text-xs text-muted-foreground">no payroll runs yet</p>
 			{/if}
 		</div>
+	</div>
+
+	<!-- Attendance summary (today) -->
+	<div class="card space-y-3">
+		<div class="flex items-center justify-between">
+			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Attendance Today</p>
+			<a href="/attendance" class="text-xs text-primary hover:underline">Open attendance →</a>
+		</div>
+		{#if metrics.attendance.derived > 0}
+			<div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+				<div><p class="text-3xl font-bold text-green-500">{metrics.attendance.present}</p><p class="text-xs text-muted-foreground">Present</p></div>
+				<div><p class="text-3xl font-bold text-yellow-400">{metrics.attendance.late}</p><p class="text-xs text-muted-foreground">Late</p></div>
+				<div><p class="text-3xl font-bold text-red-400">{metrics.attendance.absent}</p><p class="text-xs text-muted-foreground">Absent</p></div>
+				<div><p class="text-3xl font-bold text-blue-400">{metrics.attendance.onLeave}</p><p class="text-xs text-muted-foreground">On Leave</p></div>
+			</div>
+		{:else}
+			<p class="text-sm text-muted-foreground">No attendance derived for today yet. Derive it from the <a href="/attendance" class="text-primary hover:underline">Attendance</a> page.</p>
+		{/if}
 	</div>
 
 	<!-- Quick actions -->

@@ -346,7 +346,7 @@ their own `/speckit-plan` pass before task breakdown — this is a module-level 
 - [ ] T180 `SeparationRecord` + clearance checklist + exit docs + final-pay computation + separation report ([#32](https://github.com/Aguynamedkent7/Veent_HRIS/issues/32))
 
 ### 11.9 Dashboard & comms (FR-076)
-- [ ] T181 Add attendance summary + payroll status + employees-currently-on-leave tile to the HR dashboard ([#33](https://github.com/Aguynamedkent7/Veent_HRIS/issues/33))
+- [x] T181 Add attendance summary + payroll status + employees-currently-on-leave tile to the HR dashboard ([#33](https://github.com/Aguynamedkent7/Veent_HRIS/issues/33))
 - [ ] T182 [P] Announcements + notifications (`Announcement`/`Notification`) ([#34](https://github.com/Aguynamedkent7/Veent_HRIS/issues/34))
 
 ---
