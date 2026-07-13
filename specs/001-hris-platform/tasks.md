@@ -335,7 +335,7 @@ their own `/speckit-plan` pass before task breakdown — this is a module-level 
 - [ ] T175 [P] *(integration, deferred)* Disbursement: bank-file export / GCash (FR-065) ([#27](https://github.com/Aguynamedkent7/Veent_HRIS/issues/27))
 
 ### 11.6 Reports (FR-067)
-- [ ] T176 Payroll register, payslips, tardiness, overtime, loan summary, government/BIR reports (required layouts) + exports ([#28](https://github.com/Aguynamedkent7/Veent_HRIS/issues/28))
+- [x] T176 Payroll register, payslips, tardiness, overtime, loan summary, government/BIR reports (required layouts) + exports ([#28](https://github.com/Aguynamedkent7/Veent_HRIS/issues/28))
 
 ### 11.7 Recruitment & onboarding (FR-068–FR-071)
 - [ ] T177 Interview scheduling + notes; issue offers; offer→onboarding transition ([#29](https://github.com/Aguynamedkent7/Veent_HRIS/issues/29))

@@ -11,7 +11,12 @@
 		{ href: '/reports/headcount', label: 'Headcount', desc: 'Monthly headcount by department', payroll: false },
 		{ href: '/reports/attendance', label: 'Attendance', desc: 'Timesheet hours by employee', payroll: false },
 		{ href: '/reports/payroll-costs', label: 'Payroll Costs', desc: 'Gross/net by department', payroll: true },
-		{ href: '/reports/leave-utilization', label: 'Leave Utilization', desc: 'Days used by leave type', payroll: false }
+		{ href: '/reports/leave-utilization', label: 'Leave Utilization', desc: 'Days used by leave type', payroll: false },
+		{ href: '/reports/tardiness', label: 'Tardiness', desc: 'Late & undertime by employee', payroll: false },
+		{ href: '/reports/overtime', label: 'Overtime', desc: 'Approved/raw OT & night diff', payroll: false },
+		{ href: '/reports/loan-summary', label: 'Loan Summary', desc: 'Outstanding loan balances', payroll: true },
+		{ href: '/reports/government-remittance', label: 'Government Remittance', desc: 'SSS/PhilHealth/Pag-IBIG/BIR totals', payroll: true },
+		{ href: '/reports/bir-withholding', label: 'BIR Withholding', desc: 'Tax withheld per employee', payroll: true }
 	]
 	const reportCards = $derived(data.canViewHrReports ? allReportCards : allReportCards.filter((r) => r.payroll))
 </script>

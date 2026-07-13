@@ -344,6 +344,167 @@ export async function generatePayrollRegister(
 	})
 }
 
+// ─── generateTardiness ────────────────────────────────────────────────────────
+// Late / undertime per employee over the period, from derived AttendanceDay rows.
+
+export async function generateTardiness(
+	organizationId: string,
+	{ startDate, endDate, departmentId }: DateRangeFilter
+) {
+	const days = await db.attendanceDay.findMany({
+		where: {
+			date: { gte: startDate, lte: endDate },
+			employee: { user: { organizationId }, ...(departmentId ? { departmentId } : {}) }
+		},
+		select: {
+			lateMinutes: true,
+			undertimeMinutes: true,
+			employee: { select: { firstName: true, lastName: true, employeeNumber: true } }
+		}
+	})
+
+	const byEmp = new Map<string, { name: string; lateDays: number; late: number; under: number }>()
+	for (const d of days) {
+		const key = d.employee.employeeNumber
+		const row = byEmp.get(key) ?? { name: `${d.employee.lastName}, ${d.employee.firstName} (${key})`, lateDays: 0, late: 0, under: 0 }
+		if (d.lateMinutes > 0) row.lateDays += 1
+		row.late += d.lateMinutes
+		row.under += d.undertimeMinutes
+		byEmp.set(key, row)
+	}
+
+	return [...byEmp.values()]
+		.filter((r) => r.late > 0 || r.under > 0)
+		.sort((a, b) => b.late - a.late)
+		.map((r) => ({ Employee: r.name, LateDays: r.lateDays, LateMinutes: r.late, UndertimeMinutes: r.under }))
+}
+
+// ─── generateOvertime ─────────────────────────────────────────────────────────
+// Paid OT (gated on approval), raw worked OT, and night-diff hours per employee.
+
+export async function generateOvertime(
+	organizationId: string,
+	{ startDate, endDate, departmentId }: DateRangeFilter
+) {
+	const days = await db.attendanceDay.findMany({
+		where: {
+			date: { gte: startDate, lte: endDate },
+			employee: { user: { organizationId }, ...(departmentId ? { departmentId } : {}) }
+		},
+		select: {
+			overtimeHours: true,
+			rawOvertimeHours: true,
+			nightDiffHours: true,
+			employee: { select: { firstName: true, lastName: true, employeeNumber: true } }
+		}
+	})
+
+	const byEmp = new Map<string, { name: string; ot: number; raw: number; night: number }>()
+	for (const d of days) {
+		const key = d.employee.employeeNumber
+		const row = byEmp.get(key) ?? { name: `${d.employee.lastName}, ${d.employee.firstName} (${key})`, ot: 0, raw: 0, night: 0 }
+		row.ot += Number(d.overtimeHours)
+		row.raw += Number(d.rawOvertimeHours)
+		row.night += Number(d.nightDiffHours)
+		byEmp.set(key, row)
+	}
+
+	return [...byEmp.values()]
+		.filter((r) => r.raw > 0 || r.night > 0)
+		.sort((a, b) => b.ot - a.ot)
+		.map((r) => ({
+			Employee: r.name,
+			OvertimeHours: Math.round(r.ot * 100) / 100,
+			RawOvertimeHours: Math.round(r.raw * 100) / 100,
+			NightDiffHours: Math.round(r.night * 100) / 100
+		}))
+}
+
+// ─── generateLoanSummary ──────────────────────────────────────────────────────
+// Outstanding loans per employee (defaults to active; date range is ignored).
+
+export async function generateLoanSummary(organizationId: string, _range: DateRangeFilter) {
+	const loans = await db.loan.findMany({
+		where: { employee: { user: { organizationId } }, status: 'ACTIVE' },
+		select: {
+			principal: true,
+			balance: true,
+			installment: true,
+			status: true,
+			employee: { select: { firstName: true, lastName: true, employeeNumber: true } }
+		},
+		orderBy: { balance: 'desc' }
+	})
+
+	return loans.map((l) => ({
+		Employee: `${l.employee.lastName}, ${l.employee.firstName} (${l.employee.employeeNumber})`,
+		Principal: Number(l.principal),
+		Balance: Number(l.balance),
+		Installment: Number(l.installment),
+		Status: l.status
+	}))
+}
+
+// ─── generateGovernmentRemittance ─────────────────────────────────────────────
+// Employee + employer statutory contributions across the period, for SSS/PhilHealth/
+// Pag-IBIG remittance and BIR withholding totals.
+
+export async function generateGovernmentRemittance(
+	organizationId: string,
+	{ startDate, endDate }: { startDate: Date; endDate: Date }
+) {
+	const entries = await db.payrollEntry.findMany({
+		where: { payrollRun: { organizationId, periodStart: { gte: startDate }, periodEnd: { lte: endDate } } },
+		select: {
+			sssEe: true, sssEr: true, philhealthEe: true, philhealthEr: true,
+			pagibigEe: true, pagibigEr: true, withholdingTax: true
+		}
+	})
+
+	const sum = (pick: (e: (typeof entries)[number]) => number) => entries.reduce((s, e) => s + pick(e), 0)
+	const round = (n: number) => Math.round(n * 100) / 100
+	const row = (contribution: string, ee: number, er: number) => ({
+		Contribution: contribution, EmployeeShare: round(ee), EmployerShare: round(er), Total: round(ee + er)
+	})
+
+	return [
+		row('SSS', sum((e) => Number(e.sssEe)), sum((e) => Number(e.sssEr))),
+		row('PhilHealth', sum((e) => Number(e.philhealthEe)), sum((e) => Number(e.philhealthEr))),
+		row('Pag-IBIG', sum((e) => Number(e.pagibigEe)), sum((e) => Number(e.pagibigEr))),
+		row('Withholding Tax (BIR)', sum((e) => Number(e.withholdingTax)), 0)
+	]
+}
+
+// ─── generateBIRWithholding ───────────────────────────────────────────────────
+// Per-employee gross and tax withheld over the period (alphalist-style).
+
+export async function generateBIRWithholding(
+	organizationId: string,
+	{ startDate, endDate }: { startDate: Date; endDate: Date }
+) {
+	const entries = await db.payrollEntry.findMany({
+		where: { payrollRun: { organizationId, periodStart: { gte: startDate }, periodEnd: { lte: endDate } } },
+		select: {
+			grossPay: true,
+			withholdingTax: true,
+			employee: { select: { firstName: true, lastName: true, employeeNumber: true, tinNumber: true } }
+		}
+	})
+
+	const byEmp = new Map<string, { name: string; tin: string; gross: number; tax: number }>()
+	for (const e of entries) {
+		const key = e.employee.employeeNumber
+		const row = byEmp.get(key) ?? { name: `${e.employee.lastName}, ${e.employee.firstName} (${key})`, tin: e.employee.tinNumber ?? '—', gross: 0, tax: 0 }
+		row.gross += Number(e.grossPay)
+		row.tax += Number(e.withholdingTax)
+		byEmp.set(key, row)
+	}
+
+	return [...byEmp.values()]
+		.sort((a, b) => a.name.localeCompare(b.name))
+		.map((r) => ({ Employee: r.name, TIN: r.tin, Gross: Math.round(r.gross * 100) / 100, TaxWithheld: Math.round(r.tax * 100) / 100 }))
+}
+
 // ─── exportToCSV ──────────────────────────────────────────────────────────────
 
 export function exportToCSV(rows: Record<string, unknown>[]): string {

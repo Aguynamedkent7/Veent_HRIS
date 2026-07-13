@@ -6,18 +6,35 @@ import {
 	generateAttendance,
 	generatePayrollCosts,
 	generateLeaveUtilization,
-	generatePayrollRegister
+	generatePayrollRegister,
+	generateTardiness,
+	generateOvertime,
+	generateLoanSummary,
+	generateGovernmentRemittance,
+	generateBIRWithholding
 } from '$lib/server/services/reports'
+import { canViewPayrollReports } from '$lib/server/rbac'
 import type { PageServerLoad } from './$types'
 
-const VALID_TYPES = ['headcount', 'attendance', 'payroll-costs', 'leave-utilization', 'payroll-register'] as const
+const VALID_TYPES = [
+	'headcount', 'attendance', 'payroll-costs', 'leave-utilization', 'payroll-register',
+	'tardiness', 'overtime', 'loan-summary', 'government-remittance', 'bir-withholding'
+] as const
+// Payroll reports are visible to Payroll Officer / Finance; the rest are HR-only.
+const PAYROLL_REPORT_TYPES = ['payroll-costs', 'payroll-register', 'loan-summary', 'government-remittance', 'bir-withholding']
 
 export const load: PageServerLoad = async ({ locals, params, url }) => {
 	const user = locals.user!
-	requireRole(user.role, 'HR_ADMIN', 'SUPER_ADMIN')
 
 	const type = params.type as string
 	if (!VALID_TYPES.includes(type as (typeof VALID_TYPES)[number])) error(404, 'Unknown report type')
+
+	// Payroll reports open to Payroll Officer / Finance; everything else HR-only.
+	if (PAYROLL_REPORT_TYPES.includes(type)) {
+		if (!canViewPayrollReports(user.role)) error(403, 'Insufficient permissions')
+	} else {
+		requireRole(user.role, 'HR_ADMIN', 'SUPER_ADMIN')
+	}
 
 	// Parse filter params
 	const startDate = url.searchParams.get('start')
@@ -53,6 +70,21 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 	} else if (type === 'payroll-register') {
 		results = await generatePayrollRegister(user.organizationId, { startDate, endDate })
 		columns = ['Employee', 'Period', 'Gross', 'SSS', 'PhilHealth', 'PagIBIG', 'Tax', 'OtherDeductions', 'Net']
+	} else if (type === 'tardiness') {
+		results = await generateTardiness(user.organizationId, { startDate, endDate, departmentId })
+		columns = ['Employee', 'LateDays', 'LateMinutes', 'UndertimeMinutes']
+	} else if (type === 'overtime') {
+		results = await generateOvertime(user.organizationId, { startDate, endDate, departmentId })
+		columns = ['Employee', 'OvertimeHours', 'RawOvertimeHours', 'NightDiffHours']
+	} else if (type === 'loan-summary') {
+		results = await generateLoanSummary(user.organizationId, { startDate, endDate })
+		columns = ['Employee', 'Principal', 'Balance', 'Installment', 'Status']
+	} else if (type === 'government-remittance') {
+		results = await generateGovernmentRemittance(user.organizationId, { startDate, endDate })
+		columns = ['Contribution', 'EmployeeShare', 'EmployerShare', 'Total']
+	} else if (type === 'bir-withholding') {
+		results = await generateBIRWithholding(user.organizationId, { startDate, endDate })
+		columns = ['Employee', 'TIN', 'Gross', 'TaxWithheld']
 	}
 
 	return {
