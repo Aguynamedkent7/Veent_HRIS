@@ -109,9 +109,10 @@
 
 	const showSettings = $derived(isAdmin && settingsChildren.length > 0)
 	const inSettings = $derived($page.url.pathname.startsWith('/settings'))
-	// Collapsed by default; always expanded while on a settings page (SSR-correct).
-	let settingsToggled = $state(false)
-	const settingsExpanded = $derived(settingsToggled || inSettings)
+	// null = follow default (open while on a settings page); once clicked, the user's
+	// explicit choice wins so the group can be collapsed even inside /settings.
+	let settingsToggled = $state<boolean | null>(null)
+	const settingsExpanded = $derived(settingsToggled ?? inSettings)
 
 	const roleLabel: Record<string, string> = {
 		EMPLOYEE: 'Employee',
