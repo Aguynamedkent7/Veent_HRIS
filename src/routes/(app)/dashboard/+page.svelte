@@ -1,9 +1,11 @@
 <script lang="ts">
+	import { enhance } from '$app/forms'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
-	import type { PageData } from './$types'
+	import type { PageData, ActionData } from './$types'
 
-	let { data }: { data: PageData } = $props()
+	let { data, form }: { data: PageData; form: ActionData } = $props()
 	const { metrics } = data
+	let showPost = $state(false)
 </script>
 
 <svelte:head>
@@ -67,6 +69,45 @@
 			</div>
 		{:else}
 			<p class="text-sm text-muted-foreground">No attendance derived for today yet. Derive it from the <a href="/attendance" class="text-primary hover:underline">Attendance</a> page.</p>
+		{/if}
+	</div>
+
+	<!-- Announcements -->
+	<div class="card space-y-3">
+		<div class="flex items-center justify-between">
+			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Announcements</p>
+			{#if data.canPost}
+				<button type="button" onclick={() => (showPost = !showPost)} class="text-xs text-primary hover:underline">{showPost ? 'Cancel' : 'Post'}</button>
+			{/if}
+		</div>
+
+		{#if form?.posted}
+			<div class="rounded-md border border-green-500/20 bg-green-500/10 px-3 py-2 text-xs text-green-400">Announcement posted.</div>
+		{/if}
+
+		{#if showPost && data.canPost}
+			<form method="POST" action="?/postAnnouncement" use:enhance={() => async ({ update }) => { await update(); showPost = false }} class="space-y-2 rounded-md border p-3">
+				{#if form?.error}<p class="text-xs text-red-400">{form.error}</p>{/if}
+				<input name="title" placeholder="Title" required class="input h-9" />
+				<textarea name="body" rows="2" placeholder="Message to the whole organisation…" required class="input h-auto resize-none py-2"></textarea>
+				<button type="submit" class="btn-primary text-sm">Post announcement</button>
+			</form>
+		{/if}
+
+		{#if data.announcements.length}
+			<ul class="divide-y">
+				{#each data.announcements as a (a.id)}
+					<li class="py-2.5">
+						<div class="flex items-baseline justify-between gap-3">
+							<p class="text-sm font-medium text-foreground">{a.title}</p>
+							<span class="shrink-0 text-xs text-muted-foreground">{formatShortDate(a.createdAt)}</span>
+						</div>
+						<p class="mt-0.5 whitespace-pre-line text-sm text-muted-foreground">{a.body}</p>
+					</li>
+				{/each}
+			</ul>
+		{:else}
+			<p class="text-sm text-muted-foreground">No announcements yet.</p>
 		{/if}
 	</div>
 

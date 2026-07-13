@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/stores'
 	import { browser } from '$app/environment'
+	import Toaster from '$lib/components/ui/Toaster.svelte'
+	import { addToast } from '$lib/stores/toast.svelte'
 	import type { LayoutData } from './$types'
 
 	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props()
@@ -15,6 +17,19 @@
 		const theme = isDark ? 'dark' : 'light'
 		document.documentElement.className = theme
 		localStorage.setItem('theme', theme)
+	})
+
+	// Surface unread notifications as toasts, then mark them read so they don't repeat.
+	const seenNotifications = new Set<string>()
+	$effect(() => {
+		if (!browser) return
+		const fresh = data.notifications.filter((n) => !seenNotifications.has(n.id))
+		if (fresh.length === 0) return
+		for (const n of fresh) {
+			seenNotifications.add(n.id)
+			addToast(n.message, { link: n.link })
+		}
+		fetch('/api/v1/notifications/read', { method: 'POST' })
 	})
 
 	const role = data.user.role
@@ -123,6 +138,8 @@
 		FINANCE: 'Finance'
 	}
 </script>
+
+<Toaster />
 
 <div class="flex min-h-screen bg-background">
 

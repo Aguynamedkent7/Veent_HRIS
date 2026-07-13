@@ -3,6 +3,7 @@ import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import type { ApprovalDecision, Role } from '@prisma/client'
 import { applyApprovedRequest } from './requests/apply'
+import { notify } from './notifications'
 import type { AuditContext } from './types'
 
 type StageShape = { stageKind: 'SUPERVISOR' | 'ROLE'; role: Role | null }
@@ -48,7 +49,7 @@ export async function decide(
 ) {
 	const req = await db.request.findFirst({
 		where: { id: requestId, employee: { user: { organizationId: ctx.organizationId } } },
-		include: { steps: { orderBy: { stageIndex: 'asc' } }, employee: { select: { reportsToId: true } } }
+		include: { steps: { orderBy: { stageIndex: 'asc' } }, employee: { select: { reportsToId: true, userId: true } } }
 	})
 	if (!req) error(404, 'Request not found')
 	if (req.status !== 'PENDING') error(400, `Request is ${req.status.toLowerCase()}, not open for decisions`)
@@ -84,6 +85,14 @@ export async function decide(
 	// derivation; INFO_UPDATE writes the employee field here.
 	if (transition.status === 'APPROVED') {
 		await applyApprovedRequest({ id: req.id, type: req.type, employeeId: req.employeeId, dateFrom: req.dateFrom, payload: req.payload }, ctx)
+	}
+
+	// Notify the requester of the outcome (final approval / rejection / return).
+	const label = req.type.replace(/_/g, ' ').toLowerCase()
+	const verb =
+		transition.status === 'APPROVED' ? 'approved' : transition.status === 'REJECTED' ? 'rejected' : transition.status === 'RETURNED' ? 'returned for correction' : null
+	if (verb) {
+		await notify(req.employee.userId, `Your ${label} request was ${verb}.`, `/requests/${req.id}`)
 	}
 
 	return { status: transition.status, currentStage: transition.currentStage }
