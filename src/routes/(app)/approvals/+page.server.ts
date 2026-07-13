@@ -1,4 +1,4 @@
-import { fail } from '@sveltejs/kit'
+import { fail, isHttpError } from '@sveltejs/kit'
 import { requireMinRole } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { reviewTimesheet } from '$lib/server/services/timesheets'
@@ -61,6 +61,7 @@ export const actions: Actions = {
 				ipAddress: getClientAddress()
 			})
 		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
 			if (e instanceof Error) return fail(400, { error: e.message })
 			throw e
 		}
@@ -83,6 +84,7 @@ export const actions: Actions = {
 				ipAddress: getClientAddress()
 			})
 		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
 			if (e instanceof Error) return fail(400, { error: e.message })
 			throw e
 		}
@@ -110,6 +112,7 @@ export const actions: Actions = {
 				ipAddress: getClientAddress()
 			}, myEmployee?.id ?? null)
 		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
 			if (e instanceof Error) return fail(400, { error: e.message })
 			throw e
 		}

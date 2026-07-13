@@ -51,8 +51,8 @@
 	{#if form?.error}
 		<div class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{form.error}</div>
 	{/if}
-	{#if form?.success}
-		<div class="rounded-md border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">Request submitted.</div>
+	{#if form?.message}
+		<div class="rounded-md border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">{form.message}</div>
 	{/if}
 
 	{#if !data.hasEmployee}

@@ -1,4 +1,4 @@
-import { fail } from '@sveltejs/kit'
+import { fail, isHttpError } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
 import { createRequest, listRequests, cancelRequest, resubmitRequest } from '$lib/server/services/requests'
 import { requestSchema } from '$lib/server/schemas/requests'
@@ -62,10 +62,11 @@ export const actions: Actions = {
 				ipAddress: getClientAddress()
 			})
 		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
 			if (e instanceof Error) return fail(400, { error: e.message })
 			throw e
 		}
-		return { success: true }
+		return { message: 'Request submitted.' }
 	},
 
 	cancel: async ({ request, locals, getClientAddress }) => {
@@ -84,10 +85,11 @@ export const actions: Actions = {
 				ipAddress: getClientAddress()
 			})
 		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
 			if (e instanceof Error) return fail(400, { error: e.message })
 			throw e
 		}
-		return { success: true }
+		return { message: 'Request cancelled.' }
 	},
 
 	resubmit: async ({ request, locals, getClientAddress }) => {
@@ -106,9 +108,10 @@ export const actions: Actions = {
 				ipAddress: getClientAddress()
 			})
 		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
 			if (e instanceof Error) return fail(400, { error: e.message })
 			throw e
 		}
-		return { success: true }
+		return { message: 'Request re-submitted.' }
 	}
 }

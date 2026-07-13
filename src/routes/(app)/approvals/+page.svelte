@@ -3,9 +3,9 @@
 	import { formatShortDate } from '$lib/utils/format'
 	import ApprovalCard from '$lib/components/approvals/ApprovalCard.svelte'
 	import Skeleton from '$lib/components/ui/Skeleton.svelte'
-	import type { PageData } from './$types'
+	import type { PageData, ActionData } from './$types'
 
-	let { data }: { data: PageData } = $props()
+	let { data, form }: { data: PageData; form: ActionData } = $props()
 
 	let activeTab = $state<'timesheets' | 'requests'>('timesheets')
 
@@ -29,6 +29,10 @@
 	<div class="flex items-center justify-between">
 		<h1 class="text-2xl font-bold tracking-tight">Approvals</h1>
 	</div>
+
+	{#if form?.error}
+		<div class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{form.error}</div>
+	{/if}
 
 	{#await data.pending}
 		<div class="flex gap-3 border-b pb-2">

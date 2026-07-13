@@ -1,4 +1,4 @@
-import { fail } from '@sveltejs/kit'
+import { fail, isHttpError } from '@sveltejs/kit'
 import { requireMinRole } from '$lib/server/rbac'
 import { listLeaveRequests, requestLeave, reviewLeaveRequest, getLeaveBalances } from '$lib/server/services/leave'
 import { db } from '$lib/server/db'
@@ -52,6 +52,7 @@ export const actions: Actions = {
 				ipAddress: getClientAddress()
 			})
 		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
 			if (e instanceof Error) return fail(400, { error: e.message })
 			throw e
 		}
@@ -66,11 +67,17 @@ export const actions: Actions = {
 		const approved = data.get('approved') === 'true'
 		const rejectionReason = data.get('rejectionReason') as string | undefined
 
-		await reviewLeaveRequest(id, user.organizationId, approved, rejectionReason, {
-			organizationId: user.organizationId,
-			actorId: user.id,
-			actorRole: user.role,
-			ipAddress: getClientAddress()
-		})
+		try {
+			await reviewLeaveRequest(id, user.organizationId, approved, rejectionReason, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			if (e instanceof Error) return fail(400, { error: e.message })
+			throw e
+		}
 	}
 }
