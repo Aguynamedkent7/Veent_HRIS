@@ -287,10 +287,10 @@ routes are deferred and enumerated below. `[X]` = done this pass, `[ ]` = follow
 
 - [X] T149 Service `src/lib/server/services/performance.ts` (cycles, reviews, goals, audited)
 - [X] T150 Scaffold `(app)/performance/+page.{server.ts,svelte}` (my goals + reviews; create/update goal) and nav entry
-- [ ] T151 REST routes under `src/routes/api/v1/performance/` (cycles, reviews, goals) ([#12](https://github.com/Aguynamedkent7/Veent_HRIS/issues/12))
-- [ ] T152 Review detail page `(app)/performance/reviews/[id]` with self-assessment and manager-review forms + acknowledge step ([#13](https://github.com/Aguynamedkent7/Veent_HRIS/issues/13))
-- [ ] T153 Cycle management UI for HR (create/activate/close cycles, open reviews for a cycle) ([#14](https://github.com/Aguynamedkent7/Veent_HRIS/issues/14))
-- [ ] T154 [P] Manager view of direct reports' reviews and goals ([#15](https://github.com/Aguynamedkent7/Veent_HRIS/issues/15))
+- [x] T151 REST routes under `src/routes/api/v1/performance/` (cycles, reviews, goals) ([#12](https://github.com/Aguynamedkent7/Veent_HRIS/issues/12))
+- [x] T152 Review detail page `(app)/performance/reviews/[id]` with self-assessment and manager-review forms + acknowledge step ([#13](https://github.com/Aguynamedkent7/Veent_HRIS/issues/13))
+- [x] T153 Cycle management UI for HR (create/activate/close cycles, open reviews for a cycle) ([#14](https://github.com/Aguynamedkent7/Veent_HRIS/issues/14))
+- [x] T154 [P] Manager view of direct reports' reviews and goals ([#15](https://github.com/Aguynamedkent7/Veent_HRIS/issues/15))
 
 ### 10.5 Settings & Org Structure
 

@@ -136,7 +136,68 @@ export async function submitManagerReview(
 	return updated
 }
 
+// Employee acknowledges a completed review (final step of the cycle).
+export async function acknowledgeReview(id: string, employeeId: string, ctx: AuditContext) {
+	const review = await db.performanceReview.findUnique({ where: { id } })
+	if (!review) error(404, 'Performance review not found')
+	if (review.employeeId !== employeeId) error(409, 'Only the review subject can acknowledge')
+	if (review.status !== 'COMPLETED') error(400, 'Only a completed review can be acknowledged')
+
+	const updated = await db.performanceReview.update({
+		where: { id },
+		data: { status: 'ACKNOWLEDGED', acknowledgedAt: new Date() }
+	})
+	await writeAuditLog(ctx, { action: 'UPDATE', entityType: 'PerformanceReview', entityId: id, newValue: { status: 'ACKNOWLEDGED' } })
+	return updated
+}
+
+// ── Cycle lifecycle (HR) ─────────────────────────────────────────────────────
+
+export async function updateReviewCycleStatus(
+	id: string,
+	organizationId: string,
+	status: 'DRAFT' | 'ACTIVE' | 'CLOSED',
+	ctx: AuditContext
+) {
+	const cycle = await db.reviewCycle.findFirst({ where: { id, organizationId }, select: { id: true } })
+	if (!cycle) error(404, 'Review cycle not found')
+	const updated = await db.reviewCycle.update({ where: { id }, data: { status } })
+	await writeAuditLog(ctx, { action: 'UPDATE', entityType: 'ReviewCycle', entityId: id, newValue: { status } })
+	return updated
+}
+
+// Open a review for every active employee who has a manager (reviewer = reportsTo).
+// Idempotent: skips employees already having a review in this cycle.
+export async function openReviewsForCycle(cycleId: string, organizationId: string, ctx: AuditContext) {
+	const cycle = await db.reviewCycle.findFirst({ where: { id: cycleId, organizationId }, select: { id: true } })
+	if (!cycle) error(404, 'Review cycle not found')
+
+	const employees = await db.employee.findMany({
+		where: { user: { organizationId }, employmentStatus: 'ACTIVE', reportsToId: { not: null } },
+		select: { id: true, reportsToId: true }
+	})
+	const existing = await db.performanceReview.findMany({ where: { cycleId }, select: { employeeId: true } })
+	const seen = new Set(existing.map((r) => r.employeeId))
+
+	const toCreate = employees
+		.filter((e) => !seen.has(e.id))
+		.map((e) => ({ cycleId, employeeId: e.id, reviewerId: e.reportsToId!, status: 'PENDING' as const }))
+
+	if (toCreate.length) await db.performanceReview.createMany({ data: toCreate })
+	await writeAuditLog(ctx, { action: 'UPDATE', entityType: 'ReviewCycle', entityId: cycleId, newValue: { reviewsOpened: toCreate.length } })
+	return { opened: toCreate.length, skipped: employees.length - toCreate.length }
+}
+
 // ── Goals (scoped by owning employee) ────────────────────────────────────────
+
+// Goals of a manager's direct reports (T154).
+export async function listGoalsForManager(managerEmployeeId: string) {
+	return db.goal.findMany({
+		where: { employee: { reportsToId: managerEmployeeId } },
+		include: { employee: { select: { firstName: true, lastName: true } } },
+		orderBy: [{ status: 'asc' }, { createdAt: 'desc' }]
+	})
+}
 
 export async function listGoalsForEmployee(employeeId: string) {
 	return db.goal.findMany({

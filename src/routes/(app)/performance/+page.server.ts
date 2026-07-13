@@ -1,11 +1,16 @@
-import { fail } from '@sveltejs/kit'
-import { ROLE_HIERARCHY } from '$lib/server/rbac'
+import { fail, isHttpError } from '@sveltejs/kit'
+import { ROLE_HIERARCHY, requireRole } from '$lib/server/rbac'
 import {
 	listGoalsForEmployee,
 	listReviewsForEmployee,
 	listReviewsForReviewer,
 	createGoal,
-	updateGoalProgress
+	updateGoalProgress,
+	listReviewCycles,
+	createReviewCycle,
+	updateReviewCycleStatus,
+	openReviewsForCycle,
+	listGoalsForManager
 } from '$lib/server/services/performance'
 import { db } from '$lib/server/db'
 import { z } from 'zod'
@@ -16,19 +21,27 @@ const GOAL_STATUS = ['DRAFT', 'ACTIVE', 'COMPLETED', 'CANCELLED'] as const
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!
 	const isManager = ROLE_HIERARCHY[user.role] >= ROLE_HIERARCHY.MANAGER
+	const isAdmin = ['HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
+
+	const cycles = isAdmin ? await listReviewCycles(user.organizationId) : []
 
 	const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
 	if (!myEmployee) {
-		return { myGoals: [], myReviews: [], reviewsToGive: [], isManager: false }
+		return { myGoals: [], myReviews: [], reviewsToGive: [], teamGoals: [], isManager, isAdmin, cycles }
 	}
 
-	const [myGoals, myReviews, reviewsToGive] = await Promise.all([
+	const [myGoals, myReviews, reviewsToGive, teamGoals] = await Promise.all([
 		listGoalsForEmployee(myEmployee.id),
 		listReviewsForEmployee(myEmployee.id),
-		listReviewsForReviewer(myEmployee.id)
+		listReviewsForReviewer(myEmployee.id),
+		isManager ? listGoalsForManager(myEmployee.id) : Promise.resolve([])
 	])
 
-	return { myGoals, myReviews, reviewsToGive, isManager }
+	return { myGoals, myReviews, reviewsToGive, teamGoals, isManager, isAdmin, cycles }
+}
+
+function ctxOf(locals: App.Locals, ip: string) {
+	return { organizationId: locals.user!.organizationId, actorId: locals.user!.id, actorRole: locals.user!.role, ipAddress: ip }
 }
 
 const createGoalSchema = z.object({
@@ -90,6 +103,49 @@ export const actions: Actions = {
 			)
 		} catch (e: unknown) {
 			if (e instanceof Error) return fail(400, { error: e.message })
+			throw e
+		}
+	},
+
+	createCycle: async ({ request, locals, getClientAddress }) => {
+		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		const parsed = z
+			.object({ name: z.string().min(1), startDate: z.coerce.date(), endDate: z.coerce.date() })
+			.safeParse(Object.fromEntries(await request.formData()))
+		if (!parsed.success) return fail(422, { error: 'Invalid cycle details' })
+		try {
+			await createReviewCycle(locals.user!.organizationId, parsed.data, ctxOf(locals, getClientAddress()))
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
+		}
+		return { cycleCreated: true }
+	},
+
+	setCycleStatus: async ({ request, locals, getClientAddress }) => {
+		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		const data = await request.formData()
+		const id = data.get('id') as string
+		const status = data.get('status') as 'DRAFT' | 'ACTIVE' | 'CLOSED'
+		if (!id || !['DRAFT', 'ACTIVE', 'CLOSED'].includes(status)) return fail(400, { error: 'Invalid status' })
+		try {
+			await updateReviewCycleStatus(id, locals.user!.organizationId, status, ctxOf(locals, getClientAddress()))
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
+		}
+		return { cycleUpdated: true }
+	},
+
+	openReviews: async ({ request, locals, getClientAddress }) => {
+		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		const id = (await request.formData()).get('id') as string
+		if (!id) return fail(400, { error: 'Missing cycle id' })
+		try {
+			const res = await openReviewsForCycle(id, locals.user!.organizationId, ctxOf(locals, getClientAddress()))
+			return { opened: res.opened }
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
 			throw e
 		}
 	}
