@@ -90,6 +90,23 @@ export async function getRequest(id: string, organizationId: string) {
 	})
 }
 
+// Employee re-submits a RETURNED request: reset the chain and re-enter at stage 0.
+export async function resubmitRequest(id: string, employeeId: string, ctx: AuditContext) {
+	const req = await db.request.findFirst({ where: { id, employeeId }, select: { id: true, status: true } })
+	if (!req) error(404, 'Request not found')
+	if (req.status !== 'RETURNED') error(400, 'Only returned requests can be re-submitted')
+
+	const updated = await db.$transaction(async (tx) => {
+		await tx.approvalStep.updateMany({
+			where: { requestId: id },
+			data: { decision: null, actorId: null, note: null, decidedAt: null }
+		})
+		return tx.request.update({ where: { id }, data: { status: 'PENDING', currentStage: 0 } })
+	})
+	await writeAuditLog(ctx, { action: 'UPDATE', entityType: 'Request', entityId: id, newValue: { status: 'PENDING', resubmitted: true } })
+	return updated
+}
+
 // Employee withdraws their own still-pending request.
 export async function cancelRequest(id: string, employeeId: string, ctx: AuditContext) {
 	const req = await db.request.findFirst({ where: { id, employeeId }, select: { id: true, status: true } })

@@ -1,6 +1,6 @@
 import { fail } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
-import { createRequest, listRequests, cancelRequest } from '$lib/server/services/requests'
+import { createRequest, listRequests, cancelRequest, resubmitRequest } from '$lib/server/services/requests'
 import { requestSchema } from '$lib/server/schemas/requests'
 import type { Actions, PageServerLoad } from './$types'
 
@@ -78,6 +78,28 @@ export const actions: Actions = {
 
 		try {
 			await cancelRequest(id, myEmployee.id, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e: unknown) {
+			if (e instanceof Error) return fail(400, { error: e.message })
+			throw e
+		}
+		return { success: true }
+	},
+
+	resubmit: async ({ request, locals, getClientAddress }) => {
+		const user = locals.user!
+		const myEmployee = await db.employee.findUnique({ where: { userId: user.id }, select: { id: true } })
+		if (!myEmployee) return fail(400, { error: 'No employee profile found.' })
+
+		const id = (await request.formData()).get('id') as string
+		if (!id) return fail(400, { error: 'Missing request id.' })
+
+		try {
+			await resubmitRequest(id, myEmployee.id, {
 				organizationId: user.organizationId,
 				actorId: user.id,
 				actorRole: user.role,

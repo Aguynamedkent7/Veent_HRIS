@@ -181,12 +181,20 @@
 						</td>
 						<td class="px-4 py-3 text-right text-muted-foreground">{formatShortDate(req.createdAt)}</td>
 						<td class="px-4 py-3 text-right">
-							{#if req.status === 'PENDING' || req.status === 'RETURNED'}
-								<form method="POST" action="?/cancel" use:enhance>
-									<input type="hidden" name="id" value={req.id} />
-									<button type="submit" class="text-xs text-red-600 hover:underline">Cancel</button>
-								</form>
-							{/if}
+							<div class="flex items-center justify-end gap-3">
+								{#if req.status === 'RETURNED'}
+									<form method="POST" action="?/resubmit" use:enhance>
+										<input type="hidden" name="id" value={req.id} />
+										<button type="submit" class="text-xs text-primary hover:underline">Resubmit</button>
+									</form>
+								{/if}
+								{#if req.status === 'PENDING' || req.status === 'RETURNED'}
+									<form method="POST" action="?/cancel" use:enhance>
+										<input type="hidden" name="id" value={req.id} />
+										<button type="submit" class="text-xs text-red-600 hover:underline">Cancel</button>
+									</form>
+								{/if}
+							</div>
 						</td>
 					</tr>
 				{:else}

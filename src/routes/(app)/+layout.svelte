@@ -24,6 +24,8 @@
 	// Payroll Officer manages payroll; Finance reads payroll reports only.
 	const isPayroll = isAdmin || role === 'PAYROLL_OFFICER'
 	const canViewReports = isAdmin || ['PAYROLL_OFFICER', 'FINANCE'].includes(role)
+	// Payroll Officer sits on request approval chains (the Payroll stage).
+	const canApprove = isManager || role === 'PAYROLL_OFFICER'
 
 	const navItems = $derived([
 		{
@@ -59,7 +61,7 @@
 			icon: 'M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941'
 		},
 		{
-			href: '/approvals', label: 'Approvals', show: isManager,
+			href: '/approvals', label: 'Approvals', show: canApprove,
 			icon: 'M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z'
 		},
 		{
