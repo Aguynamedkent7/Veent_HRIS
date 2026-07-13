@@ -278,9 +278,9 @@ routes are deferred and enumerated below. `[X]` = done this pass, `[ ]` = follow
 
 - [X] T143 Service `src/lib/server/services/benefits.ts` (plans + enrollments CRUD, audited)
 - [X] T144 Scaffold `(app)/benefits/+page.{server.ts,svelte}` (plan list + create; HR_ADMIN+) and nav entry
-- [ ] T145 REST routes `src/routes/api/v1/benefits/plans/+server.ts` (+ `[id]`) and `.../enrollments/+server.ts` (+ `[id]`) ([#8](https://github.com/Aguynamedkent7/Veent_HRIS/issues/8))
-- [ ] T146 Enrollment management UI (enroll employee, change status, coverage level) ([#9](https://github.com/Aguynamedkent7/Veent_HRIS/issues/9))
-- [ ] T147 [P] Employee "My Benefits" read-only view (`(app)/benefits/me` or profile section) ([#10](https://github.com/Aguynamedkent7/Veent_HRIS/issues/10))
+- [x] T145 REST routes `src/routes/api/v1/benefits/plans/+server.ts` (+ `[id]`) and `.../enrollments/+server.ts` (+ `[id]`) ([#8](https://github.com/Aguynamedkent7/Veent_HRIS/issues/8))
+- [x] T146 Enrollment management UI (enroll employee, change status, coverage level) ([#9](https://github.com/Aguynamedkent7/Veent_HRIS/issues/9))
+- [x] T147 [P] Employee "My Benefits" read-only view (`(app)/benefits/me` or profile section) ([#10](https://github.com/Aguynamedkent7/Veent_HRIS/issues/10))
 - [ ] T148 [P] Optional: fold employee benefit costs into payroll deductions ([#11](https://github.com/Aguynamedkent7/Veent_HRIS/issues/11))
 
 ### 10.4 Performance Management

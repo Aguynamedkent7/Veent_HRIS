@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { db } from '$lib/server/db'
 import { getEmployee, updateEmployee } from '$lib/server/services/employees'
 import { listEmployeeDocuments } from '$lib/server/services/documents'
+import { listEnrollmentsForEmployee } from '$lib/server/services/benefits'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -15,12 +16,13 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	if (!employeeRecord) redirect(303, '/dashboard')
 
-	const [employee, documents] = await Promise.all([
+	const [employee, documents, benefits] = await Promise.all([
 		getEmployee(employeeRecord.id, user.organizationId),
-		listEmployeeDocuments(employeeRecord.id, user.organizationId)
+		listEmployeeDocuments(employeeRecord.id, user.organizationId),
+		listEnrollmentsForEmployee(employeeRecord.id)
 	])
 
-	return { employee, documents }
+	return { employee, documents, benefits }
 }
 
 const updateSchema = z.object({

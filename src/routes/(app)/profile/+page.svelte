@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
-	import { formatDate } from '$lib/utils/format'
+	import { formatDate, formatCurrency } from '$lib/utils/format'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -192,6 +192,41 @@
 			</div>
 		{:else}
 			<p class="text-xs text-muted-foreground">No documents on file. HR uploads contracts, IDs, and other records here.</p>
+		{/if}
+	</section>
+
+	<!-- My Benefits (read-only) -->
+	<section class="card space-y-4">
+		<h2 class="text-sm font-semibold uppercase tracking-wider text-muted-foreground">My Benefits</h2>
+		{#if data.benefits.length}
+			<div class="rounded-md border">
+				<table class="w-full text-sm">
+					<thead class="border-b bg-muted/50">
+						<tr>
+							<th class="px-3 py-2 text-left font-medium text-muted-foreground">Plan</th>
+							<th class="px-3 py-2 text-left font-medium text-muted-foreground">Type</th>
+							<th class="px-3 py-2 text-left font-medium text-muted-foreground">Coverage</th>
+							<th class="px-3 py-2 text-right font-medium text-muted-foreground">My Cost</th>
+							<th class="px-3 py-2 text-left font-medium text-muted-foreground">Status</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y">
+						{#each data.benefits as b (b.id)}
+							<tr class="hover:bg-muted/30 {b.status === 'ACTIVE' ? '' : 'opacity-60'}">
+								<td class="px-3 py-2 font-medium">{b.plan.name}</td>
+								<td class="px-3 py-2 text-muted-foreground">{b.plan.type.replace('_', ' ')}</td>
+								<td class="px-3 py-2 text-muted-foreground">{b.coverageLevel ?? '—'}</td>
+								<td class="px-3 py-2 text-right">{b.plan.employeeCost != null ? formatCurrency(Number(b.plan.employeeCost)) : '—'}</td>
+								<td class="px-3 py-2">
+									<span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {b.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : b.status === 'WAIVED' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'}">{b.status}</span>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{:else}
+			<p class="text-xs text-muted-foreground">You have no benefit enrollments. HR manages enrollments.</p>
 		{/if}
 	</section>
 </div>
