@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit'
 import { z } from 'zod'
-import { requireRole } from '$lib/server/rbac'
+import { requirePayrollManage } from '$lib/server/rbac'
 import { apiError, badRequest, forbidden } from '$lib/server/api-error'
 import { updateCashAdvance } from '$lib/server/services/payroll/loans'
 import type { RequestHandler } from './$types'
@@ -13,7 +13,7 @@ const patchSchema = z.object({
 export const PATCH: RequestHandler = async ({ locals, params, request, getClientAddress }) => {
 	if (!locals.user) return apiError(401, 'Unauthorized')
 	try {
-		requireRole(locals.user.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requirePayrollManage(locals.user.role)
 	} catch {
 		return forbidden()
 	}

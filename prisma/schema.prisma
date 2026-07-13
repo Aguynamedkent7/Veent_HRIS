@@ -25,6 +25,8 @@ enum Role {
   MANAGER
   HR_ADMIN
   SUPER_ADMIN
+  PAYROLL_OFFICER
+  FINANCE
 }
 
 enum EmploymentType {

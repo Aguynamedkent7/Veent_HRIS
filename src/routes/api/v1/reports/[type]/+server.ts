@@ -1,5 +1,5 @@
 import { json, error } from '@sveltejs/kit'
-import { requireRole } from '$lib/server/rbac'
+import { requireRole, requirePayrollReports } from '$lib/server/rbac'
 import {
 	generateHeadcount,
 	generateAttendance,
@@ -11,16 +11,23 @@ import {
 import type { RequestHandler } from './$types'
 
 const VALID_TYPES = ['headcount', 'attendance', 'payroll-costs', 'leave-utilization', 'payroll-register'] as const
+// Payroll reports are also visible to Payroll Officer / Finance; the rest are HR-only.
+const PAYROLL_REPORT_TYPES = ['payroll-costs', 'payroll-register'] as const
 
 export const GET: RequestHandler = async ({ locals, params, url }) => {
 	if (!locals.user) error(401, 'Unauthorized')
 
 	const user = locals.user
-	requireRole(user.role, 'HR_ADMIN', 'SUPER_ADMIN')
 
 	const type = params.type
 	if (!VALID_TYPES.includes(type as (typeof VALID_TYPES)[number])) {
 		error(404, 'Unknown report type')
+	}
+
+	if (PAYROLL_REPORT_TYPES.includes(type as (typeof PAYROLL_REPORT_TYPES)[number])) {
+		requirePayrollReports(user.role)
+	} else {
+		requireRole(user.role, 'HR_ADMIN', 'SUPER_ADMIN')
 	}
 
 	const startDate = url.searchParams.get('start')

@@ -127,6 +127,66 @@ async function main() {
 		}
 	})
 
+	// --- Payroll Officer (payroll access, no full HR) ---
+	const payrollHash = await bcrypt.hash('Payroll@1234', 12)
+	const payrollUser = await db.user.upsert({
+		where: { email: 'payroll@veent.ph' },
+		update: { role: 'PAYROLL_OFFICER' },
+		create: {
+			organizationId: org.id,
+			email: 'payroll@veent.ph',
+			passwordHash: payrollHash,
+			role: 'PAYROLL_OFFICER'
+		}
+	})
+	await db.employee.upsert({
+		where: { userId: payrollUser.id },
+		update: {},
+		create: {
+			userId: payrollUser.id,
+			organizationId: org.id,
+			employeeNumber: 'EMP-004',
+			firstName: 'Paulo',
+			lastName: 'Payroll',
+			departmentId: dept.id,
+			jobTitle: 'Payroll Officer',
+			employmentType: 'FULL_TIME',
+			startDate: new Date('2025-01-15'),
+			basicMonthlySalary: 35000,
+			rateType: 'MONTHLY'
+		}
+	})
+
+	// --- Finance (payroll reports only, read-only) ---
+	const financeHash = await bcrypt.hash('Finance@1234', 12)
+	const financeUser = await db.user.upsert({
+		where: { email: 'finance@veent.ph' },
+		update: { role: 'FINANCE' },
+		create: {
+			organizationId: org.id,
+			email: 'finance@veent.ph',
+			passwordHash: financeHash,
+			role: 'FINANCE'
+		}
+	})
+	await db.employee.upsert({
+		where: { userId: financeUser.id },
+		update: {},
+		create: {
+			userId: financeUser.id,
+			organizationId: org.id,
+			employeeNumber: 'EMP-005',
+			firstName: 'Fiona',
+			lastName: 'Finance',
+			departmentId: dept.id,
+			jobTitle: 'Finance Analyst',
+			employmentType: 'FULL_TIME',
+			startDate: new Date('2025-01-15'),
+			basicMonthlySalary: 40000,
+			rateType: 'MONTHLY'
+		}
+	})
+
 	// --- Leave balances for the employee (current year) so leave requests validate ---
 	const year = new Date().getFullYear()
 	const leaveTypes = await db.leaveType.findMany({ where: { organizationId: org.id } })
@@ -208,9 +268,11 @@ async function main() {
 	})
 
 	console.log('Seed complete. Logins:')
-	console.log('  Super Admin: admin@veent.ph / Admin@1234')
-	console.log('  Manager:     manager@veent.ph / Manager@1234')
-	console.log('  Employee:    employee@veent.ph / Employee@1234')
+	console.log('  Super Admin:     admin@veent.ph / Admin@1234')
+	console.log('  Manager:         manager@veent.ph / Manager@1234')
+	console.log('  Employee:        employee@veent.ph / Employee@1234')
+	console.log('  Payroll Officer: payroll@veent.ph / Payroll@1234')
+	console.log('  Finance:         finance@veent.ph / Finance@1234')
 }
 
 main()

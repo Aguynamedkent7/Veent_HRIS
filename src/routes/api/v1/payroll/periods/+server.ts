@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit'
 import { z } from 'zod'
-import { requireRole } from '$lib/server/rbac'
+import { requirePayrollManage } from '$lib/server/rbac'
 import { apiError, badRequest, forbidden } from '$lib/server/api-error'
 import { listPeriods, openPeriod } from '$lib/server/services/payroll/periods'
 import type { RequestHandler } from './$types'
@@ -15,7 +15,7 @@ const openSchema = z.object({
 export const GET: RequestHandler = async ({ locals }) => {
 	if (!locals.user) return apiError(401, 'Unauthorized')
 	try {
-		requireRole(locals.user.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requirePayrollManage(locals.user.role)
 	} catch {
 		return forbidden()
 	}
@@ -25,7 +25,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 export const POST: RequestHandler = async ({ locals, request, getClientAddress }) => {
 	if (!locals.user) return apiError(401, 'Unauthorized')
 	try {
-		requireRole(locals.user.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requirePayrollManage(locals.user.role)
 	} catch {
 		return forbidden()
 	}

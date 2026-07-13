@@ -1,6 +1,6 @@
 import { fail } from '@sveltejs/kit'
 import { z } from 'zod'
-import { requireMinRole, requireRole } from '$lib/server/rbac'
+import { requireRole, requirePayrollManage } from '$lib/server/rbac'
 import {
 	listPeriods,
 	openPeriod,
@@ -13,7 +13,7 @@ import {
 import type { Actions, PageServerLoad, RequestEvent } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
-	requireMinRole(locals.user!.role, 'HR_ADMIN')
+	requirePayrollManage(locals.user!.role)
 	return {
 		periods: await listPeriods(locals.user!.organizationId),
 		isSuperAdmin: locals.user!.role === 'SUPER_ADMIN'
@@ -48,7 +48,7 @@ const openSchema = z.object({
 
 export const actions: Actions = {
 	open: async (event) => {
-		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
+		requirePayrollManage(event.locals.user!.role)
 		const parsed = openSchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid period details' })
 		try {
@@ -63,7 +63,7 @@ export const actions: Actions = {
 	},
 
 	import: async (event) => {
-		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
+		requirePayrollManage(event.locals.user!.role)
 		const id = (await event.request.formData()).get('id') as string
 		try {
 			await importAttendance(id, event.locals.user!.organizationId, ctxOf(event))
@@ -73,7 +73,7 @@ export const actions: Actions = {
 	},
 
 	generate: async (event) => {
-		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
+		requirePayrollManage(event.locals.user!.role)
 		const id = (await event.request.formData()).get('id') as string
 		try {
 			await generate(id, event.locals.user!.organizationId, ctxOf(event))
@@ -83,7 +83,7 @@ export const actions: Actions = {
 	},
 
 	lock: async (event) => {
-		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
+		requirePayrollManage(event.locals.user!.role)
 		const data = await event.request.formData()
 		const id = data.get('id') as string
 		const overrideNote = ((data.get('overrideNote') as string) || '').trim() || undefined
@@ -95,7 +95,7 @@ export const actions: Actions = {
 	},
 
 	release: async (event) => {
-		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
+		requirePayrollManage(event.locals.user!.role)
 		const id = (await event.request.formData()).get('id') as string
 		try {
 			await release(id, event.locals.user!.organizationId, ctxOf(event))

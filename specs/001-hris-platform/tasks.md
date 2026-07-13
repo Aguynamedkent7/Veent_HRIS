@@ -310,7 +310,7 @@ All items below are **not started**. The large epics (Payroll, Attendance, Reque
 their own `/speckit-plan` pass before task breakdown — this is a module-level backlog, not final tasks.
 
 ### 11.1 Foundations (do first — many epics depend on these)
-- [ ] T161 Add `Role` values `PAYROLL_OFFICER`, `FINANCE`; extend RBAC + nav gating + role-management UI (FR-073/074) ([#20](https://github.com/Aguynamedkent7/Veent_HRIS/issues/20))
+- [x] T161 Add `Role` values `PAYROLL_OFFICER`, `FINANCE`; extend RBAC + nav gating + role-management UI (FR-073/074) ([#20](https://github.com/Aguynamedkent7/Veent_HRIS/issues/20))
 - [ ] T162 File uploads: storage strategy + `EmployeeDocument`/supporting-docs (contracts, IDs) (FR-049/056/071/072) ([#21](https://github.com/Aguynamedkent7/Veent_HRIS/issues/21))
 - [ ] T163 Settings master data: company info, salary structures, work schedules, payroll cutoffs, earnings/deduction codes (FR-075) ([#22](https://github.com/Aguynamedkent7/Veent_HRIS/issues/22))
 

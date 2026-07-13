@@ -4,7 +4,7 @@
 
 	let { data }: { data: PageData } = $props()
 
-	const roles = ['EMPLOYEE', 'MANAGER', 'HR_ADMIN', 'SUPER_ADMIN'] as const
+	const roles = ['EMPLOYEE', 'MANAGER', 'HR_ADMIN', 'SUPER_ADMIN', 'PAYROLL_OFFICER', 'FINANCE'] as const
 </script>
 
 <svelte:head>

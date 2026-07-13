@@ -1,13 +1,13 @@
 import { fail } from '@sveltejs/kit'
 import { z } from 'zod'
 import { db } from '$lib/server/db'
-import { requireMinRole } from '$lib/server/rbac'
+import { requirePayrollManage } from '$lib/server/rbac'
 import { previewPayroll } from '$lib/server/services/payroll/calculator'
 import { emptyAttendance } from '$lib/server/services/payroll/types'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
-	requireMinRole(locals.user!.role, 'HR_ADMIN')
+	requirePayrollManage(locals.user!.role)
 	const employees = await db.employee.findMany({
 		where: { user: { organizationId: locals.user!.organizationId }, employmentStatus: 'ACTIVE' },
 		select: { id: true, firstName: true, lastName: true, employeeNumber: true },
@@ -33,7 +33,7 @@ const schema = z.object({
 
 export const actions: Actions = {
 	preview: async ({ request, locals }) => {
-		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		requirePayrollManage(locals.user!.role)
 		const parsed = schema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid input' })
 		const d = parsed.data

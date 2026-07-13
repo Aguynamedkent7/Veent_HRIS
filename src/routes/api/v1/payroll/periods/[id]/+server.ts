@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit'
-import { requireRole } from '$lib/server/rbac'
+import { requireRole, requirePayrollManage } from '$lib/server/rbac'
 import { apiError, badRequest, forbidden } from '$lib/server/api-error'
 import { importAttendance, generate, lock, release, voidPeriod } from '$lib/server/services/payroll/periods'
 import type { RequestHandler } from './$types'
@@ -14,7 +14,7 @@ export const POST: RequestHandler = async ({ locals, params, request, url, getCl
 
 	try {
 		if (action === 'void') requireRole(locals.user.role, 'SUPER_ADMIN')
-		else requireRole(locals.user.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		else requirePayrollManage(locals.user.role)
 	} catch {
 		return forbidden()
 	}

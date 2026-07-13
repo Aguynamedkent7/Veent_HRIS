@@ -15,7 +15,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 const roleSchema = z.object({
 	userId: z.string().min(1, 'User ID is required'),
-	role: z.enum(['EMPLOYEE', 'MANAGER', 'HR_ADMIN', 'SUPER_ADMIN'])
+	role: z.enum(['EMPLOYEE', 'MANAGER', 'HR_ADMIN', 'SUPER_ADMIN', 'PAYROLL_OFFICER', 'FINANCE'])
 })
 
 export const actions: Actions = {
