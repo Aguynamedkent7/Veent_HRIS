@@ -4,6 +4,7 @@ import { error } from '@sveltejs/kit'
 import { Prisma } from '@prisma/client'
 import { requestSchema, deriveRequestColumns, type RequestInput } from '$lib/server/schemas/requests'
 import { resolveChain } from './routing'
+import { computeLeaveTotalDays, assertLeaveBalance } from './leave'
 import type { AuditContext } from '../types'
 
 // Create a request and its resolved approval chain in one transaction. The chain
@@ -24,6 +25,15 @@ export async function createRequest(
 	})
 	if (!employee) error(404, 'Employee not found')
 
+	// LEAVE carries balance semantics: compute workdays, verify balance up front, and
+	// stash totalDays into the payload so approval can deduct it later.
+	let payload: Record<string, unknown> = parsed
+	if (parsed.type === 'LEAVE') {
+		const totalDays = await computeLeaveTotalDays(organizationId, parsed.startDate, parsed.endDate)
+		await assertLeaveBalance(employeeId, parsed.leaveTypeId, parsed.startDate.getFullYear(), totalDays)
+		payload = { ...parsed, totalDays }
+	}
+
 	const chain = resolveChain(parsed.type, { hasSupervisor: Boolean(employee.reportsToId) })
 
 	const created = await db.request.create({
@@ -35,7 +45,7 @@ export async function createRequest(
 			dateTo: cols.dateTo,
 			hours: cols.hours,
 			reason: cols.reason,
-			payload: parsed as unknown as Prisma.InputJsonValue,
+			payload: payload as unknown as Prisma.InputJsonValue,
 			currentStage: 0,
 			steps: {
 				create: chain.map((s) => ({

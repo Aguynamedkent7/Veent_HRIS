@@ -44,15 +44,18 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		include: { entries: { where: { date: { gte: startDate, lte: endDate } } } }
 	})
 
-	// Get approved leave in range
-	const leaves = await db.leaveRequest.findMany({
+	// Get approved leave in range (leave is now a Request of type LEAVE)
+	const leaveReqs = await db.request.findMany({
 		where: {
+			type: 'LEAVE',
 			status: 'APPROVED',
 			employeeId: { in: members.map((m: { id: string }) => m.id) },
-			startDate: { lte: endDate },
-			endDate: { gte: startDate }
-		}
+			dateFrom: { lte: endDate },
+			dateTo: { gte: startDate }
+		},
+		select: { employeeId: true, dateFrom: true, dateTo: true }
 	})
+	const leaves = leaveReqs.map((l) => ({ employeeId: l.employeeId, startDate: l.dateFrom!, endDate: l.dateTo! }))
 
 	// Build attendance map: { [employeeId]: { [dateISO]: 'P' | 'L' } }
 	const attendanceMap: Record<string, Record<string, string>> = {}

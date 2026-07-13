@@ -81,9 +81,10 @@ export async function getManagerMetrics(userId: string, organizationId: string) 
 				status: 'SUBMITTED'
 			}
 		}),
-		db.leaveRequest.count({
+		db.request.count({
 			where: {
 				employeeId: { in: directReportIds },
+				type: 'LEAVE',
 				status: 'PENDING'
 			}
 		}),
@@ -130,12 +131,13 @@ export async function getAdminMetrics(organizationId: string) {
 				employmentStatus: 'ACTIVE'
 			}
 		}),
-		db.leaveRequest.count({
+		db.request.count({
 			where: {
 				employee: { user: { organizationId } },
+				type: 'LEAVE',
 				status: 'APPROVED',
-				startDate: { lte: tomorrow },
-				endDate: { gte: today }
+				dateFrom: { lte: tomorrow },
+				dateTo: { gte: today }
 			}
 		}),
 		db.timesheet.count({
@@ -144,9 +146,10 @@ export async function getAdminMetrics(organizationId: string) {
 				status: 'SUBMITTED'
 			}
 		}),
-		db.leaveRequest.count({
+		db.request.count({
 			where: {
 				employee: { user: { organizationId } },
+				type: 'LEAVE',
 				status: 'PENDING'
 			}
 		}),

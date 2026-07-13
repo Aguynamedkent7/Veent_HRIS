@@ -323,8 +323,8 @@ their own `/speckit-plan` pass before task breakdown — this is a module-level 
 - [X] T167 HR attendance-review workflow: flag no-time-in / incomplete, correct, and per-period **lock** before payroll
 
 ### 11.4 Requests & multi-stage approvals (FR-056–FR-059) — needs a plan pass
-- [ ] T168 Generalize `LeaveRequest` → `Request` (7 types) with typed payloads + supporting docs (Employee Kiosk) ([#25](https://github.com/Aguynamedkent7/Veent_HRIS/issues/25))
-- [ ] T169 Configurable multi-stage routing (`ApprovalStep`: Employee→Supervisor→HR→Payroll) with Approve/Reject/Return; auto-apply approved requests to attendance/payroll ([#26](https://github.com/Aguynamedkent7/Veent_HRIS/issues/26))
+- [x] T168 Generalize `LeaveRequest` → `Request` (7 types) with typed payloads + supporting docs (Employee Kiosk) ([#25](https://github.com/Aguynamedkent7/Veent_HRIS/issues/25))
+- [x] T169 Configurable multi-stage routing (`ApprovalStep`: Employee→Supervisor→HR→Payroll) with Approve/Reject/Return; auto-apply approved requests to attendance/payroll ([#26](https://github.com/Aguynamedkent7/Veent_HRIS/issues/26))
 
 ### 11.5 Payroll expansion (FR-060–FR-066) — needs a plan pass (largest epic)
 - [X] T170 `PayrollPeriod` lifecycle (create→import→review→generate→lock→release) replacing/wrapping `PayrollRun`

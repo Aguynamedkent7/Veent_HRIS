@@ -51,6 +51,6 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		actors,
 		page,
 		perPage,
-		entityTypes: ['Employee', 'Timesheet', 'LeaveRequest', 'PayrollRun', 'JobPosting', 'Applicant', 'Department']
+		entityTypes: ['Employee', 'Timesheet', 'Request', 'LeaveRequest', 'PayrollRun', 'JobPosting', 'Applicant', 'Department']
 	}
 }

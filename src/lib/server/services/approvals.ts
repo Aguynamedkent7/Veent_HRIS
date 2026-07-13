@@ -83,7 +83,7 @@ export async function decide(
 	// requests (OT/rest-day/holiday/leave) are consumed lazily by the attendance
 	// derivation; INFO_UPDATE writes the employee field here.
 	if (transition.status === 'APPROVED') {
-		await applyApprovedRequest({ id: req.id, type: req.type, employeeId: req.employeeId, payload: req.payload }, ctx)
+		await applyApprovedRequest({ id: req.id, type: req.type, employeeId: req.employeeId, dateFrom: req.dateFrom, payload: req.payload }, ctx)
 	}
 
 	return { status: transition.status, currentStage: transition.currentStage }

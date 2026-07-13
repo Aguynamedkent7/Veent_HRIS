@@ -195,6 +195,15 @@ half-migrated state.
 3. **Slice 3** — Employee Kiosk API/UI (`(app)/requests`) for the 6 new types.
 4. **Slice 4** — approval engine (`decide()`), rebuild `/approvals` inbox to include requests.
 5. **Slice 5** — auto-apply + **OT gate** ⭐ (wire approved OT into `deriveRange`).
-6. **Slice 6 (cutover)** — migrate `leave_requests` → `Request(type=LEAVE)`, repoint all 11 readers,
-   route leave create/approve through the Request engine, drop `LeaveRequest`.
+6. **Slice 6 (cutover)** ✅ — migrated `leave_requests` → `Request(type=LEAVE)`, repointed all readers
+   (deriveRange, dashboard, team, reports, approvals), routed leave create/approve through the Request
+   engine (balance validated on create, deducted on final approval), leave now shows in the unified
+   Approvals → Requests tab. **`LeaveRequest` table kept dormant (no readers) for reversibility — the
+   physical `DROP` is deferred to a small post-QA cleanup commit.**
 7. **Slice 7** — tests + manual verify throughout.
+
+## Deferred cleanup (after QA sign-off)
+- Drop the `LeaveRequest` model + `leave_requests` table + the `Employee.leaveRequests` /
+  `LeaveType.leaveRequests` relations, and remove `LeaveRequestStatus` if unused.
+- Optionally retire the `/leave` route entirely in favour of `/requests` (kept for now to preserve the
+  balance-aware leave form UX).

@@ -90,10 +90,11 @@ export async function deriveRange(
 		})
 		const byDay = groupPunchesByDay(punches)
 
-		const leaves = await db.leaveRequest.findMany({
-			where: { employeeId: emp.id, status: 'APPROVED', startDate: { lte: new Date(`${toKey}T23:59:59Z`) }, endDate: { gte: new Date(`${fromKey}T00:00:00Z`) } },
-			select: { startDate: true, endDate: true }
+		const leaveReqs = await db.request.findMany({
+			where: { employeeId: emp.id, type: 'LEAVE', status: 'APPROVED', dateFrom: { lte: new Date(`${toKey}T23:59:59Z`) }, dateTo: { gte: new Date(`${fromKey}T00:00:00Z`) } },
+			select: { dateFrom: true, dateTo: true }
 		})
+		const leaves = leaveReqs.map((l) => ({ startDate: l.dateFrom!, endDate: l.dateTo! }))
 
 		// Approved OVERTIME requests (T169) gate how much worked overtime actually
 		// pays: deriveAttendanceDay pays min(rawOvertime, approvedOtHours) per day.

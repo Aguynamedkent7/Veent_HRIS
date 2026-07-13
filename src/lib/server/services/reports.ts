@@ -265,26 +265,31 @@ export async function generateLeaveUtilization(
 	organizationId: string,
 	{ startDate, endDate }: { startDate: Date; endDate: Date }
 ) {
-	const requests = await db.leaveRequest.findMany({
+	// Leave is now a Request of type LEAVE; totalDays and leaveTypeId live in payload.
+	const requests = await db.request.findMany({
 		where: {
+			type: 'LEAVE',
 			status: 'APPROVED',
-			startDate: { gte: startDate },
-			endDate: { lte: endDate },
+			dateFrom: { gte: startDate },
+			dateTo: { lte: endDate },
 			employee: { user: { organizationId } }
 		},
-		select: {
-			totalDays: true,
-			leaveType: { select: { name: true } },
-			employeeId: true
-		}
+		select: { payload: true, employeeId: true }
 	})
+
+	const typeIds = [...new Set(requests.map((r) => (r.payload as { leaveTypeId?: string })?.leaveTypeId).filter(Boolean) as string[])]
+	const types = typeIds.length
+		? await db.leaveType.findMany({ where: { id: { in: typeIds } }, select: { id: true, name: true } })
+		: []
+	const typeNames = new Map(types.map((t) => [t.id, t.name]))
 
 	// Group by leave type
 	const byType: Record<string, { totalDays: number; employees: Set<string> }> = {}
 	for (const req of requests) {
-		const name = req.leaveType.name
+		const payload = (req.payload ?? {}) as { leaveTypeId?: string; totalDays?: number }
+		const name = (payload.leaveTypeId && typeNames.get(payload.leaveTypeId)) || '—'
 		if (!byType[name]) byType[name] = { totalDays: 0, employees: new Set() }
-		byType[name].totalDays += Number(req.totalDays)
+		byType[name].totalDays += Number(payload.totalDays ?? 0)
 		byType[name].employees.add(req.employeeId)
 	}
 

@@ -2,7 +2,6 @@ import { fail } from '@sveltejs/kit'
 import { requireMinRole } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { reviewTimesheet } from '$lib/server/services/timesheets'
-import { reviewLeaveRequest } from '$lib/server/services/leave'
 import { decide, listPendingRequestsForApprover } from '$lib/server/services/approvals'
 import type { ApprovalDecision } from '@prisma/client'
 import type { Actions, PageServerLoad } from './$types'
@@ -38,27 +37,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 		orderBy: { submittedAt: 'asc' }
 	})
 
-	// pendingLeave: PENDING leave requests (same scoping)
-	const pendingLeave = db.leaveRequest.findMany({
-		where: {
-			status: 'PENDING',
-			employee: {
-				user: { organizationId: user.organizationId },
-				...(!isAdmin && myEmployee ? { reportsToId: myEmployee.id } : {})
-			}
-		},
-		include: {
-			employee: { select: { id: true, firstName: true, lastName: true } },
-			leaveType: { select: { name: true } }
-		},
-		orderBy: { createdAt: 'asc' }
-	})
-
-	// Stream both lists together so the approvals content renders a skeleton
-	// while the queries resolve.
-	const pending = Promise.all([pendingTimesheets, pendingLeave]).then(
-		([timesheets, leave]) => ({ timesheets, leave })
-	)
+	// Leave is now part of the unified Requests inbox below (pendingRequests), so the
+	// approvals view streams just timesheets here.
+	const pending = pendingTimesheets.then((timesheets) => ({ timesheets }))
 
 	return { pending, pendingRequests }
 }
@@ -96,49 +77,6 @@ export const actions: Actions = {
 
 		try {
 			await reviewTimesheet(id, user.organizationId, false, rejectionReason, {
-				organizationId: user.organizationId,
-				actorId: user.id,
-				actorRole: user.role,
-				ipAddress: getClientAddress()
-			})
-		} catch (e: unknown) {
-			if (e instanceof Error) return fail(400, { error: e.message })
-			throw e
-		}
-	},
-
-	approveLeave: async ({ request, locals, getClientAddress }) => {
-		const user = locals.user!
-		requireMinRole(user.role, 'MANAGER')
-
-		const data = await request.formData()
-		const id = data.get('id') as string
-		if (!id) return fail(400, { error: 'Missing leave request id' })
-
-		try {
-			await reviewLeaveRequest(id, user.organizationId, true, undefined, {
-				organizationId: user.organizationId,
-				actorId: user.id,
-				actorRole: user.role,
-				ipAddress: getClientAddress()
-			})
-		} catch (e: unknown) {
-			if (e instanceof Error) return fail(400, { error: e.message })
-			throw e
-		}
-	},
-
-	rejectLeave: async ({ request, locals, getClientAddress }) => {
-		const user = locals.user!
-		requireMinRole(user.role, 'MANAGER')
-
-		const data = await request.formData()
-		const id = data.get('id') as string
-		const rejectionReason = (data.get('rejectionReason') as string) || undefined
-		if (!id) return fail(400, { error: 'Missing leave request id' })
-
-		try {
-			await reviewLeaveRequest(id, user.organizationId, false, rejectionReason, {
 				organizationId: user.organizationId,
 				actorId: user.id,
 				actorRole: user.role,

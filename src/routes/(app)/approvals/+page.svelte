@@ -7,7 +7,7 @@
 
 	let { data }: { data: PageData } = $props()
 
-	let activeTab = $state<'timesheets' | 'leave' | 'requests'>('timesheets')
+	let activeTab = $state<'timesheets' | 'requests'>('timesheets')
 
 	const typeLabels: Record<string, string> = {
 		LEAVE: 'Leave', OVERTIME: 'Overtime', UNDERTIME: 'Undertime',
@@ -40,7 +40,7 @@
 				<Skeleton class="h-28 w-full" />
 			{/each}
 		</div>
-	{:then { timesheets: pendingTimesheets, leave: pendingLeave }}
+	{:then { timesheets: pendingTimesheets }}
 		<!-- Tab navigation -->
 		<div class="flex gap-1 border-b">
 			<button
@@ -52,18 +52,6 @@
 				{#if pendingTimesheets.length > 0}
 					<span class="rounded-full bg-primary px-1.5 py-0.5 text-xs font-medium text-primary-foreground">
 						{pendingTimesheets.length}
-					</span>
-				{/if}
-			</button>
-			<button
-				type="button"
-				onclick={() => (activeTab = 'leave')}
-				class="flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors {activeTab === 'leave' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
-			>
-				Leave
-				{#if pendingLeave.length > 0}
-					<span class="rounded-full bg-primary px-1.5 py-0.5 text-xs font-medium text-primary-foreground">
-						{pendingLeave.length}
 					</span>
 				{/if}
 			</button>
@@ -98,29 +86,6 @@
 							details="{Number(ts.totalHours).toFixed(1)} hrs"
 							actionApprove="approveTimesheet"
 							actionReject="rejectTimesheet"
-						/>
-					{/each}
-				</div>
-			{/if}
-		{/if}
-
-		<!-- Leave tab -->
-		{#if activeTab === 'leave'}
-			{#if pendingLeave.length === 0}
-				<div class="rounded-md border bg-muted/50 px-6 py-12 text-center text-muted-foreground text-sm">
-					No pending leave requests to review.
-				</div>
-			{:else}
-				<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-					{#each pendingLeave as req (req.id)}
-						<ApprovalCard
-							type="leave"
-							id={req.id}
-							submitterName="{req.employee.lastName}, {req.employee.firstName}"
-							period="{formatShortDate(req.startDate)} – {formatShortDate(req.endDate)}"
-							details="{Number(req.totalDays)} days – {req.leaveType.name}"
-							actionApprove="approveLeave"
-							actionReject="rejectLeave"
 						/>
 					{/each}
 				</div>
