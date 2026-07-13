@@ -17,6 +17,14 @@
 	]
 	const catLabel = (v: string) => DOC_CATEGORIES.find((c) => c.value === v)?.label ?? v
 	const fmtSize = (b: number) => (b < 1024 * 1024 ? `${Math.max(1, Math.round(b / 1024))} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`)
+
+	// Salary-band check: employee inherits their grade via their position (T163).
+	const grade = $derived(employee.position?.salaryGrade ?? null)
+	const band = $derived.by(() => {
+		if (!grade || employee.basicMonthlySalary == null) return null
+		const s = Number(employee.basicMonthlySalary), min = Number(grade.minSalary), max = Number(grade.maxSalary)
+		return { status: s < min ? 'below' : s > max ? 'above' : 'within', min, max, name: grade.name }
+	})
 </script>
 
 <svelte:head>
@@ -51,7 +59,18 @@
 				<dd>{formatShortDate(employee.startDate)}</dd>
 				{#if canManage}
 					<dt class="text-muted-foreground">Basic Salary</dt>
-					<dd class="font-medium">{formatCurrency(Number(employee.basicMonthlySalary))}/mo</dd>
+					<dd class="font-medium">
+						{formatCurrency(Number(employee.basicMonthlySalary))}/mo
+						{#if band}
+							{#if band.status === 'within'}
+								<span class="ml-1 rounded-full bg-green-100 px-1.5 py-0.5 text-xs font-normal text-green-700" title="Within the {band.name} band">✓ {grade?.name}</span>
+							{:else}
+								<span class="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-normal text-amber-700" title="{band.name}: {formatCurrency(band.min)}–{formatCurrency(band.max)}">
+									⚠ {band.status === 'below' ? 'Below' : 'Above'} {grade?.name} band
+								</span>
+							{/if}
+						{/if}
+					</dd>
 				{/if}
 				<dt class="text-muted-foreground">Role</dt>
 				<dd>{employee.user.role}</dd>

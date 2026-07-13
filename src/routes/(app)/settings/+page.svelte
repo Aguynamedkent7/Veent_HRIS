@@ -8,6 +8,7 @@
 		{ href: '/settings/org', title: 'Org Structure', desc: 'Departments & positions', super: false },
 		{ href: '/settings/schedules', title: 'Work Schedules', desc: 'Shift templates', super: false },
 		{ href: '/settings/pay-codes', title: 'Earnings & Deductions', desc: 'Payroll codes', super: false },
+		{ href: '/settings/salary-grades', title: 'Salary Grades', desc: 'Pay bands per position', super: false },
 		{ href: '/payroll/config', title: 'Payroll Config', desc: 'Cutoffs, frequency, statutory rates', super: true },
 		{ href: '/settings/holidays', title: 'Holiday Calendar', desc: 'Regular & special holidays', super: true },
 		{ href: '/settings/roles', title: 'Roles & Access', desc: 'User role management', super: true }

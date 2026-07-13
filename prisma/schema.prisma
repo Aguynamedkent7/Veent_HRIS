@@ -256,6 +256,7 @@ model Organization {
   deductionTypes DeductionType[]
   payRateRule    PayRateRule?
   workSchedules  WorkSchedule[]
+  salaryGrades   SalaryGrade[]
 
   @@map("organizations")
 }
@@ -849,6 +850,7 @@ model Position {
   organizationId String
   title          String
   departmentId   String?
+  salaryGradeId  String?
   level          Int?
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
@@ -856,10 +858,31 @@ model Position {
 
   organization Organization @relation(fields: [organizationId], references: [id])
   department   Department?  @relation(fields: [departmentId], references: [id])
+  salaryGrade  SalaryGrade? @relation(fields: [salaryGradeId], references: [id])
   employees    Employee[]
 
   @@unique([organizationId, title])
   @@map("positions")
+}
+
+// Pay grade / band assignable to positions. An employee inherits their band via
+// their position; HR is warned when a basic salary falls outside [min, max] (T163).
+model SalaryGrade {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  minSalary      Decimal  @db.Decimal(12, 2)
+  midSalary      Decimal  @db.Decimal(12, 2)
+  maxSalary      Decimal  @db.Decimal(12, 2)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  positions    Position[]
+
+  @@unique([organizationId, name])
+  @@map("salary_grades")
 }
 
 // ─── Payroll Expansion (Phase 11 — FR-060–FR-066) ─────────────────────────────

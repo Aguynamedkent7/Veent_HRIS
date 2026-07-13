@@ -84,3 +84,63 @@ export async function toggleDeductionType(organizationId: string, id: string, ct
 	await writeAuditLog(ctx, { action: 'UPDATE', entityType: 'DeductionType', entityId: id, newValue: { isActive: updated.isActive } })
 	return updated
 }
+
+// ─── Salary grades / bands ────────────────────────────────────────────────────
+
+// Where a salary sits relative to a grade band. Pure — safe to unit-test.
+export function bandStatus(salary: number, min: number, max: number): 'below' | 'within' | 'above' {
+	if (salary < min) return 'below'
+	if (salary > max) return 'above'
+	return 'within'
+}
+
+export async function listSalaryGrades(organizationId: string) {
+	return db.salaryGrade.findMany({ where: { organizationId }, orderBy: { minSalary: 'asc' } })
+}
+
+export async function listPositionsWithGrades(organizationId: string) {
+	return db.position.findMany({
+		where: { organizationId },
+		select: { id: true, title: true, salaryGradeId: true },
+		orderBy: { title: 'asc' }
+	})
+}
+
+export async function createSalaryGrade(
+	organizationId: string,
+	input: { name: string; minSalary: number; midSalary: number; maxSalary: number },
+	ctx: AuditContext
+) {
+	const name = input.name.trim()
+	if (!(input.minSalary <= input.midSalary && input.midSalary <= input.maxSalary)) {
+		error(400, 'Salaries must satisfy min ≤ mid ≤ max')
+	}
+	const exists = await db.salaryGrade.findFirst({ where: { organizationId, name } })
+	if (exists) error(409, `Grade "${name}" already exists`)
+	const created = await db.salaryGrade.create({
+		data: { organizationId, name, minSalary: input.minSalary, midSalary: input.midSalary, maxSalary: input.maxSalary }
+	})
+	await writeAuditLog(ctx, { action: 'CREATE', entityType: 'SalaryGrade', entityId: created.id, newValue: { name } })
+	return created
+}
+
+export async function toggleSalaryGrade(organizationId: string, id: string, ctx: AuditContext) {
+	const g = await db.salaryGrade.findFirst({ where: { id, organizationId }, select: { id: true, isActive: true } })
+	if (!g) error(404, 'Grade not found')
+	const updated = await db.salaryGrade.update({ where: { id }, data: { isActive: !g.isActive } })
+	await writeAuditLog(ctx, { action: 'UPDATE', entityType: 'SalaryGrade', entityId: id, newValue: { isActive: updated.isActive } })
+	return updated
+}
+
+// Assign (or clear, with null) a position's grade.
+export async function assignPositionGrade(organizationId: string, positionId: string, salaryGradeId: string | null, ctx: AuditContext) {
+	const pos = await db.position.findFirst({ where: { id: positionId, organizationId }, select: { id: true } })
+	if (!pos) error(404, 'Position not found')
+	if (salaryGradeId) {
+		const grade = await db.salaryGrade.findFirst({ where: { id: salaryGradeId, organizationId }, select: { id: true } })
+		if (!grade) error(404, 'Grade not found')
+	}
+	const updated = await db.position.update({ where: { id: positionId }, data: { salaryGradeId } })
+	await writeAuditLog(ctx, { action: 'UPDATE', entityType: 'Position', entityId: positionId, newValue: { salaryGradeId } })
+	return updated
+}

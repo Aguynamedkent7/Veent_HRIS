@@ -89,7 +89,8 @@ export async function getEmployee(id: string, organizationId: string, viewerRole
 		include: {
 			department: true,
 			user: { select: { email: true, role: true, isActive: true, lastLoginAt: true } },
-			reportsTo: { select: { id: true, firstName: true, lastName: true } }
+			reportsTo: { select: { id: true, firstName: true, lastName: true } },
+			position: { include: { salaryGrade: true } }
 		}
 	})
 	if (!employee) error(404, 'Employee not found')
