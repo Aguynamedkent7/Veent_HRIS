@@ -2,6 +2,7 @@ import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import type { ApprovalDecision, Role } from '@prisma/client'
+import { applyApprovedRequest } from './requests/apply'
 import type { AuditContext } from './types'
 
 type StageShape = { stageKind: 'SUPERVISOR' | 'ROLE'; role: Role | null }
@@ -78,9 +79,12 @@ export async function decide(
 		newValue: { stage: req.currentStage, decision, status: transition.status }
 	})
 
-	// SEAM (slice 5): when transition.status === 'APPROVED', apply the request to
-	// attendance/payroll (approved-OT feeds the derivation gate, INFO_UPDATE writes
-	// the field, etc.). Wired in the auto-apply slice.
+	// On full approval, apply the request to attendance/payroll state. Time-based
+	// requests (OT/rest-day/holiday/leave) are consumed lazily by the attendance
+	// derivation; INFO_UPDATE writes the employee field here.
+	if (transition.status === 'APPROVED') {
+		await applyApprovedRequest({ id: req.id, type: req.type, employeeId: req.employeeId, payload: req.payload }, ctx)
+	}
 
 	return { status: transition.status, currentStage: transition.currentStage }
 }

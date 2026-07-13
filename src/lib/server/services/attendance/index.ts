@@ -95,6 +95,24 @@ export async function deriveRange(
 			select: { startDate: true, endDate: true }
 		})
 
+		// Approved OVERTIME requests (T169) gate how much worked overtime actually
+		// pays: deriveAttendanceDay pays min(rawOvertime, approvedOtHours) per day.
+		const otReqs = await db.request.findMany({
+			where: {
+				employeeId: emp.id,
+				type: 'OVERTIME',
+				status: 'APPROVED',
+				dateFrom: { gte: new Date(`${fromKey}T00:00:00Z`), lte: new Date(`${toKey}T23:59:59Z`) }
+			},
+			select: { dateFrom: true, hours: true }
+		})
+		const approvedOtByDay = new Map<string, number>()
+		for (const o of otReqs) {
+			if (!o.dateFrom) continue
+			const k = o.dateFrom.toISOString().slice(0, 10)
+			approvedOtByDay.set(k, (approvedOtByDay.get(k) ?? 0) + Number(o.hours ?? 0))
+		}
+
 		for (let cur = new Date(`${fromKey}T00:00:00Z`); cur.toISOString().slice(0, 10) <= toKey; cur.setUTCDate(cur.getUTCDate() + 1)) {
 			const dayKey = cur.toISOString().slice(0, 10)
 			const weekday = cur.getUTCDay()
@@ -119,7 +137,7 @@ export async function deriveRange(
 				punches: byDay.get(dayKey) ?? [],
 				schedule: dayType === 'REGULAR' ? schedDay : null,
 				dayType,
-				approvedOtHours: 0, // gated on approved OT requests (Phase 11.4); 0 until then
+				approvedOtHours: approvedOtByDay.get(dayKey) ?? 0,
 				onLeave
 			})
 
