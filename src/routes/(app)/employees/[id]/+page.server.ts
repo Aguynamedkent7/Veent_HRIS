@@ -1,29 +1,37 @@
-import { fail } from '@sveltejs/kit'
-import { requireMinRole } from '$lib/server/rbac'
+import { fail, isHttpError } from '@sveltejs/kit'
+import { requireMinRole, requireRole } from '$lib/server/rbac'
 import { getEmployee, updateEmployee, offboardEmployee } from '$lib/server/services/employees'
 import { listLoans, listCashAdvances, createLoan, createCashAdvance } from '$lib/server/services/payroll/loans'
 import { listSchedules } from '$lib/server/services/attendance/schedules'
+import { listEmployeeDocuments, saveEmployeeDocument, deleteEmployeeDocument } from '$lib/server/services/documents'
 import { db } from '$lib/server/db'
 import { z } from 'zod'
 import type { Actions, PageServerLoad } from './$types'
+
+const DOC_CATEGORIES = ['CONTRACT', 'GOVERNMENT_ID', 'RESUME', 'PAYROLL_FORM', 'EXIT_DOCUMENT', 'OTHER'] as const
+
+function ctxOf(locals: App.Locals, ip: string) {
+	return { organizationId: locals.user!.organizationId, actorId: locals.user!.id, actorRole: locals.user!.role, ipAddress: ip }
+}
 
 export const load: PageServerLoad = async ({ locals, params }) => {
 	requireMinRole(locals.user!.role, 'MANAGER')
 
 	const canManage = ['HR_ADMIN', 'SUPER_ADMIN'].includes(locals.user!.role)
 
-	const [employee, departments, loans, cashAdvances] = await Promise.all([
+	const [employee, departments, loans, cashAdvances, documents] = await Promise.all([
 		getEmployee(params.id, locals.user!.organizationId, locals.user!.role),
 		db.department.findMany({
 			where: { organizationId: locals.user!.organizationId },
 			orderBy: { name: 'asc' }
 		}),
 		canManage ? listLoans(params.id) : Promise.resolve([]),
-		canManage ? listCashAdvances(params.id) : Promise.resolve([])
+		canManage ? listCashAdvances(params.id) : Promise.resolve([]),
+		canManage ? listEmployeeDocuments(params.id, locals.user!.organizationId) : Promise.resolve([])
 	])
 	const schedules = canManage ? await listSchedules(locals.user!.organizationId) : []
 
-	return { employee, departments, canManage, loans, cashAdvances, schedules }
+	return { employee, departments, canManage, loans, cashAdvances, schedules, documents }
 }
 
 const loanSchema = z.object({
@@ -121,6 +129,45 @@ export const actions: Actions = {
 			actorRole: user.role,
 			ipAddress: getClientAddress()
 		})
+		return { success: true }
+	},
+
+	uploadDocument: async ({ request, locals, params, getClientAddress }) => {
+		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+
+		const data = await request.formData()
+		const file = data.get('file')
+		const categoryRaw = data.get('category') as string
+		const label = (data.get('label') as string) || ''
+
+		if (!(file instanceof File) || file.size === 0) return fail(400, { error: 'Please choose a file to upload.' })
+		const category = DOC_CATEGORIES.includes(categoryRaw as never) ? (categoryRaw as (typeof DOC_CATEGORIES)[number]) : 'OTHER'
+		const bytes = Buffer.from(await file.arrayBuffer())
+
+		try {
+			await saveEmployeeDocument(
+				params.id,
+				locals.user!.organizationId,
+				{ category, label, fileName: file.name, mimeType: file.type, bytes },
+				ctxOf(locals, getClientAddress())
+			)
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
+		}
+		return { success: true }
+	},
+
+	deleteDocument: async ({ request, locals, params, getClientAddress }) => {
+		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		const docId = (await request.formData()).get('docId') as string
+		if (!docId) return fail(400, { error: 'Missing document id.' })
+		try {
+			await deleteEmployeeDocument(docId, locals.user!.organizationId, ctxOf(locals, getClientAddress()))
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
+		}
 		return { success: true }
 	}
 }

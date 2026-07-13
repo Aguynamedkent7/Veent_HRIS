@@ -294,11 +294,12 @@ model User {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  organization  Organization   @relation(fields: [organizationId], references: [id])
-  sessions      Session[]
-  employee      Employee?
-  auditLogs     AuditLog[]
-  approvalSteps ApprovalStep[]
+  organization      Organization       @relation(fields: [organizationId], references: [id])
+  sessions          Session[]
+  employee          Employee?
+  auditLogs         AuditLog[]
+  approvalSteps     ApprovalStep[]
+  uploadedDocuments EmployeeDocument[] @relation("DocumentUploader")
 
   @@map("users")
 }
@@ -346,6 +347,7 @@ model Employee {
   leaveBalances      LeaveBalance[]
   leaveRequests      LeaveRequest[]
   requests           Request[]
+  documents          EmployeeDocument[]
   payrollEntries     PayrollEntry[]
   convertedApplicant Applicant?          @relation("ConvertedEmployee")
   benefitEnrollments BenefitEnrollment[]
@@ -512,6 +514,39 @@ model RequestDocument {
   request Request @relation(fields: [requestId], references: [id], onDelete: Cascade)
 
   @@map("request_documents")
+}
+
+// ─── Employee Documents (201 file uploads — T162) ────────────────────────────
+// Sensitive HR files (contracts, IDs, exit docs). Bytes live on disk under
+// UPLOAD_DIR (never in static/); this row holds metadata + the storageKey and is
+// served only through an authenticated download route.
+
+enum EmployeeDocumentCategory {
+  CONTRACT
+  GOVERNMENT_ID
+  RESUME
+  PAYROLL_FORM
+  EXIT_DOCUMENT
+  OTHER
+}
+
+model EmployeeDocument {
+  id           String                   @id @default(cuid())
+  employeeId   String
+  category     EmployeeDocumentCategory @default(OTHER)
+  label        String
+  fileName     String // original upload filename
+  mimeType     String
+  size         Int // bytes
+  storageKey   String // path relative to UPLOAD_DIR
+  uploadedById String?
+  uploadedAt   DateTime                 @default(now())
+
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  uploadedBy User?    @relation("DocumentUploader", fields: [uploadedById], references: [id])
+
+  @@index([employeeId])
+  @@map("employee_documents")
 }
 
 // ─── Public Holidays ──────────────────────────────────────────────────────────

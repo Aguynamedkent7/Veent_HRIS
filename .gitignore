@@ -32,3 +32,6 @@ Thumbs.db
 playwright-report/
 test-results/
 coverage/
+
+# Private HR document storage (T162)
+/uploads/

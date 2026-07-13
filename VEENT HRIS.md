@@ -48,7 +48,7 @@ Existing Employee
 * Salary adjustments  
 * Transfer departments  
 * Change employment status
-
+![alt text](image.png)
 *\*This becomes the employee’s digital 201 File, replacing paper folders*
 
 3. **Attendance / Timesheets**
