@@ -281,7 +281,7 @@ routes are deferred and enumerated below. `[X]` = done this pass, `[ ]` = follow
 - [x] T145 REST routes `src/routes/api/v1/benefits/plans/+server.ts` (+ `[id]`) and `.../enrollments/+server.ts` (+ `[id]`) ([#8](https://github.com/Aguynamedkent7/Veent_HRIS/issues/8))
 - [x] T146 Enrollment management UI (enroll employee, change status, coverage level) ([#9](https://github.com/Aguynamedkent7/Veent_HRIS/issues/9))
 - [x] T147 [P] Employee "My Benefits" read-only view (`(app)/benefits/me` or profile section) ([#10](https://github.com/Aguynamedkent7/Veent_HRIS/issues/10))
-- [ ] T148 [P] Optional: fold employee benefit costs into payroll deductions ([#11](https://github.com/Aguynamedkent7/Veent_HRIS/issues/11))
+- [x] T148 [P] Optional: fold employee benefit costs into payroll deductions ([#11](https://github.com/Aguynamedkent7/Veent_HRIS/issues/11))
 
 ### 10.4 Performance Management
 

@@ -61,12 +61,17 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	if (!run) error(404, 'Payroll run not found')
 	if (run.status !== 'DRAFT') error(400, 'Only draft payroll runs can be computed')
 
-	const [employees, config, earningTypes, loansAll, advancesAll] = await Promise.all([
+	const [employees, config, earningTypes, loansAll, advancesAll, enrollmentsAll] = await Promise.all([
 		db.employee.findMany({ where: { user: { organizationId }, employmentStatus: 'ACTIVE' } }),
 		db.payrollConfig.findUnique({ where: { organizationId } }),
 		db.earningType.findMany({ where: { organizationId }, select: { code: true, taxable: true } }),
 		db.loan.findMany({ where: { employee: { organizationId }, status: 'ACTIVE', balance: { gt: 0 } } }),
-		db.cashAdvance.findMany({ where: { employee: { organizationId }, status: 'ACTIVE', balance: { gt: 0 } } })
+		db.cashAdvance.findMany({ where: { employee: { organizationId }, status: 'ACTIVE', balance: { gt: 0 } } }),
+		// Active benefit enrollments whose plan charges the employee (T148).
+		db.benefitEnrollment.findMany({
+			where: { status: 'ACTIVE', plan: { organizationId, employeeCost: { gt: 0 } } },
+			select: { id: true, employeeId: true, plan: { select: { name: true, employeeCost: true } } }
+		})
 	])
 
 	// Requirement #1 (review): taxability comes from EarningType config, not hard-coded defaults.
@@ -75,6 +80,7 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	const periodShare = (config?.payFrequency ?? 'SEMI_MONTHLY') === 'MONTHLY' ? 1 : 0.5
 	const loansByEmp = groupByEmployee(loansAll)
 	const advancesByEmp = groupByEmployee(advancesAll)
+	const enrollmentsByEmp = groupByEmployee(enrollmentsAll)
 	const workingDays = computeWorkingDays(run.periodStart, run.periodEnd, [])
 
 	const perEmployee: Array<{
@@ -139,6 +145,17 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			attendance.specialHolidayOtHours
 		const isFlagged = paidHours === 0
 
+		// Fold employee-paid benefit costs into deductions, prorated to the period (T148).
+		const benefitDeductions = (enrollmentsByEmp.get(emp.id) ?? []).map((e) => ({
+			code: 'BENEFIT',
+			label: e.plan.name,
+			amount: round2(Number(e.plan.employeeCost) * periodShare),
+			refId: e.id
+		}))
+		const benefitTotal = round2(benefitDeductions.reduce((s, d) => s + d.amount, 0))
+		const entryTotalDeductions = round2(Number(result.totalDeductions) + benefitTotal)
+		const entryNetPay = round2(Number(result.netPay) - benefitTotal)
+
 		perEmployee.push({
 			entry: {
 				payrollRunId: runId,
@@ -153,18 +170,21 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 				pagibigEe: result.statutory.pagibigEe,
 				pagibigEr: result.statutory.pagibigEr,
 				withholdingTax: result.statutory.withholdingTax,
-				totalDeductions: result.totalDeductions,
-				netPay: result.netPay,
+				totalDeductions: entryTotalDeductions,
+				netPay: entryNetPay,
 				isFlagged,
 				flagReason: isFlagged ? 'No hours recorded for period' : null
 			},
 			earnings: result.earnings.map((c) => ({ code: c.code, label: c.label, amount: c.amount, taxable: c.taxable })),
-			deductions: result.deductions.map((c) => ({ code: c.code, label: c.label, amount: c.amount, refId: c.refId ?? null }))
+			deductions: [
+				...result.deductions.map((c) => ({ code: c.code, label: c.label, amount: c.amount, refId: c.refId ?? null })),
+				...benefitDeductions
+			]
 		})
 
 		totalGross += result.grossPay
-		totalDeductions += result.totalDeductions
-		totalNet += result.netPay
+		totalDeductions += entryTotalDeductions
+		totalNet += entryNetPay
 	}
 
 	await db.$transaction(async (tx: Prisma.TransactionClient) => {
