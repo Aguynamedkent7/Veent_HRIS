@@ -2,6 +2,7 @@ import { fail, redirect } from '@sveltejs/kit'
 import { z } from 'zod'
 import { db } from '$lib/server/db'
 import { getEmployee, updateEmployee } from '$lib/server/services/employees'
+import { listEmployeeDocuments } from '$lib/server/services/documents'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -14,9 +15,12 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	if (!employeeRecord) redirect(303, '/dashboard')
 
-	const employee = await getEmployee(employeeRecord.id, user.organizationId)
+	const [employee, documents] = await Promise.all([
+		getEmployee(employeeRecord.id, user.organizationId),
+		listEmployeeDocuments(employeeRecord.id, user.organizationId)
+	])
 
-	return { employee }
+	return { employee, documents }
 }
 
 const updateSchema = z.object({

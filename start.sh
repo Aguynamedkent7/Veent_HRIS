@@ -40,5 +40,9 @@ else
   echo "    Database already seeded (${ORG_COUNT} organization(s) found)."
 fi
 
-echo "==> Starting dev server..."
+echo "==> Starting dev server + Discord bot (Ctrl-C stops both)..."
+# Kill the whole process group on exit so the bot doesn't linger.
+trap 'kill 0' EXIT INT TERM
+# Bot in the background (fails soft if its env is missing); dev server in the foreground.
+pnpm bot &
 pnpm dev

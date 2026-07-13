@@ -356,6 +356,148 @@ application enforces this via a scheduled archival job.
 
 ---
 
+## Expansion Entities (Phase 10 — Benefits, Performance, Org Structure, Time Tracking)
+
+New `Employee` fields: `discordId` (String?, unique — links a Discord account for the time-tracking
+bot) and `positionId` (String? FK → Position).
+
+### TimeLog
+
+Raw IN/OUT punches (e.g. from the Discord bot). Timestamps stored in **UTC** (`timestamptz`);
+day/week bucketing is done in **Philippine Standard Time (UTC+8)** by the aggregation service.
+
+| Field | Type | Rules |
+|-------|------|-------|
+| `id` | UUID PK | auto-generated |
+| `employeeId` | UUID FK → Employee | required |
+| `punchType` | Enum | `IN`, `OUT` |
+| `source` | Enum | `DISCORD` (default), `WEB`, `MANUAL` |
+| `timestamp` | DateTime (timestamptz) | UTC instant of the punch |
+| `discordMessageId` | String? | originating Discord message, if any |
+| `note` | String? | optional |
+| `timesheetId` | UUID? FK → Timesheet | set when aggregated into a weekly timesheet |
+| `createdAt` | DateTime | auto |
+
+Indexes: `(employeeId, timestamp)`, `(timesheetId)`.
+
+### BenefitPlan
+
+| Field | Type | Rules |
+|-------|------|-------|
+| `id` | UUID PK | auto |
+| `organizationId` | UUID FK → Organization | required |
+| `name` | String | required |
+| `type` | Enum | `HMO`, `INSURANCE`, `RETIREMENT`, `ALLOWANCE`, `LEAVE_CREDIT`, `OTHER` |
+| `provider` | String? | e.g. insurer name |
+| `description` | Text? | optional |
+| `employeeCost` | Decimal(12,2)? | employee share (PHP) |
+| `employerCost` | Decimal(12,2)? | employer share (PHP) |
+| `isActive` | Boolean | default true |
+
+### BenefitEnrollment
+
+| Field | Type | Rules |
+|-------|------|-------|
+| `id` | UUID PK | auto |
+| `employeeId` | UUID FK → Employee | required |
+| `benefitPlanId` | UUID FK → BenefitPlan | required; unique per `(employeeId, benefitPlanId)` |
+| `status` | Enum | `ACTIVE` (default), `WAIVED`, `TERMINATED` |
+| `coverageLevel` | String? | e.g. self / family |
+| `effectiveDate` | DateTime | required |
+| `endedAt` | DateTime? | on termination |
+
+### ReviewCycle
+
+| Field | Type | Rules |
+|-------|------|-------|
+| `id` | UUID PK | auto |
+| `organizationId` | UUID FK → Organization | required |
+| `name` | String | e.g. "H2 2026" |
+| `startDate` / `endDate` | DateTime | required |
+| `status` | Enum | `DRAFT` (default), `ACTIVE`, `CLOSED` |
+
+### PerformanceReview
+
+| Field | Type | Rules |
+|-------|------|-------|
+| `id` | UUID PK | auto |
+| `cycleId` | UUID FK → ReviewCycle | required; unique per `(cycleId, employeeId)` |
+| `employeeId` | UUID FK → Employee | the review subject |
+| `reviewerId` | UUID FK → Employee | the assigned reviewer (manager) |
+| `status` | Enum | `PENDING`→`SELF_ASSESSMENT`→`MANAGER_REVIEW`→`COMPLETED`→`ACKNOWLEDGED` |
+| `selfAssessment` | Text? | filled by subject |
+| `managerComments` | Text? | filled by reviewer |
+| `overallRating` | Int? | 1–5 |
+| `submittedAt` / `completedAt` / `acknowledgedAt` | DateTime? | lifecycle stamps |
+
+### Goal
+
+| Field | Type | Rules |
+|-------|------|-------|
+| `id` | UUID PK | auto |
+| `employeeId` | UUID FK → Employee | owner |
+| `cycleId` | UUID? FK → ReviewCycle | optional link to a cycle |
+| `title` | String | required |
+| `description` | Text? | optional |
+| `category` | String? | optional |
+| `status` | Enum | `DRAFT`, `ACTIVE` (default), `COMPLETED`, `CANCELLED` |
+| `progress` | Int | 0–100, default 0 |
+| `targetDate` | DateTime? | optional |
+
+### Position
+
+Lightweight job/role catalog backing org charts. Org hierarchy otherwise reuses
+`Department.parentDepartmentId` + `Employee.reportsToId`; RBAC role management edits
+`User.role` (audited) — no dedicated permission table.
+
+| Field | Type | Rules |
+|-------|------|-------|
+| `id` | UUID PK | auto |
+| `organizationId` | UUID FK → Organization | required; unique per `(organizationId, title)` |
+| `title` | String | required |
+| `departmentId` | UUID? FK → Department | optional |
+| `level` | Int? | seniority level for chart ordering |
+| `isActive` | Boolean | default true |
+
+---
+
+## Phase 11 — Proposed Entities (HR full-HRIS/payroll expansion)
+
+> Proposed to satisfy FR-047–FR-076. Field lists are indicative; finalize at plan time.
+> New `Role` enum values: `PAYROLL_OFFICER`, `FINANCE`.
+
+**201 File**
+- `EmergencyContact` — `employeeId, name, relationship, phone, isPrimary`.
+- `BankAccount` — `employeeId, method (BANK|GCASH), bankName?, accountName, accountNumber` (sensitive PII, HR-only).
+- `EmployeeDocument` — `employeeId, type (CONTRACT|GOV_ID|CERTIFICATE|OTHER), fileUrl, uploadedById, uploadedAt`.
+
+**Scheduling & compensation setup**
+- `WorkSchedule` + `WorkScheduleDay` — named schedule with per-weekday start/end, break minutes; `Employee.workScheduleId`.
+- `SalaryStructure` — org-level pay components/rules; `EarningType` and `DeductionType` code tables (name, code, taxable?, formula/config).
+
+**Attendance (derived)**
+- `AttendanceDay` — computed per employee per PHT day from `TimeLog` + schedule: `timeIn, timeOut, lateMinutes, undertimeMinutes, overtimeHours, nightDiffHours, breakMinutes, status (PRESENT|LATE|ABSENT|INCOMPLETE|ON_LEAVE|HOLIDAY|REST_DAY), isLocked`. Feeds payroll; supersedes ad-hoc `TimesheetEntry` hours for attendance-driven payroll.
+
+**Requests & approvals (generalize LeaveRequest)**
+- `Request` — `employeeId, type (LEAVE|OVERTIME|UNDERTIME|OFFICIAL_BUSINESS|REST_DAY_WORK|HOLIDAY_WORK|INFO_UPDATE), payload (Json), status, supportingDocs`.
+- `ApprovalStep` — `requestId, stageOrder, approverRole/approverId, decision (APPROVED|REJECTED|RETURNED), comment, decidedAt` (multi-stage routing).
+
+**Payroll expansion**
+- `PayrollPeriod` — `organizationId, name, start, end, cutoff, status (OPEN|IMPORTED|REVIEWED|GENERATED|LOCKED|RELEASED)`.
+- `PayrollEarning` / `PayrollDeduction` — line items on `PayrollEntry` (typeCode, amount) for OT, night diff, holiday, rest-day, allowance, incentive; loan/CA repayments.
+- `Loan` (+ `LoanPayment`) — `employeeId, principal, balance, amortization, schedule`.
+- `CashAdvance` — `employeeId, amount, balance, deductPeriodId`.
+
+**Separation**
+- `SeparationRecord` — `employeeId, type (RESIGNATION|TERMINATION), effectiveDate, reason, finalPayEntryId?, status`.
+- `ClearanceItem` — `separationId, label, department, status (PENDING|CLEARED), clearedById?`.
+
+**Dashboard / comms**
+- `Announcement` — `organizationId, title, body, publishedAt, audienceRole?`.
+- `Notification` — `userId, type, message, read, createdAt`.
+
+---
+
 ## State Machine Summary
 
 | Entity | States |
@@ -367,3 +509,7 @@ application enforces this via a scheduled archival job.
 | Applicant | APPLIED → SCREENING → INTERVIEW → OFFER → HIRED / REJECTED |
 | Employee | ACTIVE → ON_LEAVE → ACTIVE (return); ACTIVE → OFFBOARDED |
 | User | isActive: true → false (deactivate) → true (reactivate) |
+| PerformanceReview | PENDING → SELF_ASSESSMENT → MANAGER_REVIEW → COMPLETED → ACKNOWLEDGED |
+| Goal | DRAFT → ACTIVE → COMPLETED / CANCELLED |
+| BenefitEnrollment | ACTIVE → WAIVED / TERMINATED |
+| ReviewCycle | DRAFT → ACTIVE → CLOSED |

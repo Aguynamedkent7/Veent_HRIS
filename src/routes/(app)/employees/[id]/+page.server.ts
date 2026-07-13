@@ -1,30 +1,65 @@
-import { fail } from '@sveltejs/kit'
-import { requireMinRole } from '$lib/server/rbac'
+import { fail, isHttpError } from '@sveltejs/kit'
+import { requireMinRole, requireRole } from '$lib/server/rbac'
 import { getEmployee, updateEmployee, offboardEmployee } from '$lib/server/services/employees'
+import { listLoans, listCashAdvances, createLoan, createCashAdvance } from '$lib/server/services/payroll/loans'
+import { listSchedules } from '$lib/server/services/attendance/schedules'
+import { listEmployeeDocuments, saveEmployeeDocument, deleteEmployeeDocument } from '$lib/server/services/documents'
 import { db } from '$lib/server/db'
 import { z } from 'zod'
 import type { Actions, PageServerLoad } from './$types'
 
+const DOC_CATEGORIES = ['CONTRACT', 'GOVERNMENT_ID', 'RESUME', 'PAYROLL_FORM', 'EXIT_DOCUMENT', 'OTHER'] as const
+
+function ctxOf(locals: App.Locals, ip: string) {
+	return { organizationId: locals.user!.organizationId, actorId: locals.user!.id, actorRole: locals.user!.role, ipAddress: ip }
+}
+
 export const load: PageServerLoad = async ({ locals, params }) => {
 	requireMinRole(locals.user!.role, 'MANAGER')
 
-	const [employee, departments] = await Promise.all([
-		getEmployee(params.id, locals.user!.organizationId),
+	const canManage = ['HR_ADMIN', 'SUPER_ADMIN'].includes(locals.user!.role)
+
+	const [employee, departments, loans, cashAdvances, documents] = await Promise.all([
+		getEmployee(params.id, locals.user!.organizationId, locals.user!.role),
 		db.department.findMany({
 			where: { organizationId: locals.user!.organizationId },
 			orderBy: { name: 'asc' }
-		})
+		}),
+		canManage ? listLoans(params.id) : Promise.resolve([]),
+		canManage ? listCashAdvances(params.id) : Promise.resolve([]),
+		canManage ? listEmployeeDocuments(params.id, locals.user!.organizationId) : Promise.resolve([])
 	])
+	const schedules = canManage ? await listSchedules(locals.user!.organizationId) : []
 
-	return { employee, departments }
+	return { employee, departments, canManage, loans, cashAdvances, schedules, documents }
 }
+
+const loanSchema = z.object({
+	type: z.string().optional(),
+	principal: z.coerce.number().positive(),
+	installment: z.coerce.number().positive()
+})
+const cashAdvanceSchema = z.object({
+	amount: z.coerce.number().positive(),
+	installment: z.coerce.number().positive()
+})
 
 const updateSchema = z.object({
 	jobTitle: z.string().min(1).optional(),
 	departmentId: z.string().optional(),
 	contactPhone: z.string().optional(),
 	contactAddress: z.string().optional(),
-	basicMonthlySalary: z.coerce.number().positive().optional()
+	basicMonthlySalary: z.coerce.number().positive().optional(),
+	// Empty string clears the link; a value sets it (unique per employee).
+	discordId: z
+		.string()
+		.trim()
+		.optional()
+		.transform((v) => (v ? v : null)),
+	workScheduleId: z
+		.string()
+		.optional()
+		.transform((v) => (v ? v : null))
 })
 
 export const actions: Actions = {
@@ -36,12 +71,22 @@ export const actions: Actions = {
 		const parsed = updateSchema.safeParse(raw)
 		if (!parsed.success) return fail(400, { error: 'Invalid input' })
 
-		await updateEmployee(params.id, user.organizationId, parsed.data, {
-			organizationId: user.organizationId,
-			actorId: user.id,
-			actorRole: user.role,
-			ipAddress: getClientAddress()
-		})
+		try {
+			await updateEmployee(params.id, user.organizationId, parsed.data, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e: unknown) {
+			// Unique constraint on Employee.discordId
+			if (e && typeof e === 'object' && 'code' in e && (e as { code?: string }).code === 'P2002') {
+				return fail(409, { error: 'That Discord ID is already linked to another employee.' })
+			}
+			throw e
+		}
+
+		return { success: true }
 	},
 
 	offboard: async ({ request, locals, params, getClientAddress }) => {
@@ -57,5 +102,72 @@ export const actions: Actions = {
 			actorRole: user.role,
 			ipAddress: getClientAddress()
 		})
+	},
+
+	addLoan: async ({ request, locals, params, getClientAddress }) => {
+		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		const user = locals.user!
+		const parsed = loanSchema.safeParse(Object.fromEntries(await request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Invalid loan details' })
+		await createLoan(params.id, user.organizationId, parsed.data, {
+			organizationId: user.organizationId,
+			actorId: user.id,
+			actorRole: user.role,
+			ipAddress: getClientAddress()
+		})
+		return { success: true }
+	},
+
+	addCashAdvance: async ({ request, locals, params, getClientAddress }) => {
+		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		const user = locals.user!
+		const parsed = cashAdvanceSchema.safeParse(Object.fromEntries(await request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Invalid cash-advance details' })
+		await createCashAdvance(params.id, user.organizationId, parsed.data, {
+			organizationId: user.organizationId,
+			actorId: user.id,
+			actorRole: user.role,
+			ipAddress: getClientAddress()
+		})
+		return { success: true }
+	},
+
+	uploadDocument: async ({ request, locals, params, getClientAddress }) => {
+		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+
+		const data = await request.formData()
+		const file = data.get('file')
+		const categoryRaw = data.get('category') as string
+		const label = (data.get('label') as string) || ''
+
+		if (!(file instanceof File) || file.size === 0) return fail(400, { error: 'Please choose a file to upload.' })
+		const category = DOC_CATEGORIES.includes(categoryRaw as never) ? (categoryRaw as (typeof DOC_CATEGORIES)[number]) : 'OTHER'
+		const bytes = Buffer.from(await file.arrayBuffer())
+
+		try {
+			await saveEmployeeDocument(
+				params.id,
+				locals.user!.organizationId,
+				{ category, label, fileName: file.name, mimeType: file.type, bytes },
+				ctxOf(locals, getClientAddress())
+			)
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
+		}
+		return { success: true }
+	},
+
+	deleteDocument: async ({ request, locals, params, getClientAddress }) => {
+		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		const docId = (await request.formData()).get('docId') as string
+		if (!docId) return fail(400, { error: 'Missing document id.' })
+		try {
+			await deleteEmployeeDocument(docId, locals.user!.organizationId, ctxOf(locals, getClientAddress()))
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
+		}
+		return { success: true }
 	}
 }

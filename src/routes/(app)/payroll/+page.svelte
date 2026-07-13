@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
+	import TableSkeleton from '$lib/components/ui/TableSkeleton.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -14,9 +15,13 @@
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
 		<h1 class="text-2xl font-bold tracking-tight">Payroll Runs</h1>
-		<button onclick={() => (showCreate = !showCreate)} class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-			New Payroll Run
-		</button>
+		<div class="flex items-center gap-2">
+			<a href="/payroll/calculator" class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">Calculator</a>
+			<a href="/payroll/periods" class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">Payroll Periods</a>
+			<button onclick={() => (showCreate = !showCreate)} class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+				New Payroll Run
+			</button>
+		</div>
 	</div>
 
 	{#if showCreate}
@@ -38,6 +43,9 @@
 		</form>
 	{/if}
 
+	{#await data.runs}
+		<TableSkeleton rows={5} cols={6} />
+	{:then runs}
 	<div class="rounded-lg border">
 		<table class="w-full text-sm">
 			<thead class="border-b bg-muted/50">
@@ -51,7 +59,7 @@
 				</tr>
 			</thead>
 			<tbody class="divide-y">
-				{#each data.runs as run (run.id)}
+				{#each runs as run (run.id)}
 					<tr class="hover:bg-muted/30">
 						<td class="px-4 py-3">{formatShortDate(run.periodStart)} – {formatShortDate(run.periodEnd)}</td>
 						<td class="px-4 py-3 text-right font-mono">{formatCurrency(Number(run.totalGross))}</td>
@@ -87,4 +95,5 @@
 			</tbody>
 		</table>
 	</div>
+	{/await}
 </div>

@@ -1,5 +1,6 @@
 import { redirect } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
+import { payslipVisibleRunFilter } from '$lib/server/services/payroll/runs'
 import type { PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -16,7 +17,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	const payslips = await db.payrollEntry.findMany({
 		where: {
 			employeeId: myEmployee.id,
-			payrollRun: { status: 'APPROVED' }
+			payrollRun: payslipVisibleRunFilter
 		},
 		include: {
 			payrollRun: {

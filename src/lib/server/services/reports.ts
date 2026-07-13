@@ -265,26 +265,31 @@ export async function generateLeaveUtilization(
 	organizationId: string,
 	{ startDate, endDate }: { startDate: Date; endDate: Date }
 ) {
-	const requests = await db.leaveRequest.findMany({
+	// Leave is now a Request of type LEAVE; totalDays and leaveTypeId live in payload.
+	const requests = await db.request.findMany({
 		where: {
+			type: 'LEAVE',
 			status: 'APPROVED',
-			startDate: { gte: startDate },
-			endDate: { lte: endDate },
+			dateFrom: { gte: startDate },
+			dateTo: { lte: endDate },
 			employee: { user: { organizationId } }
 		},
-		select: {
-			totalDays: true,
-			leaveType: { select: { name: true } },
-			employeeId: true
-		}
+		select: { payload: true, employeeId: true }
 	})
+
+	const typeIds = [...new Set(requests.map((r) => (r.payload as { leaveTypeId?: string })?.leaveTypeId).filter(Boolean) as string[])]
+	const types = typeIds.length
+		? await db.leaveType.findMany({ where: { id: { in: typeIds } }, select: { id: true, name: true } })
+		: []
+	const typeNames = new Map(types.map((t) => [t.id, t.name]))
 
 	// Group by leave type
 	const byType: Record<string, { totalDays: number; employees: Set<string> }> = {}
 	for (const req of requests) {
-		const name = req.leaveType.name
+		const payload = (req.payload ?? {}) as { leaveTypeId?: string; totalDays?: number }
+		const name = (payload.leaveTypeId && typeNames.get(payload.leaveTypeId)) || '—'
 		if (!byType[name]) byType[name] = { totalDays: 0, employees: new Set() }
-		byType[name].totalDays += Number(req.totalDays)
+		byType[name].totalDays += Number(payload.totalDays ?? 0)
 		byType[name].employees.add(req.employeeId)
 	}
 
@@ -293,6 +298,50 @@ export async function generateLeaveUtilization(
 		TotalDaysUsed: data.totalDays,
 		EmployeeCount: data.employees.size
 	}))
+}
+
+// ─── generatePayrollRegister ──────────────────────────────────────────────────
+// One row per payroll entry in the range: gross, itemized statutory, other
+// deductions (loans/cash advances/tardiness), and net — the standard payroll register.
+
+export async function generatePayrollRegister(
+	organizationId: string,
+	{ startDate, endDate }: { startDate: Date; endDate: Date }
+) {
+	const entries = await db.payrollEntry.findMany({
+		where: {
+			payrollRun: { organizationId, periodStart: { gte: startDate }, periodEnd: { lte: endDate } }
+		},
+		select: {
+			grossPay: true,
+			sssEe: true,
+			philhealthEe: true,
+			pagibigEe: true,
+			withholdingTax: true,
+			totalDeductions: true,
+			netPay: true,
+			payrollRun: { select: { periodStart: true, periodEnd: true } },
+			employee: { select: { firstName: true, lastName: true, employeeNumber: true } }
+		},
+		orderBy: [{ payrollRun: { periodStart: 'asc' } }, { employee: { lastName: 'asc' } }]
+	})
+
+	const fmt = (d: Date) => d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+	return entries.map((e) => {
+		const statutory = Number(e.sssEe) + Number(e.philhealthEe) + Number(e.pagibigEe) + Number(e.withholdingTax)
+		const other = Math.round((Number(e.totalDeductions) - statutory) * 100) / 100
+		return {
+			Employee: `${e.employee.lastName}, ${e.employee.firstName} (${e.employee.employeeNumber})`,
+			Period: `${fmt(e.payrollRun.periodStart)} – ${fmt(e.payrollRun.periodEnd)}`,
+			Gross: Number(e.grossPay),
+			SSS: Number(e.sssEe),
+			PhilHealth: Number(e.philhealthEe),
+			PagIBIG: Number(e.pagibigEe),
+			Tax: Number(e.withholdingTax),
+			OtherDeductions: other,
+			Net: Number(e.netPay)
+		}
+	})
 }
 
 // ─── exportToCSV ──────────────────────────────────────────────────────────────

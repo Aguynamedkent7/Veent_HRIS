@@ -40,7 +40,7 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 	}
 
 	try {
-		const employee = await getEmployee(params.id, locals.user.organizationId)
+		const employee = await getEmployee(params.id, locals.user.organizationId, locals.user.role)
 		return json({ data: employee })
 	} catch (e: unknown) {
 		const err = e as { status?: number; body?: { message?: string } }

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import { formatShortDate } from '$lib/utils/format'
+	import TableSkeleton from '$lib/components/ui/TableSkeleton.svelte'
 	import type { PageData } from './$types'
 
 	let { data }: { data: PageData } = $props()
@@ -39,6 +40,9 @@
 		</form>
 	{/if}
 
+	{#await data.timesheets}
+		<TableSkeleton rows={5} cols={data.isManager ? 5 : 4} />
+	{:then timesheets}
 	<div class="rounded-lg border">
 		<table class="w-full text-sm">
 			<thead class="border-b bg-muted/50">
@@ -51,7 +55,7 @@
 				</tr>
 			</thead>
 			<tbody class="divide-y">
-				{#each data.timesheets as ts (ts.id)}
+				{#each timesheets as ts (ts.id)}
 					<tr class="hover:bg-muted/30">
 						{#if data.isManager}
 							<td class="px-4 py-3">{ts.employee.lastName}, {ts.employee.firstName}</td>
@@ -87,4 +91,5 @@
 			</tbody>
 		</table>
 	</div>
+	{/await}
 </div>

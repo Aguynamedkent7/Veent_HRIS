@@ -6,6 +6,12 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 
 	const emp = $derived(data.employee)
+
+	const CAT_LABELS: Record<string, string> = {
+		CONTRACT: 'Contract', GOVERNMENT_ID: 'Government ID', RESUME: 'Résumé',
+		PAYROLL_FORM: 'Payroll Form', EXIT_DOCUMENT: 'Exit Document', OTHER: 'Other'
+	}
+	const fmtSize = (b: number) => (b < 1024 * 1024 ? `${Math.max(1, Math.round(b / 1024))} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`)
 </script>
 
 <svelte:head>
@@ -154,4 +160,38 @@
 			</form>
 		</section>
 	</div>
+
+	<!-- My Documents (read-only; HR maintains the 201 file) -->
+	<section class="card space-y-4">
+		<h2 class="text-sm font-semibold uppercase tracking-wider text-muted-foreground">My Documents</h2>
+		{#if data.documents.length}
+			<div class="rounded-md border">
+				<table class="w-full text-sm">
+					<thead class="border-b bg-muted/50">
+						<tr>
+							<th class="px-3 py-2 text-left font-medium text-muted-foreground">Category</th>
+							<th class="px-3 py-2 text-left font-medium text-muted-foreground">Document</th>
+							<th class="px-3 py-2 text-right font-medium text-muted-foreground">Size</th>
+							<th class="px-3 py-2 text-right font-medium text-muted-foreground">Uploaded</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y">
+						{#each data.documents as doc (doc.id)}
+							<tr class="hover:bg-muted/30">
+								<td class="px-3 py-2">{CAT_LABELS[doc.category] ?? doc.category}</td>
+								<td class="px-3 py-2">
+									<a href="/api/v1/employees/{emp.id}/documents/{doc.id}" class="font-medium text-primary hover:underline">{doc.label}</a>
+									<span class="block text-xs text-muted-foreground">{doc.fileName}</span>
+								</td>
+								<td class="px-3 py-2 text-right text-muted-foreground">{fmtSize(doc.size)}</td>
+								<td class="px-3 py-2 text-right text-muted-foreground">{formatDate(doc.uploadedAt)}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{:else}
+			<p class="text-xs text-muted-foreground">No documents on file. HR uploads contracts, IDs, and other records here.</p>
+		{/if}
+	</section>
 </div>

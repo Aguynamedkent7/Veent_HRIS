@@ -8,9 +8,10 @@ export const load: PageServerLoad = async ({ locals }) => {
 		db.employee.count({
 			where: { user: { organizationId: user.organizationId }, employmentStatus: 'ACTIVE' }
 		}),
-		db.leaveRequest.count({
+		db.request.count({
 			where: {
 				employee: { user: { organizationId: user.organizationId } },
+				type: 'LEAVE',
 				status: 'PENDING'
 			}
 		}),

@@ -11,7 +11,7 @@ const createSchema = z.object({
 	requirements: z.string().optional(),
 	location: z.string().optional(),
 	departmentId: z.string().min(1),
-	employmentType: z.enum(['REGULAR', 'PROBATIONARY', 'CONTRACTUAL', 'PART_TIME']).optional()
+	employmentType: z.enum(['FULL_TIME', 'PROBATIONARY', 'CONTRACTUAL', 'PART_TIME']).optional()
 })
 
 export const GET: RequestHandler = async ({ locals }) => {

@@ -32,12 +32,27 @@ export async function getTimesheet(id: string, organizationId: string) {
 	const ts = await db.timesheet.findFirst({
 		where: { id, employee: { user: { organizationId } } },
 		include: {
-			employee: { select: { id: true, firstName: true, lastName: true } },
+			employee: { select: { id: true, firstName: true, lastName: true, reportsToId: true } },
 			entries: { orderBy: { date: 'asc' } }
 		}
 	})
 	if (!ts) error(404, 'Timesheet not found')
 	return ts
+}
+
+/**
+ * A plain MANAGER may only act on resources belonging to their direct reports.
+ * HR_ADMIN / SUPER_ADMIN act org-wide. Throws 403 otherwise.
+ */
+async function assertManagesEmployee(ctx: AuditContext, reportsToId: string | null) {
+	if (ctx.actorRole !== 'MANAGER') return
+	const actorEmployee = await db.employee.findUnique({
+		where: { userId: ctx.actorId },
+		select: { id: true }
+	})
+	if (!actorEmployee || reportsToId !== actorEmployee.id) {
+		error(403, 'You can only review items for your direct reports')
+	}
 }
 
 export async function createTimesheet(
@@ -103,6 +118,7 @@ export async function reviewTimesheet(
 	ctx: AuditContext
 ) {
 	const ts = await getTimesheet(id, organizationId)
+	await assertManagesEmployee(ctx, ts.employee.reportsToId)
 	if (ts.status !== 'SUBMITTED') error(400, 'Only submitted timesheets can be reviewed')
 
 	const updated = await db.timesheet.update({

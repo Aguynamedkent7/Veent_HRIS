@@ -5,11 +5,12 @@ import {
 	generateHeadcount,
 	generateAttendance,
 	generatePayrollCosts,
-	generateLeaveUtilization
+	generateLeaveUtilization,
+	generatePayrollRegister
 } from '$lib/server/services/reports'
 import type { PageServerLoad } from './$types'
 
-const VALID_TYPES = ['headcount', 'attendance', 'payroll-costs', 'leave-utilization'] as const
+const VALID_TYPES = ['headcount', 'attendance', 'payroll-costs', 'leave-utilization', 'payroll-register'] as const
 
 export const load: PageServerLoad = async ({ locals, params, url }) => {
 	const user = locals.user!
@@ -49,6 +50,9 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 	} else if (type === 'leave-utilization') {
 		results = await generateLeaveUtilization(user.organizationId, { startDate, endDate })
 		columns = ['LeaveType', 'TotalDaysUsed', 'EmployeeCount']
+	} else if (type === 'payroll-register') {
+		results = await generatePayrollRegister(user.organizationId, { startDate, endDate })
+		columns = ['Employee', 'Period', 'Gross', 'SSS', 'PhilHealth', 'PagIBIG', 'Tax', 'OtherDeductions', 'Net']
 	}
 
 	return {

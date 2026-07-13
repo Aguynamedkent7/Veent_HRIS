@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
 import { apiError } from '$lib/server/api-error'
+import { isPayslipVisible } from '$lib/server/services/payroll/runs'
 import type { RequestHandler } from './$types'
 
 export const GET: RequestHandler = async ({ locals, params }) => {
@@ -26,7 +27,8 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 					periodStart: true,
 					periodEnd: true,
 					status: true,
-					approvedAt: true
+					approvedAt: true,
+					period: { select: { status: true } }
 				}
 			}
 		}
@@ -45,7 +47,7 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 		}
 	}
 
-	if (entry.payrollRun.status !== 'APPROVED') {
+	if (!isPayslipVisible(entry.payrollRun)) {
 		return apiError(403, 'Payslip not yet available')
 	}
 

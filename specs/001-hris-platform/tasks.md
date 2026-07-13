@@ -228,10 +228,10 @@ description: "Task list for Veent HRIS Core Platform"
 - [X] T113 [P] Add `src/routes/+error.svelte`: user-friendly error page with message and back-link for 403 (access denied), 404 (not found), and 500 (server error) using shadcn-svelte Card
 - [X] T114 [P] Add public holiday management: `src/routes/(app)/settings/holidays/+page.svelte` (date picker + name + type form, list of configured holidays) and `+page.server.ts` (`requireRole(HR_ADMIN, SUPER_ADMIN)`; CRUD on PublicHoliday table)
 - [X] T115 [P] ~~Redis rate limiting~~ — **SKIPPED**: Redis removed; login brute-force protection deferred to infrastructure layer (reverse proxy / WAF)
-- [ ] T116 [P] Add loading skeletons to all list pages: employees list, timesheets list, approvals queue, payroll runs list, reports table
+- [X] T116 [P] Add loading skeletons to all list pages — added `src/lib/components/ui/Skeleton.svelte` + `TableSkeleton.svelte`; converted employees/timesheets/approvals/payroll list `load` functions to stream the list query and render skeletons via `{#await}`; reports table uses a `$navigating`-based skeleton for the same-route "Generate" submit
 - [X] T117 [P] ~~Redis report caching~~ — **SKIPPED**: Redis removed; reports query DB directly (acceptable for current load)
-- [ ] T118 Security audit: review all `+server.ts` and `+page.server.ts` files — verify every mutating route has `requireRole()` call, every employee-scoped route has ownership check, no PII fields returned to unauthorized roles
-- [ ] T119 [P] Write Playwright E2E tests in `tests/e2e/` covering all 8 quickstart scenarios from `quickstart.md`: login, onboard employee, submit timesheet, approve timesheet, leave request, payroll run, dashboard metrics, audit log integrity
+- [X] T118 Security audit — reviewed all `+server.ts`/`+page.server.ts`. Fixed: manager-to-report ownership missing in `reviewTimesheet`/`reviewLeaveRequest` (a MANAGER could approve/reject ANY org member's items — IDOR); `getEmployee` leaked salary + government IDs to MANAGER viewers (now stripped below HR_ADMIN, employee detail UI gated on `canManage`); invalid `REGULAR` enum in recruitment API schema → `FULL_TIME`
+- [X] T119 [P] Playwright E2E tests in `tests/e2e/` covering quickstart scenarios: auth/RBAC (`auth.spec.ts`), employee self-service leave + profile (`employee.spec.ts`), timesheet submit → manager approval lifecycle (`timesheet-approval.spec.ts`), HR admin onboarding + dashboard + report + audit log (`admin.spec.ts`). Seed enriched with manager + employee (reports-to) users and leave balances; `global-setup.ts` resets transactional data per run. 11/11 passing
 
 ### Additional tasks completed post-plan
 
@@ -239,6 +239,115 @@ description: "Task list for Veent HRIS Core Platform"
 - [X] T121 Fix `{@const}` placement in `src/lib/components/recruitment/ApplicantKanban.svelte` — was inside `<div>`, must be immediate child of block tag
 - [X] T122 Fix `$derived` captured in `$state()` init in `src/routes/(app)/timesheets/new/+page.svelte` — initialize entries as `$state([])`, rely on `$effect` for population
 - [X] T123 Add `src/hooks.ts` transport hook to serialize Prisma `Decimal` objects across the server→client boundary — fixes 500 on `/leave`, `/profile`, `/employees`
+- [X] T124 Make `prisma/seed.ts` idempotent — `LeaveType` has no `@@unique([organizationId, name])`, so `createMany` duplicated 5 leave types on every re-seed; now only seeds when none exist. Cleaned existing duplicates from the dev DB
+- [X] T125 Enrich seed for E2E — added `manager@veent.ph` (MANAGER) and `employee@veent.ph` (EMPLOYEE, reportsTo manager) with leave balances, so approval/self-service flows are testable
+
+---
+
+## Phase 10: HR Module Expansion & Discord Time Tracking
+
+**Scope**: Benefits Administration, Performance Management, Settings & Org Structure, and a
+Discord-driven time-tracking integration. This pass delivered the **foundation** (schema,
+spec-kit docs, integration code, service layers, route scaffolds); rich page UIs and REST
+routes are deferred and enumerated below. `[X]` = done this pass, `[ ]` = follow-up.
+
+### 10.1 Schema & spec-kit artifacts
+
+- [X] T126 Add enums `PunchType`, `PunchSource`, `BenefitPlanType`, `BenefitEnrollmentStatus`, `ReviewCycleStatus`, `ReviewStatus`, `GoalStatus` in `prisma/schema.prisma`
+- [X] T127 Add models `TimeLog`, `BenefitPlan`, `BenefitEnrollment`, `ReviewCycle`, `PerformanceReview`, `Goal`, `Position`; add `Employee.discordId` (unique) + `Employee.positionId` + back-relations; `Position ↔ Department` relation; apply via `prisma db push` + `generate`
+- [X] T128 [P] Update `data-model.md` (expansion entities + state-machine rows) and `spec.md` (FR-034–FR-046)
+- [X] T129 [P] Author contracts `contracts/{benefits,performance,settings,timelog}.md` and extend `contracts/timesheets.md`
+- [ ] T130 [P] Seed sample data: one `BenefitPlan`, one `ReviewCycle`, a few `Position` rows, and a `discordId` on the demo employee (`prisma/seed.ts`) ([#1](https://github.com/Aguynamedkent7/Veent_HRIS/issues/1))
+
+### 10.2 Discord time tracking
+
+- [X] T131 Manila (UTC+8) helpers in `src/lib/utils/dates.ts` (`manilaDayKey`, `manilaDayStart`, `manilaWeekStart`, `manilaWeekEnd`)
+- [X] T132 HMAC sign/verify with replay window in `src/lib/server/hmac.ts`
+- [X] T133 `src/lib/server/services/timelog.ts` — `recordPunch`, `listPunches`, `pairPunchesToDailyHours` (pure), `aggregateTimeLogsToTimesheet`
+- [X] T134 HMAC-authed `POST src/routes/api/v1/timesheets/log/+server.ts`
+- [X] T135 [P] Standalone `scripts/discord-bot.ts` (persistent Clock In/Out buttons) + `scripts/README.md` + `.env.example` + `package.json` `bot` script + `discord.js` dependency
+- [X] T136 [P] Unit tests `tests/unit/hmac.test.ts`, `tests/unit/timelog-aggregate.test.ts`
+- [ ] T137 `GET /api/v1/timesheets/[employeeId]/punches` route (list raw punches; owner/manager/HR) ([#2](https://github.com/Aguynamedkent7/Veent_HRIS/issues/2))
+- [ ] T138 `POST /api/v1/timesheets/aggregate` route wrapping `aggregateTimeLogsToTimesheet` (HR_ADMIN+) ([#3](https://github.com/Aguynamedkent7/Veent_HRIS/issues/3))
+- [ ] T139 HR "Time Logs → Timesheet" review UI on `(app)/timesheets` — per-PHT-day punch table with computed hours + warnings, an "Aggregate week" action, inline edit of `TimesheetEntry.hoursWorked`, then Approve via existing flow ([#4](https://github.com/Aguynamedkent7/Veent_HRIS/issues/4))
+- [ ] T140 [P] Employee read-only punch view + `discordId` field in the employee profile / onboarding forms ([#5](https://github.com/Aguynamedkent7/Veent_HRIS/issues/5))
+- [ ] T141 [P] Bot production hardening (pm2/systemd unit) and optional slash-command fallback — docs only for now ([#6](https://github.com/Aguynamedkent7/Veent_HRIS/issues/6))
+- [ ] T142 [P] E2E: signed punch → aggregate → approve happy path (`tests/e2e/`) ([#7](https://github.com/Aguynamedkent7/Veent_HRIS/issues/7))
+
+### 10.3 Benefits Administration
+
+- [X] T143 Service `src/lib/server/services/benefits.ts` (plans + enrollments CRUD, audited)
+- [X] T144 Scaffold `(app)/benefits/+page.{server.ts,svelte}` (plan list + create; HR_ADMIN+) and nav entry
+- [ ] T145 REST routes `src/routes/api/v1/benefits/plans/+server.ts` (+ `[id]`) and `.../enrollments/+server.ts` (+ `[id]`) ([#8](https://github.com/Aguynamedkent7/Veent_HRIS/issues/8))
+- [ ] T146 Enrollment management UI (enroll employee, change status, coverage level) ([#9](https://github.com/Aguynamedkent7/Veent_HRIS/issues/9))
+- [ ] T147 [P] Employee "My Benefits" read-only view (`(app)/benefits/me` or profile section) ([#10](https://github.com/Aguynamedkent7/Veent_HRIS/issues/10))
+- [ ] T148 [P] Optional: fold employee benefit costs into payroll deductions ([#11](https://github.com/Aguynamedkent7/Veent_HRIS/issues/11))
+
+### 10.4 Performance Management
+
+- [X] T149 Service `src/lib/server/services/performance.ts` (cycles, reviews, goals, audited)
+- [X] T150 Scaffold `(app)/performance/+page.{server.ts,svelte}` (my goals + reviews; create/update goal) and nav entry
+- [ ] T151 REST routes under `src/routes/api/v1/performance/` (cycles, reviews, goals) ([#12](https://github.com/Aguynamedkent7/Veent_HRIS/issues/12))
+- [ ] T152 Review detail page `(app)/performance/reviews/[id]` with self-assessment and manager-review forms + acknowledge step ([#13](https://github.com/Aguynamedkent7/Veent_HRIS/issues/13))
+- [ ] T153 Cycle management UI for HR (create/activate/close cycles, open reviews for a cycle) ([#14](https://github.com/Aguynamedkent7/Veent_HRIS/issues/14))
+- [ ] T154 [P] Manager view of direct reports' reviews and goals ([#15](https://github.com/Aguynamedkent7/Veent_HRIS/issues/15))
+
+### 10.5 Settings & Org Structure
+
+- [X] T155 Service `src/lib/server/services/settings/org.ts` (positions, org chart, `setUserRole` with guardrails, audited)
+- [X] T156 Scaffold `(app)/settings/org/+page.*` (positions + org list; HR_ADMIN+) and `(app)/settings/roles/+page.*` (role management; SUPER_ADMIN) + nav entries
+- [ ] T157 REST routes under `src/routes/api/v1/settings/` (positions, org-chart, users/role) ([#16](https://github.com/Aguynamedkent7/Veent_HRIS/issues/16))
+- [ ] T158 Interactive org-chart visualization (tree with reporting lines) rather than the flat list ([#17](https://github.com/Aguynamedkent7/Veent_HRIS/issues/17))
+- [ ] T159 [P] Position edit UI + employee ↔ position assignment (in employee detail/onboarding) ([#18](https://github.com/Aguynamedkent7/Veent_HRIS/issues/18))
+- [ ] T160 [P] Last-super-admin guardrail on role changes; optional per-user permission overrides ([#19](https://github.com/Aguynamedkent7/Veent_HRIS/issues/19))
+
+---
+
+## Phase 11: Full HRIS & Payroll Expansion (HR requirements, FR-047–FR-076)
+
+**Status**: requirements captured (spec.md FR-047–FR-076, data-model "Phase 11 — Proposed Entities").
+All items below are **not started**. The large epics (Payroll, Attendance, Requests) each warrant
+their own `/speckit-plan` pass before task breakdown — this is a module-level backlog, not final tasks.
+
+### 11.1 Foundations (do first — many epics depend on these)
+- [x] T161 Add `Role` values `PAYROLL_OFFICER`, `FINANCE`; extend RBAC + nav gating + role-management UI (FR-073/074) ([#20](https://github.com/Aguynamedkent7/Veent_HRIS/issues/20))
+- [x] T162 File uploads: storage strategy + `EmployeeDocument`/supporting-docs (contracts, IDs) (FR-049/056/071/072) ([#21](https://github.com/Aguynamedkent7/Veent_HRIS/issues/21))
+- [x] T163 Settings master data: company info, salary structures, work schedules, payroll cutoffs, earnings/deduction codes (FR-075) ([#22](https://github.com/Aguynamedkent7/Veent_HRIS/issues/22))
+
+### 11.2 Employee 201 File (FR-047–FR-051)
+- [ ] T164 Emergency contacts, bank/GCash details (sensitive, HR-only), document uploads on the employee record ([#23](https://github.com/Aguynamedkent7/Veent_HRIS/issues/23))
+- [ ] T165 Assign Position + Work Schedule to employees; surface employment history from the audit trail ([#24](https://github.com/Aguynamedkent7/Veent_HRIS/issues/24))
+
+### 11.3 Attendance engine (FR-052–FR-055) — needs a plan pass
+- [X] T166 `AttendanceDay` derivation from `TimeLog` + `WorkSchedule` (late/undertime/OT/night-diff/breaks/missing), PHT-aware
+- [X] T167 HR attendance-review workflow: flag no-time-in / incomplete, correct, and per-period **lock** before payroll
+
+### 11.4 Requests & multi-stage approvals (FR-056–FR-059) — needs a plan pass
+- [x] T168 Generalize `LeaveRequest` → `Request` (7 types) with typed payloads + supporting docs (Employee Kiosk) ([#25](https://github.com/Aguynamedkent7/Veent_HRIS/issues/25))
+- [x] T169 Configurable multi-stage routing (`ApprovalStep`: Employee→Supervisor→HR→Payroll) with Approve/Reject/Return; auto-apply approved requests to attendance/payroll ([#26](https://github.com/Aguynamedkent7/Veent_HRIS/issues/26))
+
+### 11.5 Payroll expansion (FR-060–FR-066) — needs a plan pass (largest epic)
+- [X] T170 `PayrollPeriod` lifecycle (create→import→review→generate→lock→release) replacing/wrapping `PayrollRun`
+- [X] T171 Earnings engine: OT, night diff, holiday pay, rest-day pay, allowances, incentives (`PayrollEarning`)
+- [X] T172 Deductions engine: loans + amortization, cash advances (`Loan`/`CashAdvance`/`PayrollDeduction`) atop statutory
+- [X] T173 Payslip release gating + immutability on lock (FR-063)
+- [X] T174 Payroll Calculator (what-if preview, non-persisting) (FR-066)
+- [ ] T175 [P] *(integration, deferred)* Disbursement: bank-file export / GCash (FR-065) ([#27](https://github.com/Aguynamedkent7/Veent_HRIS/issues/27))
+
+### 11.6 Reports (FR-067)
+- [ ] T176 Payroll register, payslips, tardiness, overtime, loan summary, government/BIR reports (required layouts) + exports ([#28](https://github.com/Aguynamedkent7/Veent_HRIS/issues/28))
+
+### 11.7 Recruitment & onboarding (FR-068–FR-071)
+- [ ] T177 Interview scheduling + notes; issue offers; offer→onboarding transition ([#29](https://github.com/Aguynamedkent7/Veent_HRIS/issues/29))
+- [ ] T178 Onboarding checklist (contract upload, account gen, payroll registration, start attendance) ([#30](https://github.com/Aguynamedkent7/Veent_HRIS/issues/30))
+- [ ] T179 [P] *(integration, deferred)* Publish postings to external job boards (FR-070) ([#31](https://github.com/Aguynamedkent7/Veent_HRIS/issues/31))
+
+### 11.8 Separation (FR-072)
+- [ ] T180 `SeparationRecord` + clearance checklist + exit docs + final-pay computation + separation report ([#32](https://github.com/Aguynamedkent7/Veent_HRIS/issues/32))
+
+### 11.9 Dashboard & comms (FR-076)
+- [ ] T181 Add attendance summary + payroll status + employees-currently-on-leave tile to the HR dashboard ([#33](https://github.com/Aguynamedkent7/Veent_HRIS/issues/33))
+- [ ] T182 [P] Announcements + notifications (`Announcement`/`Notification`) ([#34](https://github.com/Aguynamedkent7/Veent_HRIS/issues/34))
 
 ---
 

@@ -1,12 +1,13 @@
 import { fail } from '@sveltejs/kit'
-import { requireMinRole } from '$lib/server/rbac'
+import { requireMinRole, requirePayrollManage } from '$lib/server/rbac'
 import { listPayrollRuns, createPayrollRun, computePayroll, approvePayroll } from '$lib/server/services/payroll/index'
 import { z } from 'zod'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
-	requireMinRole(locals.user!.role, 'HR_ADMIN')
-	const runs = await listPayrollRuns(locals.user!.organizationId)
+	requirePayrollManage(locals.user!.role)
+	// Stream the runs list so the page renders a skeleton while it loads.
+	const runs = listPayrollRuns(locals.user!.organizationId)
 	return { runs }
 }
 
@@ -18,7 +19,7 @@ const createSchema = z.object({
 export const actions: Actions = {
 	create: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		requireMinRole(user.role, 'HR_ADMIN')
+		requirePayrollManage(user.role)
 
 		const raw = Object.fromEntries(await request.formData())
 		const parsed = createSchema.safeParse(raw)
@@ -39,7 +40,7 @@ export const actions: Actions = {
 
 	compute: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		requireMinRole(user.role, 'HR_ADMIN')
+		requirePayrollManage(user.role)
 
 		const data = await request.formData()
 		const id = data.get('id') as string

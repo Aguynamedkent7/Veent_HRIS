@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms'
 	import { page } from '$app/stores'
 	import { formatShortDate } from '$lib/utils/format'
+	import TableSkeleton from '$lib/components/ui/TableSkeleton.svelte'
 	import type { PageData } from './$types'
 
 	let { data }: { data: PageData } = $props()
@@ -98,45 +99,49 @@
 	{/if}
 
 	<!-- Table -->
-	<div class="rounded-lg border">
-		<table class="w-full text-sm">
-			<thead class="border-b bg-muted/50">
-				<tr>
-					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Employee</th>
-					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Department</th>
-					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Title</th>
-					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Type</th>
-					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
-					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Start Date</th>
-					<th class="px-4 py-3"></th>
-				</tr>
-			</thead>
-			<tbody class="divide-y">
-				{#each data.employees as emp (emp.id)}
-					<tr class="hover:bg-muted/30">
-						<td class="px-4 py-3">
-							<div class="font-medium">{emp.lastName}, {emp.firstName}</div>
-							<div class="text-xs text-muted-foreground">{emp.employeeNumber}</div>
-						</td>
-						<td class="px-4 py-3 text-muted-foreground">{emp.department.name}</td>
-						<td class="px-4 py-3">{emp.jobTitle}</td>
-						<td class="px-4 py-3 text-muted-foreground">{emp.employmentType.replace('_', ' ')}</td>
-						<td class="px-4 py-3">
-							<span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {emp.employmentStatus === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}">
-								{emp.employmentStatus}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-muted-foreground">{formatShortDate(emp.startDate)}</td>
-						<td class="px-4 py-3">
-							<a href="/employees/{emp.id}" class="text-primary hover:underline text-xs">View</a>
-						</td>
-					</tr>
-				{:else}
+	{#await data.employees}
+		<TableSkeleton rows={6} cols={6} />
+	{:then employees}
+		<div class="rounded-lg border">
+			<table class="w-full text-sm">
+				<thead class="border-b bg-muted/50">
 					<tr>
-						<td colspan="7" class="px-4 py-8 text-center text-muted-foreground">No employees found</td>
+						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Employee</th>
+						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Department</th>
+						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Title</th>
+						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Type</th>
+						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
+						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Start Date</th>
+						<th class="px-4 py-3"></th>
 					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+				</thead>
+				<tbody class="divide-y">
+					{#each employees as emp (emp.id)}
+						<tr class="hover:bg-muted/30">
+							<td class="px-4 py-3">
+								<div class="font-medium">{emp.lastName}, {emp.firstName}</div>
+								<div class="text-xs text-muted-foreground">{emp.employeeNumber}</div>
+							</td>
+							<td class="px-4 py-3 text-muted-foreground">{emp.department.name}</td>
+							<td class="px-4 py-3">{emp.jobTitle}</td>
+							<td class="px-4 py-3 text-muted-foreground">{emp.employmentType.replace('_', ' ')}</td>
+							<td class="px-4 py-3">
+								<span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {emp.employmentStatus === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}">
+									{emp.employmentStatus}
+								</span>
+							</td>
+							<td class="px-4 py-3 text-muted-foreground">{formatShortDate(emp.startDate)}</td>
+							<td class="px-4 py-3">
+								<a href="/employees/{emp.id}" class="text-primary hover:underline text-xs">View</a>
+							</td>
+						</tr>
+					{:else}
+						<tr>
+							<td colspan="7" class="px-4 py-8 text-center text-muted-foreground">No employees found</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+	{/await}
 </div>

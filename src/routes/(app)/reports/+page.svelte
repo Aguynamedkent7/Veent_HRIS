@@ -5,6 +5,15 @@
 
 	let { data }: { data: PageData } = $props()
 	const currentYear = new Date().getFullYear()
+
+	const allReportCards = [
+		{ href: '/reports/payroll-register', label: 'Payroll Register', desc: 'Per-employee gross, deductions & net', payroll: true },
+		{ href: '/reports/headcount', label: 'Headcount', desc: 'Monthly headcount by department', payroll: false },
+		{ href: '/reports/attendance', label: 'Attendance', desc: 'Timesheet hours by employee', payroll: false },
+		{ href: '/reports/payroll-costs', label: 'Payroll Costs', desc: 'Gross/net by department', payroll: true },
+		{ href: '/reports/leave-utilization', label: 'Leave Utilization', desc: 'Days used by leave type', payroll: false }
+	]
+	const reportCards = $derived(data.canViewHrReports ? allReportCards : allReportCards.filter((r) => r.payroll))
 </script>
 
 <svelte:head>
@@ -24,6 +33,20 @@
 		</form>
 	</div>
 
+	<!-- Detailed reports (filterable + CSV export) -->
+	<section class="space-y-3">
+		<h2 class="text-lg font-semibold">Detailed Reports</h2>
+		<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+			{#each reportCards as r (r.href)}
+				<a href={r.href} class="rounded-lg border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-card/80">
+					<p class="font-medium">{r.label}</p>
+					<p class="mt-0.5 text-xs text-muted-foreground">{r.desc}</p>
+				</a>
+			{/each}
+		</div>
+	</section>
+
+	{#if data.canViewHrReports}
 	<!-- Attrition summary -->
 	<section class="space-y-3">
 		<h2 class="text-lg font-semibold">Workforce — {data.year}</h2>
@@ -67,6 +90,7 @@
 			</table>
 		</div>
 	</section>
+	{/if}
 
 	<!-- Payroll summary -->
 	{#if data.payrollSummary.length > 0}
