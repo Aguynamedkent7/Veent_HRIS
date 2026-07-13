@@ -185,5 +185,16 @@ after migration (Slice 2). `LeaveRequestStatus` enum stays only if referenced el
   these edits move the reads).
 
 ## Suggested build order
-Slice 1 → 2 (schema+migration, verify) → 3 → 4 (kiosk usable) → 5 (approvals) → 6 (OT gate ⭐) → 7.
-Each slice committed incrementally with DB checks, mirroring the attendance/payroll slices.
+**Re-sequenced during implementation** to keep every commit non-breaking: the leave→Request
+migration is deferred to the end (after the approval engine exists), so leave never sits in a
+half-migrated state.
+
+1. **Slice 1** ✅ — schema + enums.
+2. **Slice 2** — validation (Zod union) + routing config + `createRequest` service. *Additive, touches
+   no existing code.*
+3. **Slice 3** — Employee Kiosk API/UI (`(app)/requests`) for the 6 new types.
+4. **Slice 4** — approval engine (`decide()`), rebuild `/approvals` inbox to include requests.
+5. **Slice 5** — auto-apply + **OT gate** ⭐ (wire approved OT into `deriveRange`).
+6. **Slice 6 (cutover)** — migrate `leave_requests` → `Request(type=LEAVE)`, repoint all 11 readers,
+   route leave create/approve through the Request engine, drop `LeaveRequest`.
+7. **Slice 7** — tests + manual verify throughout.
