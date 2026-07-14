@@ -53,7 +53,7 @@
 	{:else}
 		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 			{#each data.pendingRequests as req (req.id)}
-				<div class="flex h-72 flex-col rounded-lg border bg-card p-4">
+				<div class="flex h-56 flex-col rounded-lg border bg-card p-4">
 					<div class="flex flex-1 flex-col gap-2 overflow-hidden">
 						<div class="flex items-center justify-between gap-2">
 							<span class="truncate font-medium">{typeLabel(req.type)}</span>
@@ -75,7 +75,7 @@
 						{#if req.reason}
 							<p class="line-clamp-3 text-xs text-muted-foreground">{req.reason}</p>
 						{/if}
-						<a href="/requests/{req.id}" class="text-xs text-primary hover:underline justify-self-end"
+						<a href="/requests/{req.id}" class="mt-auto text-xs text-primary hover:underline"
 							>View detail →</a
 						>
 					</div>
