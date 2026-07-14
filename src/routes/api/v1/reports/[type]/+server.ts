@@ -6,13 +6,35 @@ import {
 	generatePayrollCosts,
 	generateLeaveUtilization,
 	generatePayrollRegister,
+	generateTardiness,
+	generateOvertime,
+	generateLoanSummary,
+	generateGovernmentRemittance,
+	generateBIRWithholding,
 	exportToCSV
 } from '$lib/server/services/reports'
 import type { RequestHandler } from './$types'
 
-const VALID_TYPES = ['headcount', 'attendance', 'payroll-costs', 'leave-utilization', 'payroll-register'] as const
+const VALID_TYPES = [
+	'headcount',
+	'attendance',
+	'payroll-costs',
+	'leave-utilization',
+	'payroll-register',
+	'tardiness',
+	'overtime',
+	'loan-summary',
+	'government-remittance',
+	'bir-withholding'
+] as const
 // Payroll reports are also visible to Payroll Officer / Finance; the rest are HR-only.
-const PAYROLL_REPORT_TYPES = ['payroll-costs', 'payroll-register'] as const
+const PAYROLL_REPORT_TYPES = [
+	'payroll-costs',
+	'payroll-register',
+	'loan-summary',
+	'government-remittance',
+	'bir-withholding'
+] as const
 
 export const GET: RequestHandler = async ({ locals, params, url }) => {
 	if (!locals.user) error(401, 'Unauthorized')
@@ -33,9 +55,7 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
 	const startDate = url.searchParams.get('start')
 		? new Date(url.searchParams.get('start')!)
 		: new Date(new Date().getFullYear(), 0, 1)
-	const endDate = url.searchParams.get('end')
-		? new Date(url.searchParams.get('end')!)
-		: new Date()
+	const endDate = url.searchParams.get('end') ? new Date(url.searchParams.get('end')!) : new Date()
 	const departmentId = url.searchParams.get('department') ?? undefined
 	const exportCsv = url.searchParams.get('export') === 'csv'
 
@@ -51,6 +71,16 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
 		results = await generateLeaveUtilization(user.organizationId, { startDate, endDate })
 	} else if (type === 'payroll-register') {
 		results = await generatePayrollRegister(user.organizationId, { startDate, endDate })
+	} else if (type === 'tardiness') {
+		results = await generateTardiness(user.organizationId, { startDate, endDate, departmentId })
+	} else if (type === 'overtime') {
+		results = await generateOvertime(user.organizationId, { startDate, endDate, departmentId })
+	} else if (type === 'loan-summary') {
+		results = await generateLoanSummary(user.organizationId, { startDate, endDate })
+	} else if (type === 'government-remittance') {
+		results = await generateGovernmentRemittance(user.organizationId, { startDate, endDate })
+	} else if (type === 'bir-withholding') {
+		results = await generateBIRWithholding(user.organizationId, { startDate, endDate })
 	}
 
 	if (exportCsv) {

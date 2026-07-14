@@ -13,11 +13,16 @@
 	<div>
 		<a href="/settings" class="text-sm text-muted-foreground hover:underline">← Settings</a>
 		<h1 class="mt-1 text-2xl font-bold tracking-tight">Earnings &amp; Deduction Codes</h1>
-		<p class="text-sm text-muted-foreground">Codes used by the payroll engine. Deactivate instead of deleting — historical payslips reference them.</p>
+		<p class="text-sm text-muted-foreground">
+			Codes used by the payroll engine. Deactivate instead of deleting — historical payslips
+			reference them.
+		</p>
 	</div>
 
 	{#if form?.error}
-		<div class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{form.error}</div>
+		<div class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+			{form.error}
+		</div>
 	{/if}
 
 	<div class="grid gap-6 lg:grid-cols-2">
@@ -41,11 +46,19 @@
 								<td class="px-3 py-2 font-mono text-xs">{et.code}</td>
 								<td class="px-3 py-2">{et.label}</td>
 								<td class="px-3 py-2 text-center">{et.taxable ? '✓' : '—'}</td>
-								<td class="px-3 py-2 text-right font-mono text-xs">{et.multiplier ? Number(et.multiplier).toFixed(2) : '—'}</td>
+								<td class="px-3 py-2 text-right font-mono text-xs"
+									>{et.multiplier ? Number(et.multiplier).toFixed(2) : '—'}</td
+								>
 								<td class="px-3 py-2 text-right">
 									<form method="POST" action="?/toggleEarning" use:enhance>
 										<input type="hidden" name="id" value={et.id} />
-										<button type="submit" class="text-xs {et.isActive ? 'text-red-600' : 'text-green-600'} hover:underline">{et.isActive ? 'Deactivate' : 'Activate'}</button>
+										<button
+											type="submit"
+											class="text-xs {et.isActive
+												? 'text-red-600'
+												: 'text-green-600'} hover:underline"
+											>{et.isActive ? 'Deactivate' : 'Activate'}</button
+										>
 									</form>
 								</td>
 							</tr>
@@ -53,12 +66,39 @@
 					</tbody>
 				</table>
 			</div>
-			<form method="POST" action="?/addEarning" use:enhance class="flex flex-wrap items-end gap-2 border-t pt-3">
-				<input name="code" placeholder="CODE" required class="h-8 w-24 rounded-md border border-input bg-background px-2 text-xs uppercase" />
-				<input name="label" placeholder="Label" required class="h-8 w-32 rounded-md border border-input bg-background px-2 text-xs" />
-				<input name="multiplier" type="number" step="0.01" min="0" placeholder="×" class="h-8 w-16 rounded-md border border-input bg-background px-2 text-xs" />
-				<label class="flex items-center gap-1 text-xs"><input name="taxable" type="checkbox" checked /> Taxable</label>
-				<button class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90">Add</button>
+			<form
+				method="POST"
+				action="?/addEarning"
+				use:enhance
+				class="flex flex-wrap items-end gap-2 border-t pt-3"
+			>
+				<input
+					name="code"
+					placeholder="CODE"
+					required
+					class="h-8 w-24 rounded-md border border-input bg-background px-2 text-xs uppercase"
+				/>
+				<input
+					name="label"
+					placeholder="Label"
+					required
+					class="h-8 w-32 rounded-md border border-input bg-background px-2 text-xs"
+				/>
+				<input
+					name="multiplier"
+					type="number"
+					step="0.01"
+					min="0"
+					placeholder="×"
+					class="h-8 w-16 rounded-md border border-input bg-background px-2 text-xs"
+				/>
+				<label class="flex items-center gap-1 text-xs"
+					><input name="taxable" type="checkbox" checked /> Taxable</label
+				>
+				<button
+					class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+					>Add</button
+				>
 			</form>
 		</section>
 
@@ -84,7 +124,13 @@
 								<td class="px-3 py-2 text-right">
 									<form method="POST" action="?/toggleDeduction" use:enhance>
 										<input type="hidden" name="id" value={dt.id} />
-										<button type="submit" class="text-xs {dt.isActive ? 'text-red-600' : 'text-green-600'} hover:underline">{dt.isActive ? 'Deactivate' : 'Activate'}</button>
+										<button
+											type="submit"
+											class="text-xs {dt.isActive
+												? 'text-red-600'
+												: 'text-green-600'} hover:underline"
+											>{dt.isActive ? 'Deactivate' : 'Activate'}</button
+										>
 									</form>
 								</td>
 							</tr>
@@ -92,11 +138,31 @@
 					</tbody>
 				</table>
 			</div>
-			<form method="POST" action="?/addDeduction" use:enhance class="flex flex-wrap items-end gap-2 border-t pt-3">
-				<input name="code" placeholder="CODE" required class="h-8 w-24 rounded-md border border-input bg-background px-2 text-xs uppercase" />
-				<input name="label" placeholder="Label" required class="h-8 w-32 rounded-md border border-input bg-background px-2 text-xs" />
-				<label class="flex items-center gap-1 text-xs"><input name="isStatutory" type="checkbox" /> Statutory</label>
-				<button class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90">Add</button>
+			<form
+				method="POST"
+				action="?/addDeduction"
+				use:enhance
+				class="flex flex-wrap items-end gap-2 border-t pt-3"
+			>
+				<input
+					name="code"
+					placeholder="CODE"
+					required
+					class="h-8 w-24 rounded-md border border-input bg-background px-2 text-xs uppercase"
+				/>
+				<input
+					name="label"
+					placeholder="Label"
+					required
+					class="h-8 w-32 rounded-md border border-input bg-background px-2 text-xs"
+				/>
+				<label class="flex items-center gap-1 text-xs"
+					><input name="isStatutory" type="checkbox" /> Statutory</label
+				>
+				<button
+					class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+					>Add</button
+				>
 			</form>
 		</section>
 	</div>

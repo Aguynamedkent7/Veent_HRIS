@@ -30,7 +30,9 @@
 	{/if}
 
 	{#if form?.error}
-		<div class="rounded-md border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+		<div
+			class="rounded-md border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+		>
 			{form.error}
 		</div>
 	{/if}
@@ -53,9 +55,7 @@
 		<!-- Statutory Rates -->
 		<div class="grid gap-4 sm:grid-cols-2">
 			<div class="space-y-2">
-				<label class="text-sm font-medium" for="philhealthRate">
-					PhilHealth Rate (%)
-				</label>
+				<label class="text-sm font-medium" for="philhealthRate"> PhilHealth Rate (%) </label>
 				<div class="relative">
 					<input
 						id="philhealthRate"
@@ -67,15 +67,16 @@
 						bind:value={philhealthRate}
 						class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pr-8"
 					/>
-					<span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">%</span>
+					<span
+						class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"
+						>%</span
+					>
 				</div>
 				<p class="text-xs text-muted-foreground">Current statutory rate: 5%</p>
 			</div>
 
 			<div class="space-y-2">
-				<label class="text-sm font-medium" for="pagibigRate">
-					Pag-IBIG Rate (%)
-				</label>
+				<label class="text-sm font-medium" for="pagibigRate"> Pag-IBIG Rate (%) </label>
 				<div class="relative">
 					<input
 						id="pagibigRate"
@@ -87,7 +88,10 @@
 						bind:value={pagibigRate}
 						class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pr-8"
 					/>
-					<span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">%</span>
+					<span
+						class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"
+						>%</span
+					>
 				</div>
 				<p class="text-xs text-muted-foreground">Standard employee contribution: 2%</p>
 			</div>

@@ -12,14 +12,15 @@ Create or update a draft timesheet for the current employee.
 **Roles**: `EMPLOYEE`, `MANAGER` (for own timesheet)
 
 **Request body**:
+
 ```json
 {
-  "periodStart": "2025-07-07",
-  "periodEnd": "2025-07-11",
-  "entries": [
-    { "date": "2025-07-07", "hoursWorked": 8, "notes": "string | null" },
-    { "date": "2025-07-08", "hoursWorked": 8, "notes": null }
-  ]
+	"periodStart": "2025-07-07",
+	"periodEnd": "2025-07-11",
+	"entries": [
+		{ "date": "2025-07-07", "hoursWorked": 8, "notes": "string | null" },
+		{ "date": "2025-07-08", "hoursWorked": 8, "notes": null }
+	]
 }
 ```
 
@@ -46,6 +47,7 @@ Submit a draft timesheet for manager approval.
 List timesheets.
 
 **Roles**:
+
 - `EMPLOYEE`/`MANAGER`: own timesheets only
 - `HR_ADMIN`/`SUPER_ADMIN`: all timesheets
 
@@ -92,7 +94,7 @@ Reject a submitted timesheet.
 
 **Roles**: `MANAGER` (direct reports only), `HR_ADMIN`, `SUPER_ADMIN`
 
-**Request body**: `{ "reason": "string" }` *(required)*
+**Request body**: `{ "reason": "string" }` _(required)_
 
 **Response 200**: `{ "status": "REJECTED", "rejectionReason": "string" }`
 **Side effect**: Employee notified with reason; AuditLog entry.

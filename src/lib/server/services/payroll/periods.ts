@@ -58,7 +58,12 @@ export async function openPeriod(
 			}
 		})
 		await tx.payrollRun.create({
-			data: { organizationId, periodId: p.id, periodStart: input.startDate, periodEnd: input.endDate }
+			data: {
+				organizationId,
+				periodId: p.id,
+				periodStart: input.startDate,
+				periodEnd: input.endDate
+			}
 		})
 		return p
 	})
@@ -82,7 +87,12 @@ export async function importAttendance(id: string, organizationId: string, ctx: 
 	await lockRange(organizationId, range, ctx)
 
 	const updated = await db.payrollPeriod.update({ where: { id }, data: { status: 'IMPORTED' } })
-	await writeAuditLog(ctx, { action: 'UPDATE', entityType: 'PayrollPeriod', entityId: id, newValue: { status: 'IMPORTED' } })
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'PayrollPeriod',
+		entityId: id,
+		newValue: { status: 'IMPORTED' }
+	})
 	return updated
 }
 
@@ -101,13 +111,24 @@ export async function generate(id: string, organizationId: string, ctx: AuditCon
 	await computePayroll(run.id, organizationId, ctx)
 
 	const updated = await db.payrollPeriod.update({ where: { id }, data: { status: 'GENERATED' } })
-	await writeAuditLog(ctx, { action: 'UPDATE', entityType: 'PayrollPeriod', entityId: id, newValue: { status: 'GENERATED' } })
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'PayrollPeriod',
+		entityId: id,
+		newValue: { status: 'GENERATED' }
+	})
 	return updated
 }
 
-export async function lock(id: string, organizationId: string, ctx: AuditContext, overrideNote?: string) {
+export async function lock(
+	id: string,
+	organizationId: string,
+	ctx: AuditContext,
+	overrideNote?: string
+) {
 	const period = await requirePeriod(id, organizationId)
-	if (period.status !== 'GENERATED') error(400, `Only a GENERATED period can be locked (is ${period.status})`)
+	if (period.status !== 'GENERATED')
+		error(400, `Only a GENERATED period can be locked (is ${period.status})`)
 	const run = period.runs[0]
 	if (!run) error(400, 'Period has no payroll run')
 
@@ -117,7 +138,10 @@ export async function lock(id: string, organizationId: string, ctx: AuditContext
 	})
 	const flaggedCount = entries.filter((e) => e.isFlagged).length
 	if (flaggedCount > 0 && !overrideNote) {
-		error(409, `${flaggedCount} flagged entr${flaggedCount === 1 ? 'y' : 'ies'} — an override note is required to lock`)
+		error(
+			409,
+			`${flaggedCount} flagged entr${flaggedCount === 1 ? 'y' : 'ies'} — an override note is required to lock`
+		)
 	}
 
 	await db.$transaction(async (tx: Prisma.TransactionClient) => {
@@ -134,7 +158,9 @@ export async function lock(id: string, organizationId: string, ctx: AuditContext
 						where: { id: d.refId },
 						data: { balance: newBalance, status: newBalance <= 0 ? 'PAID' : loan.status }
 					})
-					await tx.loanPayment.create({ data: { loanId: d.refId, payrollEntryId: entry.id, amount } })
+					await tx.loanPayment.create({
+						data: { loanId: d.refId, payrollEntryId: entry.id, amount }
+					})
 				} else if (d.code === 'CASH_ADVANCE') {
 					const ca = await tx.cashAdvance.findUnique({ where: { id: d.refId } })
 					if (!ca) continue
@@ -158,7 +184,10 @@ export async function lock(id: string, organizationId: string, ctx: AuditContext
 				...(overrideNote ? { hasOverride: true, overrideNote } : {})
 			}
 		})
-		await tx.payrollPeriod.update({ where: { id }, data: { status: 'LOCKED', lockedAt: new Date() } })
+		await tx.payrollPeriod.update({
+			where: { id },
+			data: { status: 'LOCKED', lockedAt: new Date() }
+		})
 	})
 
 	await writeAuditLog(ctx, {
@@ -172,10 +201,19 @@ export async function lock(id: string, organizationId: string, ctx: AuditContext
 
 export async function release(id: string, organizationId: string, ctx: AuditContext) {
 	const period = await requirePeriod(id, organizationId)
-	if (period.status !== 'LOCKED') error(400, `Only a LOCKED period can be released (is ${period.status})`)
+	if (period.status !== 'LOCKED')
+		error(400, `Only a LOCKED period can be released (is ${period.status})`)
 
-	const updated = await db.payrollPeriod.update({ where: { id }, data: { status: 'RELEASED', releasedAt: new Date() } })
-	await writeAuditLog(ctx, { action: 'UPDATE', entityType: 'PayrollPeriod', entityId: id, newValue: { status: 'RELEASED' } })
+	const updated = await db.payrollPeriod.update({
+		where: { id },
+		data: { status: 'RELEASED', releasedAt: new Date() }
+	})
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'PayrollPeriod',
+		entityId: id,
+		newValue: { status: 'RELEASED' }
+	})
 	return updated
 }
 
@@ -188,7 +226,10 @@ export async function voidPeriod(id: string, organizationId: string, ctx: AuditC
 	await db.$transaction(async (tx: Prisma.TransactionClient) => {
 		if (run && wasLocked) {
 			// Reverse the amortization committed at lock.
-			const entries = await tx.payrollEntry.findMany({ where: { payrollRunId: run.id }, include: { deductions: true } })
+			const entries = await tx.payrollEntry.findMany({
+				where: { payrollRunId: run.id },
+				include: { deductions: true }
+			})
 			for (const entry of entries) {
 				for (const d of entry.deductions) {
 					const amount = Number(d.amount)
@@ -196,13 +237,21 @@ export async function voidPeriod(id: string, organizationId: string, ctx: AuditC
 					if (d.code === 'LOAN') {
 						const loan = await tx.loan.findUnique({ where: { id: d.refId } })
 						if (loan) {
-							await tx.loan.update({ where: { id: d.refId }, data: { balance: round2(Number(loan.balance) + amount), status: 'ACTIVE' } })
+							await tx.loan.update({
+								where: { id: d.refId },
+								data: { balance: round2(Number(loan.balance) + amount), status: 'ACTIVE' }
+							})
 						}
-						await tx.loanPayment.deleteMany({ where: { loanId: d.refId, payrollEntryId: entry.id } })
+						await tx.loanPayment.deleteMany({
+							where: { loanId: d.refId, payrollEntryId: entry.id }
+						})
 					} else if (d.code === 'CASH_ADVANCE') {
 						const ca = await tx.cashAdvance.findUnique({ where: { id: d.refId } })
 						if (ca) {
-							await tx.cashAdvance.update({ where: { id: d.refId }, data: { balance: round2(Number(ca.balance) + amount), status: 'ACTIVE' } })
+							await tx.cashAdvance.update({
+								where: { id: d.refId },
+								data: { balance: round2(Number(ca.balance) + amount), status: 'ACTIVE' }
+							})
 						}
 					}
 				}
@@ -212,6 +261,11 @@ export async function voidPeriod(id: string, organizationId: string, ctx: AuditC
 		await tx.payrollPeriod.update({ where: { id }, data: { status: 'VOIDED' } })
 	})
 
-	await writeAuditLog(ctx, { action: 'UPDATE', entityType: 'PayrollPeriod', entityId: id, newValue: { status: 'VOIDED' } })
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'PayrollPeriod',
+		entityId: id,
+		newValue: { status: 'VOIDED' }
+	})
 	return db.payrollPeriod.findUnique({ where: { id } })
 }

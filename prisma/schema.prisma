@@ -257,6 +257,7 @@ model Organization {
   payRateRule    PayRateRule?
   workSchedules  WorkSchedule[]
   salaryGrades   SalaryGrade[]
+  announcements  Announcement[]
 
   @@map("organizations")
 }
@@ -301,6 +302,8 @@ model User {
   auditLogs         AuditLog[]
   approvalSteps     ApprovalStep[]
   uploadedDocuments EmployeeDocument[] @relation("DocumentUploader")
+  notifications     Notification[]
+  announcements     Announcement[]     @relation("AnnouncementAuthor")
 
   @@map("users")
 }
@@ -548,6 +551,38 @@ model EmployeeDocument {
 
   @@index([employeeId])
   @@map("employee_documents")
+}
+
+// ─── Announcements & Notifications (T182) ────────────────────────────────────
+
+model Announcement {
+  id             String   @id @default(cuid())
+  organizationId String
+  authorId       String?
+  title          String
+  body           String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  author       User?        @relation("AnnouncementAuthor", fields: [authorId], references: [id])
+
+  @@index([organizationId, createdAt])
+  @@map("announcements")
+}
+
+// Per-user in-app notification. Surfaced as a toast on next load; readAt set once seen.
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  message   String
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@map("notifications")
 }
 
 // ─── Public Holidays ──────────────────────────────────────────────────────────

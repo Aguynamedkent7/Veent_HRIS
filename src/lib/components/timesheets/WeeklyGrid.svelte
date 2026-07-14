@@ -14,7 +14,7 @@
 	}: {
 		entries: Entry[]
 		readonly?: boolean
-		onchange?: (entries: Entry[]) => void
+		onchange?: (_updated: Entry[]) => void
 	} = $props()
 
 	const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']

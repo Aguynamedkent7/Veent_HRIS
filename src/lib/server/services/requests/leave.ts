@@ -17,16 +17,29 @@ export function workdaysBetween(start: Date, end: Date, holidays: Date[]): numbe
 	return count
 }
 
-export async function computeLeaveTotalDays(organizationId: string, startDate: Date, endDate: Date): Promise<number> {
+export async function computeLeaveTotalDays(
+	organizationId: string,
+	startDate: Date,
+	endDate: Date
+): Promise<number> {
 	const holidays = await db.publicHoliday.findMany({
 		where: { organizationId, date: { gte: startDate, lte: endDate } },
 		select: { date: true }
 	})
-	return workdaysBetween(startDate, endDate, holidays.map((h) => h.date))
+	return workdaysBetween(
+		startDate,
+		endDate,
+		holidays.map((h) => h.date)
+	)
 }
 
 // Throw if the employee lacks the balance to cover `totalDays` for the leave type.
-export async function assertLeaveBalance(employeeId: string, leaveTypeId: string, year: number, totalDays: number) {
+export async function assertLeaveBalance(
+	employeeId: string,
+	leaveTypeId: string,
+	year: number,
+	totalDays: number
+) {
 	const balance = await db.leaveBalance.findUnique({
 		where: { employeeId_leaveTypeId_year: { employeeId, leaveTypeId, year } }
 	})

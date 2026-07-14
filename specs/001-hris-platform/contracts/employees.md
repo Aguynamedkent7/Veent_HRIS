@@ -16,24 +16,25 @@ List employees (paginated, filterable).
 **Query params**: `page`, `limit`, `departmentId`, `status` (ACTIVE|OFFBOARDED), `search` (name/employeeNumber)
 
 **Response 200**:
+
 ```json
 {
-  "data": [
-    {
-      "id": "uuid",
-      "employeeNumber": "EMP-0001",
-      "firstName": "string",
-      "lastName": "string",
-      "jobTitle": "string",
-      "department": { "id": "uuid", "name": "string" },
-      "employmentStatus": "ACTIVE",
-      "employmentType": "FULL_TIME",
-      "startDate": "2025-01-01"
-    }
-  ],
-  "total": 0,
-  "page": 1,
-  "limit": 20
+	"data": [
+		{
+			"id": "uuid",
+			"employeeNumber": "EMP-0001",
+			"firstName": "string",
+			"lastName": "string",
+			"jobTitle": "string",
+			"department": { "id": "uuid", "name": "string" },
+			"employmentStatus": "ACTIVE",
+			"employmentType": "FULL_TIME",
+			"startDate": "2025-01-01"
+		}
+	],
+	"total": 0,
+	"page": 1,
+	"limit": 20
 }
 ```
 
@@ -46,20 +47,21 @@ Create a new employee (and linked User account).
 **Roles**: `HR_ADMIN`, `SUPER_ADMIN`
 
 **Request body**:
+
 ```json
 {
-  "firstName": "string",
-  "lastName": "string",
-  "middleName": "string | null",
-  "email": "string",
-  "departmentId": "uuid",
-  "jobTitle": "string",
-  "employmentType": "FULL_TIME | PART_TIME | CONTRACTUAL | PROBATIONARY",
-  "startDate": "2025-01-01",
-  "basicMonthlySalary": 30000,
-  "rateType": "MONTHLY | DAILY | HOURLY",
-  "reportsToId": "uuid | null",
-  "role": "EMPLOYEE | MANAGER"
+	"firstName": "string",
+	"lastName": "string",
+	"middleName": "string | null",
+	"email": "string",
+	"departmentId": "uuid",
+	"jobTitle": "string",
+	"employmentType": "FULL_TIME | PART_TIME | CONTRACTUAL | PROBATIONARY",
+	"startDate": "2025-01-01",
+	"basicMonthlySalary": 30000,
+	"rateType": "MONTHLY | DAILY | HOURLY",
+	"reportsToId": "uuid | null",
+	"role": "EMPLOYEE | MANAGER"
 }
 ```
 

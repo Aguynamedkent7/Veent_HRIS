@@ -32,7 +32,9 @@
 		</div>
 	{:else}
 		{#if form?.error}
-			<div class="rounded-md border border-destructive bg-destructive/10 px-4 py-3 text-sm text-destructive">
+			<div
+				class="rounded-md border border-destructive bg-destructive/10 px-4 py-3 text-sm text-destructive"
+			>
 				{form.error}
 			</div>
 		{/if}
@@ -116,7 +118,8 @@
 							rows="6"
 							placeholder="Tell us why you'd be a great fit for this role…"
 							class="mt-1 flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-						>{form?.values?.coverLetter ?? ''}</textarea>
+							>{form?.values?.coverLetter ?? ''}</textarea
+						>
 					</div>
 				</div>
 			</fieldset>

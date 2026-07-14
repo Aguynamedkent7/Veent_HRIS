@@ -20,7 +20,14 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	return {
 		leaveTypes,
-		balances,
+		// Coerce Decimal balance fields to numbers at the boundary so PageData matches
+		// BalanceSummary's numeric prop types (the transport hook serializes at runtime).
+		balances: balances.map((b) => ({
+			...b,
+			allocated: Number(b.allocated),
+			used: Number(b.used),
+			remaining: Number(b.remaining)
+		})),
 		myEmployeeId: employee!.id
 	}
 }

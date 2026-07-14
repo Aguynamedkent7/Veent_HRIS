@@ -13,18 +13,20 @@ export const payslipVisibleRunFilter = {
 	OR: [{ status: 'APPROVED' as const }, { period: { status: 'RELEASED' as const } }]
 }
 
-export function isPayslipVisible(run: { status: string; period?: { status: string } | null }): boolean {
+export function isPayslipVisible(run: {
+	status: string
+	period?: { status: string } | null
+}): boolean {
 	return run.status === 'APPROVED' || run.period?.status === 'RELEASED'
 }
 
-export async function listRuns(
-	organizationId: string,
-	filters?: { status?: string }
-) {
+export async function listRuns(organizationId: string, filters?: { status?: string }) {
 	return db.payrollRun.findMany({
 		where: {
 			organizationId,
-			...(filters?.status && { status: filters.status as 'DRAFT' | 'COMPUTED' | 'APPROVED' | 'VOIDED' })
+			...(filters?.status && {
+				status: filters.status as 'DRAFT' | 'COMPUTED' | 'APPROVED' | 'VOIDED'
+			})
 		},
 		include: {
 			_count: { select: { entries: true } }

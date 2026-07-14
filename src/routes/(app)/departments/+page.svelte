@@ -47,7 +47,9 @@
 	</div>
 
 	{#if form?.error}
-		<div class="rounded-md border border-destructive bg-destructive/10 px-4 py-3 text-sm text-destructive">
+		<div
+			class="rounded-md border border-destructive bg-destructive/10 px-4 py-3 text-sm text-destructive"
+		>
 			{form.error}
 		</div>
 	{/if}
@@ -90,9 +92,6 @@
 			>
 				Cancel
 			</button>
-			{#if form?.fieldErrors?.name}
-				<p class="text-xs text-destructive">{form.fieldErrors.name[0]}</p>
-			{/if}
 		</form>
 	{/if}
 

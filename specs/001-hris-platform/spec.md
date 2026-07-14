@@ -8,7 +8,7 @@
 
 **Input**: User description: "this will be an HRIS, it will have all of those, time sheets, a dashboard, users, reports"
 
-## User Scenarios & Testing *(mandatory)*
+## User Scenarios & Testing _(mandatory)_
 
 ### User Story 1 - Employee Self-Service Portal (Priority: P1)
 
@@ -123,11 +123,12 @@ HR Admins can post open positions, receive and manage applications, track candid
 
 ---
 
-## Requirements *(mandatory)*
+## Requirements _(mandatory)_
 
 ### Functional Requirements
 
 **User & Access Management**
+
 - **FR-001**: The system MUST support at least four roles: `employee`, `manager`, `hr_admin`, and `super_admin`, each with distinct access permissions.
 - **FR-002**: The system MUST allow HR Admins to create, edit, deactivate, and reactivate employee accounts.
 - **FR-003**: The system MUST send login credentials to new employees via email upon account creation.
@@ -135,17 +136,20 @@ HR Admins can post open positions, receive and manage applications, track candid
 - **FR-005**: The system MUST log every login attempt (success and failure) with timestamp and IP address.
 
 **Employee Records**
+
 - **FR-006**: The system MUST store, for each employee: full name, employee ID, department, job title, employment type, start date, and contact details.
 - **FR-007**: The system MUST maintain a complete change history for every employee record field.
 - **FR-008**: Offboarded employees MUST remain accessible in read-only mode for audit and historical reporting purposes.
 
 **Timesheets**
+
 - **FR-009**: Employees MUST be able to submit weekly timesheets specifying hours worked per day.
 - **FR-010**: Timesheets MUST go through a defined workflow: Draft → Submitted → Approved / Rejected.
 - **FR-011**: Managers MUST be able to approve or reject timesheets with mandatory comments on rejection.
 - **FR-012**: The system MUST prevent duplicate timesheet submissions for the same employee and period.
 
 **Leave Management**
+
 - **FR-013**: The system MUST support configurable leave types (e.g., annual, sick, unpaid).
 - **FR-014**: Employees MUST be able to submit leave requests specifying type, start date, end date, and reason.
 - **FR-015**: Leave requests MUST go through the same approval workflow as timesheets (manager approval).
@@ -153,6 +157,7 @@ HR Admins can post open positions, receive and manage applications, track candid
 - **FR-017**: The system MUST prevent leave requests that exceed available balance (with override capability for HR Admins).
 
 **Payroll**
+
 - **FR-018**: The system MUST compute payroll based on approved timesheets, employee salary/rate, and configured deductions.
 - **FR-019**: Payroll runs MUST be period-based (e.g., semi-monthly, monthly) and configurable per organization.
 - **FR-020**: HR Admins MUST be able to review and approve a payroll run before payslips are issued.
@@ -161,43 +166,51 @@ HR Admins can post open positions, receive and manage applications, track candid
 - **FR-023**: Before a payroll run can be approved, the system MUST display a warning listing all employees with missing or unapproved timesheets. The HR Admin MAY override and approve despite the warning; the override action MUST be recorded in the audit log with the approver's identity and timestamp.
 
 **Dashboard & Reports**
+
 - **FR-024**: Each role MUST see a role-appropriate dashboard upon login (employee sees personal data; HR Admin sees org-wide metrics).
 - **FR-025**: The dashboard MUST display real-time data — no stale cache older than 5 minutes.
 - **FR-026**: HR Admins MUST be able to generate, filter, and export reports for: headcount, attendance, payroll costs, and leave utilization.
 - **FR-027**: All reports MUST be exportable in at least one structured format (e.g., CSV or spreadsheet).
 
 **Recruitment**
+
 - **FR-028**: HR Admins MUST be able to create job postings with title, department, description, and status (Draft / Open / Closed).
 - **FR-029**: The system MUST track applicants through configurable hiring stages.
 - **FR-030**: Hiring a candidate MUST trigger pre-population of a new employee record from applicant data.
 
 **Audit & Compliance**
+
 - **FR-031**: The system MUST maintain an immutable audit log for all data mutations on core HR entities.
 - **FR-032**: Audit logs MUST capture: actor, timestamp, entity type, entity ID, field changed, old value, and new value.
 - **FR-033**: Audit logs MUST be retained for a minimum of 3 years and accessible to HR Admins and Super Admins.
 
 **Benefits Administration**
+
 - **FR-034**: HR Admins MUST be able to define benefit plans (HMO, insurance, retirement, allowance, leave credit, other) with employee/employer cost shares.
 - **FR-035**: HR Admins MUST be able to enroll employees in benefit plans and change enrollment status (active / waived / terminated); an employee MUST NOT be enrolled twice in the same plan.
 - **FR-036**: Employees MUST be able to view their own benefit enrollments.
 
 **Performance Management**
+
 - **FR-037**: HR Admins MUST be able to create review cycles (period-bound) and open performance reviews pairing a subject employee with a reviewer.
 - **FR-038**: A performance review MUST follow the workflow: Pending → Self-Assessment → Manager Review → Completed → Acknowledged.
 - **FR-039**: The review subject MUST be able to submit a self-assessment; only the assigned reviewer MUST be able to submit manager comments and an overall rating (1–5).
 - **FR-040**: Employees MUST be able to create personal goals and track progress (0–100%); goals MAY be linked to a review cycle.
 
 **Settings & Org Structure**
+
 - **FR-041**: HR Admins MUST be able to maintain a catalog of positions (titles) and view an organizational chart derived from departments and reporting lines.
 - **FR-042**: Super Admins MUST be able to change a user's role; a user MUST NOT change their own role, and role changes MUST be recorded in the audit log with old and new values.
 
 **Time Tracking (Discord Integration)**
+
 - **FR-043**: The system MUST accept clock-in / clock-out punches from an external Discord bot via a dedicated endpoint authenticated by an HMAC signature (shared secret + timestamp, with replay protection); session cookies MUST NOT be required.
 - **FR-044**: Each punch MUST be attributed to the employee whose `discordId` matches; punches from unknown or inactive Discord accounts MUST be rejected.
 - **FR-045**: Punch timestamps MUST be stored in UTC and bucketed into calendar days/weeks using Philippine Standard Time (UTC+8).
 - **FR-046**: HR MUST be able to aggregate a week of raw punches into a DRAFT weekly timesheet (pairing IN/OUT per day, flagging missing/stray punches), then review, edit, and approve it through the existing timesheet approval workflow so it feeds payroll unchanged.
 
 **Privacy & Compliance note (Phase 10 — per Constitution §I and §IV)**
+
 - Benefit data (HMO/health, insurance) and performance reviews are sensitive PII; access is
   restricted per the RBAC rules above (employees see only their own; HR/Super Admin manage),
   handled under the Philippine Data Privacy Act (RA 10173) alongside existing employee PII.
@@ -209,13 +222,14 @@ HR Admins can post open positions, receive and manage applications, track candid
 **Phase 11 — Full HRIS & Payroll Expansion (HR requirements, 2026-07-10)**
 
 > **Scope & assumptions**: These requirements from HR substantially expand Payroll, Attendance,
-> and Requests, and add Employee Separation plus richer Settings. Items marked *(integration)*
+> and Requests, and add Employee Separation plus richer Settings. Items marked _(integration)_
 > — bank/GCash disbursement and external job-board publishing — are external integrations
 > deferred beyond v1. Two new roles (Payroll Officer, Finance) and several new entities are
 > introduced (see Key Entities). Detailed design and tasking are tracked in tasks.md Phase 11;
 > each item below is a captured requirement, not necessarily built yet.
 
 _Employee 201 File (extends FR-006/FR-007)_
+
 - **FR-047**: The system MUST store one or more emergency contacts per employee (name, relationship, phone).
 - **FR-048**: The system MUST store disbursement/bank details per employee (bank name + account number, or GCash number), treated as sensitive PII under RBAC.
 - **FR-049**: The system MUST let HR upload and store employee documents (employment contract, government IDs, certificates) against the 201 file.
@@ -223,52 +237,64 @@ _Employee 201 File (extends FR-006/FR-007)_
 - **FR-051**: The system MUST maintain an employment-history record (promotions, salary adjustments, department transfers, status changes), surfaced from the audit trail.
 
 _Attendance / Timesheets (extends FR-009–FR-012)_
-- **FR-052**: The system MUST ingest attendance from an external time source (e.g., the Discord bot or a biometric/app feed) as raw punches. *(implemented for Discord)*
+
+- **FR-052**: The system MUST ingest attendance from an external time source (e.g., the Discord bot or a biometric/app feed) as raw punches. _(implemented for Discord)_
 - **FR-053**: The system MUST derive, per day, from punches + the employee's work schedule: time in/out, late minutes, undertime, overtime, night-differential hours, break records, and missing/incomplete logs.
 - **FR-054**: The system MUST flag employees with no time-in, incomplete logs, or missing attendance for HR review.
 - **FR-055**: The system MUST require attendance validation/correction and a per-period lock before payroll generation.
 
 _Requests — Employee Kiosk (extends Leave FR-013–FR-017)_
+
 - **FR-056**: Employees MUST be able to submit typed self-service requests: Leave, Overtime, Undertime, Official Business, Work on Rest Day, Holiday Work, and Personal-Information update; each MAY carry supporting documents.
 - **FR-057**: Each request type MUST have its own validation and defined downstream effect on attendance and/or payroll.
 
 _Approvals (extends FR-011/FR-015)_
+
 - **FR-058**: The system MUST support configurable multi-stage approval routing (e.g., Employee → Supervisor → HR → Payroll); at each stage an approver MUST be able to Approve, Reject, or Return-for-correction with comments.
 - **FR-059**: Approved requests MUST automatically apply to the relevant attendance day and/or payroll period; rejected/returned requests MUST notify the employee with the reason.
 
 _Payroll (extends FR-018–FR-023)_
+
 - **FR-060**: Payroll MUST follow a period lifecycle: create period → import validated attendance → review earnings → review deductions → verify OT/holiday/rest-day/night-diff → generate → lock → release payslips.
 - **FR-061**: The system MUST compute earnings beyond basic pay: overtime, night differential (if configured), holiday pay, rest-day pay, allowances, and incentives.
 - **FR-062**: The system MUST compute deductions beyond statutory: cash-advance repayments and loan amortizations, in addition to SSS, PhilHealth, Pag-IBIG, and withholding tax.
 - **FR-063**: A locked payroll run MUST be immutable; payslips MUST become visible to employees only after release.
 - **FR-064**: The system MUST record loans and cash advances per employee, with running balances that amortize across payroll periods.
-- **FR-065**: *(integration)* The system SHOULD support payslip disbursement via bank-file export or GCash — deferred beyond v1.
+- **FR-065**: _(integration)_ The system SHOULD support payslip disbursement via bank-file export or GCash — deferred beyond v1.
 
 _Payroll Calculator (new)_
+
 - **FR-066**: The system MUST provide a what-if payroll calculator for HR to preview a single employee's computation (overtime, holiday pay, salary adjustments, incentives, deductions) before running/locking payroll, without persisting a payroll entry.
 
 _Reports (extends FR-026/FR-027)_
+
 - **FR-067**: The system MUST generate additional reports: payroll register, payslips, tardiness, overtime, loan summary, and government/BIR statutory reports — all exportable (BIR/government in their required layouts where applicable).
 
 _Recruitment (extends FR-028–FR-030)_
+
 - **FR-068**: The system MUST let HR schedule interviews and record interview notes/feedback per applicant.
 - **FR-069**: The system MUST let HR issue job offers and transition an accepted offer into onboarding.
-- **FR-070**: *(integration)* The system SHOULD publish job postings to external job boards — deferred beyond v1.
+- **FR-070**: _(integration)_ The system SHOULD publish job postings to external job boards — deferred beyond v1.
 
 _Onboarding (extends FR-030)_
+
 - **FR-071**: The system MUST provide an onboarding checklist that uploads the signed contract, assigns department/position/schedule, generates the company account, registers payroll details, and starts attendance tracking — syncing into payroll without manual re-entry.
 
 _Separation (new; extends FR-008)_
+
 - **FR-072**: The system MUST manage employee separation: record resignation/termination, run a clearance checklist, attach exit documents, compute final pay, set status to OFFBOARDED, and produce a separation report.
 
 _Users & User Rights (extends FR-001/FR-042)_
+
 - **FR-073**: The system MUST add roles **Payroll Officer** (payroll only) and **Finance** (payroll reports, read-only), alongside Employee, Manager (Department Manager), HR Admin, and Super Admin.
 - **FR-074**: The system MUST enforce module-level least-privilege access per role (e.g., Payroll Officer cannot edit 201 files; Finance is read-only on payroll reports).
 
 _Settings (extends FR-013 + holidays/departments)_
+
 - **FR-075**: Settings MUST let admins configure: company information, departments, positions, salary structures, work schedules, holiday calendar, payroll cutoffs, leave types, and earnings/deduction codes, plus user roles.
 
 _Dashboard (extends FR-024)_
+
 - **FR-076**: The HR dashboard MUST add an attendance summary, payroll status, recent announcements, and notifications, alongside headcount / on-leave / pending-approvals.
 
 ### Key Entities
@@ -288,7 +314,7 @@ _Dashboard (extends FR-024)_
 
 ---
 
-## Success Criteria *(mandatory)*
+## Success Criteria _(mandatory)_
 
 ### Measurable Outcomes
 

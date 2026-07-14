@@ -1,7 +1,13 @@
 import { json } from '@sveltejs/kit'
 import { requireRole, requirePayrollManage } from '$lib/server/rbac'
 import { apiError, badRequest, forbidden } from '$lib/server/api-error'
-import { importAttendance, generate, lock, release, voidPeriod } from '$lib/server/services/payroll/periods'
+import {
+	importAttendance,
+	generate,
+	lock,
+	release,
+	voidPeriod
+} from '$lib/server/services/payroll/periods'
 import type { RequestHandler } from './$types'
 
 /**

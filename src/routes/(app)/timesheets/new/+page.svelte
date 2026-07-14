@@ -26,7 +26,7 @@
 		})
 	}
 
-	let entries = $state<{ date: Date; hoursWorked: number; notes: string }[]>([])
+	let entries = $state<{ date: Date; hoursWorked: number; notes?: string }[]>([])
 
 	$effect(() => {
 		entries = buildDefaultEntries(weekStart)
@@ -97,9 +97,7 @@
 			>
 				Submit Timesheet
 			</button>
-			<a href="/timesheets" class="rounded-md border px-5 py-2 text-sm hover:bg-accent">
-				Cancel
-			</a>
+			<a href="/timesheets" class="rounded-md border px-5 py-2 text-sm hover:bg-accent"> Cancel </a>
 		</div>
 	</form>
 </div>

@@ -1,1 +1,1 @@
-{"@prisma/client":true,"@prisma/engines":true,"bcrypt":true,"esbuild":true,"prisma":true}
+{ "@prisma/client": true, "@prisma/engines": true, "bcrypt": true, "esbuild": true, "prisma": true }

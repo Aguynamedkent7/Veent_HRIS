@@ -2,7 +2,12 @@ import { fail } from '@sveltejs/kit'
 import { z } from 'zod'
 import { db } from '$lib/server/db'
 import { requireMinRole } from '$lib/server/rbac'
-import { listAttendanceDays, deriveRange, correctDay, lockRange } from '$lib/server/services/attendance'
+import {
+	listAttendanceDays,
+	deriveRange,
+	correctDay,
+	lockRange
+} from '$lib/server/services/attendance'
 import { manilaDayKey } from '$lib/utils/dates'
 import type { Actions, PageServerLoad, RequestEvent } from './$types'
 
@@ -40,21 +45,33 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 function ctxOf(event: RequestEvent) {
 	const u = event.locals.user!
-	return { organizationId: u.organizationId, actorId: u.id, actorRole: u.role, ipAddress: event.getClientAddress() }
+	return {
+		organizationId: u.organizationId,
+		actorId: u.id,
+		actorRole: u.role,
+		ipAddress: event.getClientAddress()
+	}
 }
 
 function toFail(e: unknown) {
 	const err = e as { status?: number; body?: { message?: string } }
-	if (err?.status && [400, 404, 409].includes(err.status)) return fail(err.status, { error: err.body?.message ?? 'Action failed' })
+	if (err?.status && [400, 404, 409].includes(err.status))
+		return fail(err.status, { error: err.body?.message ?? 'Action failed' })
 	throw e
 }
 
-const rangeSchema = z.object({ employeeId: z.string().min(1), from: z.coerce.date(), to: z.coerce.date() })
+const rangeSchema = z.object({
+	employeeId: z.string().min(1),
+	from: z.coerce.date(),
+	to: z.coerce.date()
+})
 const correctSchema = z.object({
 	id: z.string().min(1),
 	regularHours: z.coerce.number().min(0).optional(),
 	overtimeHours: z.coerce.number().min(0).optional(),
-	status: z.enum(['PRESENT', 'LATE', 'ABSENT', 'INCOMPLETE', 'ON_LEAVE', 'HOLIDAY', 'REST_DAY']).optional(),
+	status: z
+		.enum(['PRESENT', 'LATE', 'ABSENT', 'INCOMPLETE', 'ON_LEAVE', 'HOLIDAY', 'REST_DAY'])
+		.optional(),
 	note: z.string().optional()
 })
 
@@ -64,7 +81,11 @@ export const actions: Actions = {
 		const parsed = rangeSchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid range' })
 		try {
-			await deriveRange(event.locals.user!.organizationId, { from: parsed.data.from, to: parsed.data.to, employeeId: parsed.data.employeeId }, ctxOf(event))
+			await deriveRange(
+				event.locals.user!.organizationId,
+				{ from: parsed.data.from, to: parsed.data.to, employeeId: parsed.data.employeeId },
+				ctxOf(event)
+			)
 		} catch (e) {
 			return toFail(e)
 		}
@@ -87,7 +108,11 @@ export const actions: Actions = {
 		const parsed = rangeSchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid range' })
 		try {
-			await lockRange(event.locals.user!.organizationId, { from: parsed.data.from, to: parsed.data.to, employeeId: parsed.data.employeeId }, ctxOf(event))
+			await lockRange(
+				event.locals.user!.organizationId,
+				{ from: parsed.data.from, to: parsed.data.to, employeeId: parsed.data.employeeId },
+				ctxOf(event)
+			)
 		} catch (e) {
 			return toFail(e)
 		}

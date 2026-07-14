@@ -34,14 +34,21 @@ export async function listEmployeeDocuments(employeeId: string, organizationId: 
 export async function saveEmployeeDocument(
 	employeeId: string,
 	organizationId: string,
-	input: { category: EmployeeDocumentCategory; label: string; fileName: string; mimeType: string; bytes: Buffer },
+	input: {
+		category: EmployeeDocumentCategory
+		label: string
+		fileName: string
+		mimeType: string
+		bytes: Buffer
+	},
 	ctx: AuditContext
 ) {
 	await assertEmployeeInOrg(employeeId, organizationId)
 
 	if (!input.bytes.byteLength) error(400, 'Empty file')
 	if (input.bytes.byteLength > MAX_UPLOAD_BYTES) error(413, 'File exceeds the 10 MB limit')
-	if (!isAllowedType(input.mimeType)) error(415, 'Unsupported file type. Allowed: PDF, PNG, JPEG, WEBP')
+	if (!isAllowedType(input.mimeType))
+		error(415, 'Unsupported file type. Allowed: PDF, PNG, JPEG, WEBP')
 
 	const saved = await saveFile(input.bytes, input.mimeType, `employees/${employeeId}`)
 
@@ -77,7 +84,11 @@ export async function getEmployeeDocument(docId: string, organizationId: string)
 	return doc
 }
 
-export async function deleteEmployeeDocument(docId: string, organizationId: string, ctx: AuditContext) {
+export async function deleteEmployeeDocument(
+	docId: string,
+	organizationId: string,
+	ctx: AuditContext
+) {
 	const doc = await getEmployeeDocument(docId, organizationId)
 	await db.employeeDocument.delete({ where: { id: doc.id } })
 	await deleteStoredFile(doc.storageKey)

@@ -27,6 +27,7 @@ Money as `Decimal`; serialized via the existing transport hook.
 **Constraints**: PH labor-law pay rules (DOLE); locked runs immutable; payslip PII RBAC-gated; all mutations audited.
 
 **Dependencies on other Phase 11 epics** (design the seams now, don't block):
+
 - **Attendance engine (11.3, FR-053)** — supplies per-employee, per-period hour buckets
   (`regularHours, otHours, nightDiffHours, holidayHours, restDayHours, lateMinutes, undertimeMinutes`).
   The earnings engine consumes an **`AttendanceInput` interface**; until the attendance engine lands,
@@ -35,6 +36,7 @@ Money as `Decimal`; serialized via the existing transport hook.
 - **Settings codes (11.1, T163)** — `EarningType`/`DeductionType` catalogs + configurable rate table.
 
 **Resolved** (clarified 2026-07-10):
+
 1. **Multipliers live in a config table.** A `PayRateRule` / `EarningType`-backed config (in Settings)
    holds the premium rates, seeded with DOLE defaults (OT ×1.25, night diff +10%, rest-day / special
    holiday ×1.30, regular holiday ×2.00 worked / ×1.00 unworked, plus the stacked combinations). Rates
@@ -48,15 +50,15 @@ Money as `Decimal`; serialized via the existing transport hook.
 
 - **D1 — Lifecycle on the run, period as container.** Add a `PayrollPeriod` (cutoff window + config
   snapshot) that owns one `PayrollRun`. Expand run status to `OPEN → IMPORTED → GENERATED → LOCKED → RELEASED`
-  (keep `VOIDED`). *Rationale*: minimal churn to the existing `PayrollRun`/`PayrollEntry`; `LOCKED` gives
-  immutability, `RELEASED` gates payslip visibility (today gated on `APPROVED`). *Alt considered*: a brand-new
+  (keep `VOIDED`). _Rationale_: minimal churn to the existing `PayrollRun`/`PayrollEntry`; `LOCKED` gives
+  immutability, `RELEASED` gates payslip visibility (today gated on `APPROVED`). _Alt considered_: a brand-new
   model tree — rejected (throws away working code + the statutory engine).
 - **D2 — Line-item earnings/deductions.** `PayrollEntry` keeps its summary columns but gains child
-  `PayrollEarning[]` / `PayrollDeduction[]` (typeCode + amount + taxable flag). *Rationale*: payslip itemization,
-  BIR reporting, and auditability; taxable vs. non-taxable feeds withholding correctly. *Alt*: wide columns — rejected (not extensible to configurable codes).
+  `PayrollEarning[]` / `PayrollDeduction[]` (typeCode + amount + taxable flag). _Rationale_: payslip itemization,
+  BIR reporting, and auditability; taxable vs. non-taxable feeds withholding correctly. _Alt_: wide columns — rejected (not extensible to configurable codes).
 - **D3 — Pure compute engine.** `payroll/earnings.ts` and `payroll/deductions.ts` export side-effect-free
   functions `(AttendanceInput, EmployeeComp, Config) → {lineItems, totals}`, composed by `computePayrollRun`.
-  The **Payroll Calculator reuses the exact same functions** with no DB writes. *Rationale*: one source of truth,
+  The **Payroll Calculator reuses the exact same functions** with no DB writes. _Rationale_: one source of truth,
   fully unit-testable, guarantees calculator == actual run.
 - **D4 — Withholding order.** Gross = basic + earnings; taxable-gross = gross − (statutory EE + non-taxable items);
   then BIR withholding; then net = gross − all deductions (statutory + tax + loans + cash advances). Encode explicitly and test.
@@ -72,13 +74,13 @@ Money as `Decimal`; serialized via the existing transport hook.
 
 ## Constitution Check
 
-| Principle | Gate | Status |
-|-----------|------|--------|
-| I. Data Privacy & Security | Payslip/salary/bank PII behind RBAC; secrets in env | ✅ RBAC-gated views; no new secrets |
-| II. RBAC | Every payroll route declares roles; server-side | ✅ Needs `PAYROLL_OFFICER`/`FINANCE` (T161) — dependency noted |
-| III. Spec-Driven | Spec precedes build | ✅ FR-060–066 written; this plan + clarify precede code |
-| IV. Audit & Compliance | All mutations logged; compliance noted | ✅ compute→generate→lock→release→void all `writeAuditLog`; PH DOLE/BIR noted |
-| V. Test-First & Deliverability | Tests before impl; each slice independently shippable | ✅ pure-fn units first; slices below ship incrementally |
+| Principle                      | Gate                                                  | Status                                                                       |
+| ------------------------------ | ----------------------------------------------------- | ---------------------------------------------------------------------------- |
+| I. Data Privacy & Security     | Payslip/salary/bank PII behind RBAC; secrets in env   | ✅ RBAC-gated views; no new secrets                                          |
+| II. RBAC                       | Every payroll route declares roles; server-side       | ✅ Needs `PAYROLL_OFFICER`/`FINANCE` (T161) — dependency noted               |
+| III. Spec-Driven               | Spec precedes build                                   | ✅ FR-060–066 written; this plan + clarify precede code                      |
+| IV. Audit & Compliance         | All mutations logged; compliance noted                | ✅ compute→generate→lock→release→void all `writeAuditLog`; PH DOLE/BIR noted |
+| V. Test-First & Deliverability | Tests before impl; each slice independently shippable | ✅ pure-fn units first; slices below ship incrementally                      |
 
 No violations. No Complexity Tracking entries required (reuses existing structure).
 
@@ -121,5 +123,6 @@ original `contracts/payroll.md` stays valid for the statutory core).
 - `speckit-analyze` — FR-060–066 map to these tasks; no orphans.
 
 ## Out of scope (this addendum)
+
 Attendance derivation (epic 11.3), disbursement/bank-GCash export (FR-065, integration), the Reports
 UI itself (FR-067 tracked separately), and the new roles' full RBAC matrix (T161).

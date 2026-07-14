@@ -37,7 +37,12 @@ export const actions: Actions = {
 
 		if (!validPassword) {
 			await writeAuditLog(
-				{ organizationId: user.organizationId, actorId: user.id, actorRole: user.role, ipAddress: ip },
+				{
+					organizationId: user.organizationId,
+					actorId: user.id,
+					actorRole: user.role,
+					ipAddress: ip
+				},
 				{ action: 'LOGIN_FAILED', entityType: 'User', entityId: user.id }
 			)
 			return fail(401, { error: 'Invalid email or password' })
@@ -54,7 +59,12 @@ export const actions: Actions = {
 		await Promise.all([
 			db.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } }),
 			writeAuditLog(
-				{ organizationId: user.organizationId, actorId: user.id, actorRole: user.role, ipAddress: ip },
+				{
+					organizationId: user.organizationId,
+					actorId: user.id,
+					actorRole: user.role,
+					ipAddress: ip
+				},
 				{ action: 'LOGIN', entityType: 'User', entityId: user.id }
 			)
 		])

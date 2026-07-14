@@ -10,7 +10,9 @@
 
 	const isHrAdmin = $derived(userRole === 'HR_ADMIN' || userRole === 'SUPER_ADMIN')
 
-	const hiredApplicants = $derived(applicants.filter((a: { currentStage: string }) => a.currentStage === 'HIRED'))
+	const hiredApplicants = $derived(
+		applicants.filter((a: { currentStage: string }) => a.currentStage === 'HIRED')
+	)
 
 	function statusBadgeClass(status: string) {
 		if (status === 'OPEN') return 'bg-green-100 text-green-700'
@@ -30,7 +32,11 @@
 			<div class="space-y-1">
 				<div class="flex items-center gap-3">
 					<h1 class="text-2xl font-bold tracking-tight">{posting.title}</h1>
-					<span class="rounded-full px-2.5 py-0.5 text-xs font-medium {statusBadgeClass(posting.status)}">
+					<span
+						class="rounded-full px-2.5 py-0.5 text-xs font-medium {statusBadgeClass(
+							posting.status
+						)}"
+					>
 						{posting.status}
 					</span>
 				</div>
@@ -132,10 +138,6 @@
 	<!-- Applicant Kanban -->
 	<div class="space-y-2">
 		<h2 class="text-lg font-semibold">Applicants ({applicants.length})</h2>
-		<ApplicantKanban
-			{applicants}
-			postingId={posting.id}
-			readonly={!isHrAdmin}
-		/>
+		<ApplicantKanban {applicants} readonly={!isHrAdmin} />
 	</div>
 </div>

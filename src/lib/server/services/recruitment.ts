@@ -72,7 +72,13 @@ export async function publishJobPosting(id: string, organizationId: string, ctx:
 
 export async function applyToPosting(
 	jobPostingId: string,
-	input: { firstName: string; lastName: string; email: string; phone?: string; coverLetter?: string }
+	input: {
+		firstName: string
+		lastName: string
+		email: string
+		phone?: string
+		coverLetter?: string
+	}
 ) {
 	const jp = await db.jobPosting.findUnique({ where: { id: jobPostingId } })
 	if (!jp || jp.status !== 'OPEN') error(400, 'This position is not accepting applications')

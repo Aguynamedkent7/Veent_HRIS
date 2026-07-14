@@ -82,14 +82,29 @@ export interface RequestColumns {
 export function deriveRequestColumns(input: RequestInput): RequestColumns {
 	switch (input.type) {
 		case 'LEAVE':
-			return { dateFrom: input.startDate, dateTo: input.endDate, hours: null, reason: input.reason ?? null }
+			return {
+				dateFrom: input.startDate,
+				dateTo: input.endDate,
+				hours: null,
+				reason: input.reason ?? null
+			}
 		case 'OFFICIAL_BUSINESS':
-			return { dateFrom: input.startDate, dateTo: input.endDate, hours: null, reason: input.purpose }
+			return {
+				dateFrom: input.startDate,
+				dateTo: input.endDate,
+				hours: null,
+				reason: input.purpose
+			}
 		case 'OVERTIME':
 		case 'UNDERTIME':
 		case 'REST_DAY_WORK':
 		case 'HOLIDAY_WORK':
-			return { dateFrom: input.date, dateTo: input.date, hours: input.hours, reason: input.reason ?? null }
+			return {
+				dateFrom: input.date,
+				dateTo: input.date,
+				hours: input.hours,
+				reason: input.reason ?? null
+			}
 		case 'INFO_UPDATE':
 			return { dateFrom: null, dateTo: null, hours: null, reason: input.reason ?? null }
 	}

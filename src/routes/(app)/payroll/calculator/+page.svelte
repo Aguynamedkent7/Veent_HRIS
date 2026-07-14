@@ -31,17 +31,27 @@
 	</div>
 
 	{#if form?.error}
-		<div class="rounded-md border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-red-400">{form.error}</div>
+		<div
+			class="rounded-md border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-red-400"
+		>
+			{form.error}
+		</div>
 	{/if}
 
 	<div class="grid gap-6 lg:grid-cols-2">
 		<form method="POST" action="?/preview" use:enhance class="rounded-lg border p-5 space-y-4">
 			<div>
 				<label class="text-sm font-medium">Employee</label>
-				<select name="employeeId" required class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+				<select
+					name="employeeId"
+					required
+					class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+				>
 					<option value="">Select employee…</option>
 					{#each data.employees as e (e.id)}
-						<option value={e.id} selected={form?.employeeId === e.id}>{e.lastName}, {e.firstName} ({e.employeeNumber})</option>
+						<option value={e.id} selected={form?.employeeId === e.id}
+							>{e.lastName}, {e.firstName} ({e.employeeNumber})</option
+						>
 					{/each}
 				</select>
 			</div>
@@ -49,11 +59,22 @@
 				{#each fields as f (f.name)}
 					<div>
 						<label class="text-xs font-medium text-muted-foreground">{f.label}</label>
-						<input name={f.name} type="number" min="0" step="0.01" placeholder="0" class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+						<input
+							name={f.name}
+							type="number"
+							min="0"
+							step="0.01"
+							placeholder="0"
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
 					</div>
 				{/each}
 			</div>
-			<button type="submit" class="rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">Calculate</button>
+			<button
+				type="submit"
+				class="rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+				>Calculate</button
+			>
 		</form>
 
 		<div class="rounded-lg border bg-card p-5">
@@ -62,24 +83,45 @@
 				<h2 class="font-semibold">{r.employee.lastName}, {r.employee.firstName}</h2>
 				<div class="mt-4 space-y-4 text-sm">
 					<div>
-						<p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Earnings</p>
+						<p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+							Earnings
+						</p>
 						<table class="mt-1 w-full">
 							<tbody>
 								{#each r.earnings as c (c.code)}
-									<tr><td class="py-0.5">{c.label}{c.taxable ? '' : ' (non-taxable)'}</td><td class="py-0.5 text-right font-mono">{formatCurrency(c.amount)}</td></tr>
+									<tr
+										><td class="py-0.5">{c.label}{c.taxable ? '' : ' (non-taxable)'}</td><td
+											class="py-0.5 text-right font-mono">{formatCurrency(c.amount)}</td
+										></tr
+									>
 								{/each}
-								<tr class="border-t font-medium"><td class="py-1">Gross</td><td class="py-1 text-right font-mono">{formatCurrency(r.grossPay)}</td></tr>
+								<tr class="border-t font-medium"
+									><td class="py-1">Gross</td><td class="py-1 text-right font-mono"
+										>{formatCurrency(r.grossPay)}</td
+									></tr
+								>
 							</tbody>
 						</table>
 					</div>
 					<div>
-						<p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Deductions</p>
+						<p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+							Deductions
+						</p>
 						<table class="mt-1 w-full">
 							<tbody>
 								{#each r.deductions as c (c.code + (c.refId ?? ''))}
-									<tr><td class="py-0.5">{c.label}</td><td class="py-0.5 text-right font-mono text-muted-foreground">{formatCurrency(c.amount)}</td></tr>
+									<tr
+										><td class="py-0.5">{c.label}</td><td
+											class="py-0.5 text-right font-mono text-muted-foreground"
+											>{formatCurrency(c.amount)}</td
+										></tr
+									>
 								{/each}
-								<tr class="border-t font-medium"><td class="py-1">Total deductions</td><td class="py-1 text-right font-mono">{formatCurrency(r.totalDeductions)}</td></tr>
+								<tr class="border-t font-medium"
+									><td class="py-1">Total deductions</td><td class="py-1 text-right font-mono"
+										>{formatCurrency(r.totalDeductions)}</td
+									></tr
+								>
 							</tbody>
 						</table>
 					</div>
@@ -89,7 +131,9 @@
 					</div>
 				</div>
 			{:else}
-				<p class="text-sm text-muted-foreground">Fill in the hours and click Calculate to preview an itemized computation.</p>
+				<p class="text-sm text-muted-foreground">
+					Fill in the hours and click Calculate to preview an itemized computation.
+				</p>
 			{/if}
 		</div>
 	</div>

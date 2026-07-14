@@ -1,4 +1,4 @@
-import { json, error } from '@sveltejs/kit'
+import { json } from '@sveltejs/kit'
 import { requireRole, requirePayrollManage } from '$lib/server/rbac'
 import { getRunWithEntries, approveRun, voidRun } from '$lib/server/services/payroll/runs'
 import { apiError } from '$lib/server/api-error'
@@ -37,16 +37,11 @@ export const POST: RequestHandler = async ({ locals, params, url, request }) => 
 			// no body is fine
 		}
 
-		const run = await approveRun(
-			params.id,
-			user.organizationId,
-			body.overrideNote,
-			{
-				organizationId: user.organizationId,
-				actorId: user.id,
-				actorRole: user.role
-			}
-		)
+		const run = await approveRun(params.id, user.organizationId, body.overrideNote, {
+			organizationId: user.organizationId,
+			actorId: user.id,
+			actorRole: user.role
+		})
 		return json({ data: run })
 	}
 
@@ -57,15 +52,11 @@ export const POST: RequestHandler = async ({ locals, params, url, request }) => 
 			return apiError(403, 'Insufficient permissions')
 		}
 
-		const run = await voidRun(
-			params.id,
-			user.organizationId,
-			{
-				organizationId: user.organizationId,
-				actorId: user.id,
-				actorRole: user.role
-			}
-		)
+		const run = await voidRun(params.id, user.organizationId, {
+			organizationId: user.organizationId,
+			actorId: user.id,
+			actorRole: user.role
+		})
 		return json({ data: run })
 	}
 

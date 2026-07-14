@@ -10,7 +10,10 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	if (!req) error(404, 'Request not found')
 
 	// Owner, or a manager/HR who can see others' requests.
-	const myEmployee = await db.employee.findUnique({ where: { userId: user.id }, select: { id: true } })
+	const myEmployee = await db.employee.findUnique({
+		where: { userId: user.id },
+		select: { id: true }
+	})
 	const isOwner = myEmployee?.id === req.employeeId
 	const canReview = ROLE_HIERARCHY[user.role] >= ROLE_HIERARCHY.MANAGER
 	if (!isOwner && !canReview) error(403, 'Insufficient permissions')

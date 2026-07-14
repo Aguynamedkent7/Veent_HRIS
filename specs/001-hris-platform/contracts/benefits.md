@@ -25,14 +25,15 @@ Create a benefit plan.
 **Roles**: `HR_ADMIN`, `SUPER_ADMIN`
 
 **Request body**:
+
 ```json
 {
-  "name": "string",
-  "type": "HMO | INSURANCE | RETIREMENT | ALLOWANCE | LEAVE_CREDIT | OTHER",
-  "provider": "string | null",
-  "description": "string | null",
-  "employeeCost": "0.00 | null",
-  "employerCost": "0.00 | null"
+	"name": "string",
+	"type": "HMO | INSURANCE | RETIREMENT | ALLOWANCE | LEAVE_CREDIT | OTHER",
+	"provider": "string | null",
+	"description": "string | null",
+	"employeeCost": "0.00 | null",
+	"employerCost": "0.00 | null"
 }
 ```
 
@@ -64,7 +65,7 @@ List an employee's benefit enrollments.
 
 **Roles**: Owner employee, or `HR_ADMIN`/`SUPER_ADMIN`.
 
-**Query params**: `employeeId` *(required)*
+**Query params**: `employeeId` _(required)_
 
 **Response 200**: List of enrollment objects.
 **Error 403**: Non-owner without HR role.
@@ -78,12 +79,13 @@ Enroll an employee in a benefit plan.
 **Roles**: `HR_ADMIN`, `SUPER_ADMIN`
 
 **Request body**:
+
 ```json
 {
-  "employeeId": "uuid",
-  "benefitPlanId": "uuid",
-  "coverageLevel": "string | null",
-  "effectiveDate": "2025-07-07"
+	"employeeId": "uuid",
+	"benefitPlanId": "uuid",
+	"coverageLevel": "string | null",
+	"effectiveDate": "2025-07-07"
 }
 ```
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { formatCurrency, formatDate } from '$lib/utils/format'
+	import { formatCurrency } from '$lib/utils/format'
 	import { navigating } from '$app/stores'
 	import TableSkeleton from '$lib/components/ui/TableSkeleton.svelte'
 	import type { PageData } from './$types'
@@ -16,14 +16,19 @@
 		attendance: 'Attendance Report',
 		'payroll-costs': 'Payroll Costs Report',
 		'leave-utilization': 'Leave Utilization Report',
-		'payroll-register': 'Payroll Register'
+		'payroll-register': 'Payroll Register',
+		tardiness: 'Tardiness Report',
+		overtime: 'Overtime Report',
+		'loan-summary': 'Loan Summary',
+		'government-remittance': 'Government Remittance',
+		'bir-withholding': 'BIR Withholding Report'
 	}
 
 	const title = $derived(REPORT_LABELS[data.reportType] ?? 'Report')
 
 	// Show department filter only for report types that support it
 	const showDeptFilter = $derived(
-		data.reportType === 'headcount' || data.reportType === 'attendance'
+		['headcount', 'attendance', 'tardiness', 'overtime'].includes(data.reportType)
 	)
 
 	// Build CSV export URL
@@ -38,7 +43,24 @@
 	})
 
 	// Currency columns
-	const CURRENCY_COLS = new Set(['TotalGross', 'TotalNet', 'Gross', 'SSS', 'PhilHealth', 'PagIBIG', 'Tax', 'OtherDeductions', 'Net'])
+	const CURRENCY_COLS = new Set([
+		'TotalGross',
+		'TotalNet',
+		'Gross',
+		'SSS',
+		'PhilHealth',
+		'PagIBIG',
+		'Tax',
+		'OtherDeductions',
+		'Net',
+		'Principal',
+		'Balance',
+		'Installment',
+		'EmployeeShare',
+		'EmployerShare',
+		'Total',
+		'TaxWithheld'
+	])
 
 	function formatCell(col: string, val: unknown): string {
 		if (val === null || val === undefined) return '—'
@@ -110,9 +132,7 @@
 		</div>
 		{#if showDeptFilter}
 			<div class="flex flex-col gap-1">
-				<label for="department" class="text-xs font-medium text-muted-foreground"
-					>Department</label
-				>
+				<label for="department" class="text-xs font-medium text-muted-foreground">Department</label>
 				<select
 					id="department"
 					name="department"
@@ -158,9 +178,7 @@
 					<thead class="border-b bg-muted/50">
 						<tr>
 							{#each data.columns as col (col)}
-								<th
-									class="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap"
-								>
+								<th class="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">
 									{col}
 								</th>
 							{/each}

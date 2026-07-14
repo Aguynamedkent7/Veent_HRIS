@@ -1,7 +1,11 @@
 import { fail } from '@sveltejs/kit'
 import { z } from 'zod'
 import { requireRole } from '$lib/server/rbac'
-import { listDepartments, createDepartment, updateDepartment } from '$lib/server/services/departments'
+import {
+	listDepartments,
+	createDepartment,
+	updateDepartment
+} from '$lib/server/services/departments'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -27,7 +31,7 @@ export const actions: Actions = {
 		const parsed = nameSchema.safeParse(raw)
 
 		if (!parsed.success) {
-			return fail(400, { fieldErrors: parsed.error.flatten().fieldErrors })
+			return fail(400, { error: parsed.error.errors[0]?.message ?? 'Invalid input' })
 		}
 
 		await createDepartment(user.organizationId, parsed.data.name, {
@@ -46,7 +50,7 @@ export const actions: Actions = {
 		const parsed = updateSchema.safeParse(raw)
 
 		if (!parsed.success) {
-			return fail(400, { fieldErrors: parsed.error.flatten().fieldErrors })
+			return fail(400, { error: parsed.error.errors[0]?.message ?? 'Invalid input' })
 		}
 
 		await updateDepartment(parsed.data.id, user.organizationId, parsed.data.name, {

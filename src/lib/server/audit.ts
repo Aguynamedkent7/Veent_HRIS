@@ -17,10 +17,7 @@ interface AuditPayload {
 	newValue?: Record<string, unknown>
 }
 
-export async function writeAuditLog(
-	ctx: AuditContext,
-	payload: AuditPayload
-): Promise<void> {
+export async function writeAuditLog(ctx: AuditContext, payload: AuditPayload): Promise<void> {
 	await db.auditLog.create({
 		data: {
 			organizationId: ctx.organizationId,

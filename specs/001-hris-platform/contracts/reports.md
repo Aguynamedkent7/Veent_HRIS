@@ -14,35 +14,38 @@ Role-aware dashboard metrics. Response shape differs by role.
 **Roles**: All authenticated.
 
 **Response 200 — EMPLOYEE**:
+
 ```json
 {
-  "currentTimesheetStatus": "DRAFT | SUBMITTED | APPROVED | null",
-  "leaveBalances": [{ "leaveTypeName": "string", "remaining": 12 }],
-  "nextPayrollDate": "2025-07-15",
-  "pendingLeaveRequests": 1
+	"currentTimesheetStatus": "DRAFT | SUBMITTED | APPROVED | null",
+	"leaveBalances": [{ "leaveTypeName": "string", "remaining": 12 }],
+	"nextPayrollDate": "2025-07-15",
+	"pendingLeaveRequests": 1
 }
 ```
 
 **Response 200 — MANAGER**:
+
 ```json
 {
-  "pendingTimesheetApprovals": 3,
-  "pendingLeaveApprovals": 2,
-  "teamHeadcount": 8,
-  "teamOnLeaveToday": 1
+	"pendingTimesheetApprovals": 3,
+	"pendingLeaveApprovals": 2,
+	"teamHeadcount": 8,
+	"teamOnLeaveToday": 1
 }
 ```
 
 **Response 200 — HR_ADMIN / SUPER_ADMIN**:
+
 ```json
 {
-  "totalHeadcount": 120,
-  "activeEmployees": 118,
-  "onLeaveToday": 5,
-  "pendingApprovals": { "timesheets": 12, "leaveRequests": 4 },
-  "nextPayrollDate": "2025-07-15",
-  "openJobPostings": 3,
-  "newHiresThisMonth": 2
+	"totalHeadcount": 120,
+	"activeEmployees": 118,
+	"onLeaveToday": 5,
+	"pendingApprovals": { "timesheets": 12, "leaveRequests": 4 },
+	"nextPayrollDate": "2025-07-15",
+	"openJobPostings": 3,
+	"newHiresThisMonth": 2
 }
 ```
 
@@ -66,10 +69,14 @@ Headcount report with optional historical trend.
 **Query params**: `departmentId?`, `employmentType?`, `dateFrom`, `dateTo`, `groupBy=month|quarter`
 
 **Response 200**:
+
 ```json
 {
-  "summary": { "total": 120, "active": 118, "offboarded": 2 },
-  "trend": [{ "period": "2025-06", "headcount": 116 }, { "period": "2025-07", "headcount": 120 }]
+	"summary": { "total": 120, "active": 118, "offboarded": 2 },
+	"trend": [
+		{ "period": "2025-06", "headcount": 116 },
+		{ "period": "2025-07", "headcount": 120 }
+	]
 }
 ```
 
@@ -99,12 +106,13 @@ Payroll cost report by period and department.
 **Query params**: `departmentId?`, `dateFrom`, `dateTo`, `groupBy=department|month`
 
 **Response 200**:
+
 ```json
 {
-  "summary": { "totalGross": 1200000, "totalDeductions": 180000, "totalNet": 1020000 },
-  "breakdown": [
-    { "department": "Engineering", "totalGross": 600000, "headcount": 20, "averageSalary": 30000 }
-  ]
+	"summary": { "totalGross": 1200000, "totalDeductions": 180000, "totalNet": 1020000 },
+	"breakdown": [
+		{ "department": "Engineering", "totalGross": 600000, "headcount": 20, "averageSalary": 30000 }
+	]
 }
 ```
 
@@ -119,15 +127,14 @@ Leave utilization report.
 **Query params**: `leaveTypeId?`, `departmentId?`, `year`
 
 **Response 200**:
+
 ```json
 {
-  "summary": { "totalAllocated": 1800, "totalUsed": 450, "utilizationRate": 0.25 },
-  "byLeaveType": [
-    { "leaveTypeName": "Annual Leave", "allocated": 1500, "used": 400 }
-  ],
-  "byEmployee": [
-    { "employeeNumber": "EMP-0001", "name": "string", "allocated": 15, "used": 5, "remaining": 10 }
-  ]
+	"summary": { "totalAllocated": 1800, "totalUsed": 450, "utilizationRate": 0.25 },
+	"byLeaveType": [{ "leaveTypeName": "Annual Leave", "allocated": 1500, "used": 400 }],
+	"byEmployee": [
+		{ "employeeNumber": "EMP-0001", "name": "string", "allocated": 15, "used": 5, "remaining": 10 }
+	]
 }
 ```
 

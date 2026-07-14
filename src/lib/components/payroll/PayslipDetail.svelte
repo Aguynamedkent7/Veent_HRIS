@@ -49,7 +49,9 @@
 				{formatDate(entry.payrollRun.periodStart)} &ndash; {formatDate(entry.payrollRun.periodEnd)}
 			</p>
 			{#if entry.payrollRun.approvedAt}
-				<p class="text-xs text-gray-400 mt-0.5">Approved: {formatDate(entry.payrollRun.approvedAt)}</p>
+				<p class="text-xs text-gray-400 mt-0.5">
+					Approved: {formatDate(entry.payrollRun.approvedAt)}
+				</p>
 			{/if}
 		</div>
 	</div>
@@ -97,7 +99,9 @@
 				<tfoot>
 					<tr class="bg-gray-50">
 						<td class="px-3 py-2 font-semibold text-gray-900">Total Earnings</td>
-						<td class="px-3 py-2 text-right font-mono font-semibold text-gray-900">{formatCurrency(gross)}</td>
+						<td class="px-3 py-2 text-right font-mono font-semibold text-gray-900"
+							>{formatCurrency(gross)}</td
+						>
 					</tr>
 				</tfoot>
 			</table>
@@ -120,7 +124,9 @@
 					</tr>
 					<tr class="border-b">
 						<td class="px-3 py-2 text-gray-700">PhilHealth</td>
-						<td class="px-3 py-2 text-right font-mono text-gray-900">{formatCurrency(philhealth)}</td>
+						<td class="px-3 py-2 text-right font-mono text-gray-900"
+							>{formatCurrency(philhealth)}</td
+						>
 					</tr>
 					<tr class="border-b">
 						<td class="px-3 py-2 text-gray-700">Pag-IBIG</td>
@@ -134,7 +140,9 @@
 				<tfoot>
 					<tr class="bg-gray-50">
 						<td class="px-3 py-2 font-semibold text-gray-900">Total Deductions</td>
-						<td class="px-3 py-2 text-right font-mono font-semibold text-gray-900">{formatCurrency(totalDed)}</td>
+						<td class="px-3 py-2 text-right font-mono font-semibold text-gray-900"
+							>{formatCurrency(totalDed)}</td
+						>
 					</tr>
 				</tfoot>
 			</table>

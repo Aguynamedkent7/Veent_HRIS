@@ -1,4 +1,4 @@
-import { json, error } from '@sveltejs/kit'
+import { json } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
 import { apiError } from '$lib/server/api-error'
 import { isPayslipVisible } from '$lib/server/services/payroll/runs'

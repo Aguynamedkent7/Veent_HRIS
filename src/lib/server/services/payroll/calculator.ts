@@ -3,7 +3,14 @@ import { error } from '@sveltejs/kit'
 import { computeEarnings } from './earnings'
 import { computeDeductions, type AmortItem } from './deductions'
 import { computeStatutoryDeductions } from './ph-statutory'
-import { hourlyRateOf, round2, type AttendanceInput, type EmployeeComp, type PayAdjustments, type PayComponent } from './types'
+import {
+	hourlyRateOf,
+	round2,
+	type AttendanceInput,
+	type EmployeeComp,
+	type PayAdjustments,
+	type PayComponent
+} from './types'
 
 /**
  * Shared per-employee payroll computation (PAY-015). Both the real run (`computePayrollRun`)
@@ -53,7 +60,9 @@ export function computeEmployeeResult(
 		const configured = cfg.taxableByCode.get(c.code)
 		if (configured !== undefined) c.taxable = configured
 	}
-	const taxableGross = round2(earnings.components.filter((c) => c.taxable).reduce((s, c) => s + c.amount, 0))
+	const taxableGross = round2(
+		earnings.components.filter((c) => c.taxable).reduce((s, c) => s + c.amount, 0)
+	)
 
 	const m = computeStatutoryDeductions(comp.basicMonthlySalary)
 	const statutory: ProratedStatutory = {
@@ -118,11 +127,24 @@ export async function previewPayroll(
 	const cfg: EmployeeComputeConfig = {
 		taxableByCode: new Map(earningTypes.map((e) => [e.code, e.taxable])),
 		periodShare: (config?.payFrequency ?? 'SEMI_MONTHLY') === 'MONTHLY' ? 1 : 0.5,
-		loans: loansAll.map((l) => ({ refId: l.id, label: l.type ?? 'Loan', installment: Number(l.installment), balance: Number(l.balance) })),
-		cashAdvances: advancesAll.map((a) => ({ refId: a.id, label: 'Cash advance', installment: Number(a.installment), balance: Number(a.balance) }))
+		loans: loansAll.map((l) => ({
+			refId: l.id,
+			label: l.type ?? 'Loan',
+			installment: Number(l.installment),
+			balance: Number(l.balance)
+		})),
+		cashAdvances: advancesAll.map((a) => ({
+			refId: a.id,
+			label: 'Cash advance',
+			installment: Number(a.installment),
+			balance: Number(a.balance)
+		}))
 	}
 
-	const comp: EmployeeComp = { basicMonthlySalary: Number(employee.basicMonthlySalary), rateType: employee.rateType }
+	const comp: EmployeeComp = {
+		basicMonthlySalary: Number(employee.basicMonthlySalary),
+		rateType: employee.rateType
+	}
 	const result = computeEmployeeResult(comp, input.attendance, input.adjustments ?? {}, cfg)
 
 	return {

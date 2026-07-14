@@ -1,4 +1,4 @@
-import { fail, redirect } from '@sveltejs/kit'
+import { fail } from '@sveltejs/kit'
 import { requireMinRole } from '$lib/server/rbac'
 import { listEmployees, createEmployee, offboardEmployee } from '$lib/server/services/employees'
 import { db } from '$lib/server/db'
@@ -48,7 +48,12 @@ export const actions: Actions = {
 			await createEmployee(
 				user.organizationId,
 				{ ...parsed.data, password: Math.random().toString(36).slice(-12) + 'A1!' },
-				{ organizationId: user.organizationId, actorId: user.id, actorRole: user.role, ipAddress: getClientAddress() }
+				{
+					organizationId: user.organizationId,
+					actorId: user.id,
+					actorRole: user.role,
+					ipAddress: getClientAddress()
+				}
 			)
 		} catch (e: unknown) {
 			if (e instanceof Error && e.message === 'Email already in use') {

@@ -33,7 +33,8 @@
 			placeholder="Search by name or employee number…"
 			class="flex h-9 w-64 rounded-md border border-input bg-background px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 		/>
-		<button type="submit" class="rounded-md border px-3 py-1 text-sm hover:bg-accent">Search</button>
+		<button type="submit" class="rounded-md border px-3 py-1 text-sm hover:bg-accent">Search</button
+		>
 	</form>
 
 	<!-- Create form -->
@@ -43,11 +44,19 @@
 			<div class="grid gap-3 sm:grid-cols-2">
 				<div>
 					<label class="text-sm font-medium">Email</label>
-					<input name="email" type="email" required class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+					<input
+						name="email"
+						type="email"
+						required
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					/>
 				</div>
 				<div>
 					<label class="text-sm font-medium">Role</label>
-					<select name="role" class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+					<select
+						name="role"
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					>
 						<option value="EMPLOYEE">Employee</option>
 						<option value="MANAGER">Manager</option>
 						<option value="HR_ADMIN">HR Admin</option>
@@ -55,15 +64,27 @@
 				</div>
 				<div>
 					<label class="text-sm font-medium">First Name</label>
-					<input name="firstName" required class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+					<input
+						name="firstName"
+						required
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					/>
 				</div>
 				<div>
 					<label class="text-sm font-medium">Last Name</label>
-					<input name="lastName" required class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+					<input
+						name="lastName"
+						required
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					/>
 				</div>
 				<div>
 					<label class="text-sm font-medium">Department</label>
-					<select name="departmentId" required class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+					<select
+						name="departmentId"
+						required
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					>
 						{#each data.departments as dept (dept.id)}
 							<option value={dept.id}>{dept.name}</option>
 						{/each}
@@ -71,11 +92,18 @@
 				</div>
 				<div>
 					<label class="text-sm font-medium">Job Title</label>
-					<input name="jobTitle" required class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+					<input
+						name="jobTitle"
+						required
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					/>
 				</div>
 				<div>
 					<label class="text-sm font-medium">Employment Type</label>
-					<select name="employmentType" class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+					<select
+						name="employmentType"
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					>
 						<option value="FULL_TIME">Full-time</option>
 						<option value="PART_TIME">Part-time</option>
 						<option value="CONTRACTUAL">Contractual</option>
@@ -84,16 +112,36 @@
 				</div>
 				<div>
 					<label class="text-sm font-medium">Start Date</label>
-					<input name="startDate" type="date" required class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+					<input
+						name="startDate"
+						type="date"
+						required
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					/>
 				</div>
 				<div>
 					<label class="text-sm font-medium">Basic Monthly Salary (PHP)</label>
-					<input name="basicMonthlySalary" type="number" min="0" step="0.01" required class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+					<input
+						name="basicMonthlySalary"
+						type="number"
+						min="0"
+						step="0.01"
+						required
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					/>
 				</div>
 			</div>
 			<div class="flex gap-2 justify-end">
-				<button type="button" onclick={() => (showCreate = false)} class="rounded-md border px-4 py-2 text-sm hover:bg-accent">Cancel</button>
-				<button type="submit" class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">Create</button>
+				<button
+					type="button"
+					onclick={() => (showCreate = false)}
+					class="rounded-md border px-4 py-2 text-sm hover:bg-accent">Cancel</button
+				>
+				<button
+					type="submit"
+					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+					>Create</button
+				>
 			</div>
 		</form>
 	{/if}
@@ -124,9 +172,15 @@
 							</td>
 							<td class="px-4 py-3 text-muted-foreground">{emp.department.name}</td>
 							<td class="px-4 py-3">{emp.jobTitle}</td>
-							<td class="px-4 py-3 text-muted-foreground">{emp.employmentType.replace('_', ' ')}</td>
+							<td class="px-4 py-3 text-muted-foreground">{emp.employmentType.replace('_', ' ')}</td
+							>
 							<td class="px-4 py-3">
-								<span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {emp.employmentStatus === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}">
+								<span
+									class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {emp.employmentStatus ===
+									'ACTIVE'
+										? 'bg-green-100 text-green-700'
+										: 'bg-gray-100 text-gray-600'}"
+								>
 									{emp.employmentStatus}
 								</span>
 							</td>
@@ -137,7 +191,9 @@
 						</tr>
 					{:else}
 						<tr>
-							<td colspan="7" class="px-4 py-8 text-center text-muted-foreground">No employees found</td>
+							<td colspan="7" class="px-4 py-8 text-center text-muted-foreground"
+								>No employees found</td
+							>
 						</tr>
 					{/each}
 				</tbody>

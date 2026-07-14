@@ -93,7 +93,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
 	return json({ data: applicant }, { status: 201 })
 }
 
-export const PATCH: RequestHandler = async ({ params, request, locals, getClientAddress }) => {
+export const PATCH: RequestHandler = async ({ request, locals, getClientAddress }) => {
 	if (!locals.user) return apiError(401, 'Unauthorized')
 
 	const user = locals.user

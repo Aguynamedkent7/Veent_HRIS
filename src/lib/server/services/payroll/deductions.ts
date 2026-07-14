@@ -25,7 +25,11 @@ export interface AmortResult {
 }
 
 /** Tardiness/undertime deduction: unpaid minutes valued at the hourly rate. */
-export function computeTardiness(hourlyRate: number, lateMinutes: number, undertimeMinutes: number): number {
+export function computeTardiness(
+	hourlyRate: number,
+	lateMinutes: number,
+	undertimeMinutes: number
+): number {
 	return round2(((lateMinutes + undertimeMinutes) / 60) * hourlyRate)
 }
 
@@ -33,7 +37,11 @@ export function computeTardiness(hourlyRate: number, lateMinutes: number, undert
  * Apply fixed installments in order against the available net. Each installment is capped at the
  * item's balance; an item is skipped entirely if `availableNet` can't cover the due amount.
  */
-export function applyAmortizations(items: AmortItem[], availableNet: number, codePrefix = 'LOAN'): AmortResult {
+export function applyAmortizations(
+	items: AmortItem[],
+	availableNet: number,
+	codePrefix = 'LOAN'
+): AmortResult {
 	const applied: PayComponent[] = []
 	const balances: Record<string, number> = {}
 	let net = availableNet
@@ -41,7 +49,13 @@ export function applyAmortizations(items: AmortItem[], availableNet: number, cod
 	for (const item of items) {
 		const due = round2(Math.min(item.installment, item.balance))
 		if (due > 0 && net >= due) {
-			applied.push({ code: codePrefix, label: item.label, amount: due, taxable: false, refId: item.refId })
+			applied.push({
+				code: codePrefix,
+				label: item.label,
+				amount: due,
+				taxable: false,
+				refId: item.refId
+			})
 			net = round2(net - due)
 			balances[item.refId] = round2(item.balance - due)
 		} else {
@@ -86,10 +100,25 @@ export function computeDeductions(params: {
 
 	const fixed: PayComponent[] = [
 		{ code: 'SSS_EE', label: 'SSS', amount: round2(statutory.sssEe), taxable: false },
-		{ code: 'PHILHEALTH_EE', label: 'PhilHealth', amount: round2(statutory.philhealthEe), taxable: false },
+		{
+			code: 'PHILHEALTH_EE',
+			label: 'PhilHealth',
+			amount: round2(statutory.philhealthEe),
+			taxable: false
+		},
 		{ code: 'PAGIBIG_EE', label: 'Pag-IBIG', amount: round2(statutory.pagibigEe), taxable: false },
-		{ code: 'TAX', label: 'Withholding tax', amount: round2(statutory.withholdingTax), taxable: false },
-		{ code: 'TARDINESS', label: 'Tardiness/undertime', amount: computeTardiness(hourlyRate, lateMinutes, undertimeMinutes), taxable: false }
+		{
+			code: 'TAX',
+			label: 'Withholding tax',
+			amount: round2(statutory.withholdingTax),
+			taxable: false
+		},
+		{
+			code: 'TARDINESS',
+			label: 'Tardiness/undertime',
+			amount: computeTardiness(hourlyRate, lateMinutes, undertimeMinutes),
+			taxable: false
+		}
 	].filter((c) => c.amount !== 0)
 
 	const fixedTotal = round2(fixed.reduce((s, c) => s + c.amount, 0))

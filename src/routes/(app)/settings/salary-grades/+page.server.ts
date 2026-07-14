@@ -20,16 +20,20 @@ export const load: PageServerLoad = async ({ locals }) => {
 	return { grades, positions }
 }
 
-const gradeSchema = z
-	.object({
-		name: z.string().min(1).max(60),
-		minSalary: z.coerce.number().min(0),
-		midSalary: z.coerce.number().min(0),
-		maxSalary: z.coerce.number().min(0)
-	})
+const gradeSchema = z.object({
+	name: z.string().min(1).max(60),
+	minSalary: z.coerce.number().min(0),
+	midSalary: z.coerce.number().min(0),
+	maxSalary: z.coerce.number().min(0)
+})
 
 function ctxOf(locals: App.Locals, ip: string) {
-	return { organizationId: locals.user!.organizationId, actorId: locals.user!.id, actorRole: locals.user!.role, ipAddress: ip }
+	return {
+		organizationId: locals.user!.organizationId,
+		actorId: locals.user!.id,
+		actorRole: locals.user!.role,
+		ipAddress: ip
+	}
 }
 
 async function run(fn: () => Promise<unknown>) {
@@ -47,14 +51,18 @@ export const actions: Actions = {
 		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
 		const parsed = gradeSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(422, { error: 'Invalid grade values' })
-		return run(() => createSalaryGrade(locals.user!.organizationId, parsed.data, ctxOf(locals, getClientAddress())))
+		return run(() =>
+			createSalaryGrade(locals.user!.organizationId, parsed.data, ctxOf(locals, getClientAddress()))
+		)
 	},
 
 	toggleGrade: async ({ request, locals, getClientAddress }) => {
 		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
 		const id = (await request.formData()).get('id') as string
 		if (!id) return fail(400, { error: 'Missing id' })
-		return run(() => toggleSalaryGrade(locals.user!.organizationId, id, ctxOf(locals, getClientAddress())))
+		return run(() =>
+			toggleSalaryGrade(locals.user!.organizationId, id, ctxOf(locals, getClientAddress()))
+		)
 	},
 
 	assignGrade: async ({ request, locals, getClientAddress }) => {
@@ -63,6 +71,13 @@ export const actions: Actions = {
 		const positionId = data.get('positionId') as string
 		const gradeId = (data.get('salaryGradeId') as string) || null
 		if (!positionId) return fail(400, { error: 'Missing position' })
-		return run(() => assignPositionGrade(locals.user!.organizationId, positionId, gradeId, ctxOf(locals, getClientAddress())))
+		return run(() =>
+			assignPositionGrade(
+				locals.user!.organizationId,
+				positionId,
+				gradeId,
+				ctxOf(locals, getClientAddress())
+			)
+		)
 	}
 }

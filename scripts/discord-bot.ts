@@ -31,7 +31,11 @@ import { signPayload } from '../src/lib/server/hmac'
 
 const { DISCORD_BOT_TOKEN, HRIS_API_URL, TIMELOG_API_SECRET } = process.env
 
-for (const [key, value] of Object.entries({ DISCORD_BOT_TOKEN, HRIS_API_URL, TIMELOG_API_SECRET })) {
+for (const [key, value] of Object.entries({
+	DISCORD_BOT_TOKEN,
+	HRIS_API_URL,
+	TIMELOG_API_SECRET
+})) {
 	if (!value) {
 		console.error(`[bot] Missing required env var: ${key}`)
 		process.exit(1)
@@ -44,7 +48,10 @@ const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000
 
 /** Parse a typed time-of-day ("9:00", "13:30", "1:30pm", "9am") into a UTC ISO for today (PHT). */
 function parseTimeToISO(input: string): string {
-	const m = input.trim().toLowerCase().match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/)
+	const m = input
+		.trim()
+		.toLowerCase()
+		.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/)
 	if (!m) throw new Error(`Couldn't read the time "${input}". Try e.g. 9:00, 13:30, or 1:30pm.`)
 	let hh = parseInt(m[1], 10)
 	const mm = m[2] ? parseInt(m[2], 10) : 0
@@ -52,7 +59,9 @@ function parseTimeToISO(input: string): string {
 	if (m[3] === 'am' && hh === 12) hh = 0
 	if (hh > 23 || mm > 59) throw new Error(`"${input}" isn't a valid time.`)
 	const phtDay = new Date(Date.now() + MANILA_OFFSET_MS).toISOString().slice(0, 10)
-	return new Date(`${phtDay}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00+08:00`).toISOString()
+	return new Date(
+		`${phtDay}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00+08:00`
+	).toISOString()
 }
 
 /** Format a UTC ISO timestamp as a PHT wall-clock time, e.g. "9:00 AM". */
@@ -75,14 +84,24 @@ async function sendPunch(discordId: string, command: PunchCommand, timestampIso?
 
 	const res = await fetch(`${HRIS_API_URL}/api/v1/timesheets/log`, {
 		method: 'POST',
-		headers: { 'content-type': 'application/json', 'x-hris-signature': signature, 'x-hris-timestamp': timestamp },
+		headers: {
+			'content-type': 'application/json',
+			'x-hris-signature': signature,
+			'x-hris-timestamp': timestamp
+		},
 		body: rawBody
 	})
 	if (!res.ok) {
 		const err = (await res.json().catch(() => ({}))) as { error?: string }
 		throw new Error(err.error ?? `HRIS responded ${res.status}`)
 	}
-	return res.json() as Promise<{ data: { punchType: string; timestamp: string; employee: { firstName: string; lastName: string } } }>
+	return res.json() as Promise<{
+		data: {
+			punchType: string
+			timestamp: string
+			employee: { firstName: string; lastName: string }
+		}
+	}>
 }
 
 /** Public announcement text from the RESOLVED punch type, with the effective time. */
@@ -105,13 +124,18 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] })
 
 const timeOption = (b: SlashCommandBuilder) =>
 	b.addStringOption((o) =>
-		o.setName('time').setDescription('Optional time if you forgot, e.g. 9:00 or 1:30pm — defaults to now').setRequired(false)
+		o
+			.setName('time')
+			.setDescription('Optional time if you forgot, e.g. 9:00 or 1:30pm — defaults to now')
+			.setRequired(false)
 	)
 
 const COMMANDS = [
 	timeOption(new SlashCommandBuilder().setName('in').setDescription('Clock in')).toJSON(),
 	timeOption(new SlashCommandBuilder().setName('out').setDescription('Clock out')).toJSON(),
-	timeOption(new SlashCommandBuilder().setName('break').setDescription('Start or end your break')).toJSON()
+	timeOption(
+		new SlashCommandBuilder().setName('break').setDescription('Start or end your break')
+	).toJSON()
 ]
 
 client.once(Events.ClientReady, async (c) => {
@@ -136,7 +160,12 @@ client.on(Events.InteractionCreate, async (interaction: Interaction) => {
 
 		const { data } = await sendPunch(interaction.user.id, command, timestampIso)
 		const name = `${data.employee.firstName} ${data.employee.lastName}`
-		const text = announce(name, `<@${interaction.user.id}>`, data.punchType, formatPhtTime(data.timestamp))
+		const text = announce(
+			name,
+			`<@${interaction.user.id}>`,
+			data.punchType,
+			formatPhtTime(data.timestamp)
+		)
 
 		// Public announcement in the channel; private ack to the invoker.
 		const channel = interaction.channel
@@ -146,7 +175,9 @@ client.on(Events.InteractionCreate, async (interaction: Interaction) => {
 		await interaction.editReply('✅ Recorded.')
 	} catch (e) {
 		const message = e instanceof Error ? e.message : 'Something went wrong'
-		await interaction.editReply(`⚠️ Could not record your punch: ${message}\nIf this persists, ask HR to link your Discord account.`)
+		await interaction.editReply(
+			`⚠️ Could not record your punch: ${message}\nIf this persists, ask HR to link your Discord account.`
+		)
 	}
 })
 

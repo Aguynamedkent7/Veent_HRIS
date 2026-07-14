@@ -126,7 +126,9 @@
 							</div>
 						</div>
 						{#if goal.targetDate}
-							<p class="text-xs text-muted-foreground">Target: {formatShortDate(goal.targetDate)}</p>
+							<p class="text-xs text-muted-foreground">
+								Target: {formatShortDate(goal.targetDate)}
+							</p>
 						{/if}
 						<form
 							method="POST"
@@ -167,9 +169,108 @@
 				{/each}
 			</div>
 		{:else}
-			<div class="rounded-lg border p-8 text-center text-sm text-muted-foreground">No goals yet</div>
+			<div class="rounded-lg border p-8 text-center text-sm text-muted-foreground">
+				No goals yet
+			</div>
 		{/if}
 	</section>
+
+	<!-- Review Cycles (HR) -->
+	{#if data.isAdmin}
+		<section class="space-y-3">
+			<h2 class="text-lg font-semibold">Review Cycles</h2>
+			<form
+				method="POST"
+				action="?/createCycle"
+				use:enhance
+				class="flex flex-wrap items-end gap-2 rounded-lg border bg-card p-4"
+			>
+				<input
+					name="name"
+					placeholder="e.g. 2026 Mid-Year"
+					required
+					class="h-9 w-44 rounded-md border border-input bg-background px-2 text-sm"
+				/>
+				<input
+					name="startDate"
+					type="date"
+					required
+					class="h-9 rounded-md border border-input bg-background px-2 text-sm"
+				/>
+				<input
+					name="endDate"
+					type="date"
+					required
+					class="h-9 rounded-md border border-input bg-background px-2 text-sm"
+				/>
+				<button
+					class="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+					>Create cycle</button
+				>
+			</form>
+			{#if data.cycles.length}
+				<div class="rounded-lg border">
+					<table class="w-full text-sm">
+						<thead class="border-b bg-muted/50">
+							<tr>
+								<th class="px-4 py-3 text-left font-medium text-muted-foreground">Cycle</th>
+								<th class="px-4 py-3 text-left font-medium text-muted-foreground">Period</th>
+								<th class="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
+								<th class="px-4 py-3 text-right font-medium text-muted-foreground">Actions</th>
+							</tr>
+						</thead>
+						<tbody class="divide-y">
+							{#each data.cycles as c (c.id)}
+								<tr class="hover:bg-muted/30">
+									<td class="px-4 py-3 font-medium">{c.name}</td>
+									<td class="px-4 py-3 text-muted-foreground"
+										>{formatShortDate(c.startDate)} – {formatShortDate(c.endDate)}</td
+									>
+									<td class="px-4 py-3"
+										><span
+											class="rounded-full px-2 py-0.5 text-xs font-medium {reviewStatusClass(
+												c.status
+											)}">{c.status}</span
+										></td
+									>
+									<td class="px-4 py-3">
+										<div class="flex items-center justify-end gap-2">
+											{#if c.status === 'DRAFT'}
+												<form method="POST" action="?/setCycleStatus" use:enhance>
+													<input type="hidden" name="id" value={c.id} /><input
+														type="hidden"
+														name="status"
+														value="ACTIVE"
+													/><button class="text-xs text-blue-600 hover:underline">Activate</button>
+												</form>
+											{/if}
+											{#if c.status === 'ACTIVE'}
+												<form method="POST" action="?/openReviews" use:enhance>
+													<input type="hidden" name="id" value={c.id} /><button
+														class="text-xs text-primary hover:underline">Open reviews</button
+													>
+												</form>
+												<form method="POST" action="?/setCycleStatus" use:enhance>
+													<input type="hidden" name="id" value={c.id} /><input
+														type="hidden"
+														name="status"
+														value="CLOSED"
+													/><button class="text-xs text-red-600 hover:underline">Close</button>
+												</form>
+											{/if}
+										</div>
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
+			{#if form?.opened != null}<p class="text-xs text-green-600">
+					Opened {form.opened} review(s).
+				</p>{/if}
+		</section>
+	{/if}
 
 	<!-- My Reviews -->
 	<section class="space-y-3">
@@ -187,7 +288,12 @@
 				<tbody class="divide-y">
 					{#each data.myReviews as review (review.id)}
 						<tr class="hover:bg-muted/30">
-							<td class="px-4 py-3">{review.cycle.name}</td>
+							<td class="px-4 py-3"
+								><a
+									href="/performance/reviews/{review.id}"
+									class="font-medium text-primary hover:underline">{review.cycle.name}</a
+								></td
+							>
 							<td class="px-4 py-3 text-muted-foreground">
 								{review.reviewer.lastName}, {review.reviewer.firstName}
 							</td>
@@ -212,6 +318,40 @@
 		</div>
 	</section>
 
+	<!-- Team Goals (manager view) -->
+	{#if data.isManager && data.teamGoals.length}
+		<section class="space-y-3">
+			<h2 class="text-lg font-semibold">Team Goals</h2>
+			<div class="rounded-lg border">
+				<table class="w-full text-sm">
+					<thead class="border-b bg-muted/50">
+						<tr>
+							<th class="px-4 py-3 text-left font-medium text-muted-foreground">Employee</th>
+							<th class="px-4 py-3 text-left font-medium text-muted-foreground">Goal</th>
+							<th class="px-4 py-3 text-right font-medium text-muted-foreground">Progress</th>
+							<th class="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y">
+						{#each data.teamGoals as g (g.id)}
+							<tr class="hover:bg-muted/30">
+								<td class="px-4 py-3">{g.employee.lastName}, {g.employee.firstName}</td>
+								<td class="px-4 py-3 font-medium">{g.title}</td>
+								<td class="px-4 py-3 text-right">{g.progress}%</td>
+								<td class="px-4 py-3"
+									><span
+										class="rounded-full px-2 py-0.5 text-xs font-medium {goalStatusClass(g.status)}"
+										>{g.status}</span
+									></td
+								>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		</section>
+	{/if}
+
 	<!-- Reviews to Complete (reviewer) -->
 	{#if data.reviewsToGive.length}
 		<section class="space-y-3">
@@ -228,7 +368,13 @@
 					<tbody class="divide-y">
 						{#each data.reviewsToGive as review (review.id)}
 							<tr class="hover:bg-muted/30">
-								<td class="px-4 py-3">{review.employee.lastName}, {review.employee.firstName}</td>
+								<td class="px-4 py-3"
+									><a
+										href="/performance/reviews/{review.id}"
+										class="font-medium text-primary hover:underline"
+										>{review.employee.lastName}, {review.employee.firstName}</a
+									></td
+								>
 								<td class="px-4 py-3 text-muted-foreground">{review.cycle.name}</td>
 								<td class="px-4 py-3">
 									<span

@@ -18,7 +18,11 @@ export const load: PageServerLoad = async ({ locals }) => {
 	const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
 	const isAdmin = ['HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
 
-	const pendingRequests = await listPendingRequestsForApprover(user.organizationId, user.role, myEmployee?.id ?? null)
+	const pendingRequests = await listPendingRequestsForApprover(
+		user.organizationId,
+		user.role,
+		myEmployee?.id ?? null
+	)
 
 	// pendingTimesheets: SUBMITTED timesheets
 	//   For MANAGER: only direct reports (reportsToId = myEmployee.id)
@@ -102,15 +106,24 @@ export const actions: Actions = {
 			return fail(400, { error: 'Missing request id or invalid decision' })
 		}
 
-		const myEmployee = await db.employee.findUnique({ where: { userId: user.id }, select: { id: true } })
+		const myEmployee = await db.employee.findUnique({
+			where: { userId: user.id },
+			select: { id: true }
+		})
 
 		try {
-			await decide(id, decision, note, {
-				organizationId: user.organizationId,
-				actorId: user.id,
-				actorRole: user.role,
-				ipAddress: getClientAddress()
-			}, myEmployee?.id ?? null)
+			await decide(
+				id,
+				decision,
+				note,
+				{
+					organizationId: user.organizationId,
+					actorId: user.id,
+					actorRole: user.role,
+					ipAddress: getClientAddress()
+				},
+				myEmployee?.id ?? null
+			)
 		} catch (e: unknown) {
 			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
 			if (e instanceof Error) return fail(400, { error: e.message })

@@ -9,7 +9,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 }
 
 export const actions: Actions = {
-	override: async ({ request, locals, params, getClientAddress }) => {
+	override: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
 		requirePayrollManage(user.role)
 
@@ -18,12 +18,11 @@ export const actions: Actions = {
 		const netPay = parseFloat(data.get('netPay') as string)
 		const note = data.get('note') as string
 
-		await overridePayrollEntry(
-			entryId,
-			user.organizationId,
-			{ netPay },
-			note,
-			{ organizationId: user.organizationId, actorId: user.id, actorRole: user.role, ipAddress: getClientAddress() }
-		)
+		await overridePayrollEntry(entryId, user.organizationId, { netPay }, note, {
+			organizationId: user.organizationId,
+			actorId: user.id,
+			actorRole: user.role,
+			ipAddress: getClientAddress()
+		})
 	}
 }

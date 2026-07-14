@@ -21,14 +21,22 @@ export function listSchedules(organizationId: string) {
 
 export async function createSchedule(
 	organizationId: string,
-	data: { name: string; isDefault?: boolean; startMinutes: number; endMinutes: number; breakMinutes: number; weekdays: number[] },
+	data: {
+		name: string
+		isDefault?: boolean
+		startMinutes: number
+		endMinutes: number
+		breakMinutes: number
+		weekdays: number[]
+	},
 	ctx: AuditContext
 ) {
 	if (data.endMinutes <= data.startMinutes) error(400, 'End time must be after start time')
 	if (data.weekdays.length === 0) error(400, 'Select at least one working day')
 
 	const schedule = await db.$transaction(async (tx: Prisma.TransactionClient) => {
-		if (data.isDefault) await tx.workSchedule.updateMany({ where: { organizationId }, data: { isDefault: false } })
+		if (data.isDefault)
+			await tx.workSchedule.updateMany({ where: { organizationId }, data: { isDefault: false } })
 		return tx.workSchedule.create({
 			data: {
 				organizationId,
@@ -50,7 +58,12 @@ export async function createSchedule(
 		action: 'CREATE',
 		entityType: 'WorkSchedule',
 		entityId: schedule.id,
-		newValue: { name: data.name, weekdays: data.weekdays, startMinutes: data.startMinutes, endMinutes: data.endMinutes }
+		newValue: {
+			name: data.name,
+			weekdays: data.weekdays,
+			startMinutes: data.startMinutes,
+			endMinutes: data.endMinutes
+		}
 	})
 	return schedule
 }
@@ -62,12 +75,23 @@ export async function assignSchedule(
 	scheduleId: string | null,
 	ctx: AuditContext
 ) {
-	const emp = await db.employee.findFirst({ where: { id: employeeId, user: { organizationId } }, select: { id: true } })
+	const emp = await db.employee.findFirst({
+		where: { id: employeeId, user: { organizationId } },
+		select: { id: true }
+	})
 	if (!emp) error(404, 'Employee not found')
 	if (scheduleId) {
-		const s = await db.workSchedule.findFirst({ where: { id: scheduleId, organizationId }, select: { id: true } })
+		const s = await db.workSchedule.findFirst({
+			where: { id: scheduleId, organizationId },
+			select: { id: true }
+		})
 		if (!s) error(404, 'Work schedule not found')
 	}
 	await db.employee.update({ where: { id: employeeId }, data: { workScheduleId: scheduleId } })
-	await writeAuditLog(ctx, { action: 'UPDATE', entityType: 'Employee', entityId: employeeId, newValue: { workScheduleId: scheduleId } })
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'Employee',
+		entityId: employeeId,
+		newValue: { workScheduleId: scheduleId }
+	})
 }

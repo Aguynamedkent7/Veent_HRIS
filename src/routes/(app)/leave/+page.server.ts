@@ -1,6 +1,11 @@
 import { fail, isHttpError } from '@sveltejs/kit'
 import { requireMinRole } from '$lib/server/rbac'
-import { listLeaveRequests, requestLeave, reviewLeaveRequest, getLeaveBalances } from '$lib/server/services/leave'
+import {
+	listLeaveRequests,
+	requestLeave,
+	reviewLeaveRequest,
+	getLeaveBalances
+} from '$lib/server/services/leave'
 import { db } from '$lib/server/db'
 import { z } from 'zod'
 import type { Actions, PageServerLoad } from './$types'

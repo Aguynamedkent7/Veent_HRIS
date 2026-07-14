@@ -10,7 +10,8 @@ const DAY_MS = 86_400_000
 const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000
 
 export type AttPunchType = 'IN' | 'OUT' | 'BREAK_START' | 'BREAK_END'
-export type AttendanceStatus = 'PRESENT' | 'LATE' | 'ABSENT' | 'INCOMPLETE' | 'ON_LEAVE' | 'HOLIDAY' | 'REST_DAY'
+export type AttendanceStatus =
+	'PRESENT' | 'LATE' | 'ABSENT' | 'INCOMPLETE' | 'ON_LEAVE' | 'HOLIDAY' | 'REST_DAY'
 export type DayType = 'REGULAR' | 'REST_DAY' | 'REGULAR_HOLIDAY' | 'SPECIAL_HOLIDAY'
 
 export interface PunchLite {
@@ -73,7 +74,10 @@ function phtMinuteOfDay(d: Date): number {
 }
 
 /** Remove `cuts` (break intervals) from `base` (work intervals). All values in ms. */
-function subtractIntervals(base: Array<[number, number]>, cuts: Array<[number, number]>): Array<[number, number]> {
+function subtractIntervals(
+	base: Array<[number, number]>,
+	cuts: Array<[number, number]>
+): Array<[number, number]> {
 	let result = base
 	for (const [cs, ce] of cuts) {
 		const next: Array<[number, number]> = []
@@ -169,7 +173,8 @@ export function deriveAttendanceDay(input: DeriveInput): AttendanceDayResult {
 	if (workSegs.length === 0) {
 		if (firstIn || incomplete) return emptyResult('INCOMPLETE', firstIn)
 		if (dayType === 'REST_DAY') return emptyResult('REST_DAY')
-		if (dayType === 'REGULAR_HOLIDAY' || dayType === 'SPECIAL_HOLIDAY') return emptyResult('HOLIDAY')
+		if (dayType === 'REGULAR_HOLIDAY' || dayType === 'SPECIAL_HOLIDAY')
+			return emptyResult('HOLIDAY')
 		return emptyResult('ABSENT')
 	}
 
@@ -209,7 +214,10 @@ export function deriveAttendanceDay(input: DeriveInput): AttendanceDayResult {
 	const rawOvertimeHours = round2(Math.max(0, workedHours - threshold))
 	const paidOt = round2(Math.min(rawOvertimeHours, approvedOt))
 
-	const result = emptyResult(incomplete ? 'INCOMPLETE' : lateMinutes > 0 ? 'LATE' : 'PRESENT', firstIn)
+	const result = emptyResult(
+		incomplete ? 'INCOMPLETE' : lateMinutes > 0 ? 'LATE' : 'PRESENT',
+		firstIn
+	)
 	result.timeOut = lastOut
 	result.workedHours = workedHours
 	result.breakMinutes = Math.round(breakMs / 60_000)

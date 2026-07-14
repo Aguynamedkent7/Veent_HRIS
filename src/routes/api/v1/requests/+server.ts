@@ -11,7 +11,10 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 
 	// Non-managers only ever see their own requests.
 	const isManager = ROLE_HIERARCHY[user.role] >= ROLE_HIERARCHY.MANAGER
-	const myEmployee = await db.employee.findUnique({ where: { userId: user.id }, select: { id: true } })
+	const myEmployee = await db.employee.findUnique({
+		where: { userId: user.id },
+		select: { id: true }
+	})
 
 	const results = await listRequests({
 		organizationId: user.organizationId,
@@ -26,7 +29,10 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 	if (!locals.user) error(401, 'Unauthorized')
 	const user = locals.user
 
-	const myEmployee = await db.employee.findUnique({ where: { userId: user.id }, select: { id: true } })
+	const myEmployee = await db.employee.findUnique({
+		where: { userId: user.id },
+		select: { id: true }
+	})
 	if (!myEmployee) error(400, 'No employee profile found')
 
 	const parsed = requestSchema.safeParse(await request.json())

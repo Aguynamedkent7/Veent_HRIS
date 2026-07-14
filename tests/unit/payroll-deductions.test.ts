@@ -65,7 +65,12 @@ describe('computeDeductions — composition + ordering', () => {
 		})
 		expect(r.total).toBeCloseTo(1350 + 750 + 100 + 1290, 2)
 		expect(r.net).toBeCloseTo(15000 - r.total, 2)
-		expect(r.components.map((c) => c.code)).toEqual(['SSS_EE', 'PHILHEALTH_EE', 'PAGIBIG_EE', 'TAX'])
+		expect(r.components.map((c) => c.code)).toEqual([
+			'SSS_EE',
+			'PHILHEALTH_EE',
+			'PAGIBIG_EE',
+			'TAX'
+		])
 	})
 
 	it('applies loans after mandatory deductions, against the remaining net', () => {

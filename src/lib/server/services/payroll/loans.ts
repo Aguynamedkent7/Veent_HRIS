@@ -34,7 +34,8 @@ export async function createLoan(
 	ctx: AuditContext
 ) {
 	await requireEmployee(employeeId, organizationId)
-	if (data.installment <= 0 || data.principal <= 0) error(400, 'Principal and installment must be positive')
+	if (data.installment <= 0 || data.principal <= 0)
+		error(400, 'Principal and installment must be positive')
 
 	const loan = await db.loan.create({
 		data: {
@@ -65,7 +66,12 @@ export async function updateLoan(
 	if (!loan) error(404, 'Loan not found')
 
 	const updated = await db.loan.update({ where: { id }, data })
-	await writeAuditLog(ctx, { action: 'UPDATE', entityType: 'Loan', entityId: id, newValue: data as Record<string, unknown> })
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'Loan',
+		entityId: id,
+		newValue: data as Record<string, unknown>
+	})
 	return updated
 }
 
@@ -76,10 +82,17 @@ export async function createCashAdvance(
 	ctx: AuditContext
 ) {
 	await requireEmployee(employeeId, organizationId)
-	if (data.installment <= 0 || data.amount <= 0) error(400, 'Amount and installment must be positive')
+	if (data.installment <= 0 || data.amount <= 0)
+		error(400, 'Amount and installment must be positive')
 
 	const ca = await db.cashAdvance.create({
-		data: { employeeId, amount: data.amount, balance: data.amount, installment: data.installment, status: 'ACTIVE' }
+		data: {
+			employeeId,
+			amount: data.amount,
+			balance: data.amount,
+			installment: data.installment,
+			status: 'ACTIVE'
+		}
 	})
 	await writeAuditLog(ctx, {
 		action: 'CREATE',
@@ -96,10 +109,17 @@ export async function updateCashAdvance(
 	data: { installment?: number; status?: LoanStatus },
 	ctx: AuditContext
 ) {
-	const ca = await db.cashAdvance.findFirst({ where: { id, employee: { user: { organizationId } } } })
+	const ca = await db.cashAdvance.findFirst({
+		where: { id, employee: { user: { organizationId } } }
+	})
 	if (!ca) error(404, 'Cash advance not found')
 
 	const updated = await db.cashAdvance.update({ where: { id }, data })
-	await writeAuditLog(ctx, { action: 'UPDATE', entityType: 'CashAdvance', entityId: id, newValue: data as Record<string, unknown> })
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'CashAdvance',
+		entityId: id,
+		newValue: data as Record<string, unknown>
+	})
 	return updated
 }

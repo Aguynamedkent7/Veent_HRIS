@@ -97,12 +97,30 @@ export async function updateBenefitPlan(
 	return plan
 }
 
+export async function listAllEnrollments(organizationId: string) {
+	return db.benefitEnrollment.findMany({
+		where: { plan: { organizationId } },
+		include: {
+			plan: { select: { id: true, name: true, type: true, employeeCost: true } },
+			employee: { select: { id: true, firstName: true, lastName: true, employeeNumber: true } }
+		},
+		orderBy: [{ status: 'asc' }, { effectiveDate: 'desc' }]
+	})
+}
+
 export async function listEnrollmentsForEmployee(employeeId: string) {
 	return db.benefitEnrollment.findMany({
 		where: { employeeId },
 		include: {
 			plan: {
-				select: { id: true, name: true, type: true, provider: true, employeeCost: true, employerCost: true }
+				select: {
+					id: true,
+					name: true,
+					type: true,
+					provider: true,
+					employeeCost: true,
+					employerCost: true
+				}
 			}
 		},
 		orderBy: { effectiveDate: 'desc' }

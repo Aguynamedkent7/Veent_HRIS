@@ -36,18 +36,19 @@ Get all leave balances for an employee for the current year.
 **Roles**: `HR_ADMIN`, `SUPER_ADMIN` (any); `EMPLOYEE` (own only); `MANAGER` (direct reports).
 
 **Response 200**:
+
 ```json
 {
-  "data": [
-    {
-      "leaveTypeId": "uuid",
-      "leaveTypeName": "Annual Leave",
-      "year": 2025,
-      "allocated": 15,
-      "used": 3,
-      "remaining": 12
-    }
-  ]
+	"data": [
+		{
+			"leaveTypeId": "uuid",
+			"leaveTypeName": "Annual Leave",
+			"year": 2025,
+			"allocated": 15,
+			"used": 3,
+			"remaining": 12
+		}
+	]
 }
 ```
 
@@ -62,12 +63,13 @@ Submit a leave request.
 **Roles**: `EMPLOYEE`, `MANAGER` (own)
 
 **Request body**:
+
 ```json
 {
-  "leaveTypeId": "uuid",
-  "startDate": "2025-08-04",
-  "endDate": "2025-08-06",
-  "reason": "string | null"
+	"leaveTypeId": "uuid",
+	"startDate": "2025-08-04",
+	"endDate": "2025-08-06",
+	"reason": "string | null"
 }
 ```
 
@@ -84,6 +86,7 @@ Submit a leave request.
 List leave requests.
 
 **Roles**:
+
 - `EMPLOYEE`/`MANAGER`: own requests
 - `HR_ADMIN`/`SUPER_ADMIN`: all
 
@@ -116,7 +119,7 @@ Leave requests awaiting current user's approval.
 
 **Roles**: `MANAGER` (direct reports only), `HR_ADMIN`, `SUPER_ADMIN`
 
-**Request body**: `{ "reason": "string" }` *(required)*
+**Request body**: `{ "reason": "string" }` _(required)_
 
 **Response 200**: `{ "status": "REJECTED", "rejectionReason": "string" }`
 
@@ -136,7 +139,7 @@ Approve a leave request that exceeds the employee's balance.
 
 **Roles**: `HR_ADMIN`, `SUPER_ADMIN` only
 
-**Request body**: `{ "overrideNote": "string" }` *(required)*
+**Request body**: `{ "overrideNote": "string" }` _(required)_
 
 **Response 200**: `{ "status": "APPROVED", "overrideApplied": true }`
 **Side effect**: AuditLog entry with `action: LEAVE_OVERRIDE` including `overrideNote`.

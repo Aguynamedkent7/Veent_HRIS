@@ -21,7 +21,8 @@ export function nextWeekdayISO(): string {
 	const d = new Date()
 	d.setDate(d.getDate() + 3)
 	const day = d.getDay()
-	if (day === 6) d.setDate(d.getDate() + 2) // Sat → Mon
+	if (day === 6)
+		d.setDate(d.getDate() + 2) // Sat → Mon
 	else if (day === 0) d.setDate(d.getDate() + 1) // Sun → Mon
 	return d.toISOString().slice(0, 10)
 }

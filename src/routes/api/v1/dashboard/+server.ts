@@ -1,5 +1,9 @@
 import { json, error } from '@sveltejs/kit'
-import { getEmployeeMetrics, getManagerMetrics, getAdminMetrics } from '$lib/server/services/dashboard'
+import {
+	getEmployeeMetrics,
+	getManagerMetrics,
+	getAdminMetrics
+} from '$lib/server/services/dashboard'
 import type { RequestHandler } from './$types'
 
 export const GET: RequestHandler = async ({ locals }) => {

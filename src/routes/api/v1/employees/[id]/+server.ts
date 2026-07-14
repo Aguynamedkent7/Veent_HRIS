@@ -1,4 +1,4 @@
-import { json, error } from '@sveltejs/kit'
+import { json } from '@sveltejs/kit'
 import { requireRole, requireMinRole } from '$lib/server/rbac'
 import { getEmployee, updateEmployee, offboardEmployee } from '$lib/server/services/employees'
 import { apiError } from '$lib/server/api-error'
@@ -66,16 +66,11 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	}
 
 	try {
-		const updated = await updateEmployee(
-			params.id,
-			locals.user.organizationId,
-			parsed.data,
-			{
-				organizationId: locals.user.organizationId,
-				actorId: locals.user.id,
-				actorRole: locals.user.role
-			}
-		)
+		const updated = await updateEmployee(params.id, locals.user.organizationId, parsed.data, {
+			organizationId: locals.user.organizationId,
+			actorId: locals.user.id,
+			actorRole: locals.user.role
+		})
 		return json({ data: updated })
 	} catch (e: unknown) {
 		const err = e as { status?: number }

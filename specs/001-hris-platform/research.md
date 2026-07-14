@@ -10,6 +10,7 @@
 ### Decision: SvelteKit Full-Stack (Single Project, TypeScript + PostgreSQL)
 
 **Framework**
+
 - **Decision**: SvelteKit 2 + Svelte 5 (Node.js 20 LTS, TypeScript 5, Vite 5)
 - **Rationale**: SvelteKit is a full-stack framework — a single project serves both the UI
   (`+page.svelte`) and server-side logic (`+page.server.ts` form actions, `+server.ts` API
@@ -17,31 +18,34 @@
   local dev (`npm run dev`). Svelte 5's runes-based reactivity keeps UI components lean and
   fast without a virtual DOM. TypeScript throughout ensures type safety for payroll logic.
 - **Alternatives considered**:
-  - *NestJS + Next.js (original plan)*: Two separate projects, two dev servers, more ops
+  - _NestJS + Next.js (original plan)_: Two separate projects, two dev servers, more ops
     overhead. Powerful but over-engineered for a single-company HRIS.
-  - *SvelteKit + separate NestJS API*: Middle ground but still two processes; no clear benefit
+  - _SvelteKit + separate NestJS API_: Middle ground but still two processes; no clear benefit
     over full SvelteKit for this scope.
 
 **UI Components**
+
 - **Decision**: shadcn-svelte + Tailwind CSS v3
 - **Rationale**: shadcn-svelte is a direct port of shadcn/ui for Svelte — copy-paste
   accessible components (tables, forms, dialogs, dropdowns) that are owned by the project,
   not a library dependency. Ideal for data-heavy HRIS views. Tailwind keeps styling
   consistent and utility-first.
 - **Alternatives considered**:
-  - *Skeleton UI*: Svelte-native, good theming, but more opinionated design.
-  - *Flowbite-svelte*: Well-documented but heavier dependency.
+  - _Skeleton UI_: Svelte-native, good theming, but more opinionated design.
+  - _Flowbite-svelte_: Well-documented but heavier dependency.
 
 **ORM**
+
 - **Decision**: Prisma 5
 - **Rationale**: Type-safe schema-first ORM. Schema file is the single source of truth for
   all 15 HRIS entities + Lucia session models. Migration tooling is robust. Prisma middleware
   can be used for audit log consistency.
 - **Alternatives considered**:
-  - *Drizzle*: SQL-first, faster queries, growing in Svelte ecosystem — worth revisiting in v2.
-  - *TypeORM*: Decorator-heavy; schema drift harder to detect.
+  - _Drizzle_: SQL-first, faster queries, growing in Svelte ecosystem — worth revisiting in v2.
+  - _TypeORM_: Decorator-heavy; schema drift harder to detect.
 
 **Database**
+
 - **Decision**: PostgreSQL 16
 - **Rationale**: Required by constitution (relational integrity for HR entities). Strong JSON
   support for audit log `oldValue`/`newValue` payloads. Robust transaction support for
@@ -50,12 +54,14 @@
   and is the default for the Prisma/SvelteKit ecosystem.
 
 **Caching**
+
 - **Decision**: Redis 7 (dashboard metrics cache only, 5-min TTL per FR-025)
 - **Rationale**: Dashboard aggregates (headcount, pending approvals, etc.) are expensive to
   recompute on every page load. Redis provides fast key-value caching. Auth sessions are
   stored in PostgreSQL via Lucia — Redis is not needed for auth.
 
 **Authentication**
+
 - **Decision**: Lucia v3 with `@lucia-auth/adapter-prisma`
 - **Rationale**: Lucia is purpose-built for SvelteKit. It manages server-side sessions stored
   in PostgreSQL (via the Prisma adapter), handles cookie lifecycle, and integrates natively
@@ -65,11 +71,12 @@
   `hooks.server.ts` validates session on every request → `locals.user` + `locals.session`
   populated for downstream use.
 - **Alternatives considered**:
-  - *JWT (original plan)*: Stateless but requires refresh token rotation and blacklisting.
+  - _JWT (original plan)_: Stateless but requires refresh token rotation and blacklisting.
     Session-based via Lucia is simpler and more secure for a server-rendered app.
-  - *Auth.js*: Supports SvelteKit but better suited when OAuth providers are needed.
+  - _Auth.js_: Supports SvelteKit but better suited when OAuth providers are needed.
 
 **Testing**
+
 - **Decision**: Vitest (unit + integration), Playwright (E2E), Svelte Testing Library
 - **Rationale**: Vitest is native to the Vite/SvelteKit ecosystem — no Jest config needed.
   Playwright is unchanged from original plan (cross-browser E2E). Svelte Testing Library
@@ -114,16 +121,17 @@
 
 **Tax table (annual):**
 
-| Annual Taxable Income (PHP) | Tax |
-|-----------------------------|-----|
-| 0 – 250,000 | 0% |
-| 250,001 – 400,000 | 15% of excess over 250,000 |
-| 400,001 – 800,000 | PHP 22,500 + 20% of excess over 400,000 |
-| 800,001 – 2,000,000 | PHP 102,500 + 25% of excess over 800,000 |
-| 2,000,001 – 8,000,000 | PHP 402,500 + 30% of excess over 2,000,000 |
-| Over 8,000,000 | PHP 2,202,500 + 35% of excess over 8,000,000 |
+| Annual Taxable Income (PHP) | Tax                                          |
+| --------------------------- | -------------------------------------------- |
+| 0 – 250,000                 | 0%                                           |
+| 250,001 – 400,000           | 15% of excess over 250,000                   |
+| 400,001 – 800,000           | PHP 22,500 + 20% of excess over 400,000      |
+| 800,001 – 2,000,000         | PHP 102,500 + 25% of excess over 800,000     |
+| 2,000,001 – 8,000,000       | PHP 402,500 + 30% of excess over 2,000,000   |
+| Over 8,000,000              | PHP 2,202,500 + 35% of excess over 8,000,000 |
 
 **Monthly withholding computation:**
+
 1. Compute monthly taxable income = gross pay − mandatory deductions (SSS EE + PhilHealth EE + Pag-IBIG EE)
 2. Annualize: taxable_annual = taxable_monthly × 12
 3. Apply TRAIN tax table to get annual_tax

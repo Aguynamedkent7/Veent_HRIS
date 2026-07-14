@@ -86,7 +86,11 @@ export const actions: Actions = {
 							pagibigRate: Number(existing.pagibigRate)
 						}
 					: undefined,
-				newValue: { payFrequency, philhealthRate: philhealthRateDecimal, pagibigRate: pagibigRateDecimal }
+				newValue: {
+					payFrequency,
+					philhealthRate: philhealthRateDecimal,
+					pagibigRate: pagibigRateDecimal
+				}
 			}
 		)
 

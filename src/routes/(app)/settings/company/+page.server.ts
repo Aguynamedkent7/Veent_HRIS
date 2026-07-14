@@ -23,13 +23,23 @@ export const actions: Actions = {
 		requireRole(user.role, 'HR_ADMIN', 'SUPER_ADMIN')
 
 		const parsed = schema.safeParse(Object.fromEntries(await request.formData()))
-		if (!parsed.success) return fail(422, { error: parsed.error.errors[0]?.message ?? 'Invalid input' })
+		if (!parsed.success)
+			return fail(422, { error: parsed.error.errors[0]?.message ?? 'Invalid input' })
 
 		try {
 			await updateCompanyInfo(
 				user.organizationId,
-				{ name: parsed.data.name, address: parsed.data.address || null, logoUrl: parsed.data.logoUrl || null },
-				{ organizationId: user.organizationId, actorId: user.id, actorRole: user.role, ipAddress: getClientAddress() }
+				{
+					name: parsed.data.name,
+					address: parsed.data.address || null,
+					logoUrl: parsed.data.logoUrl || null
+				},
+				{
+					organizationId: user.organizationId,
+					actorId: user.id,
+					actorRole: user.role,
+					ipAddress: getClientAddress()
+				}
 			)
 		} catch (e: unknown) {
 			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })

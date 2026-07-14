@@ -25,11 +25,12 @@ Create a review cycle.
 **Roles**: `HR_ADMIN`, `SUPER_ADMIN`
 
 **Request body**:
+
 ```json
 {
-  "name": "string",
-  "startDate": "2025-07-01",
-  "endDate": "2025-12-31"
+	"name": "string",
+	"startDate": "2025-07-01",
+	"endDate": "2025-12-31"
 }
 ```
 
@@ -45,6 +46,7 @@ Create a review cycle.
 List performance reviews.
 
 **Roles**:
+
 - `EMPLOYEE`: own reviews (as subject)
 - `MANAGER`: reviews assigned to them (as reviewer)
 - `HR_ADMIN`/`SUPER_ADMIN`: all reviews
@@ -87,10 +89,11 @@ Assigned reviewer saves their review.
 **Roles**: Assigned reviewer only.
 
 **Request body**:
+
 ```json
 {
-  "managerComments": "string",
-  "overallRating": 4
+	"managerComments": "string",
+	"overallRating": 4
 }
 ```
 
@@ -121,12 +124,13 @@ Create a goal for the current employee.
 **Roles**: Self (goal owner).
 
 **Request body**:
+
 ```json
 {
-  "title": "string",
-  "description": "string | null",
-  "category": "string | null",
-  "targetDate": "2025-12-31 | null"
+	"title": "string",
+	"description": "string | null",
+	"category": "string | null",
+	"targetDate": "2025-12-31 | null"
 }
 ```
 
@@ -144,10 +148,11 @@ Update a goal's progress and status.
 **Roles**: Owner employee only.
 
 **Request body**:
+
 ```json
 {
-  "progress": 50,
-  "status": "DRAFT | ACTIVE | COMPLETED | CANCELLED"
+	"progress": 50,
+	"status": "DRAFT | ACTIVE | COMPLETED | CANCELLED"
 }
 ```
 

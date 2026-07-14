@@ -21,10 +21,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 	// EMPLOYEE sees OPEN only; HR_ADMIN and above see all
 	const isHrAdmin = user.role === 'HR_ADMIN' || user.role === 'SUPER_ADMIN'
 
-	const postings = await listJobPostings(
-		user.organizationId,
-		isHrAdmin ? undefined : 'OPEN'
-	)
+	const postings = await listJobPostings(user.organizationId, isHrAdmin ? undefined : 'OPEN')
 
 	return json({ data: postings, count: postings.length })
 }

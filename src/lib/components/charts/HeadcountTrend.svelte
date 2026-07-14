@@ -28,9 +28,7 @@
 
 	const linePath = $derived(() => {
 		if (data.length === 0) return ''
-		return data
-			.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xPos(i)} ${yPos(d.headcount)}`)
-			.join(' ')
+		return data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xPos(i)} ${yPos(d.headcount)}`).join(' ')
 	})
 
 	// Y axis tick values — 5 evenly spaced
@@ -102,7 +100,13 @@
 				/>
 
 				<!-- Line path -->
-				<path d={linePath()} fill="none" stroke="#3b82f6" stroke-width="2" stroke-linejoin="round" />
+				<path
+					d={linePath()}
+					fill="none"
+					stroke="#3b82f6"
+					stroke-width="2"
+					stroke-linejoin="round"
+				/>
 
 				<!-- Area fill -->
 				{#if data.length > 1}
