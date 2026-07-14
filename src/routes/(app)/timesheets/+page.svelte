@@ -526,7 +526,7 @@
 												data-r={i}
 												data-c={3}
 												onkeydown={(e) => cellKeydown(e, i, 3)}
-												class="{inputClass} text-right"
+												class="{inputClass} text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 											/></td
 										>
 										<td class="px-3 py-1.5"
@@ -539,7 +539,7 @@
 												data-r={i}
 												data-c={4}
 												onkeydown={(e) => cellKeydown(e, i, 4)}
-												class="{inputClass} text-right"
+												class="{inputClass} text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 											/></td
 										>
 										<td class="px-3 py-1.5"
