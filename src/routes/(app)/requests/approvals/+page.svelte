@@ -53,32 +53,37 @@
 	{:else}
 		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 			{#each data.pendingRequests as req (req.id)}
-				<div class="flex flex-col gap-2 rounded-lg border bg-card p-4">
-					<div class="flex items-center justify-between">
-						<span class="font-medium">{typeLabel(req.type)}</span>
-						<span class="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-							>{currentStageLabel(req)}</span
+				<div class="flex h-72 flex-col rounded-lg border bg-card p-4">
+					<div class="flex flex-1 flex-col gap-2 overflow-hidden">
+						<div class="flex items-center justify-between gap-2">
+							<span class="truncate font-medium">{typeLabel(req.type)}</span>
+							<span class="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+								>{currentStageLabel(req)}</span
+							>
+						</div>
+						<p class="text-sm text-muted-foreground">
+							{req.employee.lastName}, {req.employee.firstName}
+						</p>
+						<p class="text-sm">
+							{#if req.dateFrom}{formatShortDate(
+									req.dateFrom
+								)}{#if req.dateTo && req.dateTo !== req.dateFrom}
+									– {formatShortDate(req.dateTo)}{/if}{/if}
+							{#if req.hours}
+								· {req.hours} hrs{/if}
+						</p>
+						{#if req.reason}
+							<p class="line-clamp-3 text-xs text-muted-foreground">{req.reason}</p>
+						{/if}
+						<a href="/requests/{req.id}" class="text-xs text-primary hover:underline justify-self-end"
+							>View detail →</a
 						>
 					</div>
-					<p class="text-sm text-muted-foreground">
-						{req.employee.lastName}, {req.employee.firstName}
-					</p>
-					<p class="text-sm">
-						{#if req.dateFrom}{formatShortDate(
-								req.dateFrom
-							)}{#if req.dateTo && req.dateTo !== req.dateFrom}
-								– {formatShortDate(req.dateTo)}{/if}{/if}
-						{#if req.hours}
-							· {req.hours} hrs{/if}
-					</p>
-					{#if req.reason}<p class="text-xs text-muted-foreground">{req.reason}</p>{/if}
-					<a href="/requests/{req.id}" class="text-xs text-primary hover:underline">View detail →</a
-					>
 					<form
 						method="POST"
 						action="?/decideRequest"
 						use:enhance
-						class="mt-1 space-y-2 border-t pt-2"
+						class="mt-2 shrink-0 space-y-2 border-t pt-2"
 					>
 						<input type="hidden" name="id" value={req.id} />
 						<textarea

@@ -37,7 +37,9 @@
 </svelte:head>
 
 <div class="mx-auto max-w-2xl space-y-6">
-	<a href="/requests" class="text-sm text-muted-foreground hover:underline">← Back to requests</a>
+	<a href="/requests/approvals" class="text-sm text-muted-foreground hover:underline"
+		>← Back to requests</a
+	>
 
 	<div class="flex items-center justify-between">
 		<h1 class="text-2xl font-bold tracking-tight">{typeLabels[req.type] ?? req.type}</h1>
