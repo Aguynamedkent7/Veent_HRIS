@@ -36,11 +36,13 @@
 	}
 
 	// Editable cells that read as plain text until focused, then reveal an input affordance.
+	// Content-sized (not w-full) so the table columns spread evenly instead of one ballooning.
 	const CELL =
-		'h-7 w-full rounded border border-transparent bg-transparent px-1 text-xs hover:bg-muted/40 focus:border-input focus:bg-background focus:outline-none focus:ring-1 focus:ring-ring'
+		'h-7 rounded border border-transparent bg-transparent px-1 text-xs hover:bg-muted/40 focus:border-input focus:bg-background focus:outline-none focus:ring-1 focus:ring-ring'
 	const CELL_NUM =
-		CELL + ' text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
+		CELL + ' w-16 text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
 	const CELL_SEL = CELL + ' appearance-none'
+	const CELL_TIME = CELL + ' w-24'
 
 	const exportHref = $derived(
 		data.view === 'team'
@@ -235,8 +237,8 @@
 									<span class="text-xs text-muted-foreground">no record</span>
 								{/if}
 							</td>
-							<td class="px-3 py-2 text-muted-foreground">{#if editable && d}<input name="timeIn" form="c-{d.id}" type="time" value={toTimeInput(d.timeIn)} class={CELL} />{:else}{fmtTime(d?.timeIn ?? null)}{/if}</td>
-							<td class="px-3 py-2 text-muted-foreground">{#if editable && d}<input name="timeOut" form="c-{d.id}" type="time" value={toTimeInput(d.timeOut)} class={CELL} />{:else}{fmtTime(d?.timeOut ?? null)}{/if}</td>
+							<td class="px-3 py-2 text-muted-foreground">{#if editable && d}<input name="timeIn" form="c-{d.id}" type="time" value={toTimeInput(d.timeIn)} class={CELL_TIME} />{:else}{fmtTime(d?.timeIn ?? null)}{/if}</td>
+							<td class="px-3 py-2 text-muted-foreground">{#if editable && d}<input name="timeOut" form="c-{d.id}" type="time" value={toTimeInput(d.timeOut)} class={CELL_TIME} />{:else}{fmtTime(d?.timeOut ?? null)}{/if}</td>
 							<td class="px-3 py-2 text-right font-mono">{#if editable && d}<input name="regularHours" form="c-{d.id}" type="number" step="0.25" min="0" value={n(d.regularHours)} class={CELL_NUM} />{:else}{d ? n(d.regularHours).toFixed(2) : '—'}{/if}</td>
 							<td class="px-3 py-2 text-right font-mono">{#if editable && d}<input name="overtimeHours" form="c-{d.id}" type="number" step="0.25" min="0" value={n(d.overtimeHours)} class={CELL_NUM} />{:else}{d ? n(d.overtimeHours).toFixed(2) : '—'}{/if}</td>
 							<td class="w-[1%] whitespace-nowrap px-3 py-2">
@@ -288,8 +290,8 @@
 									<span class="rounded-full px-2 py-0.5 text-xs font-medium {badge[d.status] ?? 'bg-gray-100 text-gray-600'}">{d.status}</span>
 								{/if}
 							</td>
-							<td class="px-3 py-2 text-muted-foreground">{#if editable}<input name="timeIn" form="c-{d.id}" type="time" value={toTimeInput(d.timeIn)} class={CELL} />{:else}{fmtTime(d.timeIn)}{/if}</td>
-							<td class="px-3 py-2 text-muted-foreground">{#if editable}<input name="timeOut" form="c-{d.id}" type="time" value={toTimeInput(d.timeOut)} class={CELL} />{:else}{fmtTime(d.timeOut)}{/if}</td>
+							<td class="px-3 py-2 text-muted-foreground">{#if editable}<input name="timeIn" form="c-{d.id}" type="time" value={toTimeInput(d.timeIn)} class={CELL_TIME} />{:else}{fmtTime(d.timeIn)}{/if}</td>
+							<td class="px-3 py-2 text-muted-foreground">{#if editable}<input name="timeOut" form="c-{d.id}" type="time" value={toTimeInput(d.timeOut)} class={CELL_TIME} />{:else}{fmtTime(d.timeOut)}{/if}</td>
 							<td class="px-3 py-2 text-right font-mono">
 								{#if editable}
 									<input name="regularHours" form="c-{d.id}" type="number" step="0.25" min="0" value={n(d.regularHours)} class={CELL_NUM} />
