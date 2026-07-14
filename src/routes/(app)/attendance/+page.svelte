@@ -1,6 +1,12 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import type { SubmitFunction } from '@sveltejs/kit'
 	import type { PageData, ActionData } from './$types'
+
+	// Don't reset the form on success: enhance's default form.reset() clears the cross-cell
+	// (form=…) inputs, and Svelte only re-syncs inputs whose value changed — so untouched
+	// Reg/OT/times would blank out. Keep values; invalidateAll refreshes them from the server.
+	const keepValues: SubmitFunction = () => async ({ update }) => update({ reset: false })
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 
@@ -243,7 +249,7 @@
 							<td class="px-3 py-2 text-right font-mono">{#if editable && d}<input name="overtimeHours" form="c-{d.id}" type="number" step="0.25" min="0" value={n(d.overtimeHours)} class={CELL_NUM} />{:else}{d ? n(d.overtimeHours).toFixed(2) : '—'}{/if}</td>
 							<td class="w-[1%] whitespace-nowrap px-3 py-2">
 								{#if editable && d}
-									<form id="c-{d.id}" method="POST" action="?/correct" use:enhance>
+									<form id="c-{d.id}" method="POST" action="?/correct" use:enhance={keepValues}>
 										<input type="hidden" name="id" value={d.id} />
 										<input type="hidden" name="date" value={toDateKey(d.date)} />
 										<button class="rounded bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90">Save</button>
@@ -309,7 +315,7 @@
 									{#if d.isLocked}
 										<span class="inline-flex h-7 items-center text-xs text-muted-foreground">locked</span>
 									{:else}
-										<form id="c-{d.id}" method="POST" action="?/correct" use:enhance>
+										<form id="c-{d.id}" method="POST" action="?/correct" use:enhance={keepValues}>
 											<input type="hidden" name="id" value={d.id} />
 										<input type="hidden" name="date" value={toDateKey(d.date)} />
 											<button class="rounded bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90">Save</button>
