@@ -332,7 +332,10 @@ export async function correctDay(
 	if (day.isLocked) error(409, 'This attendance day is locked and cannot be edited')
 
 	// Flag the day so a later re-derive (Refresh) won't overwrite this manual override.
-	const updated = await db.attendanceDay.update({ where: { id }, data: { ...data, manuallyEdited: true } })
+	const updated = await db.attendanceDay.update({
+		where: { id },
+		data: { ...data, manuallyEdited: true }
+	})
 	await writeAuditLog(ctx, {
 		action: 'UPDATE',
 		entityType: 'AttendanceDay',
@@ -345,6 +348,34 @@ export async function correctDay(
 		newValue: data as Record<string, unknown>
 	})
 	return updated
+}
+
+/**
+ * Discard a manual override on a single day and re-derive it from punches. Clears the
+ * manuallyEdited flag so the re-derive is allowed to overwrite the hand-entered values.
+ */
+export async function resetDayToDerived(id: string, organizationId: string, ctx: AuditContext) {
+	const day = await db.attendanceDay.findFirst({
+		where: { id, employee: { user: { organizationId } } },
+		select: { employeeId: true, date: true, isLocked: true }
+	})
+	if (!day) error(404, 'Attendance day not found')
+	if (day.isLocked) error(409, 'This attendance day is locked and cannot be edited')
+
+	await db.attendanceDay.update({ where: { id }, data: { manuallyEdited: false } })
+	await deriveRange(
+		organizationId,
+		{ from: day.date, to: day.date, employeeId: day.employeeId },
+		ctx
+	)
+
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'AttendanceDay',
+		entityId: id,
+		newValue: { resetToDerived: true }
+	})
+	return { reset: true }
 }
 
 /** Lock AttendanceDays in a range so payroll can import them (read-only thereafter). */
