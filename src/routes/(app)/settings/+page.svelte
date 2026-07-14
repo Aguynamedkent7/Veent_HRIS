@@ -16,6 +16,12 @@
 			desc: 'Departments & positions',
 			super: false
 		},
+		{
+			href: '/settings/org-chart',
+			title: 'Org Chart',
+			desc: 'Reporting hierarchy',
+			super: false
+		},
 		{ href: '/settings/schedules', title: 'Work Schedules', desc: 'Shift templates', super: false },
 		{
 			href: '/settings/pay-codes',

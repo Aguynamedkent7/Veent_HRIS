@@ -3,6 +3,7 @@ import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import { manilaDayKey } from '$lib/utils/dates'
 import { deriveAttendanceDay, type AttPunchType, type DayType, type ScheduleDay } from './derive'
+import { createTimesheet } from '../timesheets'
 import type { AuditContext } from '../types'
 
 /**
@@ -53,12 +54,42 @@ export function listAttendanceDays(employeeId: string, from: Date, to: Date) {
 }
 
 /**
+ * Team view for a single PHT day: every active employee with their AttendanceDay for that
+ * day (or null if none derived yet). AttendanceDays are stored keyed at midnight UTC of the
+ * PHT day (see deriveRange), so `dateKey` ('YYYY-MM-DD') is matched exactly.
+ */
+export async function listTeamDay(organizationId: string, dateKey: string) {
+	const date = new Date(dateKey)
+	const employees = await db.employee.findMany({
+		where: { user: { organizationId }, employmentStatus: 'ACTIVE' },
+		select: {
+			id: true,
+			firstName: true,
+			lastName: true,
+			employeeNumber: true,
+			department: { select: { name: true } },
+			attendanceDays: { where: { date }, take: 1 }
+		},
+		orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }]
+	})
+
+	return employees.map((e) => ({
+		id: e.id,
+		name: `${e.lastName}, ${e.firstName}`,
+		employeeNumber: e.employeeNumber,
+		departmentName: e.department?.name ?? null,
+		day: e.attendanceDays[0] ?? null
+	}))
+}
+
+/**
  * Derive AttendanceDay records for [from, to] (PHT days). Idempotent — skips locked days.
  */
 export async function deriveRange(
 	organizationId: string,
 	range: { from: Date; to: Date; employeeId?: string },
-	ctx: AuditContext
+	ctx: AuditContext,
+	opts: { onlyMissing?: boolean } = {}
 ) {
 	const fromKey = manilaDayKey(range.from)
 	const toKey = manilaDayKey(range.to)
@@ -155,6 +186,8 @@ export async function deriveRange(
 				select: { isLocked: true }
 			})
 			if (existing?.isLocked) continue
+			// Auto-derive only fills gaps — never overwrites an existing (possibly hand-corrected) day.
+			if (opts.onlyMissing && existing) continue
 
 			const r = deriveAttendanceDay({
 				punches: byDay.get(dayKey) ?? [],
@@ -202,6 +235,75 @@ export async function deriveRange(
 		newValue: { from: fromKey, to: toKey, derived, flagged: flagged.length }
 	})
 	return { derived, flagged }
+}
+
+/**
+ * Non-destructive auto-derive for page loads: if any punches exist in the window, derive only
+ * the days that don't yet have an AttendanceDay. Cheap and idempotent after the first view, and
+ * it leaves existing (corrected/locked) days untouched — a full re-derive is the Refresh button.
+ */
+export async function autoDeriveFromPunches(
+	organizationId: string,
+	range: { from: Date; to: Date; employeeId?: string },
+	ctx: AuditContext
+) {
+	const fromKey = manilaDayKey(range.from)
+	const toKey = manilaDayKey(range.to)
+	const phtStart = new Date(`${fromKey}T00:00:00+08:00`)
+	const phtEndExclusive = new Date(`${toKey}T00:00:00+08:00`)
+	phtEndExclusive.setUTCDate(phtEndExclusive.getUTCDate() + 1)
+
+	const punchCount = await db.timeLog.count({
+		where: {
+			employee: { user: { organizationId } },
+			timestamp: { gte: phtStart, lt: phtEndExclusive },
+			...(range.employeeId ? { employeeId: range.employeeId } : {})
+		}
+	})
+	if (punchCount === 0) return { derived: 0, flagged: 0 }
+
+	const res = await deriveRange(organizationId, range, ctx, { onlyMissing: true })
+	return { derived: res.derived, flagged: res.flagged.length }
+}
+
+/**
+ * Materialise an employee's derived attendance over [from, to] into a persisted Timesheet
+ * (the artifact /team and payroll consume). Per-employee only. Each day becomes one entry with
+ * hoursWorked = regular + overtime; the day status (and OT) is kept in the entry note. Relies on
+ * the Timesheet @@unique([employeeId, periodStart]) to reject duplicates (createTimesheet → 409).
+ */
+export async function createTimesheetFromAttendance(
+	employeeId: string,
+	organizationId: string,
+	from: Date,
+	to: Date,
+	ctx: AuditContext
+) {
+	const emp = await db.employee.findFirst({
+		where: { id: employeeId, organizationId },
+		select: { id: true }
+	})
+	if (!emp) error(404, 'Employee not found')
+
+	const fromKey = manilaDayKey(from)
+	const toKey = manilaDayKey(to)
+	const days = await db.attendanceDay.findMany({
+		where: { employeeId, date: { gte: new Date(fromKey), lte: new Date(toKey) } },
+		orderBy: { date: 'asc' }
+	})
+	if (days.length === 0) error(400, 'No attendance in this range to save as a timesheet.')
+
+	const entries = days.map((d) => {
+		const ot = Number(d.overtimeHours)
+		const worked = Number(d.regularHours) + ot
+		return {
+			date: d.date,
+			hoursWorked: worked,
+			notes: ot > 0 ? `${d.status} (OT ${ot.toFixed(2)})` : d.status
+		}
+	})
+
+	return createTimesheet(employeeId, new Date(fromKey), new Date(toKey), entries, ctx)
 }
 
 /** HR correction of a single AttendanceDay. Rejected if the day is locked. */
@@ -265,4 +367,29 @@ export async function lockRange(
 		newValue: { locked: res.count, from: fromKey, to: toKey }
 	})
 	return { locked: res.count }
+}
+
+/** Reopen locked AttendanceDays in a range. Privileged (super admin) — reverses lockRange. */
+export async function unlockRange(
+	organizationId: string,
+	range: { from: Date; to: Date; employeeId?: string },
+	ctx: AuditContext
+) {
+	const fromKey = manilaDayKey(range.from)
+	const toKey = manilaDayKey(range.to)
+	const res = await db.attendanceDay.updateMany({
+		where: {
+			date: { gte: new Date(fromKey), lte: new Date(toKey) },
+			employee: { user: { organizationId } },
+			...(range.employeeId ? { employeeId: range.employeeId } : {})
+		},
+		data: { isLocked: false }
+	})
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'AttendanceDay',
+		entityId: range.employeeId ?? organizationId,
+		newValue: { unlocked: res.count, from: fromKey, to: toKey }
+	})
+	return { unlocked: res.count }
 }

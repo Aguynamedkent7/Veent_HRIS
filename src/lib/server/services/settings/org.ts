@@ -8,6 +8,8 @@ interface PositionInput {
 	title: string
 	level?: number
 	departmentId?: string
+	salaryGradeId?: string | null
+	isActive?: boolean
 }
 
 export async function listPositions(organizationId: string) {
@@ -15,10 +17,24 @@ export async function listPositions(organizationId: string) {
 		where: { organizationId },
 		include: {
 			department: { select: { id: true, name: true } },
+			salaryGrade: { select: { id: true, name: true } },
 			_count: { select: { employees: true } }
 		},
 		orderBy: [{ level: 'asc' }, { title: 'asc' }]
 	})
+}
+
+export async function getPosition(id: string, organizationId: string) {
+	const position = await db.position.findFirst({
+		where: { id, organizationId },
+		include: {
+			department: { select: { id: true, name: true } },
+			salaryGrade: { select: { id: true, name: true } },
+			_count: { select: { employees: true } }
+		}
+	})
+	if (!position) error(404, 'Position not found')
+	return position
 }
 
 export async function createPosition(
@@ -32,7 +48,8 @@ export async function createPosition(
 				organizationId,
 				title: data.title,
 				level: data.level,
-				departmentId: data.departmentId
+				departmentId: data.departmentId,
+				salaryGradeId: data.salaryGradeId ?? undefined
 			}
 		})
 
@@ -70,7 +87,9 @@ export async function updatePosition(
 			data: {
 				title: data.title,
 				level: data.level,
-				departmentId: data.departmentId
+				departmentId: data.departmentId,
+				salaryGradeId: data.salaryGradeId,
+				isActive: data.isActive
 			}
 		})
 
@@ -81,9 +100,17 @@ export async function updatePosition(
 			oldValue: {
 				title: existing.title,
 				level: existing.level,
-				departmentId: existing.departmentId
+				departmentId: existing.departmentId,
+				salaryGradeId: existing.salaryGradeId,
+				isActive: existing.isActive
 			},
-			newValue: { title: data.title, level: data.level, departmentId: data.departmentId }
+			newValue: {
+				title: data.title,
+				level: data.level,
+				departmentId: data.departmentId,
+				salaryGradeId: data.salaryGradeId,
+				isActive: data.isActive
+			}
 		})
 
 		return position
@@ -141,6 +168,27 @@ export async function listOrgUsers(organizationId: string) {
 	}))
 }
 
+// Guard against locking an organization out of super-admin access. Blocks demoting
+// or deactivating the last active SUPER_ADMIN. Call before any write that would
+// strip the super-admin capability from `target`.
+async function assertNotLastSuperAdmin(
+	organizationId: string,
+	target: { id: string; role: Role; isActive: boolean }
+) {
+	if (target.role !== 'SUPER_ADMIN' || !target.isActive) return
+	const otherActiveSupers = await db.user.count({
+		where: {
+			organizationId,
+			role: 'SUPER_ADMIN',
+			isActive: true,
+			id: { not: target.id }
+		}
+	})
+	if (otherActiveSupers === 0) {
+		error(409, 'Cannot remove the last active super admin from the organization.')
+	}
+}
+
 export async function setUserRole(
 	userId: string,
 	organizationId: string,
@@ -152,6 +200,11 @@ export async function setUserRole(
 		where: { id: userId, organizationId }
 	})
 	if (!existing) error(404, 'User not found')
+
+	// GUARDRAIL: don't demote the last active super admin.
+	if (newRole !== 'SUPER_ADMIN') {
+		await assertNotLastSuperAdmin(organizationId, existing)
+	}
 
 	const updated = await db.user.update({
 		where: { id: userId },
@@ -167,4 +220,133 @@ export async function setUserRole(
 	})
 
 	return updated
+}
+
+export async function setUserActive(
+	userId: string,
+	organizationId: string,
+	isActive: boolean,
+	ctx: AuditContext
+) {
+	const existing = await db.user.findFirst({
+		where: { id: userId, organizationId }
+	})
+	if (!existing) error(404, 'User not found')
+
+	// GUARDRAIL: don't deactivate the last active super admin.
+	if (!isActive) {
+		await assertNotLastSuperAdmin(organizationId, existing)
+	}
+
+	const updated = await db.user.update({
+		where: { id: userId },
+		data: { isActive }
+	})
+
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'User',
+		entityId: userId,
+		oldValue: { isActive: existing.isActive },
+		newValue: { isActive }
+	})
+
+	return updated
+}
+
+// ─── Employee ↔ position assignment ───────────────────────────────────────────
+
+export async function listAssignableEmployees(organizationId: string) {
+	const employees = await db.employee.findMany({
+		where: { organizationId },
+		select: {
+			id: true,
+			firstName: true,
+			lastName: true,
+			jobTitle: true,
+			employmentStatus: true,
+			positionId: true,
+			position: { select: { title: true } },
+			department: { select: { name: true } }
+		},
+		orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }]
+	})
+
+	return employees.map((e) => ({
+		id: e.id,
+		name: `${e.lastName}, ${e.firstName}`,
+		jobTitle: e.jobTitle,
+		employmentStatus: e.employmentStatus,
+		positionId: e.positionId,
+		positionTitle: e.position?.title ?? null,
+		departmentName: e.department?.name ?? null
+	}))
+}
+
+export async function assignEmployeePosition(
+	employeeId: string,
+	organizationId: string,
+	positionId: string | null,
+	ctx: AuditContext
+) {
+	const employee = await db.employee.findFirst({
+		where: { id: employeeId, organizationId },
+		select: { id: true, positionId: true }
+	})
+	if (!employee) error(404, 'Employee not found')
+
+	// If a position is given, it must belong to the same organization.
+	if (positionId) {
+		const position = await db.position.findFirst({
+			where: { id: positionId, organizationId },
+			select: { id: true }
+		})
+		if (!position) error(404, 'Position not found')
+	}
+
+	const updated = await db.employee.update({
+		where: { id: employeeId },
+		data: { positionId }
+	})
+
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'Employee',
+		entityId: employeeId,
+		oldValue: { positionId: employee.positionId },
+		newValue: { positionId }
+	})
+
+	return updated
+}
+
+// ─── Reporting hierarchy (org chart) ──────────────────────────────────────────
+
+// Flat list of employees with their manager link, for building the reporting
+// tree client-side. Only ACTIVE-org employees are surfaced.
+export async function getReportingNodes(organizationId: string) {
+	const employees = await db.employee.findMany({
+		where: { organizationId },
+		select: {
+			id: true,
+			firstName: true,
+			lastName: true,
+			jobTitle: true,
+			reportsToId: true,
+			employmentStatus: true,
+			department: { select: { name: true } },
+			position: { select: { title: true } }
+		},
+		orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }]
+	})
+
+	return employees.map((e) => ({
+		id: e.id,
+		name: `${e.firstName} ${e.lastName}`,
+		jobTitle: e.jobTitle,
+		reportsToId: e.reportsToId,
+		employmentStatus: e.employmentStatus,
+		departmentName: e.department?.name ?? null,
+		positionTitle: e.position?.title ?? null
+	}))
 }

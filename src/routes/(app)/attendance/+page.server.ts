@@ -1,25 +1,47 @@
 import { fail } from '@sveltejs/kit'
 import { z } from 'zod'
 import { db } from '$lib/server/db'
-import { requireMinRole } from '$lib/server/rbac'
+import { requireMinRole, requireRole } from '$lib/server/rbac'
 import {
 	listAttendanceDays,
+	listTeamDay,
 	deriveRange,
+	autoDeriveFromPunches,
 	correctDay,
-	lockRange
+	lockRange,
+	unlockRange,
+	createTimesheetFromAttendance
 } from '$lib/server/services/attendance'
 import { manilaDayKey } from '$lib/utils/dates'
 import type { Actions, PageServerLoad, RequestEvent } from './$types'
 
 const DAY_MS = 86_400_000
+const MAX_RANGE_DAYS = 62 // ~2 months
 
-export const load: PageServerLoad = async ({ locals, url }) => {
+/** Clamp [from, to] to at most MAX_RANGE_DAYS, keeping `to` fixed. Returns PHT day keys. */
+function clampRange(fromKey: string, toKey: string) {
+	const to = new Date(toKey).getTime()
+	const from = new Date(fromKey).getTime()
+	if (from > to) return { from: toKey, to: toKey }
+	if (to - from > MAX_RANGE_DAYS * DAY_MS)
+		return { from: manilaDayKey(new Date(to - MAX_RANGE_DAYS * DAY_MS)), to: toKey }
+	return { from: fromKey, to: toKey }
+}
+
+export const load: PageServerLoad = async ({ locals, url, getClientAddress }) => {
 	const user = locals.user!
 	const canManage = ['HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
+	const canUnlock = user.role === 'SUPER_ADMIN' // reopening locked days is privileged
 
 	const today = manilaDayKey(new Date())
-	const from = url.searchParams.get('from') ?? manilaDayKey(new Date(Date.now() - 13 * DAY_MS))
-	const to = url.searchParams.get('to') ?? today
+	const rawFrom = url.searchParams.get('from') ?? manilaDayKey(new Date(Date.now() - 13 * DAY_MS))
+	const rawTo = url.searchParams.get('to') ?? today
+	// Cap the visible range to ~2 months so derive/list stay bounded.
+	const { from, to } = clampRange(rawFrom, rawTo)
+	const date = url.searchParams.get('date') ?? today
+
+	// Managers can switch between a single employee's range and the whole team on one day.
+	const view = canManage && url.searchParams.get('view') === 'team' ? 'team' : 'employee'
 
 	let employees: { id: string; firstName: string; lastName: string; employeeNumber: string }[] = []
 	let selectedEmployeeId: string | null = null
@@ -36,11 +58,50 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		selectedEmployeeId = me?.id ?? null
 	}
 
-	const days = selectedEmployeeId
-		? await listAttendanceDays(selectedEmployeeId, new Date(from), new Date(to))
-		: []
+	// Auto-derive from punches so the page shows data without a manual step. Non-destructive
+	// (fills only missing days); managers only, since it writes AttendanceDay records.
+	if (canManage) {
+		const ctx = {
+			organizationId: user.organizationId,
+			actorId: user.id,
+			actorRole: user.role,
+			ipAddress: getClientAddress()
+		}
+		if (view === 'employee' && selectedEmployeeId) {
+			await autoDeriveFromPunches(
+				user.organizationId,
+				{ from: new Date(from), to: new Date(to), employeeId: selectedEmployeeId },
+				ctx
+			)
+		} else if (view === 'team') {
+			await autoDeriveFromPunches(
+				user.organizationId,
+				{ from: new Date(date), to: new Date(date) },
+				ctx
+			)
+		}
+	}
 
-	return { canManage, employees, selectedEmployeeId, from, to, days }
+	const days =
+		view === 'employee' && selectedEmployeeId
+			? await listAttendanceDays(selectedEmployeeId, new Date(from), new Date(to))
+			: []
+
+	const team = view === 'team' ? await listTeamDay(user.organizationId, date) : []
+
+	return {
+		canManage,
+		canUnlock,
+		view,
+		employees,
+		selectedEmployeeId,
+		from,
+		to,
+		date,
+		days,
+		team,
+		maxRangeDays: MAX_RANGE_DAYS
+	}
 }
 
 function ctxOf(event: RequestEvent) {
@@ -65,8 +126,19 @@ const rangeSchema = z.object({
 	from: z.coerce.date(),
 	to: z.coerce.date()
 })
+const teamDaySchema = z.object({ date: z.coerce.date() })
+
+/** Reject spans over the 2-month cap so a hand-crafted POST can't bypass the load clamp. */
+function spanExceeded(from: Date, to: Date) {
+	return to.getTime() - from.getTime() > MAX_RANGE_DAYS * DAY_MS
+}
 const correctSchema = z.object({
 	id: z.string().min(1),
+	// date (YYYY-MM-DD, PHT) + timeIn/timeOut (HH:MM) let HR set times manually; the
+	// day key is combined with the time to rebuild a PHT timestamp. Empty time clears it.
+	date: z.string().optional(),
+	timeIn: z.string().optional(),
+	timeOut: z.string().optional(),
 	regularHours: z.coerce.number().min(0).optional(),
 	overtimeHours: z.coerce.number().min(0).optional(),
 	status: z
@@ -80,6 +152,8 @@ export const actions: Actions = {
 		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
 		const parsed = rangeSchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid range' })
+		if (spanExceeded(parsed.data.from, parsed.data.to))
+			return fail(400, { error: 'Range exceeds the 2-month limit.' })
 		try {
 			await deriveRange(
 				event.locals.user!.organizationId,
@@ -95,7 +169,13 @@ export const actions: Actions = {
 		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
 		const parsed = correctSchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid correction' })
-		const { id, ...data } = parsed.data
+		const { id, date, timeIn, timeOut, ...rest } = parsed.data
+		const data: Parameters<typeof correctDay>[2] = { ...rest }
+		// Rebuild PHT timestamps from the day key + HH:MM (only when a date was sent).
+		if (date) {
+			data.timeIn = timeIn ? new Date(`${date}T${timeIn}:00+08:00`) : null
+			data.timeOut = timeOut ? new Date(`${date}T${timeOut}:00+08:00`) : null
+		}
 		try {
 			await correctDay(id, event.locals.user!.organizationId, data, ctxOf(event))
 		} catch (e) {
@@ -107,10 +187,99 @@ export const actions: Actions = {
 		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
 		const parsed = rangeSchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid range' })
+		if (spanExceeded(parsed.data.from, parsed.data.to))
+			return fail(400, { error: 'Range exceeds the 2-month limit.' })
 		try {
 			await lockRange(
 				event.locals.user!.organizationId,
 				{ from: parsed.data.from, to: parsed.data.to, employeeId: parsed.data.employeeId },
+				ctxOf(event)
+			)
+		} catch (e) {
+			return toFail(e)
+		}
+	},
+
+	// Reopening locked days is privileged (super admin only).
+	unlock: async (event) => {
+		requireRole(event.locals.user!.role, 'SUPER_ADMIN')
+		const parsed = rangeSchema.safeParse(Object.fromEntries(await event.request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Invalid range' })
+		if (spanExceeded(parsed.data.from, parsed.data.to))
+			return fail(400, { error: 'Range exceeds the 2-month limit.' })
+		try {
+			await unlockRange(
+				event.locals.user!.organizationId,
+				{ from: parsed.data.from, to: parsed.data.to, employeeId: parsed.data.employeeId },
+				ctxOf(event)
+			)
+		} catch (e) {
+			return toFail(e)
+		}
+	},
+
+	unlockTeam: async (event) => {
+		requireRole(event.locals.user!.role, 'SUPER_ADMIN')
+		const parsed = teamDaySchema.safeParse(Object.fromEntries(await event.request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Invalid date' })
+		try {
+			await unlockRange(
+				event.locals.user!.organizationId,
+				{ from: parsed.data.date, to: parsed.data.date },
+				ctxOf(event)
+			)
+		} catch (e) {
+			return toFail(e)
+		}
+	},
+
+	// Persist the selected employee's range as a Timesheet record (per-employee tab only).
+	saveTimesheet: async (event) => {
+		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
+		const parsed = rangeSchema.safeParse(Object.fromEntries(await event.request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Invalid range' })
+		if (spanExceeded(parsed.data.from, parsed.data.to))
+			return fail(400, { error: 'Range exceeds the 2-month limit.' })
+		try {
+			const ts = await createTimesheetFromAttendance(
+				parsed.data.employeeId,
+				event.locals.user!.organizationId,
+				parsed.data.from,
+				parsed.data.to,
+				ctxOf(event)
+			)
+			return {
+				saved: `Timesheet saved (${ts.entries.length} day${ts.entries.length === 1 ? '' : 's'}).`
+			}
+		} catch (e) {
+			return toFail(e)
+		}
+	},
+
+	// Whole-team single-day variants for the team view: no employeeId → all active employees.
+	deriveTeam: async (event) => {
+		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
+		const parsed = teamDaySchema.safeParse(Object.fromEntries(await event.request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Invalid date' })
+		try {
+			await deriveRange(
+				event.locals.user!.organizationId,
+				{ from: parsed.data.date, to: parsed.data.date },
+				ctxOf(event)
+			)
+		} catch (e) {
+			return toFail(e)
+		}
+	},
+
+	lockTeam: async (event) => {
+		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
+		const parsed = teamDaySchema.safeParse(Object.fromEntries(await event.request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Invalid date' })
+		try {
+			await lockRange(
+				event.locals.user!.organizationId,
+				{ from: parsed.data.date, to: parsed.data.date },
 				ctxOf(event)
 			)
 		} catch (e) {
