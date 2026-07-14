@@ -13,9 +13,15 @@
 	<div class="flex items-start justify-between gap-4">
 		<div>
 			<h1 class="text-2xl font-bold tracking-tight">Team Attendance</h1>
-			<p class="text-sm text-muted-foreground">Multi-day overview — who was present or on leave across a date range.</p>
+			<p class="text-sm text-muted-foreground">
+				Multi-day overview — who was present or on leave across a date range.
+			</p>
 		</div>
-		<a href="/attendance?view=team" class="whitespace-nowrap rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent">Daily roster &amp; corrections →</a>
+		<a
+			href="/attendance?view=team"
+			class="whitespace-nowrap rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent"
+			>Daily roster &amp; corrections →</a
+		>
 	</div>
 
 	<!-- Date range filter -->

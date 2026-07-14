@@ -83,7 +83,12 @@ export const actions: Actions = {
 		}
 
 		try {
-			await setUserActive(parsed.data.userId, user.organizationId, parsed.data.isActive === 'true', ctx)
+			await setUserActive(
+				parsed.data.userId,
+				user.organizationId,
+				parsed.data.isActive === 'true',
+				ctx
+			)
 		} catch (err) {
 			if (isHttpError(err) && err.status === 409) return fail(409, { error: err.body.message })
 			throw err

@@ -26,11 +26,11 @@ export const PATCH: RequestHandler = async ({ locals, params, request, getClient
 	const parsed = updateSchema.safeParse(await request.json())
 	if (!parsed.success) error(422, parsed.error.errors[0]?.message ?? 'Invalid position')
 
-	const position = await updatePosition(
-		params.id,
-		user.organizationId,
-		parsed.data,
-		{ organizationId: user.organizationId, actorId: user.id, actorRole: user.role, ipAddress: getClientAddress() }
-	)
+	const position = await updatePosition(params.id, user.organizationId, parsed.data, {
+		organizationId: user.organizationId,
+		actorId: user.id,
+		actorRole: user.role,
+		ipAddress: getClientAddress()
+	})
 	return json({ data: position })
 }

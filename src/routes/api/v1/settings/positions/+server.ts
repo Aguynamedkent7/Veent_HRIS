@@ -25,10 +25,11 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 	const parsed = createSchema.safeParse(await request.json())
 	if (!parsed.success) error(422, parsed.error.errors[0]?.message ?? 'Invalid position')
 
-	const position = await createPosition(
-		user.organizationId,
-		parsed.data,
-		{ organizationId: user.organizationId, actorId: user.id, actorRole: user.role, ipAddress: getClientAddress() }
-	)
+	const position = await createPosition(user.organizationId, parsed.data, {
+		organizationId: user.organizationId,
+		actorId: user.id,
+		actorRole: user.role,
+		ipAddress: getClientAddress()
+	})
 	return json({ data: position }, { status: 201 })
 }

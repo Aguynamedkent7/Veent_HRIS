@@ -19,9 +19,7 @@
 	const ids = $derived(new Set(data.nodes.map((n) => n.id)))
 
 	// Roots: no manager, or a manager who isn't in this org's node set (dangling ref).
-	const roots = $derived(
-		data.nodes.filter((n) => !n.reportsToId || !ids.has(n.reportsToId))
-	)
+	const roots = $derived(data.nodes.filter((n) => !n.reportsToId || !ids.has(n.reportsToId)))
 
 	// Collapsed subtree ids (expanded by default).
 	let collapsed = $state<Record<string, boolean>>({})
@@ -65,15 +63,21 @@
 				<p class="text-sm font-medium">
 					{n.name}
 					{#if n.employmentStatus !== 'ACTIVE'}
-						<span class="ml-1 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">{n.employmentStatus}</span>
+						<span
+							class="ml-1 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600"
+							>{n.employmentStatus}</span
+						>
 					{/if}
 				</p>
 				<p class="text-xs text-muted-foreground">
-					{n.positionTitle ?? n.jobTitle}{#if n.departmentName} · {n.departmentName}{/if}
+					{n.positionTitle ?? n.jobTitle}{#if n.departmentName}
+						· {n.departmentName}{/if}
 				</p>
 			</div>
 			{#if kids.length}
-				<span class="text-xs text-muted-foreground">{kids.length} report{kids.length === 1 ? '' : 's'}</span>
+				<span class="text-xs text-muted-foreground"
+					>{kids.length} report{kids.length === 1 ? '' : 's'}</span
+				>
 			{/if}
 		</div>
 		{#if kids.length && !cycle && !collapsed[n.id]}
@@ -90,9 +94,13 @@
 	<div class="flex items-center justify-between">
 		<div>
 			<h1 class="text-2xl font-bold tracking-tight">Org Chart</h1>
-			<p class="text-sm text-muted-foreground">Reporting hierarchy built from each employee's manager.</p>
+			<p class="text-sm text-muted-foreground">
+				Reporting hierarchy built from each employee's manager.
+			</p>
 		</div>
-		<a href="/settings/org" class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">Manage Positions</a>
+		<a href="/settings/org" class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
+			>Manage Positions</a
+		>
 	</div>
 
 	<input
@@ -107,7 +115,10 @@
 				{#each matches as m (m.id)}
 					<li class="px-4 py-2">
 						<p class="text-sm font-medium">{m.name}</p>
-						<p class="text-xs text-muted-foreground">{m.positionTitle ?? m.jobTitle}{#if m.departmentName} · {m.departmentName}{/if}</p>
+						<p class="text-xs text-muted-foreground">
+							{m.positionTitle ?? m.jobTitle}{#if m.departmentName}
+								· {m.departmentName}{/if}
+						</p>
 					</li>
 				{:else}
 					<li class="px-4 py-8 text-center text-sm text-muted-foreground">No matches</li>
