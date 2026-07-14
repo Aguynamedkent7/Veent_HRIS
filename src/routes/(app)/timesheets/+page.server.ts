@@ -122,6 +122,59 @@ export const actions: Actions = {
 		}
 	},
 
+	// Approve each selected (submitted) timesheet; non-submitted ones are skipped.
+	approveMany: async (event) => {
+		requireMinRole(event.locals.user!.role, 'MANAGER')
+		const ids = String((await event.request.formData()).get('ids') ?? '')
+			.split(',')
+			.map((s) => s.trim())
+			.filter(Boolean)
+		if (!ids.length) return fail(400, { error: 'No timesheets selected' })
+
+		const org = event.locals.user!.organizationId
+		const ctx = ctxOf(event)
+		let done = 0
+		let skipped = 0
+		for (const id of ids) {
+			try {
+				await reviewTimesheet(id, org, true, undefined, ctx)
+				done++
+			} catch {
+				skipped++
+			}
+		}
+		return {
+			saved: `Approved ${done} timesheet${done === 1 ? '' : 's'}${skipped ? `, ${skipped} skipped` : ''}.`
+		}
+	},
+
+	// Submit each selected (draft) timesheet the current user owns; others are skipped.
+	submitMany: async (event) => {
+		const user = event.locals.user!
+		const myEmployee = await db.employee.findUnique({ where: { userId: user.id }, select: { id: true } })
+		if (!myEmployee) return fail(400, { error: 'No employee profile found' })
+		const ids = String((await event.request.formData()).get('ids') ?? '')
+			.split(',')
+			.map((s) => s.trim())
+			.filter(Boolean)
+		if (!ids.length) return fail(400, { error: 'No timesheets selected' })
+
+		const ctx = ctxOf(event)
+		let done = 0
+		let skipped = 0
+		for (const id of ids) {
+			try {
+				await submitTimesheet(id, myEmployee.id, ctx)
+				done++
+			} catch {
+				skipped++
+			}
+		}
+		return {
+			saved: `Submitted ${done} timesheet${done === 1 ? '' : 's'}${skipped ? `, ${skipped} skipped` : ''}.`
+		}
+	},
+
 	// Mass delete: delete each selected timesheet (scoped per item); report how many.
 	deleteMany: async (event) => {
 		requireMinRole(event.locals.user!.role, 'MANAGER')

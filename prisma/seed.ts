@@ -321,6 +321,60 @@ async function main() {
 		})
 	}
 
+	// --- Sample timesheets (unique on employeeId+periodStart → idempotent) ---
+	const weekEntries = (startISO: string) => {
+		const start = new Date(startISO)
+		const out: { date: Date; hoursWorked: number; notes: string }[] = []
+		for (let i = 0; i < 5; i++) {
+			// Mon–Fri
+			const d = new Date(start)
+			d.setUTCDate(start.getUTCDate() + i)
+			out.push({ date: d, hoursWorked: 8, notes: 'Regular day' })
+		}
+		return out
+	}
+	const sampleSheets: {
+		empId: string
+		start: string
+		status: 'APPROVED' | 'SUBMITTED' | 'REJECTED' | 'DRAFT'
+		rejectionReason?: string
+	}[] = [
+		{ empId: employee.id, start: '2026-06-01', status: 'APPROVED' },
+		{ empId: employee.id, start: '2026-06-08', status: 'SUBMITTED' },
+		{
+			empId: employee.id,
+			start: '2026-06-15',
+			status: 'REJECTED',
+			rejectionReason: 'Friday hours look off — please recheck before resubmitting.'
+		},
+		{ empId: employee.id, start: '2026-06-22', status: 'DRAFT' },
+		{ empId: managerEmployee.id, start: '2026-06-08', status: 'SUBMITTED' }
+	]
+	for (const s of sampleSheets) {
+		const entries = weekEntries(s.start)
+		const totalHours = entries.reduce((a, e) => a + e.hoursWorked, 0)
+		const periodStart = new Date(s.start)
+		const periodEnd = new Date(s.start)
+		periodEnd.setUTCDate(periodEnd.getUTCDate() + 6)
+		const reviewed = s.status === 'APPROVED' || s.status === 'REJECTED'
+		await db.timesheet.upsert({
+			where: { employeeId_periodStart: { employeeId: s.empId, periodStart } },
+			update: {},
+			create: {
+				employeeId: s.empId,
+				periodStart,
+				periodEnd,
+				status: s.status,
+				totalHours,
+				submittedAt: s.status !== 'DRAFT' ? new Date() : null,
+				reviewedAt: reviewed ? new Date() : null,
+				reviewedById: reviewed ? managerUser.id : null,
+				rejectionReason: s.status === 'REJECTED' ? s.rejectionReason : null,
+				entries: { create: entries }
+			}
+		})
+	}
+
 	console.log('Seed complete. Logins:')
 	console.log('  Super Admin:     admin@veent.ph / Admin@1234')
 	console.log('  Manager:         manager@veent.ph / Manager@1234')

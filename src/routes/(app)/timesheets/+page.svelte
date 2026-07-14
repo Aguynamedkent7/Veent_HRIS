@@ -165,30 +165,47 @@
 	{/if}
 
 	{#await data.timesheets}
-		<TableSkeleton rows={5} cols={data.isManager ? 5 : 4} />
+		<TableSkeleton rows={5} cols={data.isManager ? 4 : 3} />
 	{:then timesheets}
 		{@const allIds = timesheets.map((t) => t.id)}
 		{@const allSelected = allIds.length > 0 && allIds.every((id) => selected.includes(id))}
+		{@const cols = data.isManager ? 4 : 3}
 
-		{#if data.isManager && selected.length}
+		<!-- Bulk actions (top-right of the table); appear when rows are selected -->
+		{#if selected.length}
 			<div
 				class="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-2"
 				transition:slide={{ duration: 120 }}
 			>
 				<span class="text-sm font-medium">{selected.length} selected</span>
-				<div class="flex items-center gap-3">
+				<div class="flex items-center gap-2">
 					<button
 						onclick={() => (selected = [])}
-						class="text-sm text-muted-foreground hover:underline">Clear</button
+						class="mr-1 text-sm text-muted-foreground hover:underline">Clear</button
 					>
-					<form method="POST" action="?/deleteMany" use:enhance={clearOnSuccess}>
-						<input type="hidden" name="ids" value={selected.join(',')} />
-						<button
-							disabled={busy}
-							class="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-							>Delete selected</button
-						>
-					</form>
+					{#if data.isManager}
+						<form method="POST" action="?/approveMany" use:enhance={clearOnSuccess}>
+							<input type="hidden" name="ids" value={selected.join(',')} />
+							<button
+								disabled={busy}
+								class="rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+								>Approve selected</button
+							>
+						</form>
+						<form method="POST" action="?/deleteMany" use:enhance={clearOnSuccess}>
+							<input type="hidden" name="ids" value={selected.join(',')} />
+							<button
+								disabled={busy}
+								class="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+								>Delete selected</button
+							>
+						</form>
+					{:else}
+						<form method="POST" action="?/submitMany" use:enhance={clearOnSuccess}>
+							<input type="hidden" name="ids" value={selected.join(',')} />
+							<button disabled={busy} class={btnPrimary}>Submit selected</button>
+						</form>
+					{/if}
 				</div>
 			</div>
 		{/if}
@@ -197,65 +214,58 @@
 			<table class="w-full text-sm">
 				<thead class="border-b bg-muted/50">
 					<tr>
+						<th class="w-[1%] px-4 py-3">
+							<input
+								type="checkbox"
+								checked={allSelected}
+								onchange={(e) => toggleAll(allIds, e.currentTarget.checked)}
+								aria-label="Select all"
+								class="align-middle"
+							/>
+						</th>
 						{#if data.isManager}
-							<th class="w-[1%] px-4 py-3">
-								<input
-									type="checkbox"
-									checked={allSelected}
-									onchange={(e) => toggleAll(allIds, e.currentTarget.checked)}
-									aria-label="Select all"
-									class="align-middle"
-								/>
-							</th>
 							<th class="px-4 py-3 text-left font-medium text-muted-foreground">Employee</th>
 						{/if}
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Period</th>
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Total Hours</th>
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
-						<th class="w-[1%] px-4 py-3"></th>
 					</tr>
 				</thead>
 				<tbody class="divide-y">
 					{#each timesheets as ts (ts.id)}
-						<tr class="hover:bg-muted/30 {selected.includes(ts.id) ? 'bg-primary/5' : ''}">
+						<tr
+							onclick={() => openReview(ts)}
+							onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && openReview(ts)}
+							tabindex="0"
+							class={`cursor-pointer hover:bg-muted/30 focus:bg-muted/40 focus:outline-none ${selected.includes(ts.id) ? 'bg-primary/5' : ''}`}
+						>
+							<td class="px-4 py-3" onclick={(e) => e.stopPropagation()}>
+								<input
+									type="checkbox"
+									checked={selected.includes(ts.id)}
+									onchange={() => toggle(ts.id)}
+									aria-label="Select timesheet"
+									class="align-middle"
+								/>
+							</td>
 							{#if data.isManager}
-								<td class="px-4 py-3">
-									<input
-										type="checkbox"
-										checked={selected.includes(ts.id)}
-										onchange={() => toggle(ts.id)}
-										aria-label="Select timesheet"
-										class="align-middle"
-									/>
-								</td>
 								<td class="px-4 py-3">{ts.employee.lastName}, {ts.employee.firstName}</td>
 							{/if}
 							<td class="px-4 py-3 whitespace-nowrap"
 								>{formatShortDate(ts.periodStart)} – {formatShortDate(ts.periodEnd)}</td
 							>
 							<td class="px-4 py-3">{Number(ts.totalHours).toFixed(2)} hrs</td>
-							<td class="px-4 py-3">
-								<span
-									class="rounded-full px-2 py-0.5 text-xs font-medium {statusClass[ts.status] ??
-										'bg-gray-100 text-gray-600'}"
-								>
-									{ts.status}
-								</span>
-							</td>
-							<td class="px-4 py-3 text-right">
-								<button
-									onclick={() => openReview(ts)}
-									class="rounded-md border px-3 py-1 text-xs font-medium hover:bg-accent"
-								>
-									{data.isManager && ts.status === 'SUBMITTED' ? 'Review' : 'Open'}
-								</button>
-							</td>
+							<td class="px-4 py-3"
+								><span
+									class={`rounded-full px-2 py-0.5 text-xs font-medium ${statusClass[ts.status] ?? 'bg-gray-100 text-gray-600'}`}
+									>{ts.status}</span
+								></td
+							>
 						</tr>
 					{:else}
 						<tr>
-							<td
-								colspan={data.isManager ? 6 : 4}
-								class="px-4 py-8 text-center text-muted-foreground">No timesheets found</td
+							<td colspan={cols} class="px-4 py-8 text-center text-muted-foreground"
+								>No timesheets found</td
 							>
 						</tr>
 					{/each}
