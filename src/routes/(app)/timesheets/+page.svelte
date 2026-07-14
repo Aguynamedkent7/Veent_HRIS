@@ -14,10 +14,12 @@
 	let openTs = $state<Timesheet | null>(null)
 	let entries = $state<Row[]>([])
 	let rejecting = $state(false)
+	let confirmDelete = $state(false)
 
 	const total = $derived(entries.reduce((s, e) => s + (Number(e.hoursWorked) || 0), 0))
 	const canEdit = $derived(data.isManager && openTs && openTs.status !== 'APPROVED')
 	const canReview = $derived(data.isManager && openTs && openTs.status === 'SUBMITTED')
+	const canDelete = $derived(data.isManager && openTs && openTs.status !== 'APPROVED')
 	const canSubmit = $derived(
 		openTs && openTs.employeeId === data.myEmployeeId && openTs.status === 'DRAFT'
 	)
@@ -28,6 +30,7 @@
 	function openReview(ts: Timesheet) {
 		openTs = ts
 		rejecting = false
+		confirmDelete = false
 		entries = ts.entries.map((e) => ({
 			date: toDateKey(e.date),
 			hoursWorked: Number(e.hoursWorked),
@@ -398,6 +401,37 @@
 							>Submit for review</button
 						>
 					</form>
+				</div>
+			{/if}
+
+			{#if canDelete}
+				<div class="mt-5 border-t pt-4">
+					{#if confirmDelete}
+						<form
+							method="POST"
+							action="?/delete"
+							use:enhance={closeOnSuccess}
+							class="flex flex-wrap items-center gap-2"
+						>
+							<input type="hidden" name="id" value={openTs.id} />
+							<span class="text-sm text-muted-foreground">Delete this timesheet permanently?</span>
+							<button
+								class="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700"
+								>Confirm delete</button
+							>
+							<button
+								type="button"
+								onclick={() => (confirmDelete = false)}
+								class="rounded-md border px-3 py-1.5 text-sm hover:bg-accent">Cancel</button
+							>
+						</form>
+					{:else}
+						<button
+							type="button"
+							onclick={() => (confirmDelete = true)}
+							class="text-sm font-medium text-destructive hover:underline">Delete timesheet</button
+						>
+					{/if}
 				</div>
 			{/if}
 		</div>

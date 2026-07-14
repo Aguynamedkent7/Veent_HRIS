@@ -152,6 +152,32 @@ export async function submitTimesheet(id: string, employeeId: string, ctx: Audit
 	return updated
 }
 
+/**
+ * Delete a timesheet (entries cascade). Managers are scoped to their direct reports. Approved
+ * timesheets are protected since payroll may consume them — reject/unlock is the path there.
+ */
+export async function deleteTimesheet(id: string, organizationId: string, ctx: AuditContext) {
+	const ts = await getTimesheet(id, organizationId)
+	await assertManagesEmployee(ctx, ts.employee.reportsToId)
+	if (ts.status === 'APPROVED') error(400, 'Approved timesheets cannot be deleted')
+
+	await db.timesheet.delete({ where: { id } })
+
+	await writeAuditLog(ctx, {
+		action: 'DELETE',
+		entityType: 'Timesheet',
+		entityId: id,
+		oldValue: {
+			periodStart: ts.periodStart,
+			periodEnd: ts.periodEnd,
+			status: ts.status,
+			entries: ts.entries.length
+		}
+	})
+
+	return { deleted: true }
+}
+
 export async function reviewTimesheet(
 	id: string,
 	organizationId: string,

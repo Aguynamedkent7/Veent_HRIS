@@ -5,7 +5,8 @@ import {
 	createTimesheet,
 	submitTimesheet,
 	reviewTimesheet,
-	updateTimesheetEntries
+	updateTimesheetEntries,
+	deleteTimesheet
 } from '$lib/server/services/timesheets'
 import { db } from '$lib/server/db'
 import { z } from 'zod'
@@ -105,6 +106,17 @@ export const actions: Actions = {
 		try {
 			await updateTimesheetEntries(id, event.locals.user!.organizationId, parsed, ctxOf(event))
 			return { saved: 'Timesheet entries saved.' }
+		} catch (e) {
+			return toFail(e)
+		}
+	},
+
+	delete: async (event) => {
+		requireMinRole(event.locals.user!.role, 'MANAGER')
+		const id = (await event.request.formData()).get('id') as string
+		try {
+			await deleteTimesheet(id, event.locals.user!.organizationId, ctxOf(event))
+			return { saved: 'Timesheet deleted.' }
 		} catch (e) {
 			return toFail(e)
 		}
