@@ -30,9 +30,13 @@ test('employee submits a timesheet and the manager approves it', async ({ browse
 	const mgrCtx = await browser.newContext()
 	const mgrPage = await mgrCtx.newPage()
 	await login(mgrPage, USERS.manager)
-	await mgrPage.goto('/approvals')
+	await mgrPage.goto('/requests')
 
-	// The direct report's submitted timesheet is waiting on the Timesheets tab.
+	// Approvals live under the "Approvals" tab of the merged Requests/Approvals page;
+	// its Timesheets sub-tab is the default.
+	await mgrPage.getByRole('button', { name: /Approvals/ }).click()
+
+	// The direct report's submitted timesheet is waiting on the Timesheets sub-tab.
 	const card = mgrPage.locator('div.rounded-md.border', { hasText: 'Employee, Elena' }).first()
 	await expect(card).toBeVisible()
 	await card.getByRole('button', { name: 'Approve' }).click()

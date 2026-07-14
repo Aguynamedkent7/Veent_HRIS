@@ -1,5 +1,6 @@
 import { redirect } from '@sveltejs/kit'
 import { listUnread } from '$lib/server/services/notifications'
+import { countPendingApprovals } from '$lib/server/services/approvals'
 import type { LayoutServerLoad } from './$types'
 
 export const load: LayoutServerLoad = async ({ locals }) => {
@@ -7,15 +8,20 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 		redirect(302, '/login')
 	}
 
-	const notifications = await listUnread(locals.user.id)
+	const user = locals.user
+	const [notifications, pendingApprovals] = await Promise.all([
+		listUnread(user.id),
+		countPendingApprovals({ id: user.id, role: user.role, organizationId: user.organizationId })
+	])
 
 	return {
 		user: {
-			id: locals.user.id,
-			email: locals.user.email,
-			role: locals.user.role,
-			organizationId: locals.user.organizationId
+			id: user.id,
+			email: user.email,
+			role: user.role,
+			organizationId: user.organizationId
 		},
-		notifications
+		notifications,
+		pendingApprovals
 	}
 }
