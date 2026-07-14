@@ -136,6 +136,47 @@
 		entries = entries.filter((_, idx) => idx !== i)
 	}
 
+	// Spreadsheet-style keyboard nav across the entry grid.
+	// Up/Down (and Enter / Shift+Enter) move between rows; Left/Right jump columns at the
+	// text boundary. Date/Time inputs keep their native arrow behaviour (segment editing).
+	// selectionStart is null (or throws) on number inputs — treat that as "at the boundary"
+	// so Left/Right navigate those cells; text inputs keep caret-boundary behaviour.
+	function selStart(el: HTMLInputElement): number | null {
+		try {
+			return el.selectionStart
+		} catch {
+			return null
+		}
+	}
+	function atStart(el: HTMLInputElement) {
+		const s = selStart(el)
+		return s === null || (s === 0 && el.selectionEnd === 0)
+	}
+	function atEnd(el: HTMLInputElement) {
+		const s = selStart(el)
+		return s === null || s === el.value.length
+	}
+	function cellKeydown(e: KeyboardEvent, r: number, c: number) {
+		const el = e.currentTarget as HTMLInputElement
+		const focusCell = (rr: number, cc: number) => {
+			const t = document.querySelector<HTMLInputElement>(`[data-r="${rr}"][data-c="${cc}"]`)
+			if (t) {
+				e.preventDefault()
+				t.focus()
+				try {
+					t.select()
+				} catch {
+					/* date/time inputs don't support select() */
+				}
+			}
+		}
+		if (e.key === 'ArrowDown' || (e.key === 'Enter' && !e.shiftKey)) return focusCell(r + 1, c)
+		if (e.key === 'ArrowUp' || (e.key === 'Enter' && e.shiftKey)) return focusCell(r - 1, c)
+		if (el.type === 'date' || el.type === 'time') return // keep native segment arrows
+		if (e.key === 'ArrowRight' && atEnd(el)) return focusCell(r, c + 1)
+		if (e.key === 'ArrowLeft' && atStart(el)) return focusCell(r, c - 1)
+	}
+
 	// Keep the modal's local entry state on save; close it after a review/submit succeeds.
 	// `busy` disables the action buttons and guards against double-submits.
 	const keepOpen: SubmitFunction = () => {
@@ -444,13 +485,23 @@
 								{#each entries as row, i (i)}
 									<tr>
 										<td class="px-3 py-1.5"
-											><input type="date" bind:value={row.date} class={inputClass} /></td
+											><input
+												type="date"
+												bind:value={row.date}
+												data-r={i}
+												data-c={0}
+												onkeydown={(e) => cellKeydown(e, i, 0)}
+												class={inputClass}
+											/></td
 										>
 										<td class="px-3 py-1.5"
 											><input
 												type="time"
 												bind:value={row.timeIn}
 												oninput={() => recalcRow(row)}
+												data-r={i}
+												data-c={1}
+												onkeydown={(e) => cellKeydown(e, i, 1)}
 												class={inputClass}
 											/></td
 										>
@@ -459,6 +510,9 @@
 												type="time"
 												bind:value={row.timeOut}
 												oninput={() => recalcRow(row)}
+												data-r={i}
+												data-c={2}
+												onkeydown={(e) => cellKeydown(e, i, 2)}
 												class={inputClass}
 											/></td
 										>
@@ -469,6 +523,9 @@
 												min="0"
 												max="24"
 												bind:value={row.reg}
+												data-r={i}
+												data-c={3}
+												onkeydown={(e) => cellKeydown(e, i, 3)}
 												class="{inputClass} text-right"
 											/></td
 										>
@@ -479,6 +536,9 @@
 												min="0"
 												max="24"
 												bind:value={row.ot}
+												data-r={i}
+												data-c={4}
+												onkeydown={(e) => cellKeydown(e, i, 4)}
 												class="{inputClass} text-right"
 											/></td
 										>
@@ -487,6 +547,9 @@
 												type="text"
 												bind:value={row.notes}
 												placeholder="—"
+												data-r={i}
+												data-c={5}
+												onkeydown={(e) => cellKeydown(e, i, 5)}
 												class={inputClass}
 											/></td
 										>
