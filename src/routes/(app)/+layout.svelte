@@ -195,18 +195,86 @@
 		PAYROLL_OFFICER: 'Payroll Officer',
 		FINANCE: 'Finance'
 	}
+
+	// Mobile sidebar drawer. Close it whenever the route changes.
+	let sidebarOpen = $state(false)
+	$effect(() => {
+		void $page.url.pathname
+		sidebarOpen = false
+	})
 </script>
 
 <Toaster />
 
 <div class="flex min-h-screen bg-background">
-	<!-- Sidebar -->
-	<aside class="fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r border-border bg-card">
+	<!-- Mobile top bar (hamburger) — hidden on lg+ -->
+	<header
+		class="fixed inset-x-0 top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-card px-4 lg:hidden"
+	>
+		<button
+			type="button"
+			onclick={() => (sidebarOpen = true)}
+			aria-label="Open menu"
+			class="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+		>
+			<svg
+				xmlns="http://www.w3.org/2000/svg"
+				class="h-5 w-5"
+				fill="none"
+				viewBox="0 0 24 24"
+				stroke="currentColor"
+				stroke-width="2"
+			>
+				<path
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					d="M3.75 6.75h16.5M3.75 12h16.5M3.75 17.25h16.5"
+				/>
+			</svg>
+		</button>
+		<a href="/dashboard" class="flex items-center">
+			<img src="/veent-logo.png" alt="Veent HRIS" class="h-8 w-auto" />
+		</a>
+	</header>
+
+	<!-- Mobile drawer backdrop -->
+	{#if sidebarOpen}
+		<button
+			type="button"
+			onclick={() => (sidebarOpen = false)}
+			aria-label="Close menu"
+			class="fixed inset-0 z-40 bg-black/50 lg:hidden"
+		></button>
+	{/if}
+
+	<!-- Sidebar (persistent on lg+, slide-in drawer below lg) -->
+	<aside
+		class="fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r border-border bg-card transition-transform duration-200 lg:translate-x-0 {sidebarOpen
+			? 'translate-x-0'
+			: '-translate-x-full'}"
+	>
 		<!-- Logo -->
-		<div class="flex h-14 shrink-0 items-center border-b border-border px-5">
+		<div class="flex h-14 shrink-0 items-center justify-between border-b border-border px-5">
 			<a href="/dashboard" class="flex items-center">
 				<img src="/veent-logo.png" alt="Veent HRIS" class="h-9 w-auto" />
 			</a>
+			<button
+				type="button"
+				onclick={() => (sidebarOpen = false)}
+				aria-label="Close menu"
+				class="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground lg:hidden"
+			>
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					class="h-5 w-5"
+					fill="none"
+					viewBox="0 0 24 24"
+					stroke="currentColor"
+					stroke-width="2"
+				>
+					<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+				</svg>
+			</button>
 		</div>
 
 		<!-- Nav -->
@@ -431,9 +499,9 @@
 		</div>
 	</aside>
 
-	<!-- Main content — offset by sidebar width -->
-	<div class="flex flex-1 flex-col pl-60">
-		<main class="flex-1 px-8 py-8">
+	<!-- Main content — offset by sidebar on lg+, cleared by the mobile top bar below lg -->
+	<div class="flex flex-1 flex-col lg:pl-60">
+		<main class="flex-1 p-4 pt-20 lg:p-8 lg:pt-8">
 			{@render children()}
 		</main>
 	</div>
