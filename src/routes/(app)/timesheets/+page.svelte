@@ -19,7 +19,7 @@
 	const total = $derived(entries.reduce((s, e) => s + (Number(e.hoursWorked) || 0), 0))
 	const canEdit = $derived(data.isManager && openTs && openTs.status !== 'APPROVED')
 	const canReview = $derived(data.isManager && openTs && openTs.status === 'SUBMITTED')
-	const canDelete = $derived(data.isManager && openTs && openTs.status !== 'APPROVED')
+	const canDelete = $derived(data.isManager && openTs)
 	const canSubmit = $derived(
 		openTs && openTs.employeeId === data.myEmployeeId && openTs.status === 'DRAFT'
 	)
