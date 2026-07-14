@@ -90,6 +90,48 @@ export async function createTimesheet(
 	return ts
 }
 
+/**
+ * Replace a timesheet's entries and recompute its total (HR review edits). Managers are scoped
+ * to their direct reports; approved timesheets are locked. Runs in a transaction so the entries
+ * and total stay consistent.
+ */
+export async function updateTimesheetEntries(
+	id: string,
+	organizationId: string,
+	entries: TimesheetEntryInput[],
+	ctx: AuditContext
+) {
+	const ts = await getTimesheet(id, organizationId)
+	await assertManagesEmployee(ctx, ts.employee.reportsToId)
+	if (ts.status === 'APPROVED') error(400, 'Approved timesheets cannot be edited')
+
+	const totalHours = entries.reduce((sum, e) => sum + e.hoursWorked, 0)
+
+	const updated = await db.$transaction(async (tx) => {
+		await tx.timesheetEntry.deleteMany({ where: { timesheetId: id } })
+		return tx.timesheet.update({
+			where: { id },
+			data: {
+				totalHours,
+				entries: {
+					create: entries.map((e) => ({ date: e.date, hoursWorked: e.hoursWorked, notes: e.notes }))
+				}
+			},
+			include: { entries: { orderBy: { date: 'asc' } } }
+		})
+	})
+
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'Timesheet',
+		entityId: id,
+		oldValue: { entries: ts.entries.length, totalHours: Number(ts.totalHours) },
+		newValue: { entries: entries.length, totalHours }
+	})
+
+	return updated
+}
+
 export async function submitTimesheet(id: string, employeeId: string, ctx: AuditContext) {
 	const ts = await db.timesheet.findUnique({ where: { id } })
 	if (!ts || ts.employeeId !== employeeId) error(404, 'Timesheet not found')
