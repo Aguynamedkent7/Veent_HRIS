@@ -42,5 +42,18 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	if (entry.employeeId !== myEmployee.id) error(403, 'Access denied')
 	if (!isPayslipVisible(entry.payrollRun)) error(403, 'Payslip not yet available')
 
-	return { entry }
+	// Coerce Prisma Decimal fields to numbers at the boundary so PageData matches
+	// the component's numeric prop types (the transport hook serializes them at runtime).
+	return {
+		entry: {
+			...entry,
+			grossPay: Number(entry.grossPay),
+			sssEe: Number(entry.sssEe),
+			philhealthEe: Number(entry.philhealthEe),
+			pagibigEe: Number(entry.pagibigEe),
+			withholdingTax: Number(entry.withholdingTax),
+			totalDeductions: Number(entry.totalDeductions),
+			netPay: Number(entry.netPay)
+		}
+	}
 }

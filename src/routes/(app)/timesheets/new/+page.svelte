@@ -26,7 +26,7 @@
 		})
 	}
 
-	let entries = $state<{ date: Date; hoursWorked: number; notes: string }[]>([])
+	let entries = $state<{ date: Date; hoursWorked: number; notes?: string }[]>([])
 
 	$effect(() => {
 		entries = buildDefaultEntries(weekStart)

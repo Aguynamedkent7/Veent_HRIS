@@ -92,9 +92,6 @@
 			>
 				Cancel
 			</button>
-			{#if form?.fieldErrors?.name}
-				<p class="text-xs text-destructive">{form.fieldErrors.name[0]}</p>
-			{/if}
 		</form>
 	{/if}
 

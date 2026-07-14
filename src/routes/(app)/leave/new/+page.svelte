@@ -27,7 +27,7 @@
 	{#if form?.error}
 		<div class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
 			{form.error}
-			{#if form.remaining !== undefined && form.requested !== undefined}
+			{#if 'remaining' in form && 'requested' in form && form.remaining !== undefined && form.requested !== undefined}
 				<span class="block mt-1">
 					Remaining: {form.remaining} days &mdash; Requested: {form.requested} days
 				</span>
