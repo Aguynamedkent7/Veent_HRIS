@@ -19,6 +19,24 @@
 	let busy = $state(false)
 	let dialogEl = $state<HTMLElement>()
 
+	// ─── Bulk selection ─────────────────────────────────────────────────────────
+	let selected = $state<string[]>([])
+	function toggle(id: string) {
+		selected = selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]
+	}
+	function toggleAll(ids: string[], on: boolean) {
+		selected = on ? ids : []
+	}
+	// Clear the selection after a successful bulk delete.
+	const clearOnSuccess: SubmitFunction = () => {
+		busy = true
+		return async ({ result, update }) => {
+			await update()
+			busy = false
+			if (result.type === 'success') selected = []
+		}
+	}
+
 	const total = $derived(entries.reduce((s, e) => s + (Number(e.hoursWorked) || 0), 0))
 	const canEdit = $derived(data.isManager && openTs && openTs.status !== 'APPROVED')
 	const canReview = $derived(data.isManager && openTs && openTs.status === 'SUBMITTED')
@@ -149,13 +167,48 @@
 	{#await data.timesheets}
 		<TableSkeleton rows={5} cols={data.isManager ? 5 : 4} />
 	{:then timesheets}
+		{@const allIds = timesheets.map((t) => t.id)}
+		{@const allSelected = allIds.length > 0 && allIds.every((id) => selected.includes(id))}
+
+		{#if data.isManager && selected.length}
+			<div
+				class="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-2"
+				transition:slide={{ duration: 120 }}
+			>
+				<span class="text-sm font-medium">{selected.length} selected</span>
+				<div class="flex items-center gap-3">
+					<button
+						onclick={() => (selected = [])}
+						class="text-sm text-muted-foreground hover:underline">Clear</button
+					>
+					<form method="POST" action="?/deleteMany" use:enhance={clearOnSuccess}>
+						<input type="hidden" name="ids" value={selected.join(',')} />
+						<button
+							disabled={busy}
+							class="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+							>Delete selected</button
+						>
+					</form>
+				</div>
+			</div>
+		{/if}
+
 		<div class="rounded-lg border">
 			<table class="w-full text-sm">
 				<thead class="border-b bg-muted/50">
 					<tr>
-						{#if data.isManager}<th class="px-4 py-3 text-left font-medium text-muted-foreground"
-								>Employee</th
-							>{/if}
+						{#if data.isManager}
+							<th class="w-[1%] px-4 py-3">
+								<input
+									type="checkbox"
+									checked={allSelected}
+									onchange={(e) => toggleAll(allIds, e.currentTarget.checked)}
+									aria-label="Select all"
+									class="align-middle"
+								/>
+							</th>
+							<th class="px-4 py-3 text-left font-medium text-muted-foreground">Employee</th>
+						{/if}
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Period</th>
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Total Hours</th>
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
@@ -164,8 +217,17 @@
 				</thead>
 				<tbody class="divide-y">
 					{#each timesheets as ts (ts.id)}
-						<tr class="hover:bg-muted/30">
+						<tr class="hover:bg-muted/30 {selected.includes(ts.id) ? 'bg-primary/5' : ''}">
 							{#if data.isManager}
+								<td class="px-4 py-3">
+									<input
+										type="checkbox"
+										checked={selected.includes(ts.id)}
+										onchange={() => toggle(ts.id)}
+										aria-label="Select timesheet"
+										class="align-middle"
+									/>
+								</td>
 								<td class="px-4 py-3">{ts.employee.lastName}, {ts.employee.firstName}</td>
 							{/if}
 							<td class="px-4 py-3 whitespace-nowrap"
@@ -191,8 +253,9 @@
 						</tr>
 					{:else}
 						<tr>
-							<td colspan="5" class="px-4 py-8 text-center text-muted-foreground"
-								>No timesheets found</td
+							<td
+								colspan={data.isManager ? 6 : 4}
+								class="px-4 py-8 text-center text-muted-foreground">No timesheets found</td
 							>
 						</tr>
 					{/each}

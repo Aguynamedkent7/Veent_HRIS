@@ -122,6 +122,32 @@ export const actions: Actions = {
 		}
 	},
 
+	// Mass delete: delete each selected timesheet (scoped per item); report how many.
+	deleteMany: async (event) => {
+		requireMinRole(event.locals.user!.role, 'MANAGER')
+		const ids = String((await event.request.formData()).get('ids') ?? '')
+			.split(',')
+			.map((s) => s.trim())
+			.filter(Boolean)
+		if (!ids.length) return fail(400, { error: 'No timesheets selected' })
+
+		const org = event.locals.user!.organizationId
+		const ctx = ctxOf(event)
+		let deleted = 0
+		let skipped = 0
+		for (const id of ids) {
+			try {
+				await deleteTimesheet(id, org, ctx)
+				deleted++
+			} catch {
+				skipped++
+			}
+		}
+		return {
+			saved: `Deleted ${deleted} timesheet${deleted === 1 ? '' : 's'}${skipped ? `, ${skipped} skipped` : ''}.`
+		}
+	},
+
 	review: async (event) => {
 		requireMinRole(event.locals.user!.role, 'MANAGER')
 		const data = await event.request.formData()
