@@ -327,3 +327,23 @@ export async function lockRange(
 	})
 	return { locked: res.count }
 }
+
+/** Reopen locked AttendanceDays in a range. Privileged (super admin) — reverses lockRange. */
+export async function unlockRange(
+	organizationId: string,
+	range: { from: Date; to: Date; employeeId?: string },
+	ctx: AuditContext
+) {
+	const fromKey = manilaDayKey(range.from)
+	const toKey = manilaDayKey(range.to)
+	const res = await db.attendanceDay.updateMany({
+		where: {
+			date: { gte: new Date(fromKey), lte: new Date(toKey) },
+			employee: { user: { organizationId } },
+			...(range.employeeId ? { employeeId: range.employeeId } : {})
+		},
+		data: { isLocked: false }
+	})
+	await writeAuditLog(ctx, { action: 'UPDATE', entityType: 'AttendanceDay', entityId: range.employeeId ?? organizationId, newValue: { unlocked: res.count, from: fromKey, to: toKey } })
+	return { unlocked: res.count }
+}

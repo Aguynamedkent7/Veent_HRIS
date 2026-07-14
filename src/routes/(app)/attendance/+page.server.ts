@@ -1,20 +1,33 @@
 import { fail } from '@sveltejs/kit'
 import { z } from 'zod'
 import { db } from '$lib/server/db'
-import { requireMinRole } from '$lib/server/rbac'
-import { listAttendanceDays, listTeamDay, deriveRange, autoDeriveFromPunches, correctDay, lockRange } from '$lib/server/services/attendance'
+import { requireMinRole, requireRole } from '$lib/server/rbac'
+import { listAttendanceDays, listTeamDay, deriveRange, autoDeriveFromPunches, correctDay, lockRange, unlockRange } from '$lib/server/services/attendance'
 import { manilaDayKey } from '$lib/utils/dates'
 import type { Actions, PageServerLoad, RequestEvent } from './$types'
 
 const DAY_MS = 86_400_000
+const MAX_RANGE_DAYS = 62 // ~2 months
+
+/** Clamp [from, to] to at most MAX_RANGE_DAYS, keeping `to` fixed. Returns PHT day keys. */
+function clampRange(fromKey: string, toKey: string) {
+	const to = new Date(toKey).getTime()
+	const from = new Date(fromKey).getTime()
+	if (from > to) return { from: toKey, to: toKey }
+	if (to - from > MAX_RANGE_DAYS * DAY_MS) return { from: manilaDayKey(new Date(to - MAX_RANGE_DAYS * DAY_MS)), to: toKey }
+	return { from: fromKey, to: toKey }
+}
 
 export const load: PageServerLoad = async ({ locals, url, getClientAddress }) => {
 	const user = locals.user!
 	const canManage = ['HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
+	const canUnlock = user.role === 'SUPER_ADMIN' // reopening locked days is privileged
 
 	const today = manilaDayKey(new Date())
-	const from = url.searchParams.get('from') ?? manilaDayKey(new Date(Date.now() - 13 * DAY_MS))
-	const to = url.searchParams.get('to') ?? today
+	const rawFrom = url.searchParams.get('from') ?? manilaDayKey(new Date(Date.now() - 13 * DAY_MS))
+	const rawTo = url.searchParams.get('to') ?? today
+	// Cap the visible range to ~2 months so derive/list stay bounded.
+	const { from, to } = clampRange(rawFrom, rawTo)
 	const date = url.searchParams.get('date') ?? today
 
 	// Managers can switch between a single employee's range and the whole team on one day.
@@ -53,7 +66,7 @@ export const load: PageServerLoad = async ({ locals, url, getClientAddress }) =>
 
 	const team = view === 'team' ? await listTeamDay(user.organizationId, date) : []
 
-	return { canManage, view, employees, selectedEmployeeId, from, to, date, days, team }
+	return { canManage, canUnlock, view, employees, selectedEmployeeId, from, to, date, days, team, maxRangeDays: MAX_RANGE_DAYS }
 }
 
 function ctxOf(event: RequestEvent) {
@@ -69,6 +82,11 @@ function toFail(e: unknown) {
 
 const rangeSchema = z.object({ employeeId: z.string().min(1), from: z.coerce.date(), to: z.coerce.date() })
 const teamDaySchema = z.object({ date: z.coerce.date() })
+
+/** Reject spans over the 2-month cap so a hand-crafted POST can't bypass the load clamp. */
+function spanExceeded(from: Date, to: Date) {
+	return to.getTime() - from.getTime() > MAX_RANGE_DAYS * DAY_MS
+}
 const correctSchema = z.object({
 	id: z.string().min(1),
 	regularHours: z.coerce.number().min(0).optional(),
@@ -82,6 +100,7 @@ export const actions: Actions = {
 		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
 		const parsed = rangeSchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid range' })
+		if (spanExceeded(parsed.data.from, parsed.data.to)) return fail(400, { error: 'Range exceeds the 2-month limit.' })
 		try {
 			await deriveRange(event.locals.user!.organizationId, { from: parsed.data.from, to: parsed.data.to, employeeId: parsed.data.employeeId }, ctxOf(event))
 		} catch (e) {
@@ -105,8 +124,33 @@ export const actions: Actions = {
 		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
 		const parsed = rangeSchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid range' })
+		if (spanExceeded(parsed.data.from, parsed.data.to)) return fail(400, { error: 'Range exceeds the 2-month limit.' })
 		try {
 			await lockRange(event.locals.user!.organizationId, { from: parsed.data.from, to: parsed.data.to, employeeId: parsed.data.employeeId }, ctxOf(event))
+		} catch (e) {
+			return toFail(e)
+		}
+	},
+
+	// Reopening locked days is privileged (super admin only).
+	unlock: async (event) => {
+		requireRole(event.locals.user!.role, 'SUPER_ADMIN')
+		const parsed = rangeSchema.safeParse(Object.fromEntries(await event.request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Invalid range' })
+		if (spanExceeded(parsed.data.from, parsed.data.to)) return fail(400, { error: 'Range exceeds the 2-month limit.' })
+		try {
+			await unlockRange(event.locals.user!.organizationId, { from: parsed.data.from, to: parsed.data.to, employeeId: parsed.data.employeeId }, ctxOf(event))
+		} catch (e) {
+			return toFail(e)
+		}
+	},
+
+	unlockTeam: async (event) => {
+		requireRole(event.locals.user!.role, 'SUPER_ADMIN')
+		const parsed = teamDaySchema.safeParse(Object.fromEntries(await event.request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Invalid date' })
+		try {
+			await unlockRange(event.locals.user!.organizationId, { from: parsed.data.date, to: parsed.data.date }, ctxOf(event))
 		} catch (e) {
 			return toFail(e)
 		}

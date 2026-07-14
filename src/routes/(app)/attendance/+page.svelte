@@ -24,6 +24,12 @@
 		return new Date(d).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Manila' })
 	}
 	const n = (x: unknown) => Number(x)
+
+	const exportHref = $derived(
+		data.view === 'team'
+			? `/attendance/export?view=team&date=${data.date}`
+			: `/attendance/export?view=employee&employeeId=${data.selectedEmployeeId ?? ''}&from=${data.from}&to=${data.to}`
+	)
 </script>
 
 <svelte:head>
@@ -95,12 +101,13 @@
 				<label for="to" class="text-xs font-medium text-muted-foreground">To</label>
 				<input id="to" name="to" type="date" value={data.to} onchange={(e) => e.currentTarget.form?.requestSubmit()} class="h-9 rounded-md border border-input bg-background px-3 text-sm" />
 			</div>
+			<p class="w-full text-xs text-muted-foreground">Range is capped at {data.maxRangeDays} days (~2 months); longer spans are trimmed automatically.</p>
 		</form>
 	{/if}
 
 	<!-- Bulk actions -->
 	{#if data.canManage && data.view === 'employee' && data.selectedEmployeeId}
-		<div class="flex gap-2">
+		<div class="flex flex-wrap gap-2">
 			<form method="POST" action="?/derive" use:enhance>
 				<input type="hidden" name="employeeId" value={data.selectedEmployeeId} />
 				<input type="hidden" name="from" value={data.from} />
@@ -113,9 +120,18 @@
 				<input type="hidden" name="to" value={data.to} />
 				<button class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">Lock range</button>
 			</form>
+			{#if data.canUnlock}
+				<form method="POST" action="?/unlock" use:enhance>
+					<input type="hidden" name="employeeId" value={data.selectedEmployeeId} />
+					<input type="hidden" name="from" value={data.from} />
+					<input type="hidden" name="to" value={data.to} />
+					<button title="Reopen locked days (super admin)" class="rounded-md border border-amber-300 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50">🔓 Unlock range</button>
+				</form>
+			{/if}
+			<a href={exportHref} class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">Export CSV</a>
 		</div>
 	{:else if data.canManage && data.view === 'team'}
-		<div class="flex gap-2">
+		<div class="flex flex-wrap gap-2">
 			<form method="POST" action="?/deriveTeam" use:enhance>
 				<input type="hidden" name="date" value={data.date} />
 				<button title="Re-pull from punches (updates unlocked days)" class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">↻ Refresh</button>
@@ -124,6 +140,18 @@
 				<input type="hidden" name="date" value={data.date} />
 				<button class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">Lock day</button>
 			</form>
+			{#if data.canUnlock}
+				<form method="POST" action="?/unlockTeam" use:enhance>
+					<input type="hidden" name="date" value={data.date} />
+					<button title="Reopen locked days (super admin)" class="rounded-md border border-amber-300 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50">🔓 Unlock day</button>
+				</form>
+			{/if}
+			<a href={exportHref} class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">Export CSV</a>
+		</div>
+	{:else}
+		<!-- Employees can export their own timesheet -->
+		<div class="flex gap-2">
+			<a href={exportHref} class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">Export CSV</a>
 		</div>
 	{/if}
 
