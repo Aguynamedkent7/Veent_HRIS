@@ -196,7 +196,7 @@
 						<th class="px-3 py-3 text-left font-medium text-muted-foreground">Out</th>
 						<th class="px-3 py-3 text-right font-medium text-muted-foreground">Reg</th>
 						<th class="px-3 py-3 text-right font-medium text-muted-foreground">OT</th>
-						<th class="px-3 py-3"></th>
+						<th class="w-[1%] whitespace-nowrap px-3 py-3"></th>
 					</tr>
 				</thead>
 				<tbody class="divide-y">
@@ -217,7 +217,7 @@
 							<td class="px-3 py-2 text-muted-foreground">{fmtTime(d?.timeOut ?? null)}</td>
 							<td class="px-3 py-2 text-right font-mono">{d ? n(d.regularHours).toFixed(2) : '—'}</td>
 							<td class="px-3 py-2 text-right font-mono">{d ? n(d.overtimeHours).toFixed(2) : '—'}</td>
-							<td class="px-3 py-2">
+							<td class="w-[1%] whitespace-nowrap px-3 py-2">
 								{#if data.canManage && d && !d.isLocked}
 									<form method="POST" action="?/correct" use:enhance class="flex items-center gap-1">
 										<input type="hidden" name="id" value={d.id} />
@@ -253,7 +253,7 @@
 						<th class="px-3 py-3 text-right font-medium text-muted-foreground">OT</th>
 						<th class="px-3 py-3 text-right font-medium text-muted-foreground">Night</th>
 						<th class="px-3 py-3 text-right font-medium text-muted-foreground">Late/UT</th>
-						{#if data.canManage}<th class="px-3 py-3"></th>{/if}
+						{#if data.canManage}<th class="w-[1%] whitespace-nowrap px-3 py-3"></th>{/if}
 					</tr>
 				</thead>
 				<tbody class="divide-y">
@@ -268,7 +268,7 @@
 							<td class="px-3 py-2 text-right font-mono">{n(d.nightDiffHours).toFixed(2)}</td>
 							<td class="px-3 py-2 text-right font-mono text-muted-foreground">{d.lateMinutes}/{d.undertimeMinutes}</td>
 							{#if data.canManage}
-								<td class="px-3 py-2">
+								<td class="w-[1%] whitespace-nowrap px-3 py-2">
 									{#if d.isLocked}
 										<span class="inline-flex h-7 items-center text-xs text-muted-foreground">locked</span>
 									{:else}
