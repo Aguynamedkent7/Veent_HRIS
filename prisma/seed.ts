@@ -392,6 +392,54 @@ async function main() {
 		})
 	}
 
+	// A full month (all weekdays) in one timesheet to stress-test the review UI.
+	const monthEntries = (year: number, month: number) => {
+		const out: {
+			date: Date
+			timeIn: Date
+			timeOut: Date
+			hoursWorked: number
+			otHours: number
+			notes: string
+		}[] = []
+		const cur = new Date(Date.UTC(year, month - 1, 1))
+		const last = new Date(Date.UTC(year, month, 0))
+		for (; cur <= last; cur.setUTCDate(cur.getUTCDate() + 1)) {
+			const dow = cur.getUTCDay()
+			if (dow === 0 || dow === 6) continue // skip weekends
+			const day = cur.toISOString().slice(0, 10)
+			const ot = cur.getUTCDate() % 5 === 0 // OT every 5th of the month
+			out.push({
+				date: new Date(cur),
+				timeIn: new Date(`${day}T${ot ? '07' : '08'}:00:00+08:00`),
+				timeOut: new Date(`${day}T${ot ? '19' : '17'}:00:00+08:00`),
+				hoursWorked: ot ? 12 : 9,
+				otHours: ot ? 3 : 0,
+				notes: ot ? 'Overtime' : 'Regular day'
+			})
+		}
+		return out
+	}
+	{
+		const entries = monthEntries(2026, 5) // May 2026
+		const totalHours = entries.reduce((a, e) => a + e.hoursWorked, 0)
+		await db.timesheet.upsert({
+			where: {
+				employeeId_periodStart: { employeeId: employee.id, periodStart: new Date('2026-05-01') }
+			},
+			update: {},
+			create: {
+				employeeId: employee.id,
+				periodStart: new Date('2026-05-01'),
+				periodEnd: new Date('2026-05-31'),
+				status: 'SUBMITTED',
+				totalHours,
+				submittedAt: new Date(),
+				entries: { create: entries }
+			}
+		})
+	}
+
 	console.log('Seed complete. Logins:')
 	console.log('  Super Admin:     admin@veent.ph / Admin@1234')
 	console.log('  Manager:         manager@veent.ph / Manager@1234')
