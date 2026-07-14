@@ -3,7 +3,10 @@ import { pairPunchesToDailyHours, type PunchLite } from '$lib/server/services/ti
 import { manilaDayKey, manilaWeekStart } from '$lib/utils/dates'
 
 // Helper: build a punch from a UTC ISO string.
-const p = (punchType: 'IN' | 'OUT', iso: string): PunchLite => ({ punchType, timestamp: new Date(iso) })
+const p = (punchType: 'IN' | 'OUT', iso: string): PunchLite => ({
+	punchType,
+	timestamp: new Date(iso)
+})
 
 describe('manila timezone helpers (UTC+8)', () => {
 	it('buckets a UTC instant into the correct PHT calendar day across midnight', () => {
@@ -15,7 +18,9 @@ describe('manila timezone helpers (UTC+8)', () => {
 
 	it('computes the PHT week start (Mon 00:00 PHT) as a UTC instant', () => {
 		// Wed Jul 8 2026, 13:00 PHT -> week Monday is Jul 6, 00:00 PHT == Jul 5 16:00 UTC
-		expect(manilaWeekStart(new Date('2026-07-08T05:00:00Z')).toISOString()).toBe('2026-07-05T16:00:00.000Z')
+		expect(manilaWeekStart(new Date('2026-07-08T05:00:00Z')).toISOString()).toBe(
+			'2026-07-05T16:00:00.000Z'
+		)
 	})
 })
 

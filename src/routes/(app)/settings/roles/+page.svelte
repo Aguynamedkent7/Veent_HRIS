@@ -4,7 +4,14 @@
 
 	let { data }: { data: PageData } = $props()
 
-	const roles = ['EMPLOYEE', 'MANAGER', 'HR_ADMIN', 'SUPER_ADMIN', 'PAYROLL_OFFICER', 'FINANCE'] as const
+	const roles = [
+		'EMPLOYEE',
+		'MANAGER',
+		'HR_ADMIN',
+		'SUPER_ADMIN',
+		'PAYROLL_OFFICER',
+		'FINANCE'
+	] as const
 </script>
 
 <svelte:head>
@@ -45,12 +52,7 @@
 							</span>
 						</td>
 						<td class="px-4 py-3" colspan="2">
-							<form
-								method="POST"
-								action="?/setRole"
-								use:enhance
-								class="flex items-center gap-2"
-							>
+							<form method="POST" action="?/setRole" use:enhance class="flex items-center gap-2">
 								<input type="hidden" name="userId" value={u.id} />
 								<select
 									name="role"

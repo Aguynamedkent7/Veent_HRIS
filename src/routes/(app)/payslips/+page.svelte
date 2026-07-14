@@ -31,9 +31,13 @@
 				{#each data.payslips as payslip (payslip.id)}
 					<tr class="hover:bg-muted/30">
 						<td class="px-4 py-3">
-							{formatShortDate(payslip.payrollRun.periodStart)} &ndash; {formatShortDate(payslip.payrollRun.periodEnd)}
+							{formatShortDate(payslip.payrollRun.periodStart)} &ndash; {formatShortDate(
+								payslip.payrollRun.periodEnd
+							)}
 						</td>
-						<td class="px-4 py-3 text-right font-mono">{formatCurrency(Number(payslip.grossPay))}</td>
+						<td class="px-4 py-3 text-right font-mono"
+							>{formatCurrency(Number(payslip.grossPay))}</td
+						>
 						<td class="px-4 py-3 text-right font-mono text-muted-foreground">
 							{formatCurrency(Number(payslip.totalDeductions))}
 						</td>
@@ -41,7 +45,9 @@
 							{formatCurrency(Number(payslip.netPay))}
 						</td>
 						<td class="px-4 py-3">
-							<span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+							<span
+								class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700"
+							>
 								{payslip.payrollRun.status}
 							</span>
 						</td>

@@ -137,9 +137,7 @@ export async function listOrgUsers(organizationId: string) {
 		email: u.email,
 		role: u.role,
 		isActive: u.isActive,
-		employeeName: u.employee
-			? `${u.employee.lastName}, ${u.employee.firstName}`
-			: null
+		employeeName: u.employee ? `${u.employee.lastName}, ${u.employee.firstName}` : null
 	}))
 }
 

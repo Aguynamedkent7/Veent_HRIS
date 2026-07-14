@@ -68,10 +68,10 @@ intentionally out of scope here.
 
 ## Troubleshooting
 
-| Symptom | Cause / fix |
-|---|---|
-| `⚠️ Could not record your punch: No active employee is linked…` | Set `Employee.discordId` for that member. |
-| `Invalid or missing signature` (401) | `TIMELOG_API_SECRET` differs between bot and HRIS, or clock skew > 5 min. |
-| Slash commands not showing | Bot invited without the `applications.commands` scope — re-invite with it. |
-| Announcement not posted | Bot lacks **Send Messages** permission in that channel. |
-| `Couldn't read the time` | Use a form like `9:00`, `13:30`, or `1:30pm`. |
+| Symptom                                                         | Cause / fix                                                                |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `⚠️ Could not record your punch: No active employee is linked…` | Set `Employee.discordId` for that member.                                  |
+| `Invalid or missing signature` (401)                            | `TIMELOG_API_SECRET` differs between bot and HRIS, or clock skew > 5 min.  |
+| Slash commands not showing                                      | Bot invited without the `applications.commands` scope — re-invite with it. |
+| Announcement not posted                                         | Bot lacks **Send Messages** permission in that channel.                    |
+| `Couldn't read the time`                                        | Use a form like `9:00`, `13:30`, or `1:30pm`.                              |

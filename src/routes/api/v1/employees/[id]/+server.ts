@@ -66,16 +66,11 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	}
 
 	try {
-		const updated = await updateEmployee(
-			params.id,
-			locals.user.organizationId,
-			parsed.data,
-			{
-				organizationId: locals.user.organizationId,
-				actorId: locals.user.id,
-				actorRole: locals.user.role
-			}
-		)
+		const updated = await updateEmployee(params.id, locals.user.organizationId, parsed.data, {
+			organizationId: locals.user.organizationId,
+			actorId: locals.user.id,
+			actorRole: locals.user.role
+		})
 		return json({ data: updated })
 	} catch (e: unknown) {
 		const err = e as { status?: number }

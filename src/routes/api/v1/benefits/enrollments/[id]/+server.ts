@@ -14,11 +14,16 @@ export const PATCH: RequestHandler = async ({ locals, request, params, getClient
 	const parsed = patchSchema.safeParse(await request.json())
 	if (!parsed.success) error(422, 'Invalid status')
 
-	const enrollment = await updateEnrollmentStatus(params.id, user.organizationId, parsed.data.status, {
-		organizationId: user.organizationId,
-		actorId: user.id,
-		actorRole: user.role,
-		ipAddress: getClientAddress()
-	})
+	const enrollment = await updateEnrollmentStatus(
+		params.id,
+		user.organizationId,
+		parsed.data.status,
+		{
+			organizationId: user.organizationId,
+			actorId: user.id,
+			actorRole: user.role,
+			ipAddress: getClientAddress()
+		}
+	)
 	return json({ enrollment })
 }

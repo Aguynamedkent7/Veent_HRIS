@@ -2,7 +2,11 @@ import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import { Prisma } from '@prisma/client'
-import { requestSchema, deriveRequestColumns, type RequestInput } from '$lib/server/schemas/requests'
+import {
+	requestSchema,
+	deriveRequestColumns,
+	type RequestInput
+} from '$lib/server/schemas/requests'
 import { resolveChain } from './routing'
 import { computeLeaveTotalDays, assertLeaveBalance } from './leave'
 import type { AuditContext } from '../types'
@@ -30,7 +34,12 @@ export async function createRequest(
 	let payload: Record<string, unknown> = parsed
 	if (parsed.type === 'LEAVE') {
 		const totalDays = await computeLeaveTotalDays(organizationId, parsed.startDate, parsed.endDate)
-		await assertLeaveBalance(employeeId, parsed.leaveTypeId, parsed.startDate.getFullYear(), totalDays)
+		await assertLeaveBalance(
+			employeeId,
+			parsed.leaveTypeId,
+			parsed.startDate.getFullYear(),
+			totalDays
+		)
 		payload = { ...parsed, totalDays }
 	}
 
@@ -94,7 +103,10 @@ export async function getRequest(id: string, organizationId: string) {
 		where: { id, employee: { user: { organizationId } } },
 		include: {
 			employee: { select: { id: true, firstName: true, lastName: true } },
-			steps: { orderBy: { stageIndex: 'asc' }, include: { actor: { select: { id: true, email: true } } } },
+			steps: {
+				orderBy: { stageIndex: 'asc' },
+				include: { actor: { select: { id: true, email: true } } }
+			},
 			documents: true
 		}
 	})
@@ -102,7 +114,10 @@ export async function getRequest(id: string, organizationId: string) {
 
 // Employee re-submits a RETURNED request: reset the chain and re-enter at stage 0.
 export async function resubmitRequest(id: string, employeeId: string, ctx: AuditContext) {
-	const req = await db.request.findFirst({ where: { id, employeeId }, select: { id: true, status: true } })
+	const req = await db.request.findFirst({
+		where: { id, employeeId },
+		select: { id: true, status: true }
+	})
 	if (!req) error(404, 'Request not found')
 	if (req.status !== 'RETURNED') error(400, 'Only returned requests can be re-submitted')
 
@@ -113,18 +128,31 @@ export async function resubmitRequest(id: string, employeeId: string, ctx: Audit
 		})
 		return tx.request.update({ where: { id }, data: { status: 'PENDING', currentStage: 0 } })
 	})
-	await writeAuditLog(ctx, { action: 'UPDATE', entityType: 'Request', entityId: id, newValue: { status: 'PENDING', resubmitted: true } })
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'Request',
+		entityId: id,
+		newValue: { status: 'PENDING', resubmitted: true }
+	})
 	return updated
 }
 
 // Employee withdraws their own still-pending request.
 export async function cancelRequest(id: string, employeeId: string, ctx: AuditContext) {
-	const req = await db.request.findFirst({ where: { id, employeeId }, select: { id: true, status: true } })
+	const req = await db.request.findFirst({
+		where: { id, employeeId },
+		select: { id: true, status: true }
+	})
 	if (!req) error(404, 'Request not found')
 	if (req.status !== 'PENDING' && req.status !== 'RETURNED') {
 		error(400, 'Only pending or returned requests can be cancelled')
 	}
 	const updated = await db.request.update({ where: { id }, data: { status: 'CANCELLED' } })
-	await writeAuditLog(ctx, { action: 'UPDATE', entityType: 'Request', entityId: id, newValue: { status: 'CANCELLED' } })
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'Request',
+		entityId: id,
+		newValue: { status: 'CANCELLED' }
+	})
 	return updated
 }

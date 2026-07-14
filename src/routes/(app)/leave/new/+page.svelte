@@ -7,9 +7,7 @@
 
 	let selectedLeaveTypeId = $state('')
 
-	let selectedBalance = $derived(
-		data.balances.find((b) => b.leaveTypeId === selectedLeaveTypeId)
-	)
+	let selectedBalance = $derived(data.balances.find((b) => b.leaveTypeId === selectedLeaveTypeId))
 </script>
 
 <svelte:head>
@@ -84,7 +82,9 @@
 		</div>
 
 		<div class="space-y-1">
-			<label for="reason" class="text-sm font-medium">Reason <span class="text-muted-foreground">(optional)</span></label>
+			<label for="reason" class="text-sm font-medium"
+				>Reason <span class="text-muted-foreground">(optional)</span></label
+			>
 			<textarea
 				id="reason"
 				name="reason"
@@ -101,9 +101,7 @@
 			>
 				Submit Request
 			</button>
-			<a href="/leave" class="rounded-md border px-5 py-2 text-sm hover:bg-accent">
-				Cancel
-			</a>
+			<a href="/leave" class="rounded-md border px-5 py-2 text-sm hover:bg-accent"> Cancel </a>
 		</div>
 	</form>
 </div>

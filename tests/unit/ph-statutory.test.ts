@@ -62,7 +62,7 @@ describe('BIR Withholding Tax', () => {
 
 	it('computes tax for 2nd bracket', () => {
 		const tax = computeWithholdingTax(25000)
-		expect(tax).toBeCloseTo(20 * (25000 - 20833) / 100, 0)
+		expect(tax).toBeCloseTo((20 * (25000 - 20833)) / 100, 0)
 	})
 })
 

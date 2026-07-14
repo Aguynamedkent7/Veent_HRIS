@@ -4,7 +4,15 @@
 
 	let { data }: { data: PageData } = $props()
 
-	const ACTIONS = ['CREATE', 'UPDATE', 'DELETE', 'LOGIN', 'LOGIN_FAILED', 'PAYROLL_OVERRIDE', 'LEAVE_OVERRIDE']
+	const ACTIONS = [
+		'CREATE',
+		'UPDATE',
+		'DELETE',
+		'LOGIN',
+		'LOGIN_FAILED',
+		'PAYROLL_OVERRIDE',
+		'LEAVE_OVERRIDE'
+	]
 
 	const totalPages = $derived(Math.max(1, Math.ceil(data.totalCount / data.perPage)))
 
@@ -30,10 +38,7 @@
 	<h1 class="text-2xl font-bold tracking-tight">Audit Log</h1>
 
 	<!-- Filter form -->
-	<form
-		method="GET"
-		class="flex flex-wrap items-end gap-3 rounded-lg border bg-card p-4"
-	>
+	<form method="GET" class="flex flex-wrap items-end gap-3 rounded-lg border bg-card p-4">
 		<!-- Actor -->
 		<div class="flex flex-col gap-1">
 			<label for="actor" class="text-xs font-medium text-muted-foreground">Actor</label>
@@ -157,8 +162,7 @@
 							</td>
 							<td class="px-4 py-3 whitespace-nowrap">
 								<span class="font-medium">{log.actor.email}</span>
-								<span
-									class="ml-1 rounded bg-muted px-1 py-0.5 text-xs text-muted-foreground"
+								<span class="ml-1 rounded bg-muted px-1 py-0.5 text-xs text-muted-foreground"
 									>{log.actor.role}</span
 								>
 							</td>

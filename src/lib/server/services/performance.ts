@@ -130,7 +130,11 @@ export async function submitManagerReview(
 		action: 'UPDATE',
 		entityType: 'PerformanceReview',
 		entityId: id,
-		newValue: { status: updated.status, overallRating: updated.overallRating, completedAt: updated.completedAt }
+		newValue: {
+			status: updated.status,
+			overallRating: updated.overallRating,
+			completedAt: updated.completedAt
+		}
 	})
 
 	return updated
@@ -147,7 +151,12 @@ export async function acknowledgeReview(id: string, employeeId: string, ctx: Aud
 		where: { id },
 		data: { status: 'ACKNOWLEDGED', acknowledgedAt: new Date() }
 	})
-	await writeAuditLog(ctx, { action: 'UPDATE', entityType: 'PerformanceReview', entityId: id, newValue: { status: 'ACKNOWLEDGED' } })
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'PerformanceReview',
+		entityId: id,
+		newValue: { status: 'ACKNOWLEDGED' }
+	})
 	return updated
 }
 
@@ -159,32 +168,60 @@ export async function updateReviewCycleStatus(
 	status: 'DRAFT' | 'ACTIVE' | 'CLOSED',
 	ctx: AuditContext
 ) {
-	const cycle = await db.reviewCycle.findFirst({ where: { id, organizationId }, select: { id: true } })
+	const cycle = await db.reviewCycle.findFirst({
+		where: { id, organizationId },
+		select: { id: true }
+	})
 	if (!cycle) error(404, 'Review cycle not found')
 	const updated = await db.reviewCycle.update({ where: { id }, data: { status } })
-	await writeAuditLog(ctx, { action: 'UPDATE', entityType: 'ReviewCycle', entityId: id, newValue: { status } })
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'ReviewCycle',
+		entityId: id,
+		newValue: { status }
+	})
 	return updated
 }
 
 // Open a review for every active employee who has a manager (reviewer = reportsTo).
 // Idempotent: skips employees already having a review in this cycle.
-export async function openReviewsForCycle(cycleId: string, organizationId: string, ctx: AuditContext) {
-	const cycle = await db.reviewCycle.findFirst({ where: { id: cycleId, organizationId }, select: { id: true } })
+export async function openReviewsForCycle(
+	cycleId: string,
+	organizationId: string,
+	ctx: AuditContext
+) {
+	const cycle = await db.reviewCycle.findFirst({
+		where: { id: cycleId, organizationId },
+		select: { id: true }
+	})
 	if (!cycle) error(404, 'Review cycle not found')
 
 	const employees = await db.employee.findMany({
 		where: { user: { organizationId }, employmentStatus: 'ACTIVE', reportsToId: { not: null } },
 		select: { id: true, reportsToId: true }
 	})
-	const existing = await db.performanceReview.findMany({ where: { cycleId }, select: { employeeId: true } })
+	const existing = await db.performanceReview.findMany({
+		where: { cycleId },
+		select: { employeeId: true }
+	})
 	const seen = new Set(existing.map((r) => r.employeeId))
 
 	const toCreate = employees
 		.filter((e) => !seen.has(e.id))
-		.map((e) => ({ cycleId, employeeId: e.id, reviewerId: e.reportsToId!, status: 'PENDING' as const }))
+		.map((e) => ({
+			cycleId,
+			employeeId: e.id,
+			reviewerId: e.reportsToId!,
+			status: 'PENDING' as const
+		}))
 
 	if (toCreate.length) await db.performanceReview.createMany({ data: toCreate })
-	await writeAuditLog(ctx, { action: 'UPDATE', entityType: 'ReviewCycle', entityId: cycleId, newValue: { reviewsOpened: toCreate.length } })
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'ReviewCycle',
+		entityId: cycleId,
+		newValue: { reviewsOpened: toCreate.length }
+	})
 	return { opened: toCreate.length, skipped: employees.length - toCreate.length }
 }
 
@@ -208,7 +245,13 @@ export async function listGoalsForEmployee(employeeId: string) {
 
 export async function createGoal(
 	employeeId: string,
-	data: { title: string; description?: string; category?: string; cycleId?: string; targetDate?: Date },
+	data: {
+		title: string
+		description?: string
+		category?: string
+		cycleId?: string
+		targetDate?: Date
+	},
 	ctx: AuditContext
 ) {
 	const goal = await db.goal.create({

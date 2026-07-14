@@ -27,7 +27,15 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
 	if (!myEmployee) {
-		return { myGoals: [], myReviews: [], reviewsToGive: [], teamGoals: [], isManager, isAdmin, cycles }
+		return {
+			myGoals: [],
+			myReviews: [],
+			reviewsToGive: [],
+			teamGoals: [],
+			isManager,
+			isAdmin,
+			cycles
+		}
 	}
 
 	const [myGoals, myReviews, reviewsToGive, teamGoals] = await Promise.all([
@@ -41,7 +49,12 @@ export const load: PageServerLoad = async ({ locals }) => {
 }
 
 function ctxOf(locals: App.Locals, ip: string) {
-	return { organizationId: locals.user!.organizationId, actorId: locals.user!.id, actorRole: locals.user!.role, ipAddress: ip }
+	return {
+		organizationId: locals.user!.organizationId,
+		actorId: locals.user!.id,
+		actorRole: locals.user!.role,
+		ipAddress: ip
+	}
 }
 
 const createGoalSchema = z.object({
@@ -114,7 +127,11 @@ export const actions: Actions = {
 			.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(422, { error: 'Invalid cycle details' })
 		try {
-			await createReviewCycle(locals.user!.organizationId, parsed.data, ctxOf(locals, getClientAddress()))
+			await createReviewCycle(
+				locals.user!.organizationId,
+				parsed.data,
+				ctxOf(locals, getClientAddress())
+			)
 		} catch (e: unknown) {
 			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
 			throw e
@@ -127,9 +144,15 @@ export const actions: Actions = {
 		const data = await request.formData()
 		const id = data.get('id') as string
 		const status = data.get('status') as 'DRAFT' | 'ACTIVE' | 'CLOSED'
-		if (!id || !['DRAFT', 'ACTIVE', 'CLOSED'].includes(status)) return fail(400, { error: 'Invalid status' })
+		if (!id || !['DRAFT', 'ACTIVE', 'CLOSED'].includes(status))
+			return fail(400, { error: 'Invalid status' })
 		try {
-			await updateReviewCycleStatus(id, locals.user!.organizationId, status, ctxOf(locals, getClientAddress()))
+			await updateReviewCycleStatus(
+				id,
+				locals.user!.organizationId,
+				status,
+				ctxOf(locals, getClientAddress())
+			)
 		} catch (e: unknown) {
 			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
 			throw e
@@ -142,7 +165,11 @@ export const actions: Actions = {
 		const id = (await request.formData()).get('id') as string
 		if (!id) return fail(400, { error: 'Missing cycle id' })
 		try {
-			const res = await openReviewsForCycle(id, locals.user!.organizationId, ctxOf(locals, getClientAddress()))
+			const res = await openReviewsForCycle(
+				id,
+				locals.user!.organizationId,
+				ctxOf(locals, getClientAddress())
+			)
 			return { opened: res.opened }
 		} catch (e: unknown) {
 			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })

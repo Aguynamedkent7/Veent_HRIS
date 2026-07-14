@@ -34,12 +34,18 @@ export async function applyApprovedRequest(req: ApprovedRequest, ctx: AuditConte
 		const payload = (req.payload ?? {}) as { leaveTypeId?: string; totalDays?: number }
 		if (!payload.leaveTypeId || !payload.totalDays || !req.dateFrom) return
 		const year = req.dateFrom.getFullYear()
-		await db.$transaction((tx) => deductLeaveBalance(tx, req.employeeId, payload.leaveTypeId!, year, payload.totalDays!))
+		await db.$transaction((tx) =>
+			deductLeaveBalance(tx, req.employeeId, payload.leaveTypeId!, year, payload.totalDays!)
+		)
 		await writeAuditLog(ctx, {
 			action: 'UPDATE',
 			entityType: 'LeaveBalance',
 			entityId: req.employeeId,
-			newValue: { leaveTypeId: payload.leaveTypeId, deducted: payload.totalDays, viaRequest: req.id }
+			newValue: {
+				leaveTypeId: payload.leaveTypeId,
+				deducted: payload.totalDays,
+				viaRequest: req.id
+			}
 		})
 		return
 	}
@@ -49,7 +55,10 @@ export async function applyApprovedRequest(req: ApprovedRequest, ctx: AuditConte
 		if (!payload.field || payload.requestedValue == null) return
 		const column = resolveInfoUpdateColumn(payload.field)
 		if (!column) return // unmapped/sensitive field — recorded on the request, applied later (T164)
-		await db.employee.update({ where: { id: req.employeeId }, data: { [column]: payload.requestedValue } })
+		await db.employee.update({
+			where: { id: req.employeeId },
+			data: { [column]: payload.requestedValue }
+		})
 		await writeAuditLog(ctx, {
 			action: 'UPDATE',
 			entityType: 'Employee',

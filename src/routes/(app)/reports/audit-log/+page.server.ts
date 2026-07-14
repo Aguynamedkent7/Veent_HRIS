@@ -12,7 +12,9 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const actorId = url.searchParams.get('actor') ?? undefined
 	const entityType = url.searchParams.get('entity') ?? undefined
 	const action = url.searchParams.get('action') ?? undefined
-	const startDate = url.searchParams.get('start') ? new Date(url.searchParams.get('start')!) : undefined
+	const startDate = url.searchParams.get('start')
+		? new Date(url.searchParams.get('start')!)
+		: undefined
 	const endDate = url.searchParams.get('end') ? new Date(url.searchParams.get('end')!) : undefined
 
 	const where = {
@@ -39,11 +41,22 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	])
 
 	// Redact old/new values for HR_ADMIN (only SUPER_ADMIN sees them)
-	const sanitizedLogs = logs.map((log: { id: string; action: string; entityType: string; entityId: string; oldValue: unknown; newValue: unknown; createdAt: Date; actor: { email: string; role: string } }) => ({
-		...log,
-		oldValue: isSuperAdmin ? log.oldValue : null,
-		newValue: isSuperAdmin ? log.newValue : null
-	}))
+	const sanitizedLogs = logs.map(
+		(log: {
+			id: string
+			action: string
+			entityType: string
+			entityId: string
+			oldValue: unknown
+			newValue: unknown
+			createdAt: Date
+			actor: { email: string; role: string }
+		}) => ({
+			...log,
+			oldValue: isSuperAdmin ? log.oldValue : null,
+			newValue: isSuperAdmin ? log.newValue : null
+		})
+	)
 
 	return {
 		logs: sanitizedLogs,
@@ -51,6 +64,15 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		actors,
 		page,
 		perPage,
-		entityTypes: ['Employee', 'Timesheet', 'Request', 'LeaveRequest', 'PayrollRun', 'JobPosting', 'Applicant', 'Department']
+		entityTypes: [
+			'Employee',
+			'Timesheet',
+			'Request',
+			'LeaveRequest',
+			'PayrollRun',
+			'JobPosting',
+			'Applicant',
+			'Department'
+		]
 	}
 }

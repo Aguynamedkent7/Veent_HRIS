@@ -30,7 +30,10 @@
 			<p class="text-sm text-muted-foreground">Manage public holidays for payroll computation.</p>
 		</div>
 		<button
-			onclick={() => { showAddForm = !showAddForm; editingId = null }}
+			onclick={() => {
+				showAddForm = !showAddForm
+				editingId = null
+			}}
 			class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
 		>
 			{showAddForm ? 'Cancel' : 'Add Holiday'}
@@ -38,7 +41,9 @@
 	</div>
 
 	{#if form?.error}
-		<div class="rounded-md border border-destructive bg-destructive/10 px-4 py-3 text-sm text-destructive">
+		<div
+			class="rounded-md border border-destructive bg-destructive/10 px-4 py-3 text-sm text-destructive"
+		>
 			{form.error}
 		</div>
 	{/if}
@@ -173,7 +178,11 @@
 											class="mt-0.5 flex h-8 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 										>
 											<option value="REGULAR" selected={holiday.type === 'REGULAR'}>Regular</option>
-											<option value="SPECIAL_NON_WORKING" selected={holiday.type === 'SPECIAL_NON_WORKING'}>Special Non-Working</option>
+											<option
+												value="SPECIAL_NON_WORKING"
+												selected={holiday.type === 'SPECIAL_NON_WORKING'}
+												>Special Non-Working</option
+											>
 										</select>
 									</div>
 									<div class="flex gap-2">
@@ -199,7 +208,11 @@
 							<td class="px-4 py-3 text-muted-foreground">{formatShortDate(holiday.date)}</td>
 							<td class="px-4 py-3 font-medium">{holiday.name}</td>
 							<td class="px-4 py-3">
-								<span class="rounded-full px-2 py-0.5 text-xs font-medium {typeBadgeClass(holiday.type)}">
+								<span
+									class="rounded-full px-2 py-0.5 text-xs font-medium {typeBadgeClass(
+										holiday.type
+									)}"
+								>
 									{typeLabel(holiday.type)}
 								</span>
 							</td>
@@ -215,7 +228,9 @@
 										<input type="hidden" name="id" value={holiday.id} />
 										<button
 											type="submit"
-											onclick={(e) => { if (!confirm(`Delete "${holiday.name}"?`)) e.preventDefault() }}
+											onclick={(e) => {
+												if (!confirm(`Delete "${holiday.name}"?`)) e.preventDefault()
+											}}
 											class="text-xs text-destructive hover:underline"
 										>
 											Delete

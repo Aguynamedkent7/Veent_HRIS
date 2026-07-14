@@ -29,8 +29,17 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 	const enrollment = await enrollEmployee(
 		parsed.data.employeeId,
 		parsed.data.benefitPlanId,
-		{ coverageLevel: parsed.data.coverageLevel, effectiveDate: parsed.data.effectiveDate, status: parsed.data.status },
-		{ organizationId: user.organizationId, actorId: user.id, actorRole: user.role, ipAddress: getClientAddress() }
+		{
+			coverageLevel: parsed.data.coverageLevel,
+			effectiveDate: parsed.data.effectiveDate,
+			status: parsed.data.status
+		},
+		{
+			organizationId: user.organizationId,
+			actorId: user.id,
+			actorRole: user.role,
+			ipAddress: getClientAddress()
+		}
 	)
 	return json({ enrollment }, { status: 201 })
 }

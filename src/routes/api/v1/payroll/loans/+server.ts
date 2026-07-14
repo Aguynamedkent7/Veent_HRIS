@@ -40,13 +40,24 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 	const parsed = createSchema.safeParse(body)
 	if (!parsed.success) return badRequest('Invalid input', parsed.error.flatten())
 
-	const ctx = { organizationId: locals.user.organizationId, actorId: locals.user.id, actorRole: locals.user.role, ipAddress: getClientAddress() }
+	const ctx = {
+		organizationId: locals.user.organizationId,
+		actorId: locals.user.id,
+		actorRole: locals.user.role,
+		ipAddress: getClientAddress()
+	}
 	try {
-		const loan = await createLoan(parsed.data.employeeId, locals.user.organizationId, parsed.data, ctx)
+		const loan = await createLoan(
+			parsed.data.employeeId,
+			locals.user.organizationId,
+			parsed.data,
+			ctx
+		)
 		return json({ data: loan }, { status: 201 })
 	} catch (e: unknown) {
 		const err = e as { status?: number; body?: { message?: string } }
-		if (err?.status && [400, 404].includes(err.status)) return apiError(err.status, err.body?.message ?? 'Error')
+		if (err?.status && [400, 404].includes(err.status))
+			return apiError(err.status, err.body?.message ?? 'Error')
 		throw e
 	}
 }

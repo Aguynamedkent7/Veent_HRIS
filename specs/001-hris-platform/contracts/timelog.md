@@ -14,29 +14,32 @@
 **Auth**: HMAC-SHA256 over `` `${timestamp}.${rawBody}` `` using `TIMELOG_API_SECRET`. Headers: `x-hris-signature` (hex), `x-hris-timestamp` (unix seconds). Replay window ±300s. 401 if invalid/missing/stale.
 
 **Request body**:
+
 ```json
 {
-  "discordId": "string",
-  "punchType": "IN | OUT | BREAK",
-  "timestamp": "ISO8601 | null",
-  "messageId": "string | null"
+	"discordId": "string",
+	"punchType": "IN | OUT | BREAK",
+	"timestamp": "ISO8601 | null",
+	"messageId": "string | null"
 }
 ```
+
 `timestamp` defaults to server now. `BREAK` is a toggle — the server resolves it to
 `BREAK_START`/`BREAK_END` from the member's last punch and returns the resolved `punchType`.
 
 **Behavior**: Resolves the Employee by `discordId` (must be `ACTIVE`); inserts a raw `TimeLog` (stored UTC). Timestamps are bucketed to Philippine Standard Time (UTC+8) at aggregation.
 
 **Response 201**:
+
 ```json
 {
-  "data": {
-    "id": "uuid",
-    "punchType": "IN | OUT",
-    "timestamp": "ISO8601",
-    "employee": { "id": "uuid", "firstName": "string", "lastName": "string" },
-    "previousType": "IN | OUT | null"
-  }
+	"data": {
+		"id": "uuid",
+		"punchType": "IN | OUT",
+		"timestamp": "ISO8601",
+		"employee": { "id": "uuid", "firstName": "string", "lastName": "string" },
+		"previousType": "IN | OUT | null"
+	}
 }
 ```
 
@@ -66,6 +69,7 @@ INTENDED. Build a weekly draft timesheet from raw Discord punches.
 **Roles**: `HR_ADMIN`, `SUPER_ADMIN` (or the owner for their own week)
 
 **Request body**:
+
 ```json
 { "employeeId": "uuid", "weekOf": "2025-07-07" }
 ```
@@ -73,12 +77,13 @@ INTENDED. Build a weekly draft timesheet from raw Discord punches.
 **Behavior**: Pairs IN/OUT punches per PHT day (overnight shifts count toward the IN day; missing-OUT/stray-OUT produce warnings), upserts a `DRAFT` weekly `Timesheet` + one `TimesheetEntry` per worked day, and links the punches. Refuses to touch a non-`DRAFT` timesheet.
 
 **Response 200**:
+
 ```json
 {
-  "timesheet": { "...": "..." },
-  "hoursByDay": { "2025-07-07": 8 },
-  "totalHours": 40,
-  "warnings": ["string"]
+	"timesheet": { "...": "..." },
+	"hoursByDay": { "2025-07-07": 8 },
+	"totalHours": 40,
+	"warnings": ["string"]
 }
 ```
 

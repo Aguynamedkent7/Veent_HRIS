@@ -15,40 +15,46 @@ export const load: PageServerLoad = async ({ locals }) => {
 	const todayKey = manilaDayKey(new Date())
 	const today = new Date(`${todayKey}T00:00:00Z`)
 
-	const [headcount, onLeaveToday, pendingRequests, pendingTimesheets, lastPayrollRun, attendanceGroups] =
-		await Promise.all([
-			db.employee.count({
-				where: { user: { organizationId: orgId }, employmentStatus: 'ACTIVE' }
-			}),
-			// Employees on approved leave that spans today.
-			db.request.count({
-				where: {
-					employee: { user: { organizationId: orgId } },
-					type: 'LEAVE',
-					status: 'APPROVED',
-					dateFrom: { lte: today },
-					dateTo: { gte: today }
-				}
-			}),
-			// All pending requests (leave, OT, etc.) awaiting a decision.
-			db.request.count({
-				where: { employee: { user: { organizationId: orgId } }, status: 'PENDING' }
-			}),
-			db.timesheet.count({
-				where: { employee: { user: { organizationId: orgId } }, status: 'SUBMITTED' }
-			}),
-			db.payrollRun.findFirst({
-				where: { organizationId: orgId },
-				orderBy: { createdAt: 'desc' },
-				select: { periodStart: true, periodEnd: true, status: true, totalNet: true }
-			}),
-			// Today's derived attendance, grouped by status.
-			db.attendanceDay.groupBy({
-				by: ['status'],
-				where: { date: today, employee: { user: { organizationId: orgId } } },
-				_count: { _all: true }
-			})
-		])
+	const [
+		headcount,
+		onLeaveToday,
+		pendingRequests,
+		pendingTimesheets,
+		lastPayrollRun,
+		attendanceGroups
+	] = await Promise.all([
+		db.employee.count({
+			where: { user: { organizationId: orgId }, employmentStatus: 'ACTIVE' }
+		}),
+		// Employees on approved leave that spans today.
+		db.request.count({
+			where: {
+				employee: { user: { organizationId: orgId } },
+				type: 'LEAVE',
+				status: 'APPROVED',
+				dateFrom: { lte: today },
+				dateTo: { gte: today }
+			}
+		}),
+		// All pending requests (leave, OT, etc.) awaiting a decision.
+		db.request.count({
+			where: { employee: { user: { organizationId: orgId } }, status: 'PENDING' }
+		}),
+		db.timesheet.count({
+			where: { employee: { user: { organizationId: orgId } }, status: 'SUBMITTED' }
+		}),
+		db.payrollRun.findFirst({
+			where: { organizationId: orgId },
+			orderBy: { createdAt: 'desc' },
+			select: { periodStart: true, periodEnd: true, status: true, totalNet: true }
+		}),
+		// Today's derived attendance, grouped by status.
+		db.attendanceDay.groupBy({
+			by: ['status'],
+			where: { date: today, employee: { user: { organizationId: orgId } } },
+			_count: { _all: true }
+		})
+	])
 
 	const attStatus = (s: string) => attendanceGroups.find((g) => g.status === s)?._count._all ?? 0
 	const attendance = {
@@ -87,7 +93,8 @@ export const actions: Actions = {
 		requireRole(user.role, 'HR_ADMIN', 'SUPER_ADMIN')
 
 		const parsed = announcementSchema.safeParse(Object.fromEntries(await request.formData()))
-		if (!parsed.success) return fail(422, { error: parsed.error.errors[0]?.message ?? 'Invalid input' })
+		if (!parsed.success)
+			return fail(422, { error: parsed.error.errors[0]?.message ?? 'Invalid input' })
 
 		await createAnnouncement(user.organizationId, parsed.data, {
 			organizationId: user.organizationId,

@@ -28,8 +28,14 @@ export const load: PageServerLoad = async ({ locals }) => {
 const updateSchema = z.object({
 	firstName: z.string().min(1).optional(),
 	lastName: z.string().min(1).optional(),
-	contactPhone: z.string().optional().transform((v) => v || undefined),
-	contactAddress: z.string().optional().transform((v) => v || undefined),
+	contactPhone: z
+		.string()
+		.optional()
+		.transform((v) => v || undefined),
+	contactAddress: z
+		.string()
+		.optional()
+		.transform((v) => v || undefined),
 	dateOfBirth: z
 		.string()
 		.optional()

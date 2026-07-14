@@ -26,7 +26,12 @@ export const PATCH: RequestHandler = async ({ locals, params, request, getClient
 	const parsed = patchSchema.safeParse(body)
 	if (!parsed.success) return badRequest('Invalid input', parsed.error.flatten())
 
-	const ctx = { organizationId: locals.user.organizationId, actorId: locals.user.id, actorRole: locals.user.role, ipAddress: getClientAddress() }
+	const ctx = {
+		organizationId: locals.user.organizationId,
+		actorId: locals.user.id,
+		actorRole: locals.user.role,
+		ipAddress: getClientAddress()
+	}
 	try {
 		const ca = await updateCashAdvance(params.id, locals.user.organizationId, parsed.data, ctx)
 		return json({ data: ca })

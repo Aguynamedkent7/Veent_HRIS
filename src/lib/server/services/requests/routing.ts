@@ -9,11 +9,23 @@ export type StageSpec = { kind: 'SUPERVISOR' } | { kind: 'ROLE'; role: Role }
 // per-org/department. OT and Holiday-work reach Payroll because they change pay.
 export const DEFAULT_ROUTING: Record<RequestType, StageSpec[]> = {
 	LEAVE: [{ kind: 'SUPERVISOR' }, { kind: 'ROLE', role: 'HR_ADMIN' }],
-	OVERTIME: [{ kind: 'SUPERVISOR' }, { kind: 'ROLE', role: 'HR_ADMIN' }, { kind: 'ROLE', role: 'PAYROLL_OFFICER' }],
+	OVERTIME: [
+		{ kind: 'SUPERVISOR' },
+		{ kind: 'ROLE', role: 'HR_ADMIN' },
+		{ kind: 'ROLE', role: 'PAYROLL_OFFICER' }
+	],
 	UNDERTIME: [{ kind: 'SUPERVISOR' }, { kind: 'ROLE', role: 'HR_ADMIN' }],
 	OFFICIAL_BUSINESS: [{ kind: 'SUPERVISOR' }, { kind: 'ROLE', role: 'HR_ADMIN' }],
-	REST_DAY_WORK: [{ kind: 'SUPERVISOR' }, { kind: 'ROLE', role: 'HR_ADMIN' }, { kind: 'ROLE', role: 'PAYROLL_OFFICER' }],
-	HOLIDAY_WORK: [{ kind: 'SUPERVISOR' }, { kind: 'ROLE', role: 'HR_ADMIN' }, { kind: 'ROLE', role: 'PAYROLL_OFFICER' }],
+	REST_DAY_WORK: [
+		{ kind: 'SUPERVISOR' },
+		{ kind: 'ROLE', role: 'HR_ADMIN' },
+		{ kind: 'ROLE', role: 'PAYROLL_OFFICER' }
+	],
+	HOLIDAY_WORK: [
+		{ kind: 'SUPERVISOR' },
+		{ kind: 'ROLE', role: 'HR_ADMIN' },
+		{ kind: 'ROLE', role: 'PAYROLL_OFFICER' }
+	],
 	INFO_UPDATE: [{ kind: 'ROLE', role: 'HR_ADMIN' }]
 }
 

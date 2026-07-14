@@ -1,9 +1,16 @@
 import { describe, it, expect } from 'vitest'
 import { computeEarnings } from '$lib/server/services/payroll/earnings'
-import { emptyAttendance, type EmployeeComp, type AttendanceInput } from '$lib/server/services/payroll/types'
+import {
+	emptyAttendance,
+	type EmployeeComp,
+	type AttendanceInput
+} from '$lib/server/services/payroll/types'
 
 const comp: EmployeeComp = { basicMonthlySalary: 30000, rateType: 'MONTHLY' } // 30000/(22*8) = 170.4545/hr
-const att = (over: Partial<AttendanceInput> = {}): AttendanceInput => ({ ...emptyAttendance(), ...over })
+const att = (over: Partial<AttendanceInput> = {}): AttendanceInput => ({
+	...emptyAttendance(),
+	...over
+})
 const amt = (r: ReturnType<typeof computeEarnings>, code: string) =>
 	r.components.find((c) => c.code === code)?.amount ?? 0
 
@@ -15,7 +22,10 @@ describe('computeEarnings — hourly rate + basic', () => {
 	})
 
 	it('respects custom working days/hours', () => {
-		const r = computeEarnings({ ...comp, monthlyWorkingDays: 20, dailyWorkingHours: 8 }, att({ regularHours: 8 }))
+		const r = computeEarnings(
+			{ ...comp, monthlyWorkingDays: 20, dailyWorkingHours: 8 },
+			att({ regularHours: 8 })
+		)
 		// 30000/(20*8)=187.5/hr → 8h = 1500
 		expect(amt(r, 'BASIC')).toBeCloseTo(1500, 2)
 	})
@@ -24,35 +34,57 @@ describe('computeEarnings — hourly rate + basic', () => {
 describe('computeEarnings — premiums use DOLE default multipliers', () => {
 	const hr = 30000 / (22 * 8)
 	it('overtime = base × 1.25', () => {
-		expect(amt(computeEarnings(comp, att({ overtimeHours: 10 })), 'OT')).toBeCloseTo(10 * hr * 1.25, 2)
+		expect(amt(computeEarnings(comp, att({ overtimeHours: 10 })), 'OT')).toBeCloseTo(
+			10 * hr * 1.25,
+			2
+		)
 	})
 	it('night differential = base × 0.10 (premium only)', () => {
-		expect(amt(computeEarnings(comp, att({ nightDiffHours: 8 })), 'NIGHT_DIFF')).toBeCloseTo(8 * hr * 0.1, 2)
+		expect(amt(computeEarnings(comp, att({ nightDiffHours: 8 })), 'NIGHT_DIFF')).toBeCloseTo(
+			8 * hr * 0.1,
+			2
+		)
 	})
 	it('rest day = base × 1.30', () => {
-		expect(amt(computeEarnings(comp, att({ restDayHours: 8 })), 'REST_DAY')).toBeCloseTo(8 * hr * 1.3, 2)
+		expect(amt(computeEarnings(comp, att({ restDayHours: 8 })), 'REST_DAY')).toBeCloseTo(
+			8 * hr * 1.3,
+			2
+		)
 	})
 	it('regular holiday = base × 2.00', () => {
-		expect(amt(computeEarnings(comp, att({ regularHolidayHours: 8 })), 'REG_HOLIDAY')).toBeCloseTo(8 * hr * 2, 2)
+		expect(amt(computeEarnings(comp, att({ regularHolidayHours: 8 })), 'REG_HOLIDAY')).toBeCloseTo(
+			8 * hr * 2,
+			2
+		)
 	})
 	it('special holiday = base × 1.30', () => {
-		expect(amt(computeEarnings(comp, att({ specialHolidayHours: 8 })), 'SPECIAL_HOLIDAY')).toBeCloseTo(8 * hr * 1.3, 2)
+		expect(
+			amt(computeEarnings(comp, att({ specialHolidayHours: 8 })), 'SPECIAL_HOLIDAY')
+		).toBeCloseTo(8 * hr * 1.3, 2)
 	})
 })
 
 describe('computeEarnings — stacked day-type overtime', () => {
 	const hr = 30000 / (22 * 8)
 	it('rest-day OT = base × restDay × overtimePremium (1.69)', () => {
-		expect(amt(computeEarnings(comp, att({ restDayOtHours: 4 })), 'REST_DAY_OT')).toBeCloseTo(4 * hr * 1.3 * 1.3, 2)
+		expect(amt(computeEarnings(comp, att({ restDayOtHours: 4 })), 'REST_DAY_OT')).toBeCloseTo(
+			4 * hr * 1.3 * 1.3,
+			2
+		)
 	})
 	it('regular-holiday OT = base × 2.00 × 1.30 (2.60)', () => {
-		expect(amt(computeEarnings(comp, att({ regularHolidayOtHours: 2 })), 'REG_HOLIDAY_OT')).toBeCloseTo(2 * hr * 2 * 1.3, 2)
+		expect(
+			amt(computeEarnings(comp, att({ regularHolidayOtHours: 2 })), 'REG_HOLIDAY_OT')
+		).toBeCloseTo(2 * hr * 2 * 1.3, 2)
 	})
 })
 
 describe('computeEarnings — taxability + totals', () => {
 	it('allowances are non-taxable; incentives are taxable', () => {
-		const r = computeEarnings(comp, att({ regularHours: 80 }), { allowances: 2000, incentives: 1500 })
+		const r = computeEarnings(comp, att({ regularHours: 80 }), {
+			allowances: 2000,
+			incentives: 1500
+		})
 		expect(amt(r, 'ALLOWANCE')).toBe(2000)
 		expect(amt(r, 'INCENTIVE')).toBe(1500)
 		expect(r.gross).toBeCloseTo(r.taxableGross + r.nonTaxableGross, 2)

@@ -17,11 +17,25 @@ import { canViewPayrollReports } from '$lib/server/rbac'
 import type { PageServerLoad } from './$types'
 
 const VALID_TYPES = [
-	'headcount', 'attendance', 'payroll-costs', 'leave-utilization', 'payroll-register',
-	'tardiness', 'overtime', 'loan-summary', 'government-remittance', 'bir-withholding'
+	'headcount',
+	'attendance',
+	'payroll-costs',
+	'leave-utilization',
+	'payroll-register',
+	'tardiness',
+	'overtime',
+	'loan-summary',
+	'government-remittance',
+	'bir-withholding'
 ] as const
 // Payroll reports are visible to Payroll Officer / Finance; the rest are HR-only.
-const PAYROLL_REPORT_TYPES = ['payroll-costs', 'payroll-register', 'loan-summary', 'government-remittance', 'bir-withholding']
+const PAYROLL_REPORT_TYPES = [
+	'payroll-costs',
+	'payroll-register',
+	'loan-summary',
+	'government-remittance',
+	'bir-withholding'
+]
 
 export const load: PageServerLoad = async ({ locals, params, url }) => {
 	const user = locals.user!
@@ -40,9 +54,7 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 	const startDate = url.searchParams.get('start')
 		? new Date(url.searchParams.get('start')!)
 		: new Date(new Date().getFullYear(), 0, 1)
-	const endDate = url.searchParams.get('end')
-		? new Date(url.searchParams.get('end')!)
-		: new Date()
+	const endDate = url.searchParams.get('end') ? new Date(url.searchParams.get('end')!) : new Date()
 	const departmentId = url.searchParams.get('department') ?? undefined
 
 	// Load departments for the filter selector
@@ -69,7 +81,17 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		columns = ['LeaveType', 'TotalDaysUsed', 'EmployeeCount']
 	} else if (type === 'payroll-register') {
 		results = await generatePayrollRegister(user.organizationId, { startDate, endDate })
-		columns = ['Employee', 'Period', 'Gross', 'SSS', 'PhilHealth', 'PagIBIG', 'Tax', 'OtherDeductions', 'Net']
+		columns = [
+			'Employee',
+			'Period',
+			'Gross',
+			'SSS',
+			'PhilHealth',
+			'PagIBIG',
+			'Tax',
+			'OtherDeductions',
+			'Net'
+		]
 	} else if (type === 'tardiness') {
 		results = await generateTardiness(user.organizationId, { startDate, endDate, departmentId })
 		columns = ['Employee', 'LateDays', 'LateMinutes', 'UndertimeMinutes']

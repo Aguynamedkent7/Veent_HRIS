@@ -15,8 +15,14 @@
 <div class="space-y-6">
 	<div class="flex items-center gap-4">
 		<a href="/payroll" class="text-sm text-muted-foreground hover:text-foreground">← Payroll</a>
-		<h1 class="text-2xl font-bold">{formatShortDate(run.periodStart)} – {formatShortDate(run.periodEnd)}</h1>
-		<span class="rounded-full px-2.5 py-1 text-xs font-medium {run.status === 'APPROVED' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}">
+		<h1 class="text-2xl font-bold">
+			{formatShortDate(run.periodStart)} – {formatShortDate(run.periodEnd)}
+		</h1>
+		<span
+			class="rounded-full px-2.5 py-1 text-xs font-medium {run.status === 'APPROVED'
+				? 'bg-green-100 text-green-700'
+				: 'bg-blue-100 text-blue-700'}"
+		>
 			{run.status}
 		</span>
 		{#if run.hasOverride}
@@ -35,7 +41,9 @@
 		</div>
 		<div class="rounded-lg border bg-card p-4">
 			<p class="text-sm text-muted-foreground">Total Net Pay</p>
-			<p class="text-xl font-bold font-mono text-green-700">{formatCurrency(Number(run.totalNet))}</p>
+			<p class="text-xl font-bold font-mono text-green-700">
+				{formatCurrency(Number(run.totalNet))}
+			</p>
 		</div>
 	</div>
 
@@ -58,20 +66,35 @@
 					<tr class="hover:bg-muted/30 {entry.isFlagged ? 'bg-yellow-50' : ''}">
 						<td class="px-4 py-3">
 							<div class="font-medium">{entry.employee.lastName}, {entry.employee.firstName}</div>
-							<div class="text-xs text-muted-foreground">{entry.employee.employeeNumber} · {entry.employee.department.name}</div>
+							<div class="text-xs text-muted-foreground">
+								{entry.employee.employeeNumber} · {entry.employee.department.name}
+							</div>
 							{#if entry.isFlagged}
 								<div class="text-xs text-yellow-600">⚠ {entry.flagReason}</div>
 							{/if}
 						</td>
 						<td class="px-4 py-3 text-right font-mono">{formatCurrency(Number(entry.grossPay))}</td>
-						<td class="px-4 py-3 text-right font-mono text-muted-foreground">{formatCurrency(Number(entry.sssEe))}</td>
-						<td class="px-4 py-3 text-right font-mono text-muted-foreground">{formatCurrency(Number(entry.philhealthEe))}</td>
-						<td class="px-4 py-3 text-right font-mono text-muted-foreground">{formatCurrency(Number(entry.pagibigEe))}</td>
-						<td class="px-4 py-3 text-right font-mono text-muted-foreground">{formatCurrency(Number(entry.withholdingTax))}</td>
-						<td class="px-4 py-3 text-right font-mono font-medium">{formatCurrency(Number(entry.netPay))}</td>
+						<td class="px-4 py-3 text-right font-mono text-muted-foreground"
+							>{formatCurrency(Number(entry.sssEe))}</td
+						>
+						<td class="px-4 py-3 text-right font-mono text-muted-foreground"
+							>{formatCurrency(Number(entry.philhealthEe))}</td
+						>
+						<td class="px-4 py-3 text-right font-mono text-muted-foreground"
+							>{formatCurrency(Number(entry.pagibigEe))}</td
+						>
+						<td class="px-4 py-3 text-right font-mono text-muted-foreground"
+							>{formatCurrency(Number(entry.withholdingTax))}</td
+						>
+						<td class="px-4 py-3 text-right font-mono font-medium"
+							>{formatCurrency(Number(entry.netPay))}</td
+						>
 						<td class="px-4 py-3">
 							{#if run.status !== 'APPROVED'}
-								<button onclick={() => (overrideEntryId = entry.id)} class="text-xs text-primary hover:underline">Override</button>
+								<button
+									onclick={() => (overrideEntryId = entry.id)}
+									class="text-xs text-primary hover:underline">Override</button
+								>
 							{/if}
 						</td>
 					</tr>
@@ -82,14 +105,32 @@
 									<input type="hidden" name="entryId" value={entry.id} />
 									<div>
 										<label class="text-xs font-medium">Override Net Pay</label>
-										<input name="netPay" type="number" step="0.01" value={Number(entry.netPay)} class="mt-1 flex h-8 w-36 rounded border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
+										<input
+											name="netPay"
+											type="number"
+											step="0.01"
+											value={Number(entry.netPay)}
+											class="mt-1 flex h-8 w-36 rounded border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+										/>
 									</div>
 									<div class="flex-1">
 										<label class="text-xs font-medium">Reason (required)</label>
-										<input name="note" required class="mt-1 flex h-8 w-full rounded border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
+										<input
+											name="note"
+											required
+											class="mt-1 flex h-8 w-full rounded border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+										/>
 									</div>
-									<button type="submit" class="rounded bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90">Save</button>
-									<button type="button" onclick={() => (overrideEntryId = null)} class="rounded border px-3 py-1.5 text-xs hover:bg-accent">Cancel</button>
+									<button
+										type="submit"
+										class="rounded bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+										>Save</button
+									>
+									<button
+										type="button"
+										onclick={() => (overrideEntryId = null)}
+										class="rounded border px-3 py-1.5 text-xs hover:bg-accent">Cancel</button
+									>
 								</form>
 							</td>
 						</tr>

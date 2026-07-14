@@ -29,7 +29,12 @@ export const load: PageServerLoad = async ({ locals }) => {
 }
 
 function ctxOf(locals: App.Locals, ip: string) {
-	return { organizationId: locals.user!.organizationId, actorId: locals.user!.id, actorRole: locals.user!.role, ipAddress: ip }
+	return {
+		organizationId: locals.user!.organizationId,
+		actorId: locals.user!.id,
+		actorRole: locals.user!.role,
+		ipAddress: ip
+	}
 }
 
 const createPlanSchema = z.object({
@@ -73,10 +78,15 @@ export const actions: Actions = {
 		if (!parsed.success) return fail(422, { error: 'Invalid enrollment details' })
 
 		try {
-			await enrollEmployee(parsed.data.employeeId, parsed.data.benefitPlanId, {
-				coverageLevel: parsed.data.coverageLevel,
-				effectiveDate: parsed.data.effectiveDate
-			}, ctxOf(locals, getClientAddress()))
+			await enrollEmployee(
+				parsed.data.employeeId,
+				parsed.data.benefitPlanId,
+				{
+					coverageLevel: parsed.data.coverageLevel,
+					effectiveDate: parsed.data.effectiveDate
+				},
+				ctxOf(locals, getClientAddress())
+			)
 		} catch (e: unknown) {
 			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
 			throw e
@@ -89,10 +99,16 @@ export const actions: Actions = {
 		const data = await request.formData()
 		const id = data.get('id') as string
 		const status = data.get('status') as 'ACTIVE' | 'WAIVED' | 'TERMINATED'
-		if (!id || !['ACTIVE', 'WAIVED', 'TERMINATED'].includes(status)) return fail(400, { error: 'Invalid status change' })
+		if (!id || !['ACTIVE', 'WAIVED', 'TERMINATED'].includes(status))
+			return fail(400, { error: 'Invalid status change' })
 
 		try {
-			await updateEnrollmentStatus(id, locals.user!.organizationId, status, ctxOf(locals, getClientAddress()))
+			await updateEnrollmentStatus(
+				id,
+				locals.user!.organizationId,
+				status,
+				ctxOf(locals, getClientAddress())
+			)
 		} catch (e: unknown) {
 			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
 			throw e

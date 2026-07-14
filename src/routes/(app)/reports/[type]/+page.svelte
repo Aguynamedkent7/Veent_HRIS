@@ -43,7 +43,24 @@
 	})
 
 	// Currency columns
-	const CURRENCY_COLS = new Set(['TotalGross', 'TotalNet', 'Gross', 'SSS', 'PhilHealth', 'PagIBIG', 'Tax', 'OtherDeductions', 'Net', 'Principal', 'Balance', 'Installment', 'EmployeeShare', 'EmployerShare', 'Total', 'TaxWithheld'])
+	const CURRENCY_COLS = new Set([
+		'TotalGross',
+		'TotalNet',
+		'Gross',
+		'SSS',
+		'PhilHealth',
+		'PagIBIG',
+		'Tax',
+		'OtherDeductions',
+		'Net',
+		'Principal',
+		'Balance',
+		'Installment',
+		'EmployeeShare',
+		'EmployerShare',
+		'Total',
+		'TaxWithheld'
+	])
 
 	function formatCell(col: string, val: unknown): string {
 		if (val === null || val === undefined) return '—'
@@ -115,9 +132,7 @@
 		</div>
 		{#if showDeptFilter}
 			<div class="flex flex-col gap-1">
-				<label for="department" class="text-xs font-medium text-muted-foreground"
-					>Department</label
-				>
+				<label for="department" class="text-xs font-medium text-muted-foreground">Department</label>
 				<select
 					id="department"
 					name="department"
@@ -163,9 +178,7 @@
 					<thead class="border-b bg-muted/50">
 						<tr>
 							{#each data.columns as col (col)}
-								<th
-									class="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap"
-								>
+								<th class="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">
 									{col}
 								</th>
 							{/each}

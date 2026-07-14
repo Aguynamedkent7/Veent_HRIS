@@ -24,6 +24,7 @@ Create a position.
 **Roles**: `HR_ADMIN`, `SUPER_ADMIN`
 
 **Request body**:
+
 ```json
 { "title": "string", "level": "string | null", "departmentId": "uuid | null" }
 ```
@@ -74,6 +75,7 @@ Set a user's role.
 **Roles**: `SUPER_ADMIN`
 
 **Request body**:
+
 ```json
 { "role": "EMPLOYEE | MANAGER | HR_ADMIN | SUPER_ADMIN" }
 ```

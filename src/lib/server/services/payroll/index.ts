@@ -61,18 +61,23 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	if (!run) error(404, 'Payroll run not found')
 	if (run.status !== 'DRAFT') error(400, 'Only draft payroll runs can be computed')
 
-	const [employees, config, earningTypes, loansAll, advancesAll, enrollmentsAll] = await Promise.all([
-		db.employee.findMany({ where: { user: { organizationId }, employmentStatus: 'ACTIVE' } }),
-		db.payrollConfig.findUnique({ where: { organizationId } }),
-		db.earningType.findMany({ where: { organizationId }, select: { code: true, taxable: true } }),
-		db.loan.findMany({ where: { employee: { organizationId }, status: 'ACTIVE', balance: { gt: 0 } } }),
-		db.cashAdvance.findMany({ where: { employee: { organizationId }, status: 'ACTIVE', balance: { gt: 0 } } }),
-		// Active benefit enrollments whose plan charges the employee (T148).
-		db.benefitEnrollment.findMany({
-			where: { status: 'ACTIVE', plan: { organizationId, employeeCost: { gt: 0 } } },
-			select: { id: true, employeeId: true, plan: { select: { name: true, employeeCost: true } } }
-		})
-	])
+	const [employees, config, earningTypes, loansAll, advancesAll, enrollmentsAll] =
+		await Promise.all([
+			db.employee.findMany({ where: { user: { organizationId }, employmentStatus: 'ACTIVE' } }),
+			db.payrollConfig.findUnique({ where: { organizationId } }),
+			db.earningType.findMany({ where: { organizationId }, select: { code: true, taxable: true } }),
+			db.loan.findMany({
+				where: { employee: { organizationId }, status: 'ACTIVE', balance: { gt: 0 } }
+			}),
+			db.cashAdvance.findMany({
+				where: { employee: { organizationId }, status: 'ACTIVE', balance: { gt: 0 } }
+			}),
+			// Active benefit enrollments whose plan charges the employee (T148).
+			db.benefitEnrollment.findMany({
+				where: { status: 'ACTIVE', plan: { organizationId, employeeCost: { gt: 0 } } },
+				select: { id: true, employeeId: true, plan: { select: { name: true, employeeCost: true } } }
+			})
+		])
 
 	// Requirement #1 (review): taxability comes from EarningType config, not hard-coded defaults.
 	const taxableByCode = new Map(earningTypes.map((e) => [e.code, e.taxable]))
@@ -93,7 +98,10 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	let totalNet = 0
 
 	for (const emp of employees) {
-		const comp: EmployeeComp = { basicMonthlySalary: Number(emp.basicMonthlySalary), rateType: emp.rateType }
+		const comp: EmployeeComp = {
+			basicMonthlySalary: Number(emp.basicMonthlySalary),
+			rateType: emp.rateType
+		}
 
 		const timesheets = await db.timesheet.findMany({
 			where: {
@@ -128,12 +136,17 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		const attendance = attInput ?? { ...emptyAttendance(), regularHours }
 
 		// Shared engine — identical to the Payroll Calculator for the same inputs.
-		const result = computeEmployeeResult(comp, attendance, {}, {
-			taxableByCode,
-			periodShare,
-			loans,
-			cashAdvances
-		})
+		const result = computeEmployeeResult(
+			comp,
+			attendance,
+			{},
+			{
+				taxableByCode,
+				periodShare,
+				loans,
+				cashAdvances
+			}
+		)
 		const paidHours =
 			attendance.regularHours +
 			attendance.overtimeHours +
@@ -175,9 +188,19 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 				isFlagged,
 				flagReason: isFlagged ? 'No hours recorded for period' : null
 			},
-			earnings: result.earnings.map((c) => ({ code: c.code, label: c.label, amount: c.amount, taxable: c.taxable })),
+			earnings: result.earnings.map((c) => ({
+				code: c.code,
+				label: c.label,
+				amount: c.amount,
+				taxable: c.taxable
+			})),
 			deductions: [
-				...result.deductions.map((c) => ({ code: c.code, label: c.label, amount: c.amount, refId: c.refId ?? null })),
+				...result.deductions.map((c) => ({
+					code: c.code,
+					label: c.label,
+					amount: c.amount,
+					refId: c.refId ?? null
+				})),
 				...benefitDeductions
 			]
 		})

@@ -4,7 +4,13 @@
  * components. Multipliers come from the resolved `PayRates` config, never hard-coded.
  */
 
-import type { AttendanceInput, EarningsResult, EmployeeComp, PayAdjustments, PayComponent } from './types'
+import type {
+	AttendanceInput,
+	EarningsResult,
+	EmployeeComp,
+	PayAdjustments,
+	PayComponent
+} from './types'
 import { hourlyRateOf, round2 } from './types'
 import { resolveRates, type PayRates } from './rates'
 
@@ -26,11 +32,36 @@ export function computeEarnings(
 		line('OT', 'Overtime', att.overtimeHours * hr * rates.overtime, true),
 		line('NIGHT_DIFF', 'Night differential', att.nightDiffHours * hr * rates.nightDiff, true),
 		line('REST_DAY', 'Rest day', att.restDayHours * hr * rates.restDay, true),
-		line('REST_DAY_OT', 'Rest day OT', att.restDayOtHours * hr * rates.restDay * rates.overtimePremium, true),
-		line('REG_HOLIDAY', 'Regular holiday', att.regularHolidayHours * hr * rates.regularHoliday, true),
-		line('REG_HOLIDAY_OT', 'Regular holiday OT', att.regularHolidayOtHours * hr * rates.regularHoliday * rates.overtimePremium, true),
-		line('SPECIAL_HOLIDAY', 'Special holiday', att.specialHolidayHours * hr * rates.specialHoliday, true),
-		line('SPECIAL_HOLIDAY_OT', 'Special holiday OT', att.specialHolidayOtHours * hr * rates.specialHoliday * rates.overtimePremium, true),
+		line(
+			'REST_DAY_OT',
+			'Rest day OT',
+			att.restDayOtHours * hr * rates.restDay * rates.overtimePremium,
+			true
+		),
+		line(
+			'REG_HOLIDAY',
+			'Regular holiday',
+			att.regularHolidayHours * hr * rates.regularHoliday,
+			true
+		),
+		line(
+			'REG_HOLIDAY_OT',
+			'Regular holiday OT',
+			att.regularHolidayOtHours * hr * rates.regularHoliday * rates.overtimePremium,
+			true
+		),
+		line(
+			'SPECIAL_HOLIDAY',
+			'Special holiday',
+			att.specialHolidayHours * hr * rates.specialHoliday,
+			true
+		),
+		line(
+			'SPECIAL_HOLIDAY_OT',
+			'Special holiday OT',
+			att.specialHolidayOtHours * hr * rates.specialHoliday * rates.overtimePremium,
+			true
+		),
 		// Allowances are treated as non-taxable (de-minimis assumption); incentives are taxable.
 		line('ALLOWANCE', 'Allowances', adjustments.allowances ?? 0, false),
 		line('INCENTIVE', 'Incentives', adjustments.incentives ?? 0, true)

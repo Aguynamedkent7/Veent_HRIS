@@ -23,7 +23,12 @@ const earningSchema = z.object({
 		.union([z.literal('on'), z.literal('true'), z.literal('')])
 		.optional()
 		.transform((v) => v === 'on' || v === 'true'),
-	multiplier: z.coerce.number().min(0).max(10).optional().or(z.literal('').transform(() => undefined))
+	multiplier: z.coerce
+		.number()
+		.min(0)
+		.max(10)
+		.optional()
+		.or(z.literal('').transform(() => undefined))
 })
 
 const deductionSchema = z.object({
@@ -36,7 +41,12 @@ const deductionSchema = z.object({
 })
 
 function ctxOf(locals: App.Locals, ip: string) {
-	return { organizationId: locals.user!.organizationId, actorId: locals.user!.id, actorRole: locals.user!.role, ipAddress: ip }
+	return {
+		organizationId: locals.user!.organizationId,
+		actorId: locals.user!.id,
+		actorRole: locals.user!.role,
+		ipAddress: ip
+	}
 }
 
 async function run(fn: () => Promise<unknown>) {
@@ -55,7 +65,13 @@ export const actions: Actions = {
 		const parsed = earningSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(422, { error: 'Invalid earning code' })
 		const { code, label, taxable, multiplier } = parsed.data
-		return run(() => createEarningType(locals.user!.organizationId, { code, label, taxable, multiplier: multiplier ?? null }, ctxOf(locals, getClientAddress())))
+		return run(() =>
+			createEarningType(
+				locals.user!.organizationId,
+				{ code, label, taxable, multiplier: multiplier ?? null },
+				ctxOf(locals, getClientAddress())
+			)
+		)
 	},
 
 	addDeduction: async ({ request, locals, getClientAddress }) => {
@@ -63,20 +79,30 @@ export const actions: Actions = {
 		const parsed = deductionSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(422, { error: 'Invalid deduction code' })
 		const { code, label, isStatutory } = parsed.data
-		return run(() => createDeductionType(locals.user!.organizationId, { code, label, isStatutory }, ctxOf(locals, getClientAddress())))
+		return run(() =>
+			createDeductionType(
+				locals.user!.organizationId,
+				{ code, label, isStatutory },
+				ctxOf(locals, getClientAddress())
+			)
+		)
 	},
 
 	toggleEarning: async ({ request, locals, getClientAddress }) => {
 		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
 		const id = (await request.formData()).get('id') as string
 		if (!id) return fail(400, { error: 'Missing id' })
-		return run(() => toggleEarningType(locals.user!.organizationId, id, ctxOf(locals, getClientAddress())))
+		return run(() =>
+			toggleEarningType(locals.user!.organizationId, id, ctxOf(locals, getClientAddress()))
+		)
 	},
 
 	toggleDeduction: async ({ request, locals, getClientAddress }) => {
 		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
 		const id = (await request.formData()).get('id') as string
 		if (!id) return fail(400, { error: 'Missing id' })
-		return run(() => toggleDeductionType(locals.user!.organizationId, id, ctxOf(locals, getClientAddress())))
+		return run(() =>
+			toggleDeductionType(locals.user!.organizationId, id, ctxOf(locals, getClientAddress()))
+		)
 	}
 }

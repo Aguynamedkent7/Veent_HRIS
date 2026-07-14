@@ -16,7 +16,9 @@
 	</div>
 
 	{#if form?.error}
-		<div class="rounded-md border border-destructive bg-destructive/10 px-4 py-3 text-sm text-destructive">
+		<div
+			class="rounded-md border border-destructive bg-destructive/10 px-4 py-3 text-sm text-destructive"
+		>
 			{typeof form.error === 'string' ? form.error : 'Please fix the errors below.'}
 		</div>
 	{/if}
@@ -27,7 +29,9 @@
 			<legend class="px-1 text-sm font-semibold">Personal Information</legend>
 			<div class="grid gap-4 sm:grid-cols-3">
 				<div>
-					<label for="firstName" class="text-sm font-medium">First Name <span class="text-destructive">*</span></label>
+					<label for="firstName" class="text-sm font-medium"
+						>First Name <span class="text-destructive">*</span></label
+					>
 					<input
 						id="firstName"
 						name="firstName"
@@ -40,7 +44,9 @@
 					{/if}
 				</div>
 				<div>
-					<label for="lastName" class="text-sm font-medium">Last Name <span class="text-destructive">*</span></label>
+					<label for="lastName" class="text-sm font-medium"
+						>Last Name <span class="text-destructive">*</span></label
+					>
 					<input
 						id="lastName"
 						name="lastName"
@@ -95,7 +101,9 @@
 			<legend class="px-1 text-sm font-semibold">Account</legend>
 			<div class="grid gap-4 sm:grid-cols-2">
 				<div>
-					<label for="email" class="text-sm font-medium">Email <span class="text-destructive">*</span></label>
+					<label for="email" class="text-sm font-medium"
+						>Email <span class="text-destructive">*</span></label
+					>
 					<input
 						id="email"
 						name="email"
@@ -117,10 +125,14 @@
 						placeholder="Leave blank to auto-generate"
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					/>
-					<p class="mt-1 text-xs text-muted-foreground">If left blank, a temporary password will be generated and emailed.</p>
+					<p class="mt-1 text-xs text-muted-foreground">
+						If left blank, a temporary password will be generated and emailed.
+					</p>
 				</div>
 				<div>
-					<label for="role" class="text-sm font-medium">Role <span class="text-destructive">*</span></label>
+					<label for="role" class="text-sm font-medium"
+						>Role <span class="text-destructive">*</span></label
+					>
 					<select
 						id="role"
 						name="role"
@@ -139,7 +151,9 @@
 			<legend class="px-1 text-sm font-semibold">Employment Details</legend>
 			<div class="grid gap-4 sm:grid-cols-2">
 				<div>
-					<label for="departmentId" class="text-sm font-medium">Department <span class="text-destructive">*</span></label>
+					<label for="departmentId" class="text-sm font-medium"
+						>Department <span class="text-destructive">*</span></label
+					>
 					<select
 						id="departmentId"
 						name="departmentId"
@@ -156,7 +170,9 @@
 					{/if}
 				</div>
 				<div>
-					<label for="jobTitle" class="text-sm font-medium">Job Title <span class="text-destructive">*</span></label>
+					<label for="jobTitle" class="text-sm font-medium"
+						>Job Title <span class="text-destructive">*</span></label
+					>
 					<input
 						id="jobTitle"
 						name="jobTitle"
@@ -169,7 +185,9 @@
 					{/if}
 				</div>
 				<div>
-					<label for="employmentType" class="text-sm font-medium">Employment Type <span class="text-destructive">*</span></label>
+					<label for="employmentType" class="text-sm font-medium"
+						>Employment Type <span class="text-destructive">*</span></label
+					>
 					<select
 						id="employmentType"
 						name="employmentType"
@@ -182,7 +200,9 @@
 					</select>
 				</div>
 				<div>
-					<label for="startDate" class="text-sm font-medium">Start Date <span class="text-destructive">*</span></label>
+					<label for="startDate" class="text-sm font-medium"
+						>Start Date <span class="text-destructive">*</span></label
+					>
 					<input
 						id="startDate"
 						name="startDate"
@@ -196,7 +216,9 @@
 					{/if}
 				</div>
 				<div>
-					<label for="basicMonthlySalary" class="text-sm font-medium">Basic Monthly Salary (PHP) <span class="text-destructive">*</span></label>
+					<label for="basicMonthlySalary" class="text-sm font-medium"
+						>Basic Monthly Salary (PHP) <span class="text-destructive">*</span></label
+					>
 					<input
 						id="basicMonthlySalary"
 						name="basicMonthlySalary"

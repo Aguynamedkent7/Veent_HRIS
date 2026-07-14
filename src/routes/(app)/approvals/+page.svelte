@@ -10,11 +10,18 @@
 	let activeTab = $state<'timesheets' | 'requests'>('timesheets')
 
 	const typeLabels: Record<string, string> = {
-		LEAVE: 'Leave', OVERTIME: 'Overtime', UNDERTIME: 'Undertime',
-		OFFICIAL_BUSINESS: 'Official Business', REST_DAY_WORK: 'Work on Rest Day',
-		HOLIDAY_WORK: 'Holiday Work', INFO_UPDATE: 'Info Update'
+		LEAVE: 'Leave',
+		OVERTIME: 'Overtime',
+		UNDERTIME: 'Undertime',
+		OFFICIAL_BUSINESS: 'Official Business',
+		REST_DAY_WORK: 'Work on Rest Day',
+		HOLIDAY_WORK: 'Holiday Work',
+		INFO_UPDATE: 'Info Update'
 	}
-	function currentStageLabel(r: { steps: { stageIndex: number; stageKind: string; role: string | null }[]; currentStage: number }) {
+	function currentStageLabel(r: {
+		steps: { stageIndex: number; stageKind: string; role: string | null }[]
+		currentStage: number
+	}) {
 		const step = r.steps.find((s) => s.stageIndex === r.currentStage)
 		if (!step) return ''
 		return step.stageKind === 'SUPERVISOR' ? 'Supervisor' : (step.role ?? 'Approver')
@@ -31,7 +38,9 @@
 	</div>
 
 	{#if form?.error}
-		<div class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{form.error}</div>
+		<div class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+			{form.error}
+		</div>
 	{/if}
 
 	{#await data.pending}
@@ -50,11 +59,16 @@
 			<button
 				type="button"
 				onclick={() => (activeTab = 'timesheets')}
-				class="flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors {activeTab === 'timesheets' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+				class="flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors {activeTab ===
+				'timesheets'
+					? 'border-primary text-foreground'
+					: 'border-transparent text-muted-foreground hover:text-foreground'}"
 			>
 				Timesheets
 				{#if pendingTimesheets.length > 0}
-					<span class="rounded-full bg-primary px-1.5 py-0.5 text-xs font-medium text-primary-foreground">
+					<span
+						class="rounded-full bg-primary px-1.5 py-0.5 text-xs font-medium text-primary-foreground"
+					>
 						{pendingTimesheets.length}
 					</span>
 				{/if}
@@ -62,11 +76,16 @@
 			<button
 				type="button"
 				onclick={() => (activeTab = 'requests')}
-				class="flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors {activeTab === 'requests' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+				class="flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors {activeTab ===
+				'requests'
+					? 'border-primary text-foreground'
+					: 'border-transparent text-muted-foreground hover:text-foreground'}"
 			>
 				Requests
 				{#if data.pendingRequests.length > 0}
-					<span class="rounded-full bg-primary px-1.5 py-0.5 text-xs font-medium text-primary-foreground">
+					<span
+						class="rounded-full bg-primary px-1.5 py-0.5 text-xs font-medium text-primary-foreground"
+					>
 						{data.pendingRequests.length}
 					</span>
 				{/if}
@@ -76,7 +95,9 @@
 		<!-- Timesheets tab -->
 		{#if activeTab === 'timesheets'}
 			{#if pendingTimesheets.length === 0}
-				<div class="rounded-md border bg-muted/50 px-6 py-12 text-center text-muted-foreground text-sm">
+				<div
+					class="rounded-md border bg-muted/50 px-6 py-12 text-center text-muted-foreground text-sm"
+				>
 					No pending timesheets to review.
 				</div>
 			{:else}
@@ -99,7 +120,9 @@
 		<!-- Requests tab -->
 		{#if activeTab === 'requests'}
 			{#if data.pendingRequests.length === 0}
-				<div class="rounded-md border bg-muted/50 px-6 py-12 text-center text-muted-foreground text-sm">
+				<div
+					class="rounded-md border bg-muted/50 px-6 py-12 text-center text-muted-foreground text-sm"
+				>
 					No requests awaiting your decision.
 				</div>
 			{:else}
@@ -108,22 +131,60 @@
 						<div class="flex flex-col gap-2 rounded-lg border bg-card p-4">
 							<div class="flex items-center justify-between">
 								<span class="font-medium">{typeLabels[req.type] ?? req.type}</span>
-								<span class="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{currentStageLabel(req)}</span>
+								<span class="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+									>{currentStageLabel(req)}</span
+								>
 							</div>
-							<p class="text-sm text-muted-foreground">{req.employee.lastName}, {req.employee.firstName}</p>
+							<p class="text-sm text-muted-foreground">
+								{req.employee.lastName}, {req.employee.firstName}
+							</p>
 							<p class="text-sm">
-								{#if req.dateFrom}{formatShortDate(req.dateFrom)}{#if req.dateTo && req.dateTo !== req.dateFrom} – {formatShortDate(req.dateTo)}{/if}{/if}
-								{#if req.hours} · {req.hours} hrs{/if}
+								{#if req.dateFrom}{formatShortDate(
+										req.dateFrom
+									)}{#if req.dateTo && req.dateTo !== req.dateFrom}
+										– {formatShortDate(req.dateTo)}{/if}{/if}
+								{#if req.hours}
+									· {req.hours} hrs{/if}
 							</p>
 							{#if req.reason}<p class="text-xs text-muted-foreground">{req.reason}</p>{/if}
-							<a href="/requests/{req.id}" class="text-xs text-primary hover:underline">View detail →</a>
-							<form method="POST" action="?/decideRequest" use:enhance class="mt-1 space-y-2 border-t pt-2">
+							<a href="/requests/{req.id}" class="text-xs text-primary hover:underline"
+								>View detail →</a
+							>
+							<form
+								method="POST"
+								action="?/decideRequest"
+								use:enhance
+								class="mt-1 space-y-2 border-t pt-2"
+							>
 								<input type="hidden" name="id" value={req.id} />
-								<textarea name="note" rows="1" placeholder="Note (required to reject/return)" class="w-full rounded-md border border-input bg-background px-2 py-1 text-xs"></textarea>
+								<textarea
+									name="note"
+									rows="1"
+									placeholder="Note (required to reject/return)"
+									class="w-full rounded-md border border-input bg-background px-2 py-1 text-xs"
+								></textarea>
 								<div class="flex gap-2">
-									<button type="submit" name="decision" value="APPROVED" class="flex-1 rounded-md bg-green-600 px-2 py-1 text-xs font-medium text-white hover:bg-green-700">Approve</button>
-									<button type="submit" name="decision" value="RETURNED" class="flex-1 rounded-md bg-orange-500 px-2 py-1 text-xs font-medium text-white hover:bg-orange-600">Return</button>
-									<button type="submit" name="decision" value="REJECTED" class="flex-1 rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700">Reject</button>
+									<button
+										type="submit"
+										name="decision"
+										value="APPROVED"
+										class="flex-1 rounded-md bg-green-600 px-2 py-1 text-xs font-medium text-white hover:bg-green-700"
+										>Approve</button
+									>
+									<button
+										type="submit"
+										name="decision"
+										value="RETURNED"
+										class="flex-1 rounded-md bg-orange-500 px-2 py-1 text-xs font-medium text-white hover:bg-orange-600"
+										>Return</button
+									>
+									<button
+										type="submit"
+										name="decision"
+										value="REJECTED"
+										class="flex-1 rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700"
+										>Reject</button
+									>
 								</div>
 							</form>
 						</div>

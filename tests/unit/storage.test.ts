@@ -10,7 +10,9 @@ describe('storage allowlist', () => {
 	})
 	it('rejects executables / office / unknown types', () => {
 		expect(isAllowedType('application/x-msdownload')).toBe(false)
-		expect(isAllowedType('application/vnd.openxmlformats-officedocument.wordprocessingml.document')).toBe(false)
+		expect(
+			isAllowedType('application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+		).toBe(false)
 		expect(isAllowedType('')).toBe(false)
 	})
 	it('maps every allowed mime to an extension and caps size at 10MB', () => {

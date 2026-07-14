@@ -2,7 +2,11 @@
 	import { page } from '$app/stores'
 
 	const title = $derived(
-		$page.status === 403 ? 'Access Denied' : $page.status === 404 ? 'Page Not Found' : 'Server Error'
+		$page.status === 403
+			? 'Access Denied'
+			: $page.status === 404
+				? 'Page Not Found'
+				: 'Server Error'
 	)
 </script>
 
@@ -19,23 +23,17 @@
 		{#if $page.status === 403}
 			<div class="space-y-2">
 				<h1 class="text-2xl font-bold tracking-tight">Access Denied</h1>
-				<p class="text-muted-foreground">
-					You don't have permission to view this page.
-				</p>
+				<p class="text-muted-foreground">You don't have permission to view this page.</p>
 			</div>
 		{:else if $page.status === 404}
 			<div class="space-y-2">
 				<h1 class="text-2xl font-bold tracking-tight">Page Not Found</h1>
-				<p class="text-muted-foreground">
-					The page you're looking for doesn't exist.
-				</p>
+				<p class="text-muted-foreground">The page you're looking for doesn't exist.</p>
 			</div>
 		{:else}
 			<div class="space-y-2">
 				<h1 class="text-2xl font-bold tracking-tight">Server Error</h1>
-				<p class="text-muted-foreground">
-					Something went wrong. Please try again.
-				</p>
+				<p class="text-muted-foreground">Something went wrong. Please try again.</p>
 				{#if $page.error?.message}
 					<p class="text-sm text-muted-foreground/70 italic">{$page.error.message}</p>
 				{/if}

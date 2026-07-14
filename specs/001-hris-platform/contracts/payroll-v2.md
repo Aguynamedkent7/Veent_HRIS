@@ -56,13 +56,23 @@ What-if preview for one employee — runs the same earnings/deductions engine, *
 
 **Roles**: `HR_ADMIN`, `SUPER_ADMIN`, `PAYROLL_OFFICER`
 **Request body**:
+
 ```json
 {
-  "employeeId": "…",
-  "attendance": { "regularHours": 80, "otHours": 10, "nightDiffHours": 4, "holidayHours": 8, "restDayHours": 0, "lateMinutes": 0, "undertimeMinutes": 0 },
-  "adjustments": { "allowances": 2000, "incentives": 1500 }
+	"employeeId": "…",
+	"attendance": {
+		"regularHours": 80,
+		"otHours": 10,
+		"nightDiffHours": 4,
+		"holidayHours": 8,
+		"restDayHours": 0,
+		"lateMinutes": 0,
+		"undertimeMinutes": 0
+	},
+	"adjustments": { "allowances": 2000, "incentives": 1500 }
 }
 ```
+
 **Response 200**: `{ earnings[], deductions[], grossPay, taxableGross, netPay }` — identical to what a real run would produce for the same inputs.
 
 ---

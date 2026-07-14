@@ -26,9 +26,15 @@ export async function listUnread(userId: string, limit = 10) {
 
 export async function markRead(userId: string, ids: string[]) {
 	if (ids.length === 0) return
-	await db.notification.updateMany({ where: { id: { in: ids }, userId }, data: { readAt: new Date() } })
+	await db.notification.updateMany({
+		where: { id: { in: ids }, userId },
+		data: { readAt: new Date() }
+	})
 }
 
 export async function markAllRead(userId: string) {
-	await db.notification.updateMany({ where: { userId, readAt: null }, data: { readAt: new Date() } })
+	await db.notification.updateMany({
+		where: { userId, readAt: null },
+		data: { readAt: new Date() }
+	})
 }

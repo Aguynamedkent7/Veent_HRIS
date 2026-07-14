@@ -1,6 +1,11 @@
 import { error } from '@sveltejs/kit'
 import { ROLE_HIERARCHY, canViewPayrollReports } from '$lib/server/rbac'
-import { getHeadcountByDepartment, getLeaveUtilizationReport, getPayrollSummaryReport, getAttritionReport } from '$lib/server/services/reports'
+import {
+	getHeadcountByDepartment,
+	getLeaveUtilizationReport,
+	getPayrollSummaryReport,
+	getAttritionReport
+} from '$lib/server/services/reports'
 import type { PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals, url }) => {
@@ -16,7 +21,9 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		canViewHrReports ? getHeadcountByDepartment(orgId) : Promise.resolve([]),
 		canViewHrReports ? getLeaveUtilizationReport(orgId, year) : Promise.resolve([]),
 		getPayrollSummaryReport(orgId, year),
-		canViewHrReports ? getAttritionReport(orgId, year) : Promise.resolve({ hired: 0, offboarded: 0 })
+		canViewHrReports
+			? getAttritionReport(orgId, year)
+			: Promise.resolve({ hired: 0, offboarded: 0 })
 	])
 
 	return { headcountByDept, leaveUtilization, payrollSummary, attrition, year, canViewHrReports }

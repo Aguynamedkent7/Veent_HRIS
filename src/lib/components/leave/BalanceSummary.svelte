@@ -18,9 +18,13 @@
 			<div class="flex items-center gap-2 mb-1">
 				<span class="text-sm font-medium text-foreground">{balance.leaveType.name}</span>
 				{#if balance.leaveType.isPaid}
-					<span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Paid</span>
+					<span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700"
+						>Paid</span
+					>
 				{:else}
-					<span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Unpaid</span>
+					<span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600"
+						>Unpaid</span
+					>
 				{/if}
 			</div>
 			<div class="text-3xl font-bold text-foreground">{Number(balance.remaining)}</div>

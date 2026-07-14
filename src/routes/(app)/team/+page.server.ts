@@ -55,7 +55,11 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		},
 		select: { employeeId: true, dateFrom: true, dateTo: true }
 	})
-	const leaves = leaveReqs.map((l) => ({ employeeId: l.employeeId, startDate: l.dateFrom!, endDate: l.dateTo! }))
+	const leaves = leaveReqs.map((l) => ({
+		employeeId: l.employeeId,
+		startDate: l.dateFrom!,
+		endDate: l.dateTo!
+	}))
 
 	// Build attendance map: { [employeeId]: { [dateISO]: 'P' | 'L' } }
 	const attendanceMap: Record<string, Record<string, string>> = {}

@@ -76,7 +76,11 @@
 			{@const stageApplicants = applicantsInStage(stage)}
 			<div class="w-64 flex-shrink-0">
 				<!-- Column Header -->
-				<div class="mb-2 flex items-center justify-between rounded-md px-3 py-2 {STAGE_HEADER_COLORS[stage]}">
+				<div
+					class="mb-2 flex items-center justify-between rounded-md px-3 py-2 {STAGE_HEADER_COLORS[
+						stage
+					]}"
+				>
 					<span class="text-sm font-semibold">{STAGE_LABELS[stage]}</span>
 					<span class="rounded-full bg-white/60 px-2 py-0.5 text-xs font-medium">
 						{stageApplicants.length}
@@ -88,7 +92,8 @@
 					{#each stageApplicants as applicant (applicant.id)}
 						<div class="rounded-md border p-3 shadow-sm {STAGE_COLORS[stage]} bg-white">
 							<p class="text-sm font-medium text-foreground">
-								{applicant.firstName} {applicant.lastName}
+								{applicant.firstName}
+								{applicant.lastName}
 							</p>
 							<p class="mt-0.5 truncate text-xs text-muted-foreground">{applicant.email}</p>
 							<p class="mt-1 text-xs text-muted-foreground">
@@ -126,7 +131,9 @@
 							{/if}
 						</div>
 					{:else}
-						<div class="rounded-md border border-dashed px-3 py-6 text-center text-xs text-muted-foreground">
+						<div
+							class="rounded-md border border-dashed px-3 py-6 text-center text-xs text-muted-foreground"
+						>
 							No applicants
 						</div>
 					{/each}

@@ -15,7 +15,8 @@
 		{ v: 0, l: 'Sun' }
 	]
 	const label = (w: number) => DOW.find((d) => d.v === w)?.l ?? String(w)
-	const toHHMM = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+	const toHHMM = (m: number) =>
+		`${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
 </script>
 
 <svelte:head>
@@ -25,14 +26,24 @@
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
 		<div class="flex items-center gap-3">
-			<a href="/settings/org" class="text-sm text-muted-foreground hover:text-foreground">← Settings</a>
+			<a href="/settings/org" class="text-sm text-muted-foreground hover:text-foreground"
+				>← Settings</a
+			>
 			<h1 class="text-2xl font-bold tracking-tight">Work Schedules</h1>
 		</div>
-		<button onclick={() => (showCreate = !showCreate)} class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">New Schedule</button>
+		<button
+			onclick={() => (showCreate = !showCreate)}
+			class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+			>New Schedule</button
+		>
 	</div>
 
 	{#if form?.error}
-		<div class="rounded-md border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-red-400">{form.error}</div>
+		<div
+			class="rounded-md border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-red-400"
+		>
+			{form.error}
+		</div>
 	{/if}
 
 	{#if showCreate}
@@ -41,19 +52,42 @@
 			<div class="grid gap-3 sm:grid-cols-4">
 				<div class="sm:col-span-2">
 					<label class="text-sm font-medium">Name</label>
-					<input name="name" required placeholder="Regular (Mon–Fri 9–6)" class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm" />
+					<input
+						name="name"
+						required
+						placeholder="Regular (Mon–Fri 9–6)"
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+					/>
 				</div>
 				<div>
 					<label class="text-sm font-medium">Start</label>
-					<input name="start" type="time" value="09:00" required class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm" />
+					<input
+						name="start"
+						type="time"
+						value="09:00"
+						required
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+					/>
 				</div>
 				<div>
 					<label class="text-sm font-medium">End</label>
-					<input name="end" type="time" value="18:00" required class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm" />
+					<input
+						name="end"
+						type="time"
+						value="18:00"
+						required
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+					/>
 				</div>
 				<div>
 					<label class="text-sm font-medium">Break (min)</label>
-					<input name="breakMinutes" type="number" min="0" value="60" class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm" />
+					<input
+						name="breakMinutes"
+						type="number"
+						min="0"
+						value="60"
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+					/>
 				</div>
 			</div>
 			<div>
@@ -67,10 +101,20 @@
 					{/each}
 				</div>
 			</div>
-			<label class="flex items-center gap-2 text-sm"><input type="checkbox" name="isDefault" /> Set as the organization default</label>
+			<label class="flex items-center gap-2 text-sm"
+				><input type="checkbox" name="isDefault" /> Set as the organization default</label
+			>
 			<div class="flex justify-end gap-2">
-				<button type="button" onclick={() => (showCreate = false)} class="rounded-md border px-4 py-2 text-sm hover:bg-accent">Cancel</button>
-				<button type="submit" class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">Create</button>
+				<button
+					type="button"
+					onclick={() => (showCreate = false)}
+					class="rounded-md border px-4 py-2 text-sm hover:bg-accent">Cancel</button
+				>
+				<button
+					type="submit"
+					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+					>Create</button
+				>
 			</div>
 		</form>
 	{/if}
@@ -89,13 +133,29 @@
 				{#each data.schedules as s (s.id)}
 					{@const shift = s.days[0]}
 					<tr class="hover:bg-muted/30">
-						<td class="px-4 py-3 font-medium">{s.name} {#if s.isDefault}<span class="ml-1 rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">default</span>{/if}</td>
-						<td class="px-4 py-3 text-muted-foreground">{s.days.map((d) => label(d.weekday)).join(', ') || '—'}</td>
-						<td class="px-4 py-3 text-muted-foreground">{shift ? `${toHHMM(shift.startMinutes)}–${toHHMM(shift.endMinutes)} · ${shift.breakMinutes}m break` : '—'}</td>
+						<td class="px-4 py-3 font-medium"
+							>{s.name}
+							{#if s.isDefault}<span
+									class="ml-1 rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700"
+									>default</span
+								>{/if}</td
+						>
+						<td class="px-4 py-3 text-muted-foreground"
+							>{s.days.map((d) => label(d.weekday)).join(', ') || '—'}</td
+						>
+						<td class="px-4 py-3 text-muted-foreground"
+							>{shift
+								? `${toHHMM(shift.startMinutes)}–${toHHMM(shift.endMinutes)} · ${shift.breakMinutes}m break`
+								: '—'}</td
+						>
 						<td class="px-4 py-3 text-right">{s._count.employees}</td>
 					</tr>
 				{:else}
-					<tr><td colspan="4" class="px-4 py-8 text-center text-muted-foreground">No schedules yet. Unassigned employees use a Mon–Fri 9–6 default.</td></tr>
+					<tr
+						><td colspan="4" class="px-4 py-8 text-center text-muted-foreground"
+							>No schedules yet. Unassigned employees use a Mon–Fri 9–6 default.</td
+						></tr
+					>
 				{/each}
 			</tbody>
 		</table>

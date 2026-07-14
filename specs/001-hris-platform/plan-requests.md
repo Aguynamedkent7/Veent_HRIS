@@ -5,12 +5,14 @@
 **Branch**: `dev/payroll`
 
 ## Goal
+
 One unified **Request** model covering 7 types submitted via the Employee Kiosk, routed through a
 **configurable multi-stage approval chain** (Employee → Supervisor → HR → Payroll) with Approve /
 Reject / Return-for-correction. Approved requests **auto-apply to attendance & payroll** — most
 importantly, approved **Overtime** feeds the attendance engine's OT gate that is currently stubbed to `0`.
 
 ## Locked decisions (from discussion)
+
 - **New `Request` model; migrate existing `leave_requests` into it, then retire `LeaveRequest`.** One
   kiosk, one approval engine; leave becomes `type = LEAVE`.
 - **Payload = `Json` validated by a Zod `discriminatedUnion('type', …)`**, with a small set of
@@ -23,6 +25,7 @@ importantly, approved **Overtime** feeds the attendance engine's OT gate that is
 ## Slice 1 — Schema & enums (T168 foundation)
 
 New enums:
+
 ```prisma
 enum RequestType {
   LEAVE
@@ -44,6 +47,7 @@ enum ApprovalDecision { APPROVED  REJECTED  RETURNED }
 ```
 
 New models:
+
 ```prisma
 model Request {
   id           String        @id @default(cuid())
@@ -86,6 +90,7 @@ model ApprovalStep {
   @@map("approval_steps")
 }
 ```
+
 - **"Supervisor" stage**: there is no `SUPERVISOR` role — supervisor = the employee's
   `reportsToId`. Model it as a stage with a `SUPERVISOR` sentinel in a small `ApprovalStageKind`
   enum (`SUPERVISOR | ROLE`), or reuse `role` with an added `MANAGER` mapping + an `isDirectManager`
@@ -98,6 +103,7 @@ Retire `LeaveRequest`: keep `LeaveType`/`LeaveBalance` (still used); drop the `L
 after migration (Slice 2). `LeaveRequestStatus` enum stays only if referenced elsewhere (it isn't — verify).
 
 ## Slice 2 — Data migration (leave → request)
+
 - One-off migration script (`prisma/migrations` is `db push` here, so a `scripts/migrate-leave-to-request.ts`
   run once): for every `leave_requests` row create a `requests` row with
   `type=LEAVE`, `dateFrom=startDate`, `dateTo=endDate`, `hours=null`,
@@ -108,6 +114,7 @@ after migration (Slice 2). `LeaveRequestStatus` enum stays only if referenced el
   the app no longer reads it, then drop.
 
 ## Slice 3 — Validation & config (T168)
+
 - `src/lib/server/schemas/requests.ts`: `z.discriminatedUnion('type', [...])` — one object per type
   (e.g. OVERTIME `{ date, hours, reason }`, LEAVE `{ leaveTypeId, startDate, endDate, reason? }`,
   INFO_UPDATE `{ field, currentValue?, requestedValue }`). A `toColumns(parsed)` helper derives the
@@ -118,6 +125,7 @@ after migration (Slice 2). `LeaveRequestStatus` enum stays only if referenced el
   When a request is created, resolve the chain into concrete `ApprovalStep` rows.
 
 ## Slice 4 — Request service + kiosk API/UI (T168)
+
 - `src/lib/server/services/requests.ts`: `createRequest`, `listRequests` (filters: mine / inbox /
   type / status), `getRequest`, `cancelRequest`, `resubmitRequest` (after RETURNED).
 - Employee Kiosk: `(app)/requests` (list + new) with a type picker driving the right payload form;
@@ -126,6 +134,7 @@ after migration (Slice 2). `LeaveRequestStatus` enum stays only if referenced el
 - REST: `api/v1/requests` (+ `[id]`, `[id]/decision`).
 
 ## Slice 5 — Approval engine (T169)
+
 - `src/lib/server/services/approvals.ts`: `decide(requestId, stageIndex, decision, note, ctx)`:
   - authorize actor against the stage (`SUPERVISOR` ⇒ actor is employee's `reportsToId`'s user;
     `ROLE` ⇒ actor has that role). Reuse `rbac.ts`.
@@ -138,6 +147,7 @@ after migration (Slice 2). `LeaveRequestStatus` enum stays only if referenced el
   timesheets. Approve / Reject / **Return** actions. `ApprovalCard.svelte` gains a Return button + note.
 
 ## Slice 6 — Auto-apply to attendance & payroll (T169) ⭐ the OT gate
+
 - `applyApprovedRequest(request)` switch by type:
   - **OVERTIME / REST_DAY_WORK / HOLIDAY_WORK** → nothing to persist eagerly; consumed at derivation.
   - **LEAVE** → already consumed by `deriveRange` (reads approved leave). Repoint that query from
@@ -160,6 +170,7 @@ after migration (Slice 2). `LeaveRequestStatus` enum stays only if referenced el
   request before lock is enough. Optionally re-derive the affected day on approval for live preview.
 
 ## Slice 7 — Tests & verify
+
 - Unit: request Zod union (each type accept/reject), `toColumns` promotion, approval engine state
   machine (advance / reject / return / re-submit), routing resolution, **OT gate** (approved OT hours
   flow into `deriveAttendanceDay` and cap raw OT).
@@ -168,10 +179,12 @@ after migration (Slice 2). `LeaveRequestStatus` enum stays only if referenced el
   run payroll → OT is paid. Return-for-correction round trip.
 
 ## RBAC / roles touchpoints
+
 - Approve authorization reuses `rbac.ts`. The **Payroll** approval stage targets `PAYROLL_OFFICER`
   (added in T161) or HR/Super. Supervisor stage = `reportsToId`.
 
 ## Risks / open questions
+
 - **Chain configurability depth**: v1 = per-type default chain (org-level). Full per-department or
   conditional routing (e.g. OT > N hours needs extra stage) is a follow-up — flag, don't silently cap.
 - **Info-Update auto-apply** to sensitive fields overlaps T164 (bank/GCash) — gate writes; for fields
@@ -185,13 +198,14 @@ after migration (Slice 2). `LeaveRequestStatus` enum stays only if referenced el
   these edits move the reads).
 
 ## Suggested build order
+
 **Re-sequenced during implementation** to keep every commit non-breaking: the leave→Request
 migration is deferred to the end (after the approval engine exists), so leave never sits in a
 half-migrated state.
 
 1. **Slice 1** ✅ — schema + enums.
-2. **Slice 2** — validation (Zod union) + routing config + `createRequest` service. *Additive, touches
-   no existing code.*
+2. **Slice 2** — validation (Zod union) + routing config + `createRequest` service. _Additive, touches
+   no existing code._
 3. **Slice 3** — Employee Kiosk API/UI (`(app)/requests`) for the 6 new types.
 4. **Slice 4** — approval engine (`decide()`), rebuild `/approvals` inbox to include requests.
 5. **Slice 5** — auto-apply + **OT gate** ⭐ (wire approved OT into `deriveRange`).
@@ -203,6 +217,7 @@ half-migrated state.
 7. **Slice 7** — tests + manual verify throughout.
 
 ## Deferred cleanup (after QA sign-off)
+
 - Drop the `LeaveRequest` model + `leave_requests` table + the `Employee.leaveRequests` /
   `LeaveType.leaveRequests` relations, and remove `LeaveRequestStatus` if unused.
 - Optionally retire the `/leave` route entirely in favour of `/requests` (kept for now to preserve the

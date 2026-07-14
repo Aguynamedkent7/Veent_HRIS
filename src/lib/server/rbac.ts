@@ -33,7 +33,12 @@ export function requireMinRole(userRole: Role, minimumRole: Role): void {
 // Manage payroll (periods, runs, loans, cash advances, calculator).
 export const PAYROLL_MANAGE_ROLES: Role[] = ['SUPER_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER']
 // View payroll reports (adds read-only Finance).
-export const PAYROLL_REPORT_ROLES: Role[] = ['SUPER_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER', 'FINANCE']
+export const PAYROLL_REPORT_ROLES: Role[] = [
+	'SUPER_ADMIN',
+	'HR_ADMIN',
+	'PAYROLL_OFFICER',
+	'FINANCE'
+]
 
 export function canManagePayroll(role: Role): boolean {
 	return PAYROLL_MANAGE_ROLES.includes(role)

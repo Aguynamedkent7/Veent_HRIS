@@ -48,7 +48,12 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 	try {
 		const period = await openPeriod(
 			locals.user.organizationId,
-			{ name: parsed.data.name, startDate: parsed.data.start, endDate: parsed.data.end, cutoff: parsed.data.cutoff },
+			{
+				name: parsed.data.name,
+				startDate: parsed.data.start,
+				endDate: parsed.data.end,
+				cutoff: parsed.data.cutoff
+			},
 			ctx
 		)
 		return json({ data: period }, { status: 201 })

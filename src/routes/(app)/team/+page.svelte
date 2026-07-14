@@ -47,15 +47,24 @@
 	<!-- Legend -->
 	<div class="flex gap-4 text-xs text-muted-foreground">
 		<span class="flex items-center gap-1.5">
-			<span class="inline-flex h-5 w-5 items-center justify-center rounded bg-green-100 text-green-700 font-bold">P</span>
+			<span
+				class="inline-flex h-5 w-5 items-center justify-center rounded bg-green-100 text-green-700 font-bold"
+				>P</span
+			>
 			Present
 		</span>
 		<span class="flex items-center gap-1.5">
-			<span class="inline-flex h-5 w-5 items-center justify-center rounded bg-yellow-100 text-yellow-700 font-bold">L</span>
+			<span
+				class="inline-flex h-5 w-5 items-center justify-center rounded bg-yellow-100 text-yellow-700 font-bold"
+				>L</span
+			>
 			On Leave
 		</span>
 		<span class="flex items-center gap-1.5">
-			<span class="inline-flex h-5 w-5 items-center justify-center rounded bg-muted text-muted-foreground font-bold">–</span>
+			<span
+				class="inline-flex h-5 w-5 items-center justify-center rounded bg-muted text-muted-foreground font-bold"
+				>–</span
+			>
 			No Data
 		</span>
 	</div>
@@ -70,11 +79,15 @@
 			<table class="w-full text-sm">
 				<thead class="border-b bg-muted/50">
 					<tr>
-						<th class="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap sticky left-0 bg-muted/50 z-10">
+						<th
+							class="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap sticky left-0 bg-muted/50 z-10"
+						>
 							Employee
 						</th>
 						{#each data.dates as date (date)}
-							<th class="px-2 py-3 text-center font-medium text-muted-foreground whitespace-nowrap min-w-[64px]">
+							<th
+								class="px-2 py-3 text-center font-medium text-muted-foreground whitespace-nowrap min-w-[64px]"
+							>
 								{formatShortDate(date)}
 							</th>
 						{/each}
@@ -90,15 +103,21 @@
 								{@const status = data.attendanceMap[member.id]?.[date]}
 								<td class="px-2 py-3 text-center">
 									{#if status === 'P'}
-										<span class="inline-flex h-6 w-6 items-center justify-center rounded bg-green-100 text-green-700 text-xs font-bold">
+										<span
+											class="inline-flex h-6 w-6 items-center justify-center rounded bg-green-100 text-green-700 text-xs font-bold"
+										>
 											P
 										</span>
 									{:else if status === 'L'}
-										<span class="inline-flex h-6 w-6 items-center justify-center rounded bg-yellow-100 text-yellow-700 text-xs font-bold">
+										<span
+											class="inline-flex h-6 w-6 items-center justify-center rounded bg-yellow-100 text-yellow-700 text-xs font-bold"
+										>
 											L
 										</span>
 									{:else}
-										<span class="inline-flex h-6 w-6 items-center justify-center rounded bg-muted text-muted-foreground text-xs">
+										<span
+											class="inline-flex h-6 w-6 items-center justify-center rounded bg-muted text-muted-foreground text-xs"
+										>
 											–
 										</span>
 									{/if}

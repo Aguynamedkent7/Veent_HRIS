@@ -3,6 +3,7 @@
 **Branch**: `dev/reports` (forked from `dev/payroll`) · **Last updated**: 2026-07-13
 
 ## ⚠️ Environment note (read first)
+
 - **DB is on port 5433** (temporary container `veent-db-5433`). `.env`'s `DATABASE_URL` points to
   `localhost:5433`. Start it with `docker start veent-db-5433`.
 - Run: `pnpm dev` (app) + `pnpm bot` (Discord), or `./start.sh`.
@@ -13,10 +14,12 @@
   `finance@veent.ph`/`Finance@1234`.
 
 ## Git state
+
 - `dev/payroll` — pushed (previous session's work: payroll, attendance, requests foundations).
 - `dev/reports` — **6 commits, NOT pushed yet.** Everything below is committed here.
 
 ## ✅ Done (this session)
+
 - **T161 — Roles/RBAC**: `PAYROLL_OFFICER` + `FINANCE` roles, capability-based RBAC
   (`requirePayrollManage`/`requirePayrollReports` in `rbac.ts`), nav gating, role-management UI.
 - **T168/T169 — Requests + multi-stage approvals**: unified `Request` model (7 types), Zod-validated
@@ -43,11 +46,13 @@ incrementally. Only 4 **pre-existing** typecheck errors remain (departments, lea
 timesheets/new — none touched this session).
 
 ## GitHub issues
+
 - Closed: #20, #25, #26, #21, #22 (T161/168/169/162/163).
 - **To close after pushing `dev/reports`**: #28 (T176), #33 (T181), #34 (T182), #8–11 (Benefits),
   #12–15 (Performance).
 
 ## ⏳ Not done yet (next up)
+
 1. **Settings / Org chart (#16–19, T157–160)** — REST routes, interactive org-chart viz, position
    edit + employee↔position assignment, last-super-admin guardrail. (Recommended next.)
 2. **Recruitment/onboarding/separation** — #29 (T177 interviews/offers), #30 (T178 onboarding
@@ -57,12 +62,14 @@ timesheets/new — none touched this session).
    non-duplicative bit is a `/timesheets/[id]` detail view.
 
 ## Deferred cleanup (do once, after QA sign-off)
+
 - **Drop `LeaveRequest`**: migration already copied data to `Request(type=LEAVE)` and all readers are
   repointed. Remove the `LeaveRequest` model + `leave_requests` table + `Employee.leaveRequests` /
   `LeaveType.leaveRequests` relations, and `LeaveRequestStatus` if unused. Reversible until then.
 - **RequestDocument** still uses a `url` stub — retro-fit to the T162 storage lib for real file attachments.
 
 ## Known gotchas (carried over)
+
 - Attendance-driven payroll → no punches = 0 pay; monthly-salaried staff must be marked present before lock.
 - Combined rest-day + holiday stacking not modeled; unworked regular-holiday pay not handled.
 - No E2E (Playwright) for payroll/attendance/requests yet.

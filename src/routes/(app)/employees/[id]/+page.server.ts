@@ -1,17 +1,38 @@
 import { fail, isHttpError } from '@sveltejs/kit'
 import { requireMinRole, requireRole } from '$lib/server/rbac'
 import { getEmployee, updateEmployee, offboardEmployee } from '$lib/server/services/employees'
-import { listLoans, listCashAdvances, createLoan, createCashAdvance } from '$lib/server/services/payroll/loans'
+import {
+	listLoans,
+	listCashAdvances,
+	createLoan,
+	createCashAdvance
+} from '$lib/server/services/payroll/loans'
 import { listSchedules } from '$lib/server/services/attendance/schedules'
-import { listEmployeeDocuments, saveEmployeeDocument, deleteEmployeeDocument } from '$lib/server/services/documents'
+import {
+	listEmployeeDocuments,
+	saveEmployeeDocument,
+	deleteEmployeeDocument
+} from '$lib/server/services/documents'
 import { db } from '$lib/server/db'
 import { z } from 'zod'
 import type { Actions, PageServerLoad } from './$types'
 
-const DOC_CATEGORIES = ['CONTRACT', 'GOVERNMENT_ID', 'RESUME', 'PAYROLL_FORM', 'EXIT_DOCUMENT', 'OTHER'] as const
+const DOC_CATEGORIES = [
+	'CONTRACT',
+	'GOVERNMENT_ID',
+	'RESUME',
+	'PAYROLL_FORM',
+	'EXIT_DOCUMENT',
+	'OTHER'
+] as const
 
 function ctxOf(locals: App.Locals, ip: string) {
-	return { organizationId: locals.user!.organizationId, actorId: locals.user!.id, actorRole: locals.user!.role, ipAddress: ip }
+	return {
+		organizationId: locals.user!.organizationId,
+		actorId: locals.user!.id,
+		actorRole: locals.user!.role,
+		ipAddress: ip
+	}
 }
 
 export const load: PageServerLoad = async ({ locals, params }) => {
@@ -140,8 +161,11 @@ export const actions: Actions = {
 		const categoryRaw = data.get('category') as string
 		const label = (data.get('label') as string) || ''
 
-		if (!(file instanceof File) || file.size === 0) return fail(400, { error: 'Please choose a file to upload.' })
-		const category = DOC_CATEGORIES.includes(categoryRaw as never) ? (categoryRaw as (typeof DOC_CATEGORIES)[number]) : 'OTHER'
+		if (!(file instanceof File) || file.size === 0)
+			return fail(400, { error: 'Please choose a file to upload.' })
+		const category = DOC_CATEGORIES.includes(categoryRaw as never)
+			? (categoryRaw as (typeof DOC_CATEGORIES)[number])
+			: 'OTHER'
 		const bytes = Buffer.from(await file.arrayBuffer())
 
 		try {
@@ -163,7 +187,11 @@ export const actions: Actions = {
 		const docId = (await request.formData()).get('docId') as string
 		if (!docId) return fail(400, { error: 'Missing document id.' })
 		try {
-			await deleteEmployeeDocument(docId, locals.user!.organizationId, ctxOf(locals, getClientAddress()))
+			await deleteEmployeeDocument(
+				docId,
+				locals.user!.organizationId,
+				ctxOf(locals, getClientAddress())
+			)
 		} catch (e: unknown) {
 			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
 			throw e

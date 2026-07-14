@@ -18,12 +18,11 @@ export const actions: Actions = {
 		const netPay = parseFloat(data.get('netPay') as string)
 		const note = data.get('note') as string
 
-		await overridePayrollEntry(
-			entryId,
-			user.organizationId,
-			{ netPay },
-			note,
-			{ organizationId: user.organizationId, actorId: user.id, actorRole: user.role, ipAddress: getClientAddress() }
-		)
+		await overridePayrollEntry(entryId, user.organizationId, { netPay }, note, {
+			organizationId: user.organizationId,
+			actorId: user.id,
+			actorRole: user.role,
+			ipAddress: getClientAddress()
+		})
 	}
 }

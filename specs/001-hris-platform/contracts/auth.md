@@ -10,21 +10,23 @@
 Log in and receive JWT tokens.
 
 **Request body**:
+
 ```json
 { "email": "string", "password": "string" }
 ```
 
 **Response 200**:
+
 ```json
 {
-  "accessToken": "string (JWT, 15m TTL)",
-  "refreshToken": "string (JWT, 7d TTL)",
-  "user": {
-    "id": "uuid",
-    "email": "string",
-    "role": "EMPLOYEE | MANAGER | HR_ADMIN | SUPER_ADMIN",
-    "employeeId": "uuid | null"
-  }
+	"accessToken": "string (JWT, 15m TTL)",
+	"refreshToken": "string (JWT, 7d TTL)",
+	"user": {
+		"id": "uuid",
+		"email": "string",
+		"role": "EMPLOYEE | MANAGER | HR_ADMIN | SUPER_ADMIN",
+		"employeeId": "uuid | null"
+	}
 }
 ```
 

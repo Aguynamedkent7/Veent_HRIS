@@ -23,7 +23,12 @@
 
 	<!-- Create position form -->
 	{#if showCreate}
-		<form method="POST" action="?/createPosition" use:enhance class="rounded-lg border p-4 space-y-4">
+		<form
+			method="POST"
+			action="?/createPosition"
+			use:enhance
+			class="rounded-lg border p-4 space-y-4"
+		>
 			<h2 class="font-semibold">New Position</h2>
 			<div class="grid gap-3 sm:grid-cols-3">
 				<div>

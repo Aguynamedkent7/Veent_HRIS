@@ -38,7 +38,11 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 const createSchema = z.object({
 	email: z.string().email(),
-	password: z.string().min(8).optional().or(z.literal('').transform(() => undefined)),
+	password: z
+		.string()
+		.min(8)
+		.optional()
+		.or(z.literal('').transform(() => undefined)),
 	firstName: z.string().min(1),
 	lastName: z.string().min(1),
 	middleName: z.string().optional(),
@@ -52,7 +56,10 @@ const createSchema = z.object({
 	philhealthNumber: z.string().optional(),
 	pagibigNumber: z.string().optional(),
 	tinNumber: z.string().optional(),
-	reportsToId: z.string().optional().or(z.literal('').transform(() => undefined))
+	reportsToId: z
+		.string()
+		.optional()
+		.or(z.literal('').transform(() => undefined))
 })
 
 export const actions: Actions = {

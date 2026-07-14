@@ -1,6 +1,11 @@
 import { fail } from '@sveltejs/kit'
 import { requireMinRole, requirePayrollManage } from '$lib/server/rbac'
-import { listPayrollRuns, createPayrollRun, computePayroll, approvePayroll } from '$lib/server/services/payroll/index'
+import {
+	listPayrollRuns,
+	createPayrollRun,
+	computePayroll,
+	approvePayroll
+} from '$lib/server/services/payroll/index'
 import { z } from 'zod'
 import type { Actions, PageServerLoad } from './$types'
 
@@ -33,7 +38,8 @@ export const actions: Actions = {
 				ipAddress: getClientAddress()
 			})
 		} catch (e: unknown) {
-			if (e instanceof Error && e.message.includes('already exists')) return fail(409, { error: e.message })
+			if (e instanceof Error && e.message.includes('already exists'))
+				return fail(409, { error: e.message })
 			throw e
 		}
 	},

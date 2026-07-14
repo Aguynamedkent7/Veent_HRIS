@@ -10,7 +10,11 @@ export const GET: RequestHandler = async ({ locals }) => {
 	return json({ results: await listReviewCycles(locals.user.organizationId) })
 }
 
-const schema = z.object({ name: z.string().min(1), startDate: z.coerce.date(), endDate: z.coerce.date() })
+const schema = z.object({
+	name: z.string().min(1),
+	startDate: z.coerce.date(),
+	endDate: z.coerce.date()
+})
 
 export const POST: RequestHandler = async ({ locals, request, getClientAddress }) => {
 	if (!locals.user) error(401, 'Unauthorized')
@@ -19,7 +23,10 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 	const parsed = schema.safeParse(await request.json())
 	if (!parsed.success) error(422, parsed.error.errors[0]?.message ?? 'Invalid cycle')
 	const cycle = await createReviewCycle(user.organizationId, parsed.data, {
-		organizationId: user.organizationId, actorId: user.id, actorRole: user.role, ipAddress: getClientAddress()
+		organizationId: user.organizationId,
+		actorId: user.id,
+		actorRole: user.role,
+		ipAddress: getClientAddress()
 	})
 	return json({ cycle }, { status: 201 })
 }

@@ -1,6 +1,11 @@
 import { fail } from '@sveltejs/kit'
 import { requireMinRole } from '$lib/server/rbac'
-import { listJobPostings, createJobPosting, publishJobPosting, advanceApplicant } from '$lib/server/services/recruitment'
+import {
+	listJobPostings,
+	createJobPosting,
+	publishJobPosting,
+	advanceApplicant
+} from '$lib/server/services/recruitment'
 import { db } from '$lib/server/db'
 import { z } from 'zod'
 import type { Actions, PageServerLoad } from './$types'
@@ -34,11 +39,12 @@ export const actions: Actions = {
 		const parsed = createSchema.safeParse(raw)
 		if (!parsed.success) return fail(400, { error: 'Invalid input' })
 
-		await createJobPosting(
-			user.organizationId,
-			parsed.data,
-			{ organizationId: user.organizationId, actorId: user.id, actorRole: user.role, ipAddress: getClientAddress() }
-		)
+		await createJobPosting(user.organizationId, parsed.data, {
+			organizationId: user.organizationId,
+			actorId: user.id,
+			actorRole: user.role,
+			ipAddress: getClientAddress()
+		})
 	},
 
 	publish: async ({ request, locals, getClientAddress }) => {

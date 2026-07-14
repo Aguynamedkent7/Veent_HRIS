@@ -24,7 +24,11 @@
 			<p class="font-semibold text-sm">{submitterName}</p>
 			<p class="text-xs text-muted-foreground mt-0.5">{period}</p>
 		</div>
-		<span class="rounded-full px-2 py-0.5 text-xs font-medium {type === 'timesheet' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}">
+		<span
+			class="rounded-full px-2 py-0.5 text-xs font-medium {type === 'timesheet'
+				? 'bg-blue-100 text-blue-700'
+				: 'bg-purple-100 text-purple-700'}"
+		>
 			{type === 'timesheet' ? 'Timesheet' : 'Leave'}
 		</span>
 	</div>
@@ -67,7 +71,10 @@
 			<div class="flex gap-2">
 				<button
 					type="button"
-					onclick={() => { showRejectForm = false; rejectionReason = '' }}
+					onclick={() => {
+						showRejectForm = false
+						rejectionReason = ''
+					}}
 					class="flex-1 rounded-md border px-3 py-1.5 text-sm hover:bg-accent"
 				>
 					Cancel

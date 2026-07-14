@@ -57,7 +57,14 @@ async function main() {
 	if (existingLeaveTypes === 0) {
 		await db.leaveType.createMany({
 			data: [
-				{ organizationId: org.id, name: 'Vacation Leave', isPaid: true, defaultDaysPerYear: 15, allowCarryOver: true, maxCarryOverDays: 5 },
+				{
+					organizationId: org.id,
+					name: 'Vacation Leave',
+					isPaid: true,
+					defaultDaysPerYear: 15,
+					allowCarryOver: true,
+					maxCarryOverDays: 5
+				},
 				{ organizationId: org.id, name: 'Sick Leave', isPaid: true, defaultDaysPerYear: 15 },
 				{ organizationId: org.id, name: 'Emergency Leave', isPaid: true, defaultDaysPerYear: 3 },
 				{ organizationId: org.id, name: 'Maternity Leave', isPaid: true, defaultDaysPerYear: 105 },

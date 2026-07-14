@@ -35,7 +35,10 @@
 			class="space-y-4"
 			use:enhance={() => {
 				loading = true
-				return async ({ update }) => { loading = false; update() }
+				return async ({ update }) => {
+					loading = false
+					update()
+				}
 			}}
 		>
 			<div class="space-y-1.5">
@@ -64,11 +67,7 @@
 				/>
 			</div>
 
-			<button
-				type="submit"
-				disabled={loading}
-				class="btn-primary w-full h-10 disabled:opacity-60"
-			>
+			<button type="submit" disabled={loading} class="btn-primary w-full h-10 disabled:opacity-60">
 				{loading ? 'Signing in…' : 'Sign In'}
 			</button>
 		</form>

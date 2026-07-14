@@ -64,9 +64,7 @@
 		</div>
 
 		<!-- Status badge -->
-		<span
-			class="inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-medium {statusClass()}"
-		>
+		<span class="inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-medium {statusClass()}">
 			{employee.employmentStatus}
 		</span>
 	</div>

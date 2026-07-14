@@ -15,18 +15,23 @@ const DEFAULT_WEEKDAY_SHIFT: ScheduleDay = { startMinutes: 540, endMinutes: 1080
 
 /** The shift for a weekday: an assigned schedule wins (absent weekday = rest); otherwise Mon–Fri default. */
 function scheduleDayFor(
-	scheduleDays: { weekday: number; startMinutes: number; endMinutes: number; breakMinutes: number }[] | null,
+	scheduleDays:
+		{ weekday: number; startMinutes: number; endMinutes: number; breakMinutes: number }[] | null,
 	weekday: number
 ): ScheduleDay | null {
 	if (scheduleDays) {
 		const d = scheduleDays.find((x) => x.weekday === weekday)
-		return d ? { startMinutes: d.startMinutes, endMinutes: d.endMinutes, breakMinutes: d.breakMinutes } : null
+		return d
+			? { startMinutes: d.startMinutes, endMinutes: d.endMinutes, breakMinutes: d.breakMinutes }
+			: null
 	}
 	return weekday >= 1 && weekday <= 5 ? DEFAULT_WEEKDAY_SHIFT : null
 }
 
 /** Group punches into shifts, attributing an overnight OUT/breaks to the IN's PHT day. */
-function groupPunchesByDay(punches: { punchType: AttPunchType; timestamp: Date }[]): Map<string, { punchType: AttPunchType; timestamp: Date }[]> {
+function groupPunchesByDay(
+	punches: { punchType: AttPunchType; timestamp: Date }[]
+): Map<string, { punchType: AttPunchType; timestamp: Date }[]> {
 	const byDay = new Map<string, { punchType: AttPunchType; timestamp: Date }[]>()
 	const sorted = [...punches].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
 	let currentDay: string | null = null
@@ -68,7 +73,10 @@ export async function deriveRange(
 	})
 
 	const holidays = await db.publicHoliday.findMany({
-		where: { organizationId, date: { gte: new Date(`${fromKey}T00:00:00Z`), lte: new Date(`${toKey}T23:59:59Z`) } },
+		where: {
+			organizationId,
+			date: { gte: new Date(`${fromKey}T00:00:00Z`), lte: new Date(`${toKey}T23:59:59Z`) }
+		},
 		select: { date: true, type: true }
 	})
 	const holidayByDay = new Map(holidays.map((h) => [h.date.toISOString().slice(0, 10), h.type]))
@@ -91,7 +99,13 @@ export async function deriveRange(
 		const byDay = groupPunchesByDay(punches)
 
 		const leaveReqs = await db.request.findMany({
-			where: { employeeId: emp.id, type: 'LEAVE', status: 'APPROVED', dateFrom: { lte: new Date(`${toKey}T23:59:59Z`) }, dateTo: { gte: new Date(`${fromKey}T00:00:00Z`) } },
+			where: {
+				employeeId: emp.id,
+				type: 'LEAVE',
+				status: 'APPROVED',
+				dateFrom: { lte: new Date(`${toKey}T23:59:59Z`) },
+				dateTo: { gte: new Date(`${fromKey}T00:00:00Z`) }
+			},
 			select: { dateFrom: true, dateTo: true }
 		})
 		const leaves = leaveReqs.map((l) => ({ startDate: l.dateFrom!, endDate: l.dateTo! }))
@@ -114,7 +128,11 @@ export async function deriveRange(
 			approvedOtByDay.set(k, (approvedOtByDay.get(k) ?? 0) + Number(o.hours ?? 0))
 		}
 
-		for (let cur = new Date(`${fromKey}T00:00:00Z`); cur.toISOString().slice(0, 10) <= toKey; cur.setUTCDate(cur.getUTCDate() + 1)) {
+		for (
+			let cur = new Date(`${fromKey}T00:00:00Z`);
+			cur.toISOString().slice(0, 10) <= toKey;
+			cur.setUTCDate(cur.getUTCDate() + 1)
+		) {
 			const dayKey = cur.toISOString().slice(0, 10)
 			const weekday = cur.getUTCDay()
 			const holiday = holidayByDay.get(dayKey)
@@ -126,7 +144,11 @@ export async function deriveRange(
 				: schedDay
 					? 'REGULAR'
 					: 'REST_DAY'
-			const onLeave = leaves.some((l) => l.startDate.toISOString().slice(0, 10) <= dayKey && l.endDate.toISOString().slice(0, 10) >= dayKey)
+			const onLeave = leaves.some(
+				(l) =>
+					l.startDate.toISOString().slice(0, 10) <= dayKey &&
+					l.endDate.toISOString().slice(0, 10) >= dayKey
+			)
 
 			const existing = await db.attendanceDay.findUnique({
 				where: { employeeId_date: { employeeId: emp.id, date: cur } },
@@ -168,7 +190,8 @@ export async function deriveRange(
 				update: data
 			})
 			derived++
-			if (r.status === 'ABSENT' || r.status === 'INCOMPLETE') flagged.push({ employeeId: emp.id, date: dayKey, status: r.status })
+			if (r.status === 'ABSENT' || r.status === 'INCOMPLETE')
+				flagged.push({ employeeId: emp.id, date: dayKey, status: r.status })
 		}
 	}
 
@@ -198,7 +221,9 @@ export async function correctDay(
 	},
 	ctx: AuditContext
 ) {
-	const day = await db.attendanceDay.findFirst({ where: { id, employee: { user: { organizationId } } } })
+	const day = await db.attendanceDay.findFirst({
+		where: { id, employee: { user: { organizationId } } }
+	})
 	if (!day) error(404, 'Attendance day not found')
 	if (day.isLocked) error(409, 'This attendance day is locked and cannot be edited')
 
@@ -207,7 +232,11 @@ export async function correctDay(
 		action: 'UPDATE',
 		entityType: 'AttendanceDay',
 		entityId: id,
-		oldValue: { regularHours: Number(day.regularHours), overtimeHours: Number(day.overtimeHours), status: day.status },
+		oldValue: {
+			regularHours: Number(day.regularHours),
+			overtimeHours: Number(day.overtimeHours),
+			status: day.status
+		},
 		newValue: data as Record<string, unknown>
 	})
 	return updated
@@ -229,6 +258,11 @@ export async function lockRange(
 		},
 		data: { isLocked: true }
 	})
-	await writeAuditLog(ctx, { action: 'UPDATE', entityType: 'AttendanceDay', entityId: range.employeeId ?? organizationId, newValue: { locked: res.count, from: fromKey, to: toKey } })
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'AttendanceDay',
+		entityId: range.employeeId ?? organizationId,
+		newValue: { locked: res.count, from: fromKey, to: toKey }
+	})
 	return { locked: res.count }
 }

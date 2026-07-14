@@ -277,9 +277,18 @@ export async function generateLeaveUtilization(
 		select: { payload: true, employeeId: true }
 	})
 
-	const typeIds = [...new Set(requests.map((r) => (r.payload as { leaveTypeId?: string })?.leaveTypeId).filter(Boolean) as string[])]
+	const typeIds = [
+		...new Set(
+			requests
+				.map((r) => (r.payload as { leaveTypeId?: string })?.leaveTypeId)
+				.filter(Boolean) as string[]
+		)
+	]
 	const types = typeIds.length
-		? await db.leaveType.findMany({ where: { id: { in: typeIds } }, select: { id: true, name: true } })
+		? await db.leaveType.findMany({
+				where: { id: { in: typeIds } },
+				select: { id: true, name: true }
+			})
 		: []
 	const typeNames = new Map(types.map((t) => [t.id, t.name]))
 
@@ -326,9 +335,11 @@ export async function generatePayrollRegister(
 		orderBy: [{ payrollRun: { periodStart: 'asc' } }, { employee: { lastName: 'asc' } }]
 	})
 
-	const fmt = (d: Date) => d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+	const fmt = (d: Date) =>
+		d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
 	return entries.map((e) => {
-		const statutory = Number(e.sssEe) + Number(e.philhealthEe) + Number(e.pagibigEe) + Number(e.withholdingTax)
+		const statutory =
+			Number(e.sssEe) + Number(e.philhealthEe) + Number(e.pagibigEe) + Number(e.withholdingTax)
 		const other = Math.round((Number(e.totalDeductions) - statutory) * 100) / 100
 		return {
 			Employee: `${e.employee.lastName}, ${e.employee.firstName} (${e.employee.employeeNumber})`,
@@ -366,7 +377,12 @@ export async function generateTardiness(
 	const byEmp = new Map<string, { name: string; lateDays: number; late: number; under: number }>()
 	for (const d of days) {
 		const key = d.employee.employeeNumber
-		const row = byEmp.get(key) ?? { name: `${d.employee.lastName}, ${d.employee.firstName} (${key})`, lateDays: 0, late: 0, under: 0 }
+		const row = byEmp.get(key) ?? {
+			name: `${d.employee.lastName}, ${d.employee.firstName} (${key})`,
+			lateDays: 0,
+			late: 0,
+			under: 0
+		}
 		if (d.lateMinutes > 0) row.lateDays += 1
 		row.late += d.lateMinutes
 		row.under += d.undertimeMinutes
@@ -376,7 +392,12 @@ export async function generateTardiness(
 	return [...byEmp.values()]
 		.filter((r) => r.late > 0 || r.under > 0)
 		.sort((a, b) => b.late - a.late)
-		.map((r) => ({ Employee: r.name, LateDays: r.lateDays, LateMinutes: r.late, UndertimeMinutes: r.under }))
+		.map((r) => ({
+			Employee: r.name,
+			LateDays: r.lateDays,
+			LateMinutes: r.late,
+			UndertimeMinutes: r.under
+		}))
 }
 
 // ─── generateOvertime ─────────────────────────────────────────────────────────
@@ -402,7 +423,12 @@ export async function generateOvertime(
 	const byEmp = new Map<string, { name: string; ot: number; raw: number; night: number }>()
 	for (const d of days) {
 		const key = d.employee.employeeNumber
-		const row = byEmp.get(key) ?? { name: `${d.employee.lastName}, ${d.employee.firstName} (${key})`, ot: 0, raw: 0, night: 0 }
+		const row = byEmp.get(key) ?? {
+			name: `${d.employee.lastName}, ${d.employee.firstName} (${key})`,
+			ot: 0,
+			raw: 0,
+			night: 0
+		}
 		row.ot += Number(d.overtimeHours)
 		row.raw += Number(d.rawOvertimeHours)
 		row.night += Number(d.nightDiffHours)
@@ -454,24 +480,51 @@ export async function generateGovernmentRemittance(
 	{ startDate, endDate }: { startDate: Date; endDate: Date }
 ) {
 	const entries = await db.payrollEntry.findMany({
-		where: { payrollRun: { organizationId, periodStart: { gte: startDate }, periodEnd: { lte: endDate } } },
+		where: {
+			payrollRun: { organizationId, periodStart: { gte: startDate }, periodEnd: { lte: endDate } }
+		},
 		select: {
-			sssEe: true, sssEr: true, philhealthEe: true, philhealthEr: true,
-			pagibigEe: true, pagibigEr: true, withholdingTax: true
+			sssEe: true,
+			sssEr: true,
+			philhealthEe: true,
+			philhealthEr: true,
+			pagibigEe: true,
+			pagibigEr: true,
+			withholdingTax: true
 		}
 	})
 
-	const sum = (pick: (e: (typeof entries)[number]) => number) => entries.reduce((s, e) => s + pick(e), 0)
+	const sum = (pick: (e: (typeof entries)[number]) => number) =>
+		entries.reduce((s, e) => s + pick(e), 0)
 	const round = (n: number) => Math.round(n * 100) / 100
 	const row = (contribution: string, ee: number, er: number) => ({
-		Contribution: contribution, EmployeeShare: round(ee), EmployerShare: round(er), Total: round(ee + er)
+		Contribution: contribution,
+		EmployeeShare: round(ee),
+		EmployerShare: round(er),
+		Total: round(ee + er)
 	})
 
 	return [
-		row('SSS', sum((e) => Number(e.sssEe)), sum((e) => Number(e.sssEr))),
-		row('PhilHealth', sum((e) => Number(e.philhealthEe)), sum((e) => Number(e.philhealthEr))),
-		row('Pag-IBIG', sum((e) => Number(e.pagibigEe)), sum((e) => Number(e.pagibigEr))),
-		row('Withholding Tax (BIR)', sum((e) => Number(e.withholdingTax)), 0)
+		row(
+			'SSS',
+			sum((e) => Number(e.sssEe)),
+			sum((e) => Number(e.sssEr))
+		),
+		row(
+			'PhilHealth',
+			sum((e) => Number(e.philhealthEe)),
+			sum((e) => Number(e.philhealthEr))
+		),
+		row(
+			'Pag-IBIG',
+			sum((e) => Number(e.pagibigEe)),
+			sum((e) => Number(e.pagibigEr))
+		),
+		row(
+			'Withholding Tax (BIR)',
+			sum((e) => Number(e.withholdingTax)),
+			0
+		)
 	]
 }
 
@@ -483,18 +536,27 @@ export async function generateBIRWithholding(
 	{ startDate, endDate }: { startDate: Date; endDate: Date }
 ) {
 	const entries = await db.payrollEntry.findMany({
-		where: { payrollRun: { organizationId, periodStart: { gte: startDate }, periodEnd: { lte: endDate } } },
+		where: {
+			payrollRun: { organizationId, periodStart: { gte: startDate }, periodEnd: { lte: endDate } }
+		},
 		select: {
 			grossPay: true,
 			withholdingTax: true,
-			employee: { select: { firstName: true, lastName: true, employeeNumber: true, tinNumber: true } }
+			employee: {
+				select: { firstName: true, lastName: true, employeeNumber: true, tinNumber: true }
+			}
 		}
 	})
 
 	const byEmp = new Map<string, { name: string; tin: string; gross: number; tax: number }>()
 	for (const e of entries) {
 		const key = e.employee.employeeNumber
-		const row = byEmp.get(key) ?? { name: `${e.employee.lastName}, ${e.employee.firstName} (${key})`, tin: e.employee.tinNumber ?? '—', gross: 0, tax: 0 }
+		const row = byEmp.get(key) ?? {
+			name: `${e.employee.lastName}, ${e.employee.firstName} (${key})`,
+			tin: e.employee.tinNumber ?? '—',
+			gross: 0,
+			tax: 0
+		}
 		row.gross += Number(e.grossPay)
 		row.tax += Number(e.withholdingTax)
 		byEmp.set(key, row)
@@ -502,7 +564,12 @@ export async function generateBIRWithholding(
 
 	return [...byEmp.values()]
 		.sort((a, b) => a.name.localeCompare(b.name))
-		.map((r) => ({ Employee: r.name, TIN: r.tin, Gross: Math.round(r.gross * 100) / 100, TaxWithheld: Math.round(r.tax * 100) / 100 }))
+		.map((r) => ({
+			Employee: r.name,
+			TIN: r.tin,
+			Gross: Math.round(r.gross * 100) / 100,
+			TaxWithheld: Math.round(r.tax * 100) / 100
+		}))
 }
 
 // ─── exportToCSV ──────────────────────────────────────────────────────────────

@@ -113,7 +113,14 @@ export async function listEnrollmentsForEmployee(employeeId: string) {
 		where: { employeeId },
 		include: {
 			plan: {
-				select: { id: true, name: true, type: true, provider: true, employeeCost: true, employerCost: true }
+				select: {
+					id: true,
+					name: true,
+					type: true,
+					provider: true,
+					employeeCost: true,
+					employerCost: true
+				}
 			}
 		},
 		orderBy: { effectiveDate: 'desc' }

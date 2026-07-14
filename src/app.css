@@ -14,7 +14,7 @@
 		--popover: 0 0% 100%;
 		--popover-foreground: 0 0% 9%;
 
-		--primary: 0 79% 45%;             /* #CC1515 — Veent Red */
+		--primary: 0 79% 45%; /* #CC1515 — Veent Red */
 		--primary-foreground: 0 0% 100%;
 
 		--secondary: 0 0% 96%;
@@ -87,7 +87,9 @@
 	body {
 		@apply bg-background text-foreground;
 		font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
-		font-feature-settings: 'rlig' 1, 'calt' 1;
+		font-feature-settings:
+			'rlig' 1,
+			'calt' 1;
 		-webkit-font-smoothing: antialiased;
 	}
 

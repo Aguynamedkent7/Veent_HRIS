@@ -35,7 +35,9 @@ export function nextState(
 	if (decision === 'RETURNED') return { status: 'RETURNED', currentStage }
 	// APPROVED
 	const isLast = currentStage >= stepCount - 1
-	return isLast ? { status: 'APPROVED', currentStage } : { status: 'PENDING', currentStage: currentStage + 1 }
+	return isLast
+		? { status: 'APPROVED', currentStage }
+		: { status: 'PENDING', currentStage: currentStage + 1 }
 }
 
 // Act on the request's current stage. `actorEmployeeId` is the deciding user's own
@@ -49,10 +51,14 @@ export async function decide(
 ) {
 	const req = await db.request.findFirst({
 		where: { id: requestId, employee: { user: { organizationId: ctx.organizationId } } },
-		include: { steps: { orderBy: { stageIndex: 'asc' } }, employee: { select: { reportsToId: true, userId: true } } }
+		include: {
+			steps: { orderBy: { stageIndex: 'asc' } },
+			employee: { select: { reportsToId: true, userId: true } }
+		}
 	})
 	if (!req) error(404, 'Request not found')
-	if (req.status !== 'PENDING') error(400, `Request is ${req.status.toLowerCase()}, not open for decisions`)
+	if (req.status !== 'PENDING')
+		error(400, `Request is ${req.status.toLowerCase()}, not open for decisions`)
 
 	const step = req.steps.find((s) => s.stageIndex === req.currentStage)
 	if (!step) error(500, 'Approval chain is inconsistent')
@@ -84,13 +90,28 @@ export async function decide(
 	// requests (OT/rest-day/holiday/leave) are consumed lazily by the attendance
 	// derivation; INFO_UPDATE writes the employee field here.
 	if (transition.status === 'APPROVED') {
-		await applyApprovedRequest({ id: req.id, type: req.type, employeeId: req.employeeId, dateFrom: req.dateFrom, payload: req.payload }, ctx)
+		await applyApprovedRequest(
+			{
+				id: req.id,
+				type: req.type,
+				employeeId: req.employeeId,
+				dateFrom: req.dateFrom,
+				payload: req.payload
+			},
+			ctx
+		)
 	}
 
 	// Notify the requester of the outcome (final approval / rejection / return).
 	const label = req.type.replace(/_/g, ' ').toLowerCase()
 	const verb =
-		transition.status === 'APPROVED' ? 'approved' : transition.status === 'REJECTED' ? 'rejected' : transition.status === 'RETURNED' ? 'returned for correction' : null
+		transition.status === 'APPROVED'
+			? 'approved'
+			: transition.status === 'REJECTED'
+				? 'rejected'
+				: transition.status === 'RETURNED'
+					? 'returned for correction'
+					: null
 	if (verb) {
 		await notify(req.employee.userId, `Your ${label} request was ${verb}.`, `/requests/${req.id}`)
 	}

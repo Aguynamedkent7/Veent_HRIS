@@ -1,9 +1,9 @@
-import js from '@eslint/js';
-import ts from '@typescript-eslint/eslint-plugin';
-import tsParser from '@typescript-eslint/parser';
-import svelte from 'eslint-plugin-svelte';
-import svelteParser from 'svelte-eslint-parser';
-import prettier from 'eslint-config-prettier';
+import js from '@eslint/js'
+import ts from '@typescript-eslint/eslint-plugin'
+import tsParser from '@typescript-eslint/parser'
+import svelte from 'eslint-plugin-svelte'
+import svelteParser from 'svelte-eslint-parser'
+import prettier from 'eslint-config-prettier'
 
 /** @type {import('eslint').Linter.Config[]} */
 export default [
@@ -27,4 +27,4 @@ export default [
 	{
 		ignores: ['build/', '.svelte-kit/', 'node_modules/', 'dist/']
 	}
-];
+]

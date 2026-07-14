@@ -86,15 +86,17 @@ export async function recordPunch(
 }
 
 /** List an employee's raw punches within an optional [from, to] window. */
-export async function listPunches(
-	employeeId: string,
-	range?: { from?: Date; to?: Date }
-) {
+export async function listPunches(employeeId: string, range?: { from?: Date; to?: Date }) {
 	return db.timeLog.findMany({
 		where: {
 			employeeId,
 			...(range?.from || range?.to
-				? { timestamp: { ...(range.from && { gte: range.from }), ...(range.to && { lte: range.to }) } }
+				? {
+						timestamp: {
+							...(range.from && { gte: range.from }),
+							...(range.to && { lte: range.to })
+						}
+					}
 				: {})
 		},
 		orderBy: { timestamp: 'asc' }

@@ -62,15 +62,7 @@
 				</text>
 
 				<!-- Bar -->
-				<rect
-					x={PADDING.left}
-					y={y}
-					width={bw}
-					height={BAR_HEIGHT}
-					fill={color(i)}
-					rx="3"
-					ry="3"
-				>
+				<rect x={PADDING.left} {y} width={bw} height={BAR_HEIGHT} fill={color(i)} rx="3" ry="3">
 					<title>{d.department}: {formatCurrency(d.totalGross)}</title>
 				</rect>
 

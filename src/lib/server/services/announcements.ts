@@ -26,12 +26,29 @@ export async function createAnnouncement(
 	ctx: AuditContext
 ) {
 	const created = await db.announcement.create({
-		data: { organizationId, authorId: ctx.actorId, title: input.title.trim(), body: input.body.trim() }
+		data: {
+			organizationId,
+			authorId: ctx.actorId,
+			title: input.title.trim(),
+			body: input.body.trim()
+		}
 	})
 
-	const users = await db.user.findMany({ where: { organizationId, isActive: true }, select: { id: true } })
-	await notifyMany(users.map((u) => u.id), `📢 ${created.title}`, '/dashboard')
+	const users = await db.user.findMany({
+		where: { organizationId, isActive: true },
+		select: { id: true }
+	})
+	await notifyMany(
+		users.map((u) => u.id),
+		`📢 ${created.title}`,
+		'/dashboard'
+	)
 
-	await writeAuditLog(ctx, { action: 'CREATE', entityType: 'Announcement', entityId: created.id, newValue: { title: created.title } })
+	await writeAuditLog(ctx, {
+		action: 'CREATE',
+		entityType: 'Announcement',
+		entityId: created.id,
+		newValue: { title: created.title }
+	})
 	return created
 }

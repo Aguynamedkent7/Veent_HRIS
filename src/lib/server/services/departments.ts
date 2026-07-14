@@ -21,11 +21,7 @@ export async function getDepartment(id: string, organizationId: string) {
 	return department
 }
 
-export async function createDepartment(
-	organizationId: string,
-	name: string,
-	ctx: AuditContext
-) {
+export async function createDepartment(organizationId: string, name: string, ctx: AuditContext) {
 	const department = await db.department.create({
 		data: { organizationId, name }
 	})

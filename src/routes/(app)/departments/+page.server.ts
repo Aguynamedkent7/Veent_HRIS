@@ -1,7 +1,11 @@
 import { fail } from '@sveltejs/kit'
 import { z } from 'zod'
 import { requireRole } from '$lib/server/rbac'
-import { listDepartments, createDepartment, updateDepartment } from '$lib/server/services/departments'
+import {
+	listDepartments,
+	createDepartment,
+	updateDepartment
+} from '$lib/server/services/departments'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {

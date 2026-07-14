@@ -57,11 +57,14 @@ interface UpdateEmployeeInput {
 	workScheduleId?: string | null
 }
 
-export async function listEmployees(organizationId: string, filters?: {
-	status?: EmploymentStatus
-	departmentId?: string
-	search?: string
-}) {
+export async function listEmployees(
+	organizationId: string,
+	filters?: {
+		status?: EmploymentStatus
+		departmentId?: string
+		search?: string
+	}
+) {
 	return db.employee.findMany({
 		where: {
 			user: { organizationId },

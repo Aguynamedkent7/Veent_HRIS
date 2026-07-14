@@ -54,7 +54,12 @@ export const actions: Actions = {
 		try {
 			await openPeriod(
 				event.locals.user!.organizationId,
-				{ name: parsed.data.name, startDate: parsed.data.start, endDate: parsed.data.end, cutoff: parsed.data.cutoff },
+				{
+					name: parsed.data.name,
+					startDate: parsed.data.start,
+					endDate: parsed.data.end,
+					cutoff: parsed.data.cutoff
+				},
 				ctxOf(event)
 			)
 		} catch (e) {

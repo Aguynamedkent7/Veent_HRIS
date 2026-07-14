@@ -16,11 +16,25 @@ import {
 import type { RequestHandler } from './$types'
 
 const VALID_TYPES = [
-	'headcount', 'attendance', 'payroll-costs', 'leave-utilization', 'payroll-register',
-	'tardiness', 'overtime', 'loan-summary', 'government-remittance', 'bir-withholding'
+	'headcount',
+	'attendance',
+	'payroll-costs',
+	'leave-utilization',
+	'payroll-register',
+	'tardiness',
+	'overtime',
+	'loan-summary',
+	'government-remittance',
+	'bir-withholding'
 ] as const
 // Payroll reports are also visible to Payroll Officer / Finance; the rest are HR-only.
-const PAYROLL_REPORT_TYPES = ['payroll-costs', 'payroll-register', 'loan-summary', 'government-remittance', 'bir-withholding'] as const
+const PAYROLL_REPORT_TYPES = [
+	'payroll-costs',
+	'payroll-register',
+	'loan-summary',
+	'government-remittance',
+	'bir-withholding'
+] as const
 
 export const GET: RequestHandler = async ({ locals, params, url }) => {
 	if (!locals.user) error(401, 'Unauthorized')
@@ -41,9 +55,7 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
 	const startDate = url.searchParams.get('start')
 		? new Date(url.searchParams.get('start')!)
 		: new Date(new Date().getFullYear(), 0, 1)
-	const endDate = url.searchParams.get('end')
-		? new Date(url.searchParams.get('end')!)
-		: new Date()
+	const endDate = url.searchParams.get('end') ? new Date(url.searchParams.get('end')!) : new Date()
 	const departmentId = url.searchParams.get('department') ?? undefined
 	const exportCsv = url.searchParams.get('export') === 'csv'
 

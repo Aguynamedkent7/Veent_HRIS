@@ -35,7 +35,12 @@ export const actions: Actions = {
 			await createSchedule(
 				locals.user!.organizationId,
 				{ name, isDefault, startMinutes, endMinutes, breakMinutes, weekdays },
-				{ organizationId: locals.user!.organizationId, actorId: locals.user!.id, actorRole: locals.user!.role, ipAddress: getClientAddress() }
+				{
+					organizationId: locals.user!.organizationId,
+					actorId: locals.user!.id,
+					actorRole: locals.user!.role,
+					ipAddress: getClientAddress()
+				}
 			)
 		} catch (e: unknown) {
 			const err = e as { status?: number; body?: { message?: string } }

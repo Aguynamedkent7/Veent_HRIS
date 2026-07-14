@@ -9,8 +9,9 @@ Turn raw `TimeLog` punches into reviewable, per-day **AttendanceDay** records �
 late, undertime, overtime, night differential, breaks, and missing/incomplete flags against each
 employee's **WorkSchedule** and the holiday calendar. HR reviews/corrects, then **locks** attendance for
 a period, which feeds the payroll engine's `AttendanceInput` (regular/OT/night-diff/holiday/rest-day hours
-+ late/undertime). This closes the loop: **Discord punch → attendance → payroll** — replacing the interim
-"regularHours from approved timesheets" seam the payroll engine uses today.
+
+- late/undertime). This closes the loop: **Discord punch → attendance → payroll** — replacing the interim
+  "regularHours from approved timesheets" seam the payroll engine uses today.
 
 ## Technical Context
 
@@ -47,6 +48,7 @@ and `generate` reads them (falling back to the current timesheet path when no At
   (restDayOt, regularHolidayOt, …); attendance only classifies hours into buckets, payroll prices them.
 
 **Resolved** (clarified 2026-07-10):
+
 1. **Night-differential window is org-configurable**, defaulting to DOLE **22:00–06:00 PHT** (stored alongside
    the pay-rate config). The derivation reads the window from config.
 2. **Overtime is gated on approval.** The engine computes `rawOvertimeHours` (worked beyond scheduled) for HR
@@ -60,13 +62,13 @@ and `generate` reads them (falling back to the current timesheet path when no At
 
 ## Constitution Check
 
-| Principle | Status |
-|-----------|--------|
-| I. Data Privacy | ✅ Attendance is personal data — RBAC-gated (employee sees own; HR manages). No new secrets. |
-| II. RBAC | ✅ Derive/correct/lock = HR_ADMIN+ (later PAYROLL_OFFICER); employees read-only own days. |
-| III. Spec-Driven | ✅ FR-052–055 specified; this plan + clarify precede build. |
-| IV. Audit | ✅ Corrections and locks write `writeAuditLog`; derivation is idempotent + traceable. |
-| V. Test-First | ✅ Pure `deriveAttendanceDay` unit-tested before wiring (mirrors the payroll engine approach). |
+| Principle        | Status                                                                                         |
+| ---------------- | ---------------------------------------------------------------------------------------------- |
+| I. Data Privacy  | ✅ Attendance is personal data — RBAC-gated (employee sees own; HR manages). No new secrets.   |
+| II. RBAC         | ✅ Derive/correct/lock = HR_ADMIN+ (later PAYROLL_OFFICER); employees read-only own days.      |
+| III. Spec-Driven | ✅ FR-052–055 specified; this plan + clarify precede build.                                    |
+| IV. Audit        | ✅ Corrections and locks write `writeAuditLog`; derivation is idempotent + traceable.          |
+| V. Test-First    | ✅ Pure `deriveAttendanceDay` unit-tested before wiring (mirrors the payroll engine approach). |
 
 No violations. No Complexity Tracking entries.
 
@@ -106,6 +108,7 @@ tests/unit/attendance-derive.test.ts (new)
 - `speckit-analyze` — FR-052–055 mapped.
 
 ## Out of scope (this addendum)
+
 Biometric/other punch sources (TimeLog already generic); break-punch support; shift rotation / multiple shifts
 per day; geofencing; the Requests-module OT approval gating (Phase 11.4) — attendance derives OT, approval
 gating is layered on when Requests lands.

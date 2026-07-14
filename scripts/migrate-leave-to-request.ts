@@ -69,7 +69,14 @@ async function main() {
 			stageIndex: idx,
 			stageKind: 'ROLE',
 			role: 'HR_ADMIN',
-			decision: status === 'PENDING' ? null : status === 'REJECTED' ? 'REJECTED' : status === 'APPROVED' ? 'APPROVED' : null,
+			decision:
+				status === 'PENDING'
+					? null
+					: status === 'REJECTED'
+						? 'REJECTED'
+						: status === 'APPROVED'
+							? 'APPROVED'
+							: null,
 			actorId: lr.reviewedById ?? null,
 			note: lr.rejectionReason ?? null,
 			decidedAt: lr.reviewedAt ?? null

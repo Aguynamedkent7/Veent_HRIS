@@ -13,7 +13,12 @@ const SCHED: ScheduleDay = { startMinutes: 540, endMinutes: 1080, breakMinutes: 
 
 function derive(
 	punches: ReturnType<typeof p>[],
-	opts: { schedule?: ScheduleDay | null; dayType?: DayType; approvedOtHours?: number; onLeave?: boolean } = {}
+	opts: {
+		schedule?: ScheduleDay | null
+		dayType?: DayType
+		approvedOtHours?: number
+		onLeave?: boolean
+	} = {}
 ) {
 	return deriveAttendanceDay({
 		punches,
@@ -43,7 +48,12 @@ describe('deriveAttendanceDay — regular day', () => {
 	})
 
 	it('flags late arrival and marks status LATE', () => {
-		const r = derive([p('IN', T('09:30')), p('BREAK_START', T('12:00')), p('BREAK_END', T('13:00')), p('OUT', T('18:00'))])
+		const r = derive([
+			p('IN', T('09:30')),
+			p('BREAK_START', T('12:00')),
+			p('BREAK_END', T('13:00')),
+			p('OUT', T('18:00'))
+		])
 		expect(r.lateMinutes).toBe(30)
 		expect(r.workedHours).toBeCloseTo(7.5, 2)
 		expect(r.status).toBe('LATE')
@@ -58,7 +68,12 @@ describe('deriveAttendanceDay — regular day', () => {
 
 describe('deriveAttendanceDay — overtime is gated on approval', () => {
 	it('reports rawOvertime but pays 0 without approval', () => {
-		const r = derive([p('IN', T('09:00')), p('BREAK_START', T('12:00')), p('BREAK_END', T('13:00')), p('OUT', T('20:00'))])
+		const r = derive([
+			p('IN', T('09:00')),
+			p('BREAK_START', T('12:00')),
+			p('BREAK_END', T('13:00')),
+			p('OUT', T('20:00'))
+		])
 		expect(r.workedHours).toBeCloseTo(10, 2)
 		expect(r.regularHours).toBeCloseTo(8, 2)
 		expect(r.rawOvertimeHours).toBeCloseTo(2, 2)
@@ -66,16 +81,27 @@ describe('deriveAttendanceDay — overtime is gated on approval', () => {
 	})
 
 	it('pays approved overtime up to the approved amount', () => {
-		const r = derive([p('IN', T('09:00')), p('BREAK_START', T('12:00')), p('BREAK_END', T('13:00')), p('OUT', T('20:00'))], {
-			approvedOtHours: 2
-		})
+		const r = derive(
+			[
+				p('IN', T('09:00')),
+				p('BREAK_START', T('12:00')),
+				p('BREAK_END', T('13:00')),
+				p('OUT', T('20:00'))
+			],
+			{
+				approvedOtHours: 2
+			}
+		)
 		expect(r.overtimeHours).toBeCloseTo(2, 2)
 	})
 })
 
 describe('deriveAttendanceDay — night differential', () => {
 	it('counts hours inside the 22:00–06:00 window (overnight rest-day shift)', () => {
-		const r = derive([p('IN', T('22:00')), p('OUT', T2('02:00'))], { schedule: null, dayType: 'REST_DAY' })
+		const r = derive([p('IN', T('22:00')), p('OUT', T2('02:00'))], {
+			schedule: null,
+			dayType: 'REST_DAY'
+		})
 		expect(r.workedHours).toBeCloseTo(4, 2)
 		expect(r.nightDiffHours).toBeCloseTo(4, 2) // all within night window
 		expect(r.restDayHours).toBeCloseTo(4, 2)
@@ -91,7 +117,10 @@ describe('deriveAttendanceDay — night differential', () => {
 
 describe('deriveAttendanceDay — day types & holidays', () => {
 	it('routes worked hours to the regular-holiday bucket', () => {
-		const r = derive([p('IN', T('09:00')), p('OUT', T('17:00'))], { schedule: null, dayType: 'REGULAR_HOLIDAY' })
+		const r = derive([p('IN', T('09:00')), p('OUT', T('17:00'))], {
+			schedule: null,
+			dayType: 'REGULAR_HOLIDAY'
+		})
 		expect(r.regularHolidayHours).toBeCloseTo(8, 2)
 		expect(r.regularHours).toBe(0)
 		expect(r.status).toBe('PRESENT')

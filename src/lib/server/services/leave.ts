@@ -35,9 +35,18 @@ export async function listLeaveRequests(params: {
 		orderBy: { createdAt: 'desc' }
 	})
 
-	const typeIds = [...new Set(rows.map((r) => (r.payload as { leaveTypeId?: string })?.leaveTypeId).filter(Boolean) as string[])]
+	const typeIds = [
+		...new Set(
+			rows
+				.map((r) => (r.payload as { leaveTypeId?: string })?.leaveTypeId)
+				.filter(Boolean) as string[]
+		)
+	]
 	const types = typeIds.length
-		? await db.leaveType.findMany({ where: { id: { in: typeIds } }, select: { id: true, name: true, isPaid: true } })
+		? await db.leaveType.findMany({
+				where: { id: { in: typeIds } },
+				select: { id: true, name: true, isPaid: true }
+			})
 		: []
 	const typeMap = new Map(types.map((t) => [t.id, t]))
 
@@ -67,7 +76,13 @@ export async function requestLeave(
 	return createRequest(
 		employeeId,
 		organizationId,
-		{ type: 'LEAVE', leaveTypeId: input.leaveTypeId, startDate: input.startDate, endDate: input.endDate, reason: input.reason },
+		{
+			type: 'LEAVE',
+			leaveTypeId: input.leaveTypeId,
+			startDate: input.startDate,
+			endDate: input.endDate,
+			reason: input.reason
+		},
 		ctx
 	)
 }
@@ -81,7 +96,10 @@ export async function reviewLeaveRequest(
 	rejectionReason: string | undefined,
 	ctx: AuditContext
 ) {
-	const actor = await db.employee.findUnique({ where: { userId: ctx.actorId }, select: { id: true } })
+	const actor = await db.employee.findUnique({
+		where: { userId: ctx.actorId },
+		select: { id: true }
+	})
 	return decide(id, approved ? 'APPROVED' : 'REJECTED', rejectionReason, ctx, actor?.id ?? null)
 }
 
