@@ -30,11 +30,28 @@
 			? `/attendance/export?view=team&date=${data.date}`
 			: `/attendance/export?view=employee&employeeId=${data.selectedEmployeeId ?? ''}&from=${data.from}&to=${data.to}`
 	)
+
+	// Heroicons (outline, 24×24) — match the inline-SVG convention used in the app nav.
+	const IC = {
+		refresh:
+			'M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99',
+		lock: 'M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z',
+		lockOpen:
+			'M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z',
+		download:
+			'M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3'
+	}
 </script>
 
 <svelte:head>
 	<title>Attendance — Veent HRIS</title>
 </svelte:head>
+
+{#snippet icon(d: string, cls = 'h-4 w-4 shrink-0')}
+	<svg xmlns="http://www.w3.org/2000/svg" class={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+		<path stroke-linecap="round" stroke-linejoin="round" d={d} />
+	</svg>
+{/snippet}
 
 <div class="space-y-6">
 	<div class="flex items-start justify-between gap-4">
@@ -112,7 +129,7 @@
 				<input type="hidden" name="employeeId" value={data.selectedEmployeeId} />
 				<input type="hidden" name="from" value={data.from} />
 				<input type="hidden" name="to" value={data.to} />
-				<button title="Re-pull from punches (updates unlocked days)" class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">↻ Refresh</button>
+				<button title="Re-pull from punches (updates unlocked days)" class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">{@render icon(IC.refresh)}Refresh</button>
 			</form>
 			<form method="POST" action="?/lock" use:enhance>
 				<input type="hidden" name="employeeId" value={data.selectedEmployeeId} />
@@ -125,16 +142,16 @@
 					<input type="hidden" name="employeeId" value={data.selectedEmployeeId} />
 					<input type="hidden" name="from" value={data.from} />
 					<input type="hidden" name="to" value={data.to} />
-					<button title="Reopen locked days (super admin)" class="rounded-md border border-amber-300 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50">🔓 Unlock range</button>
+					<button title="Reopen locked days (super admin)" class="inline-flex items-center gap-1.5 rounded-md border border-amber-300 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50">{@render icon(IC.lockOpen)}Unlock range</button>
 				</form>
 			{/if}
-			<a href={exportHref} class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">Export CSV</a>
+			<a href={exportHref} class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">{@render icon(IC.download)}Export CSV</a>
 		</div>
 	{:else if data.canManage && data.view === 'team'}
 		<div class="flex flex-wrap gap-2">
 			<form method="POST" action="?/deriveTeam" use:enhance>
 				<input type="hidden" name="date" value={data.date} />
-				<button title="Re-pull from punches (updates unlocked days)" class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">↻ Refresh</button>
+				<button title="Re-pull from punches (updates unlocked days)" class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">{@render icon(IC.refresh)}Refresh</button>
 			</form>
 			<form method="POST" action="?/lockTeam" use:enhance>
 				<input type="hidden" name="date" value={data.date} />
@@ -143,15 +160,15 @@
 			{#if data.canUnlock}
 				<form method="POST" action="?/unlockTeam" use:enhance>
 					<input type="hidden" name="date" value={data.date} />
-					<button title="Reopen locked days (super admin)" class="rounded-md border border-amber-300 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50">🔓 Unlock day</button>
+					<button title="Reopen locked days (super admin)" class="inline-flex items-center gap-1.5 rounded-md border border-amber-300 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50">{@render icon(IC.lockOpen)}Unlock day</button>
 				</form>
 			{/if}
-			<a href={exportHref} class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">Export CSV</a>
+			<a href={exportHref} class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">{@render icon(IC.download)}Export CSV</a>
 		</div>
 	{:else}
 		<!-- Employees can export their own timesheet -->
 		<div class="flex gap-2">
-			<a href={exportHref} class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">Export CSV</a>
+			<a href={exportHref} class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">{@render icon(IC.download)}Export CSV</a>
 		</div>
 	{/if}
 
@@ -180,7 +197,7 @@
 							<td class="px-3 py-2">
 								{#if d}
 									<span class="rounded-full px-2 py-0.5 text-xs font-medium {badge[d.status] ?? 'bg-gray-100 text-gray-600'}">{d.status}</span>
-									{#if d.isLocked}<span title="locked" class="ml-1 text-muted-foreground">🔒</span>{/if}
+									{#if d.isLocked}<span title="locked" class="ml-1 inline-flex align-middle text-muted-foreground">{@render icon(IC.lock, 'h-3.5 w-3.5')}</span>{/if}
 								{:else}
 									<span class="text-xs text-muted-foreground">no record</span>
 								{/if}
@@ -231,7 +248,7 @@
 				<tbody class="divide-y">
 					{#each data.days as d (d.id)}
 						<tr class="hover:bg-muted/30 {d.status === 'ABSENT' || d.status === 'INCOMPLETE' ? 'bg-red-500/5' : ''}">
-							<td class="px-3 py-2 whitespace-nowrap">{fmtDate(d.date)} {#if d.isLocked}<span title="locked" class="text-muted-foreground">🔒</span>{/if}</td>
+							<td class="px-3 py-2 whitespace-nowrap">{fmtDate(d.date)} {#if d.isLocked}<span title="locked" class="inline-flex align-middle text-muted-foreground">{@render icon(IC.lock, 'h-3.5 w-3.5')}</span>{/if}</td>
 							<td class="px-3 py-2"><span class="rounded-full px-2 py-0.5 text-xs font-medium {badge[d.status] ?? 'bg-gray-100 text-gray-600'}">{d.status}</span></td>
 							<td class="px-3 py-2 text-muted-foreground">{fmtTime(d.timeIn)}</td>
 							<td class="px-3 py-2 text-muted-foreground">{fmtTime(d.timeOut)}</td>
@@ -258,7 +275,7 @@
 							{/if}
 						</tr>
 					{:else}
-						<tr><td colspan={data.canManage ? 9 : 8} class="px-3 py-8 text-center text-muted-foreground">No attendance for this range{#if data.canManage} — no punches yet, or hit ↻ Refresh{/if}.</td></tr>
+						<tr><td colspan={data.canManage ? 9 : 8} class="px-3 py-8 text-center text-muted-foreground">No attendance for this range{#if data.canManage} — no punches yet, or use Refresh{/if}.</td></tr>
 					{/each}
 				</tbody>
 			</table>
