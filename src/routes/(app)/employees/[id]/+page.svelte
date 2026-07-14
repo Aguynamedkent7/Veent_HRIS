@@ -53,7 +53,7 @@
 		<!-- Profile Card -->
 		<div class="rounded-lg border bg-card p-6 space-y-4">
 			<h2 class="font-semibold">Profile</h2>
-			<dl class="grid grid-cols-2 gap-3 text-sm">
+			<dl class="grid grid-cols-1 gap-3 sm:grid-cols-2 text-sm">
 				<dt class="text-muted-foreground">Employee No.</dt>
 				<dd class="font-medium">{employee.employeeNumber}</dd>
 				<dt class="text-muted-foreground">Email</dt>
@@ -97,7 +97,7 @@
 		{#if canManage}
 			<div class="rounded-lg border bg-card p-6 space-y-4">
 				<h2 class="font-semibold">Government IDs</h2>
-				<dl class="grid grid-cols-2 gap-3 text-sm">
+				<dl class="grid grid-cols-1 gap-3 sm:grid-cols-2 text-sm">
 					<dt class="text-muted-foreground">SSS Number</dt>
 					<dd>{employee.sssNumber ?? '—'}</dd>
 					<dt class="text-muted-foreground">PhilHealth No.</dt>
@@ -372,7 +372,7 @@
 				</h2>
 
 				{#if data.documents.length}
-					<div class="rounded-md border">
+					<div class="overflow-x-auto rounded-md border">
 						<table class="w-full text-sm">
 							<thead class="border-b bg-muted/50">
 								<tr>

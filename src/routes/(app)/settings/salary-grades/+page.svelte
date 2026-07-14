@@ -29,7 +29,7 @@
 	<!-- Grades -->
 	<section class="space-y-3 rounded-lg border bg-card p-4">
 		<h2 class="font-semibold">Grades</h2>
-		<div class="rounded-md border">
+		<div class="overflow-x-auto rounded-md border">
 			<table class="w-full text-sm">
 				<thead class="border-b bg-muted/50">
 					<tr>
@@ -124,7 +124,7 @@
 	<section class="space-y-3 rounded-lg border bg-card p-4">
 		<h2 class="font-semibold">Position Grades</h2>
 		{#if data.positions.length}
-			<div class="rounded-md border">
+			<div class="overflow-x-auto rounded-md border">
 				<table class="w-full text-sm">
 					<thead class="border-b bg-muted/50">
 						<tr>

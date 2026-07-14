@@ -308,7 +308,7 @@
 			</div>
 		{/if}
 
-		<div class="rounded-lg border">
+		<div class="overflow-x-auto rounded-lg border">
 			<table class="w-full text-sm">
 				<thead class="border-b bg-muted/50">
 					<tr>
@@ -429,7 +429,7 @@
 			<!-- Body (scrollable) -->
 			<div class="flex-1 space-y-4 overflow-y-auto px-6 py-4">
 				<!-- Summary -->
-				<div class="grid grid-cols-2 gap-3 sm:max-w-lg sm:grid-cols-4">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:max-w-lg sm:grid-cols-4">
 					<div class="rounded-lg border bg-muted/30 px-4 py-2">
 						<p class="text-xs text-muted-foreground">Total</p>
 						<p class="font-mono text-lg font-semibold">{total.toFixed(2)}</p>

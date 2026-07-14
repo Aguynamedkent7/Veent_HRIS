@@ -110,7 +110,7 @@
 						{/each}
 					</select>
 				</div>
-				<div class="grid grid-cols-2 gap-3">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					<div class="grid gap-1.5">
 						<label for="startDate" class="text-sm font-medium">Start</label>
 						<input
@@ -134,7 +134,7 @@
 					</div>
 				</div>
 			{:else if selectedType === 'OFFICIAL_BUSINESS'}
-				<div class="grid grid-cols-2 gap-3">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					<div class="grid gap-1.5">
 						<label for="startDate" class="text-sm font-medium">Start</label>
 						<input
@@ -176,7 +176,7 @@
 					/>
 				</div>
 			{:else if isDayHours(selectedType)}
-				<div class="grid grid-cols-2 gap-3">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					<div class="grid gap-1.5">
 						<label for="date" class="text-sm font-medium">Date</label>
 						<input
@@ -243,7 +243,7 @@
 		</form>
 	{/if}
 
-	<div class="rounded-lg border">
+	<div class="overflow-x-auto rounded-lg border">
 		<table class="w-full text-sm">
 			<thead class="border-b bg-muted/50">
 				<tr>
