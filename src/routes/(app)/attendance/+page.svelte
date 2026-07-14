@@ -25,6 +25,23 @@
 	}
 	const n = (x: unknown) => Number(x)
 
+	// 24h HH:MM for a <input type="time">, in Manila time; '' when no punch.
+	function toTimeInput(d: string | Date | null) {
+		if (!d) return ''
+		return new Date(d).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Manila' })
+	}
+	// YYYY-MM-DD (Manila) for the row's date, sent so the server can rebuild edited timestamps.
+	function toDateKey(d: string | Date) {
+		return new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
+	}
+
+	// Editable cells that read as plain text until focused, then reveal an input affordance.
+	const CELL =
+		'h-7 w-full rounded border border-transparent bg-transparent px-1 text-xs hover:bg-muted/40 focus:border-input focus:bg-background focus:outline-none focus:ring-1 focus:ring-ring'
+	const CELL_NUM =
+		CELL + ' text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
+	const CELL_SEL = CELL + ' appearance-none'
+
 	const exportHref = $derived(
 		data.view === 'team'
 			? `/attendance/export?view=team&date=${data.date}`
@@ -208,7 +225,7 @@
 							<td class="px-3 py-2 text-muted-foreground">{t.departmentName ?? '—'}</td>
 							<td class="px-3 py-2">
 								{#if editable && d}
-									<select name="status" form="c-{d.id}" class="h-7 rounded border border-input bg-background px-1 text-xs">
+									<select name="status" form="c-{d.id}" class={CELL_SEL}>
 										{#each STATUSES as s (s)}<option value={s} selected={s === d.status}>{s}</option>{/each}
 									</select>
 								{:else if d}
@@ -218,14 +235,15 @@
 									<span class="text-xs text-muted-foreground">no record</span>
 								{/if}
 							</td>
-							<td class="px-3 py-2 text-muted-foreground">{fmtTime(d?.timeIn ?? null)}</td>
-							<td class="px-3 py-2 text-muted-foreground">{fmtTime(d?.timeOut ?? null)}</td>
-							<td class="px-3 py-2 text-right font-mono">{#if editable && d}<input name="regularHours" form="c-{d.id}" type="number" step="0.25" min="0" value={n(d.regularHours)} class="h-7 w-20 rounded border border-input bg-background px-1 text-right text-xs" />{:else}{d ? n(d.regularHours).toFixed(2) : '—'}{/if}</td>
-							<td class="px-3 py-2 text-right font-mono">{#if editable && d}<input name="overtimeHours" form="c-{d.id}" type="number" step="0.25" min="0" value={n(d.overtimeHours)} class="h-7 w-20 rounded border border-input bg-background px-1 text-right text-xs" />{:else}{d ? n(d.overtimeHours).toFixed(2) : '—'}{/if}</td>
+							<td class="px-3 py-2 text-muted-foreground">{#if editable && d}<input name="timeIn" form="c-{d.id}" type="time" value={toTimeInput(d.timeIn)} class={CELL} />{:else}{fmtTime(d?.timeIn ?? null)}{/if}</td>
+							<td class="px-3 py-2 text-muted-foreground">{#if editable && d}<input name="timeOut" form="c-{d.id}" type="time" value={toTimeInput(d.timeOut)} class={CELL} />{:else}{fmtTime(d?.timeOut ?? null)}{/if}</td>
+							<td class="px-3 py-2 text-right font-mono">{#if editable && d}<input name="regularHours" form="c-{d.id}" type="number" step="0.25" min="0" value={n(d.regularHours)} class={CELL_NUM} />{:else}{d ? n(d.regularHours).toFixed(2) : '—'}{/if}</td>
+							<td class="px-3 py-2 text-right font-mono">{#if editable && d}<input name="overtimeHours" form="c-{d.id}" type="number" step="0.25" min="0" value={n(d.overtimeHours)} class={CELL_NUM} />{:else}{d ? n(d.overtimeHours).toFixed(2) : '—'}{/if}</td>
 							<td class="w-[1%] whitespace-nowrap px-3 py-2">
 								{#if editable && d}
 									<form id="c-{d.id}" method="POST" action="?/correct" use:enhance>
 										<input type="hidden" name="id" value={d.id} />
+										<input type="hidden" name="date" value={toDateKey(d.date)} />
 										<button class="rounded bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90">Save</button>
 									</form>
 								{:else if d?.isLocked}
@@ -263,23 +281,23 @@
 							<td class="px-3 py-2 whitespace-nowrap">{fmtDate(d.date)} {#if d.isLocked}<span title="locked" class="inline-flex align-middle text-muted-foreground">{@render icon(IC.lock, 'h-3.5 w-3.5')}</span>{/if}</td>
 							<td class="px-3 py-2">
 								{#if editable}
-									<select name="status" form="c-{d.id}" class="h-7 rounded border border-input bg-background px-1 text-xs">
+									<select name="status" form="c-{d.id}" class={CELL_SEL}>
 										{#each STATUSES as s (s)}<option value={s} selected={s === d.status}>{s}</option>{/each}
 									</select>
 								{:else}
 									<span class="rounded-full px-2 py-0.5 text-xs font-medium {badge[d.status] ?? 'bg-gray-100 text-gray-600'}">{d.status}</span>
 								{/if}
 							</td>
-							<td class="px-3 py-2 text-muted-foreground">{fmtTime(d.timeIn)}</td>
-							<td class="px-3 py-2 text-muted-foreground">{fmtTime(d.timeOut)}</td>
+							<td class="px-3 py-2 text-muted-foreground">{#if editable}<input name="timeIn" form="c-{d.id}" type="time" value={toTimeInput(d.timeIn)} class={CELL} />{:else}{fmtTime(d.timeIn)}{/if}</td>
+							<td class="px-3 py-2 text-muted-foreground">{#if editable}<input name="timeOut" form="c-{d.id}" type="time" value={toTimeInput(d.timeOut)} class={CELL} />{:else}{fmtTime(d.timeOut)}{/if}</td>
 							<td class="px-3 py-2 text-right font-mono">
 								{#if editable}
-									<input name="regularHours" form="c-{d.id}" type="number" step="0.25" min="0" value={n(d.regularHours)} class="h-7 w-20 rounded border border-input bg-background px-1 text-right text-xs" />
+									<input name="regularHours" form="c-{d.id}" type="number" step="0.25" min="0" value={n(d.regularHours)} class={CELL_NUM} />
 								{:else}{n(d.regularHours).toFixed(2)}{/if}
 							</td>
 							<td class="px-3 py-2 text-right font-mono">
 								{#if editable}
-									<input name="overtimeHours" form="c-{d.id}" type="number" step="0.25" min="0" value={n(d.overtimeHours)} class="h-7 w-20 rounded border border-input bg-background px-1 text-right text-xs" />
+									<input name="overtimeHours" form="c-{d.id}" type="number" step="0.25" min="0" value={n(d.overtimeHours)} class={CELL_NUM} />
 								{:else}{n(d.overtimeHours).toFixed(2)}{#if n(d.rawOvertimeHours) > n(d.overtimeHours)}<span class="ml-1 text-xs text-amber-600" title="unapproved OT">(+{(n(d.rawOvertimeHours) - n(d.overtimeHours)).toFixed(1)})</span>{/if}{/if}
 							</td>
 							<td class="px-3 py-2 text-right font-mono">{n(d.nightDiffHours).toFixed(2)}</td>
@@ -291,6 +309,7 @@
 									{:else}
 										<form id="c-{d.id}" method="POST" action="?/correct" use:enhance>
 											<input type="hidden" name="id" value={d.id} />
+										<input type="hidden" name="date" value={toDateKey(d.date)} />
 											<button class="rounded bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90">Save</button>
 										</form>
 									{/if}

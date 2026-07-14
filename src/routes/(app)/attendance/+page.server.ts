@@ -89,6 +89,11 @@ function spanExceeded(from: Date, to: Date) {
 }
 const correctSchema = z.object({
 	id: z.string().min(1),
+	// date (YYYY-MM-DD, PHT) + timeIn/timeOut (HH:MM) let HR set times manually; the
+	// day key is combined with the time to rebuild a PHT timestamp. Empty time clears it.
+	date: z.string().optional(),
+	timeIn: z.string().optional(),
+	timeOut: z.string().optional(),
 	regularHours: z.coerce.number().min(0).optional(),
 	overtimeHours: z.coerce.number().min(0).optional(),
 	status: z.enum(['PRESENT', 'LATE', 'ABSENT', 'INCOMPLETE', 'ON_LEAVE', 'HOLIDAY', 'REST_DAY']).optional(),
@@ -112,7 +117,13 @@ export const actions: Actions = {
 		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
 		const parsed = correctSchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid correction' })
-		const { id, ...data } = parsed.data
+		const { id, date, timeIn, timeOut, ...rest } = parsed.data
+		const data: Parameters<typeof correctDay>[2] = { ...rest }
+		// Rebuild PHT timestamps from the day key + HH:MM (only when a date was sent).
+		if (date) {
+			data.timeIn = timeIn ? new Date(`${date}T${timeIn}:00+08:00`) : null
+			data.timeOut = timeOut ? new Date(`${date}T${timeOut}:00+08:00`) : null
+		}
 		try {
 			await correctDay(id, event.locals.user!.organizationId, data, ctxOf(event))
 		} catch (e) {
