@@ -110,7 +110,7 @@ async function main() {
 	})
 	const employee = await db.employee.upsert({
 		where: { userId: employeeUser.id },
-		update: { reportsToId: managerEmployee.id },
+		update: { reportsToId: managerEmployee.id, discordId: '123456789012345678' },
 		create: {
 			userId: employeeUser.id,
 			organizationId: org.id,
@@ -123,7 +123,8 @@ async function main() {
 			startDate: new Date('2025-02-01'),
 			basicMonthlySalary: 30000,
 			rateType: 'MONTHLY',
-			reportsToId: managerEmployee.id
+			reportsToId: managerEmployee.id,
+			discordId: '123456789012345678'
 		}
 	})
 
@@ -266,6 +267,52 @@ async function main() {
 		update: {},
 		create: { organizationId: org.id } // schema defaults = DOLE rates
 	})
+
+	// --- Benefit plan (one sample; fixed id keeps upsert idempotent) ---
+	await db.benefitPlan.upsert({
+		where: { id: 'benefit_seed_hmo' },
+		update: {},
+		create: {
+			id: 'benefit_seed_hmo',
+			organizationId: org.id,
+			name: 'Maxicare HMO — Basic',
+			type: 'HMO',
+			provider: 'Maxicare',
+			description: 'Standard HMO coverage for regular employees.',
+			employeeCost: 0,
+			employerCost: 1500
+		}
+	})
+
+	// --- Review cycle (one sample; fixed id keeps upsert idempotent) ---
+	await db.reviewCycle.upsert({
+		where: { id: 'review_cycle_seed' },
+		update: {},
+		create: {
+			id: 'review_cycle_seed',
+			organizationId: org.id,
+			name: `H1 ${year} Performance Review`,
+			startDate: new Date(`${year}-01-01`),
+			endDate: new Date(`${year}-06-30`),
+			status: 'ACTIVE'
+		}
+	})
+
+	// --- Positions catalog (unique on organizationId+title, so upsert is idempotent) ---
+	const positions = [
+		{ title: 'HR System Administrator', level: 5 },
+		{ title: 'People Operations Manager', level: 4 },
+		{ title: 'Software Engineer', level: 3 },
+		{ title: 'Payroll Officer', level: 3 },
+		{ title: 'Finance Analyst', level: 3 }
+	]
+	for (const p of positions) {
+		await db.position.upsert({
+			where: { organizationId_title: { organizationId: org.id, title: p.title } },
+			update: {},
+			create: { organizationId: org.id, departmentId: dept.id, ...p }
+		})
+	}
 
 	console.log('Seed complete. Logins:')
 	console.log('  Super Admin:     admin@veent.ph / Admin@1234')
