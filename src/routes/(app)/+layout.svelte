@@ -39,6 +39,8 @@
 	// Payroll Officer manages payroll; Finance reads payroll reports only.
 	const isPayroll = isAdmin || role === 'PAYROLL_OFFICER'
 	const canViewReports = isAdmin || ['PAYROLL_OFFICER', 'FINANCE'].includes(role)
+	// Approvers (manager ladder + Payroll Officer) get the Requests/Approvals dropdown.
+	const canApprove = isManager || role === 'PAYROLL_OFFICER'
 
 	const navItems = $derived(
 		[
@@ -68,7 +70,7 @@
 			},
 			{
 				href: '/requests',
-				label: 'Requests/Approvals',
+				label: 'My Requests',
 				show: true,
 				icon: 'M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z'
 			},
@@ -158,6 +160,33 @@
 	let settingsToggled = $state<boolean | null>(null)
 	const settingsExpanded = $derived(settingsToggled ?? inSettings)
 
+	// Requests/Approvals is a collapsible group for approvers (like Settings). Non-approvers
+	// see a flat "My Requests" link instead (rendered in the nav loop).
+	const requestsIcon =
+		'M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z'
+	const requestsChildren = $derived(
+		[
+			{ href: '/requests', label: 'My Requests', show: true, badge: 0 },
+			{
+				href: '/requests/timesheets',
+				label: 'Timesheets',
+				show: isManager,
+				badge: data.pendingApprovals.timesheets
+			},
+			{
+				href: '/requests/approvals',
+				label: 'Requests',
+				show: canApprove,
+				badge: data.pendingApprovals.requests
+			}
+		].filter((i) => i.show)
+	)
+	const inRequests = $derived(
+		$page.url.pathname === '/requests' || $page.url.pathname.startsWith('/requests/')
+	)
+	let requestsToggled = $state<boolean | null>(null)
+	const requestsExpanded = $derived(requestsToggled ?? inRequests)
+
 	const roleLabel: Record<string, string> = {
 		EMPLOYEE: 'Employee',
 		MANAGER: 'Manager',
@@ -183,34 +212,100 @@
 		<!-- Nav -->
 		<nav class="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">
 			{#each navItems as item (item.href)}
-				{@const active =
-					$page.url.pathname.startsWith(item.href) &&
-					(item.href !== '/dashboard' || $page.url.pathname === '/dashboard')}
-				<a
-					href={item.href}
-					class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors
-						{active
-						? 'bg-primary/15 text-primary'
-						: 'text-muted-foreground hover:bg-accent hover:text-foreground'}"
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class="h-4 w-4 shrink-0"
-						fill="none"
-						viewBox="0 0 24 24"
-						stroke="currentColor"
-						stroke-width="1.75"
+				{#if item.href === '/requests' && canApprove}
+					<!-- Requests/Approvals collapsible group (approvers) -->
+					<div>
+						<button
+							type="button"
+							onclick={() => (requestsToggled = !requestsExpanded)}
+							aria-expanded={requestsExpanded}
+							class="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors
+								{inRequests
+								? 'bg-primary/15 text-primary'
+								: 'text-muted-foreground hover:bg-accent hover:text-foreground'}"
+						>
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								class="h-4 w-4 shrink-0"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke="currentColor"
+								stroke-width="1.75"
+							>
+								<path stroke-linecap="round" stroke-linejoin="round" d={requestsIcon} />
+							</svg>
+							<span class="flex-1 text-left">Requests/Approvals</span>
+							{#if data.pendingApprovals.total > 0 && !requestsExpanded}
+								<span
+									class="h-2 w-2 shrink-0 rounded-full bg-red-500"
+									title="{data.pendingApprovals.total} awaiting your decision"
+								></span>
+							{/if}
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								class="h-3.5 w-3.5 shrink-0 transition-transform {requestsExpanded
+									? 'rotate-180'
+									: ''}"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									d="M19.5 8.25l-7.5 7.5-7.5-7.5"
+								/>
+							</svg>
+						</button>
+						{#if requestsExpanded}
+							<div class="mt-0.5 space-y-0.5 border-l border-border pl-3 ml-4">
+								{#each requestsChildren as child (child.href)}
+									{@const childActive = $page.url.pathname === child.href}
+									<a
+										href={child.href}
+										class="flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors
+											{childActive
+											? 'bg-primary/15 font-medium text-primary'
+											: 'text-muted-foreground hover:bg-accent hover:text-foreground'}"
+									>
+										<span class="flex-1">{child.label}</span>
+										{#if child.badge > 0}
+											<span
+												class="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground"
+											>
+												{child.badge}
+											</span>
+										{/if}
+									</a>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{:else}
+					{@const active =
+						$page.url.pathname.startsWith(item.href) &&
+						(item.href !== '/dashboard' || $page.url.pathname === '/dashboard')}
+					<a
+						href={item.href}
+						class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors
+							{active
+							? 'bg-primary/15 text-primary'
+							: 'text-muted-foreground hover:bg-accent hover:text-foreground'}"
 					>
-						<path stroke-linecap="round" stroke-linejoin="round" d={item.icon} />
-					</svg>
-					{item.label}
-					{#if item.href === '/requests' && data.pendingApprovals > 0}
-						<span
-							class="ml-auto h-2 w-2 shrink-0 rounded-full bg-red-500"
-							title="{data.pendingApprovals} awaiting your decision"
-						></span>
-					{/if}
-				</a>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							class="h-4 w-4 shrink-0"
+							fill="none"
+							viewBox="0 0 24 24"
+							stroke="currentColor"
+							stroke-width="1.75"
+						>
+							<path stroke-linecap="round" stroke-linejoin="round" d={item.icon} />
+						</svg>
+						{item.label}
+					</a>
+				{/if}
 			{/each}
 
 			{#if showSettings}

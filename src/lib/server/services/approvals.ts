@@ -144,15 +144,21 @@ export async function listPendingRequestsForApprover(
 // stage of request chains; timesheet approval is MANAGER+ only.
 export const APPROVER_ROLES: Role[] = ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN', 'PAYROLL_OFFICER']
 
-// Count items awaiting this user's decision — pending requests at their stage plus
-// SUBMITTED timesheets they can approve. Returns 0 for non-approver roles. Backs the
-// sidebar notification dot on "Requests/Approvals".
+export interface PendingApprovalCounts {
+	timesheets: number
+	requests: number
+	total: number
+}
+
+// Count items awaiting this user's decision — pending requests at their stage and
+// SUBMITTED timesheets they can approve — split by type for the sidebar dropdown
+// dot + per-child badges. Zeros for non-approver roles.
 export async function countPendingApprovals(user: {
 	id: string
 	role: Role
 	organizationId: string
-}): Promise<number> {
-	if (!APPROVER_ROLES.includes(user.role)) return 0
+}): Promise<PendingApprovalCounts> {
+	if (!APPROVER_ROLES.includes(user.role)) return { timesheets: 0, requests: 0, total: 0 }
 
 	const myEmployee = await db.employee.findUnique({
 		where: { userId: user.id },
@@ -177,5 +183,5 @@ export async function countPendingApprovals(user: {
 			: Promise.resolve(0)
 	])
 
-	return requests.length + timesheets
+	return { timesheets, requests: requests.length, total: timesheets + requests.length }
 }
