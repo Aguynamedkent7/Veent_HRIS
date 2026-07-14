@@ -10,8 +10,12 @@
 </svelte:head>
 
 <div class="space-y-6">
-	<div class="flex items-center justify-between">
-		<h1 class="text-2xl font-bold tracking-tight">Team Attendance</h1>
+	<div class="flex items-start justify-between gap-4">
+		<div>
+			<h1 class="text-2xl font-bold tracking-tight">Team Attendance</h1>
+			<p class="text-sm text-muted-foreground">Multi-day overview — who was present or on leave across a date range.</p>
+		</div>
+		<a href="/attendance?view=team" class="whitespace-nowrap rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent">Daily roster &amp; corrections →</a>
 	</div>
 
 	<!-- Date range filter -->
@@ -23,6 +27,7 @@
 				name="start"
 				type="date"
 				value={data.startDate}
+				onchange={(e) => e.currentTarget.form?.requestSubmit()}
 				class="flex h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 			/>
 		</div>
@@ -33,15 +38,10 @@
 				name="end"
 				type="date"
 				value={data.endDate}
+				onchange={(e) => e.currentTarget.form?.requestSubmit()}
 				class="flex h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 			/>
 		</div>
-		<button
-			type="submit"
-			class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-		>
-			Apply
-		</button>
 	</form>
 
 	<!-- Legend -->

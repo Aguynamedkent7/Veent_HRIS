@@ -31,7 +31,17 @@
 </svelte:head>
 
 <div class="space-y-6">
-	<h1 class="text-2xl font-bold tracking-tight">Attendance</h1>
+	<div class="flex items-start justify-between gap-4">
+		<div>
+			<h1 class="text-2xl font-bold tracking-tight">Attendance</h1>
+			{#if data.canManage}
+				<p class="text-sm text-muted-foreground">Daily records &amp; corrections. For a multi-day team matrix, see Team Attendance.</p>
+			{/if}
+		</div>
+		{#if data.canManage && data.view === 'team'}
+			<a href="/team" class="whitespace-nowrap rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent">Multi-day matrix →</a>
+		{/if}
+	</div>
 
 	{#if form?.error}
 		<div class="rounded-md border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-red-400">{form.error}</div>
