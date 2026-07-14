@@ -31,6 +31,29 @@
 	}
 	const n = (x: unknown) => Number(x)
 
+	// When In/Out are entered manually, auto-fill Reg (and OT overflow) to mirror the derive
+	// engine: worked = (Out − In) − 1h break past 5h; Reg = min(worked, 8), OT = the rest.
+	// HR can still override the numbers afterward.
+	function recalcHours(e: Event) {
+		const el = e.currentTarget as HTMLInputElement
+		const fid = el.getAttribute('form')
+		if (!fid) return
+		const q = (name: string) => document.querySelector<HTMLInputElement>(`input[name="${name}"][form="${fid}"]`)
+		const tin = q('timeIn')?.value
+		const tout = q('timeOut')?.value
+		const reg = q('regularHours')
+		const ot = q('overtimeHours')
+		if (!tin || !tout || !reg || !ot) return
+		const [ih, im] = tin.split(':').map(Number)
+		const [oh, om] = tout.split(':').map(Number)
+		let mins = oh * 60 + om - (ih * 60 + im)
+		if (mins < 0) mins += 1440 // overnight out
+		const gross = mins / 60
+		const worked = Math.max(0, gross - (gross > 5 ? 1 : 0))
+		reg.value = Math.min(worked, 8).toFixed(2)
+		ot.value = Math.max(0, worked - 8).toFixed(2)
+	}
+
 	// 24h HH:MM for a <input type="time">, in Manila time; '' when no punch.
 	function toTimeInput(d: string | Date | null) {
 		if (!d) return ''
@@ -243,8 +266,8 @@
 									<span class="text-xs text-muted-foreground">no record</span>
 								{/if}
 							</td>
-							<td class="px-3 py-2 text-muted-foreground">{#if editable && d}<input name="timeIn" form="c-{d.id}" type="time" value={toTimeInput(d.timeIn)} class={CELL_TIME} />{:else}{fmtTime(d?.timeIn ?? null)}{/if}</td>
-							<td class="px-3 py-2 text-muted-foreground">{#if editable && d}<input name="timeOut" form="c-{d.id}" type="time" value={toTimeInput(d.timeOut)} class={CELL_TIME} />{:else}{fmtTime(d?.timeOut ?? null)}{/if}</td>
+							<td class="px-3 py-2 text-muted-foreground">{#if editable && d}<input name="timeIn" form="c-{d.id}" type="time" value={toTimeInput(d.timeIn)} oninput={recalcHours} class={CELL_TIME} />{:else}{fmtTime(d?.timeIn ?? null)}{/if}</td>
+							<td class="px-3 py-2 text-muted-foreground">{#if editable && d}<input name="timeOut" form="c-{d.id}" type="time" value={toTimeInput(d.timeOut)} oninput={recalcHours} class={CELL_TIME} />{:else}{fmtTime(d?.timeOut ?? null)}{/if}</td>
 							<td class="px-3 py-2 text-right font-mono">{#if editable && d}<input name="regularHours" form="c-{d.id}" type="number" step="0.25" min="0" value={n(d.regularHours)} class={CELL_NUM} />{:else}{d ? n(d.regularHours).toFixed(2) : '—'}{/if}</td>
 							<td class="px-3 py-2 text-right font-mono">{#if editable && d}<input name="overtimeHours" form="c-{d.id}" type="number" step="0.25" min="0" value={n(d.overtimeHours)} class={CELL_NUM} />{:else}{d ? n(d.overtimeHours).toFixed(2) : '—'}{/if}</td>
 							<td class="w-[1%] whitespace-nowrap px-3 py-2">
@@ -296,8 +319,8 @@
 									<span class="rounded-full px-2 py-0.5 text-xs font-medium {badge[d.status] ?? 'bg-gray-100 text-gray-600'}">{d.status}</span>
 								{/if}
 							</td>
-							<td class="px-3 py-2 text-muted-foreground">{#if editable}<input name="timeIn" form="c-{d.id}" type="time" value={toTimeInput(d.timeIn)} class={CELL_TIME} />{:else}{fmtTime(d.timeIn)}{/if}</td>
-							<td class="px-3 py-2 text-muted-foreground">{#if editable}<input name="timeOut" form="c-{d.id}" type="time" value={toTimeInput(d.timeOut)} class={CELL_TIME} />{:else}{fmtTime(d.timeOut)}{/if}</td>
+							<td class="px-3 py-2 text-muted-foreground">{#if editable}<input name="timeIn" form="c-{d.id}" type="time" value={toTimeInput(d.timeIn)} oninput={recalcHours} class={CELL_TIME} />{:else}{fmtTime(d.timeIn)}{/if}</td>
+							<td class="px-3 py-2 text-muted-foreground">{#if editable}<input name="timeOut" form="c-{d.id}" type="time" value={toTimeInput(d.timeOut)} oninput={recalcHours} class={CELL_TIME} />{:else}{fmtTime(d.timeOut)}{/if}</td>
 							<td class="px-3 py-2 text-right font-mono">
 								{#if editable}
 									<input name="regularHours" form="c-{d.id}" type="number" step="0.25" min="0" value={n(d.regularHours)} class={CELL_NUM} />
