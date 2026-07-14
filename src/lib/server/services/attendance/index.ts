@@ -183,9 +183,11 @@ export async function deriveRange(
 
 			const existing = await db.attendanceDay.findUnique({
 				where: { employeeId_date: { employeeId: emp.id, date: cur } },
-				select: { isLocked: true }
+				select: { isLocked: true, manuallyEdited: true }
 			})
 			if (existing?.isLocked) continue
+			// Never overwrite a manual HR override, even on a full Refresh re-derive.
+			if (existing?.manuallyEdited) continue
 			// Auto-derive only fills gaps — never overwrites an existing (possibly hand-corrected) day.
 			if (opts.onlyMissing && existing) continue
 
@@ -329,7 +331,8 @@ export async function correctDay(
 	if (!day) error(404, 'Attendance day not found')
 	if (day.isLocked) error(409, 'This attendance day is locked and cannot be edited')
 
-	const updated = await db.attendanceDay.update({ where: { id }, data })
+	// Flag the day so a later re-derive (Refresh) won't overwrite this manual override.
+	const updated = await db.attendanceDay.update({ where: { id }, data: { ...data, manuallyEdited: true } })
 	await writeAuditLog(ctx, {
 		action: 'UPDATE',
 		entityType: 'AttendanceDay',

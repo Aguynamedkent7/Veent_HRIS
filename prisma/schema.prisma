@@ -1123,10 +1123,12 @@ model AttendanceDay {
   undertimeMinutes      Int     @default(0)
   breakMinutes          Int     @default(0)
 
-  isLocked  Boolean  @default(false)
-  note      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isLocked       Boolean  @default(false)
+  // Set when HR hand-corrects a day; keeps re-derive (Refresh) from overwriting the override.
+  manuallyEdited Boolean  @default(false)
+  note           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   employee Employee @relation(fields: [employeeId], references: [id])
 
