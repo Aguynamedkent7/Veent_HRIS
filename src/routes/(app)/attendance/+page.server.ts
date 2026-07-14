@@ -2,13 +2,13 @@ import { fail } from '@sveltejs/kit'
 import { z } from 'zod'
 import { db } from '$lib/server/db'
 import { requireMinRole } from '$lib/server/rbac'
-import { listAttendanceDays, listTeamDay, deriveRange, correctDay, lockRange } from '$lib/server/services/attendance'
+import { listAttendanceDays, listTeamDay, deriveRange, autoDeriveFromPunches, correctDay, lockRange } from '$lib/server/services/attendance'
 import { manilaDayKey } from '$lib/utils/dates'
 import type { Actions, PageServerLoad, RequestEvent } from './$types'
 
 const DAY_MS = 86_400_000
 
-export const load: PageServerLoad = async ({ locals, url }) => {
+export const load: PageServerLoad = async ({ locals, url, getClientAddress }) => {
 	const user = locals.user!
 	const canManage = ['HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
 
@@ -33,6 +33,17 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	} else {
 		const me = await db.employee.findUnique({ where: { userId: user.id }, select: { id: true } })
 		selectedEmployeeId = me?.id ?? null
+	}
+
+	// Auto-derive from punches so the page shows data without a manual step. Non-destructive
+	// (fills only missing days); managers only, since it writes AttendanceDay records.
+	if (canManage) {
+		const ctx = { organizationId: user.organizationId, actorId: user.id, actorRole: user.role, ipAddress: getClientAddress() }
+		if (view === 'employee' && selectedEmployeeId) {
+			await autoDeriveFromPunches(user.organizationId, { from: new Date(from), to: new Date(to), employeeId: selectedEmployeeId }, ctx)
+		} else if (view === 'team') {
+			await autoDeriveFromPunches(user.organizationId, { from: new Date(date), to: new Date(date) }, ctx)
+		}
 	}
 
 	const days =

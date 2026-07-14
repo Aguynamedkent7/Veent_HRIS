@@ -87,7 +87,8 @@ export async function listTeamDay(organizationId: string, dateKey: string) {
 export async function deriveRange(
 	organizationId: string,
 	range: { from: Date; to: Date; employeeId?: string },
-	ctx: AuditContext
+	ctx: AuditContext,
+	opts: { onlyMissing?: boolean } = {}
 ) {
 	const fromKey = manilaDayKey(range.from)
 	const toKey = manilaDayKey(range.to)
@@ -184,6 +185,8 @@ export async function deriveRange(
 				select: { isLocked: true }
 			})
 			if (existing?.isLocked) continue
+			// Auto-derive only fills gaps — never overwrites an existing (possibly hand-corrected) day.
+			if (opts.onlyMissing && existing) continue
 
 			const r = deriveAttendanceDay({
 				punches: byDay.get(dayKey) ?? [],
@@ -231,6 +234,35 @@ export async function deriveRange(
 		newValue: { from: fromKey, to: toKey, derived, flagged: flagged.length }
 	})
 	return { derived, flagged }
+}
+
+/**
+ * Non-destructive auto-derive for page loads: if any punches exist in the window, derive only
+ * the days that don't yet have an AttendanceDay. Cheap and idempotent after the first view, and
+ * it leaves existing (corrected/locked) days untouched — a full re-derive is the Refresh button.
+ */
+export async function autoDeriveFromPunches(
+	organizationId: string,
+	range: { from: Date; to: Date; employeeId?: string },
+	ctx: AuditContext
+) {
+	const fromKey = manilaDayKey(range.from)
+	const toKey = manilaDayKey(range.to)
+	const phtStart = new Date(`${fromKey}T00:00:00+08:00`)
+	const phtEndExclusive = new Date(`${toKey}T00:00:00+08:00`)
+	phtEndExclusive.setUTCDate(phtEndExclusive.getUTCDate() + 1)
+
+	const punchCount = await db.timeLog.count({
+		where: {
+			employee: { user: { organizationId } },
+			timestamp: { gte: phtStart, lt: phtEndExclusive },
+			...(range.employeeId ? { employeeId: range.employeeId } : {})
+		}
+	})
+	if (punchCount === 0) return { derived: 0, flagged: 0 }
+
+	const res = await deriveRange(organizationId, range, ctx, { onlyMissing: true })
+	return { derived: res.derived, flagged: res.flagged.length }
 }
 
 /** HR correction of a single AttendanceDay. Rejected if the day is locked. */

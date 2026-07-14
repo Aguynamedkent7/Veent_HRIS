@@ -61,9 +61,8 @@
 			<input type="hidden" name="view" value="team" />
 			<div class="flex flex-col gap-1">
 				<label for="date" class="text-xs font-medium text-muted-foreground">Day</label>
-				<input id="date" name="date" type="date" value={data.date} class="h-9 rounded-md border border-input bg-background px-3 text-sm" />
+				<input id="date" name="date" type="date" value={data.date} onchange={(e) => e.currentTarget.form?.requestSubmit()} class="h-9 rounded-md border border-input bg-background px-3 text-sm" />
 			</div>
-			<button type="submit" class="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90">Show</button>
 		</form>
 	{:else}
 		<form method="GET" class="flex flex-wrap items-end gap-3 rounded-lg border bg-card p-4">
@@ -71,7 +70,7 @@
 				<input type="hidden" name="view" value="employee" />
 				<div class="flex flex-col gap-1">
 					<label for="employeeId" class="text-xs font-medium text-muted-foreground">Employee</label>
-					<select id="employeeId" name="employeeId" class="h-9 rounded-md border border-input bg-background px-3 text-sm">
+					<select id="employeeId" name="employeeId" onchange={(e) => e.currentTarget.form?.requestSubmit()} class="h-9 rounded-md border border-input bg-background px-3 text-sm">
 						{#each data.employees as e (e.id)}
 							<option value={e.id} selected={e.id === data.selectedEmployeeId}>{e.lastName}, {e.firstName} ({e.employeeNumber})</option>
 						{/each}
@@ -80,13 +79,12 @@
 			{/if}
 			<div class="flex flex-col gap-1">
 				<label for="from" class="text-xs font-medium text-muted-foreground">From</label>
-				<input id="from" name="from" type="date" value={data.from} class="h-9 rounded-md border border-input bg-background px-3 text-sm" />
+				<input id="from" name="from" type="date" value={data.from} onchange={(e) => e.currentTarget.form?.requestSubmit()} class="h-9 rounded-md border border-input bg-background px-3 text-sm" />
 			</div>
 			<div class="flex flex-col gap-1">
 				<label for="to" class="text-xs font-medium text-muted-foreground">To</label>
-				<input id="to" name="to" type="date" value={data.to} class="h-9 rounded-md border border-input bg-background px-3 text-sm" />
+				<input id="to" name="to" type="date" value={data.to} onchange={(e) => e.currentTarget.form?.requestSubmit()} class="h-9 rounded-md border border-input bg-background px-3 text-sm" />
 			</div>
-			<button type="submit" class="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90">Show</button>
 		</form>
 	{/if}
 
@@ -97,7 +95,7 @@
 				<input type="hidden" name="employeeId" value={data.selectedEmployeeId} />
 				<input type="hidden" name="from" value={data.from} />
 				<input type="hidden" name="to" value={data.to} />
-				<button class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">Derive from punches</button>
+				<button title="Re-pull from punches (updates unlocked days)" class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">↻ Refresh</button>
 			</form>
 			<form method="POST" action="?/lock" use:enhance>
 				<input type="hidden" name="employeeId" value={data.selectedEmployeeId} />
@@ -110,7 +108,7 @@
 		<div class="flex gap-2">
 			<form method="POST" action="?/deriveTeam" use:enhance>
 				<input type="hidden" name="date" value={data.date} />
-				<button class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">Derive team from punches</button>
+				<button title="Re-pull from punches (updates unlocked days)" class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">↻ Refresh</button>
 			</form>
 			<form method="POST" action="?/lockTeam" use:enhance>
 				<input type="hidden" name="date" value={data.date} />
@@ -222,7 +220,7 @@
 							{/if}
 						</tr>
 					{:else}
-						<tr><td colspan={data.canManage ? 9 : 8} class="px-3 py-8 text-center text-muted-foreground">No attendance for this range. {#if data.canManage}Click "Derive from punches".{/if}</td></tr>
+						<tr><td colspan={data.canManage ? 9 : 8} class="px-3 py-8 text-center text-muted-foreground">No attendance for this range{#if data.canManage} — no punches yet, or hit ↻ Refresh{/if}.</td></tr>
 					{/each}
 				</tbody>
 			</table>
