@@ -9,7 +9,14 @@ const DAY_MS = 86_400_000
 const MAX_RANGE_DAYS = 62
 
 const fmtTime = (d: Date | null) =>
-	d ? new Date(d).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Manila' }) : ''
+	d
+		? new Date(d).toLocaleTimeString('en-PH', {
+				hour: '2-digit',
+				minute: '2-digit',
+				hour12: false,
+				timeZone: 'Asia/Manila'
+			})
+		: ''
 const num = (x: unknown) => Number(x).toFixed(2)
 
 // Export attendance as a timesheet CSV. Mirrors the page's access model: managers export any

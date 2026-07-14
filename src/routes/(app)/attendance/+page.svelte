@@ -6,7 +6,10 @@
 	// Don't reset the form on success: enhance's default form.reset() clears the cross-cell
 	// (form=…) inputs, and Svelte only re-syncs inputs whose value changed — so untouched
 	// Reg/OT/times would blank out. Keep values; invalidateAll refreshes them from the server.
-	const keepValues: SubmitFunction = () => async ({ update }) => update({ reset: false })
+	const keepValues: SubmitFunction =
+		() =>
+		async ({ update }) =>
+			update({ reset: false })
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 
@@ -23,11 +26,20 @@
 	const STATUSES = ['PRESENT', 'LATE', 'ABSENT', 'INCOMPLETE', 'ON_LEAVE', 'HOLIDAY', 'REST_DAY']
 
 	function fmtDate(d: string | Date) {
-		return new Date(d).toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'Asia/Manila' })
+		return new Date(d).toLocaleDateString('en-PH', {
+			weekday: 'short',
+			month: 'short',
+			day: 'numeric',
+			timeZone: 'Asia/Manila'
+		})
 	}
 	function fmtTime(d: string | Date | null) {
 		if (!d) return '—'
-		return new Date(d).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Manila' })
+		return new Date(d).toLocaleTimeString('en-PH', {
+			hour: '2-digit',
+			minute: '2-digit',
+			timeZone: 'Asia/Manila'
+		})
 	}
 	const n = (x: unknown) => Number(x)
 
@@ -38,7 +50,8 @@
 		const el = e.currentTarget as HTMLInputElement
 		const fid = el.getAttribute('form')
 		if (!fid) return
-		const q = (name: string) => document.querySelector<HTMLInputElement>(`input[name="${name}"][form="${fid}"]`)
+		const q = (name: string) =>
+			document.querySelector<HTMLInputElement>(`input[name="${name}"][form="${fid}"]`)
 		const tin = q('timeIn')?.value
 		const tout = q('timeOut')?.value
 		const reg = q('regularHours')
@@ -57,7 +70,12 @@
 	// 24h HH:MM for a <input type="time">, in Manila time; '' when no punch.
 	function toTimeInput(d: string | Date | null) {
 		if (!d) return ''
-		return new Date(d).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Manila' })
+		return new Date(d).toLocaleTimeString('en-GB', {
+			hour: '2-digit',
+			minute: '2-digit',
+			hour12: false,
+			timeZone: 'Asia/Manila'
+		})
 	}
 	// YYYY-MM-DD (Manila) for the row's date, sent so the server can rebuild edited timestamps.
 	function toDateKey(d: string | Date) {
@@ -69,7 +87,8 @@
 	const CELL =
 		'h-7 rounded border border-transparent bg-transparent px-1 text-xs hover:bg-muted/40 focus:border-input focus:bg-background focus:outline-none focus:ring-1 focus:ring-ring'
 	const CELL_NUM =
-		CELL + ' w-16 text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
+		CELL +
+		' w-16 text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
 	const CELL_SEL = CELL + ' appearance-none'
 	const CELL_TIME = CELL + ' w-24'
 
@@ -98,8 +117,16 @@
 </svelte:head>
 
 {#snippet icon(d: string, cls = 'h-4 w-4 shrink-0')}
-	<svg xmlns="http://www.w3.org/2000/svg" class={cls} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
-		<path stroke-linecap="round" stroke-linejoin="round" d={d} />
+	<svg
+		xmlns="http://www.w3.org/2000/svg"
+		class={cls}
+		fill="none"
+		viewBox="0 0 24 24"
+		stroke="currentColor"
+		stroke-width="1.75"
+		aria-hidden="true"
+	>
+		<path stroke-linecap="round" stroke-linejoin="round" {d} />
 	</svg>
 {/snippet}
 
@@ -108,33 +135,52 @@
 		<div>
 			<h1 class="text-2xl font-bold tracking-tight">Attendance</h1>
 			{#if data.canManage}
-				<p class="text-sm text-muted-foreground">Daily records &amp; corrections. For a multi-day team matrix, see Team Attendance.</p>
+				<p class="text-sm text-muted-foreground">
+					Daily records &amp; corrections. For a multi-day team matrix, see Team Attendance.
+				</p>
 			{/if}
 		</div>
 		{#if data.canManage && data.view === 'team'}
-			<a href="/team" class="whitespace-nowrap rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent">Multi-day matrix →</a>
+			<a
+				href="/team"
+				class="whitespace-nowrap rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent"
+				>Multi-day matrix →</a
+			>
 		{/if}
 	</div>
 
 	{#if form?.error}
-		<div class="rounded-md border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-red-400">{form.error}</div>
+		<div
+			class="rounded-md border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-red-400"
+		>
+			{form.error}
+		</div>
 	{/if}
 	{#if form?.saved}
-		<div class="rounded-md border border-green-500/20 bg-green-500/10 px-4 py-3 text-sm text-green-600">{form.saved}</div>
+		<div
+			class="rounded-md border border-green-500/20 bg-green-500/10 px-4 py-3 text-sm text-green-600"
+		>
+			{form.saved}
+		</div>
 	{/if}
 
 	{#if data.canManage}
 		<!-- View toggle: one employee's range vs the whole team on a day -->
 		<div class="inline-flex rounded-lg border p-1 text-sm">
 			<a
-				href="?view=employee&employeeId={data.selectedEmployeeId ?? ''}&from={data.from}&to={data.to}"
-				class="rounded-md px-3 py-1.5 font-medium {data.view === 'employee' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'}"
+				href="?view=employee&employeeId={data.selectedEmployeeId ??
+					''}&from={data.from}&to={data.to}"
+				class="rounded-md px-3 py-1.5 font-medium {data.view === 'employee'
+					? 'bg-primary text-primary-foreground'
+					: 'text-muted-foreground hover:bg-accent'}"
 			>
 				By employee
 			</a>
 			<a
 				href="?view=team&date={data.date}"
-				class="rounded-md px-3 py-1.5 font-medium {data.view === 'team' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'}"
+				class="rounded-md px-3 py-1.5 font-medium {data.view === 'team'
+					? 'bg-primary text-primary-foreground'
+					: 'text-muted-foreground hover:bg-accent'}"
 			>
 				Whole team (day)
 			</a>
@@ -147,7 +193,14 @@
 			<input type="hidden" name="view" value="team" />
 			<div class="flex flex-col gap-1">
 				<label for="date" class="text-xs font-medium text-muted-foreground">Day</label>
-				<input id="date" name="date" type="date" value={data.date} onchange={(e) => e.currentTarget.form?.requestSubmit()} class="h-9 rounded-md border border-input bg-background px-3 text-sm" />
+				<input
+					id="date"
+					name="date"
+					type="date"
+					value={data.date}
+					onchange={(e) => e.currentTarget.form?.requestSubmit()}
+					class="h-9 rounded-md border border-input bg-background px-3 text-sm"
+				/>
 			</div>
 		</form>
 	{:else}
@@ -156,22 +209,45 @@
 				<input type="hidden" name="view" value="employee" />
 				<div class="flex flex-col gap-1">
 					<label for="employeeId" class="text-xs font-medium text-muted-foreground">Employee</label>
-					<select id="employeeId" name="employeeId" onchange={(e) => e.currentTarget.form?.requestSubmit()} class="h-9 rounded-md border border-input bg-background px-3 text-sm">
+					<select
+						id="employeeId"
+						name="employeeId"
+						onchange={(e) => e.currentTarget.form?.requestSubmit()}
+						class="h-9 rounded-md border border-input bg-background px-3 text-sm"
+					>
 						{#each data.employees as e (e.id)}
-							<option value={e.id} selected={e.id === data.selectedEmployeeId}>{e.lastName}, {e.firstName} ({e.employeeNumber})</option>
+							<option value={e.id} selected={e.id === data.selectedEmployeeId}
+								>{e.lastName}, {e.firstName} ({e.employeeNumber})</option
+							>
 						{/each}
 					</select>
 				</div>
 			{/if}
 			<div class="flex flex-col gap-1">
 				<label for="from" class="text-xs font-medium text-muted-foreground">From</label>
-				<input id="from" name="from" type="date" value={data.from} onchange={(e) => e.currentTarget.form?.requestSubmit()} class="h-9 rounded-md border border-input bg-background px-3 text-sm" />
+				<input
+					id="from"
+					name="from"
+					type="date"
+					value={data.from}
+					onchange={(e) => e.currentTarget.form?.requestSubmit()}
+					class="h-9 rounded-md border border-input bg-background px-3 text-sm"
+				/>
 			</div>
 			<div class="flex flex-col gap-1">
 				<label for="to" class="text-xs font-medium text-muted-foreground">To</label>
-				<input id="to" name="to" type="date" value={data.to} onchange={(e) => e.currentTarget.form?.requestSubmit()} class="h-9 rounded-md border border-input bg-background px-3 text-sm" />
+				<input
+					id="to"
+					name="to"
+					type="date"
+					value={data.to}
+					onchange={(e) => e.currentTarget.form?.requestSubmit()}
+					class="h-9 rounded-md border border-input bg-background px-3 text-sm"
+				/>
 			</div>
-			<p class="w-full text-xs text-muted-foreground">Range is capped at {data.maxRangeDays} days (~2 months); longer spans are trimmed automatically.</p>
+			<p class="w-full text-xs text-muted-foreground">
+				Range is capped at {data.maxRangeDays} days (~2 months); longer spans are trimmed automatically.
+			</p>
 		</form>
 	{/if}
 
@@ -182,52 +258,88 @@
 				<input type="hidden" name="employeeId" value={data.selectedEmployeeId} />
 				<input type="hidden" name="from" value={data.from} />
 				<input type="hidden" name="to" value={data.to} />
-				<button title="Re-pull from punches (updates unlocked days)" class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">{@render icon(IC.refresh)}Refresh</button>
+				<button
+					title="Re-pull from punches (updates unlocked days)"
+					class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
+					>{@render icon(IC.refresh)}Refresh</button
+				>
 			</form>
 			<form method="POST" action="?/lock" use:enhance>
 				<input type="hidden" name="employeeId" value={data.selectedEmployeeId} />
 				<input type="hidden" name="from" value={data.from} />
 				<input type="hidden" name="to" value={data.to} />
-				<button class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">Lock range</button>
+				<button class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
+					>Lock range</button
+				>
 			</form>
 			{#if data.canUnlock}
 				<form method="POST" action="?/unlock" use:enhance>
 					<input type="hidden" name="employeeId" value={data.selectedEmployeeId} />
 					<input type="hidden" name="from" value={data.from} />
 					<input type="hidden" name="to" value={data.to} />
-					<button title="Reopen locked days (super admin)" class="inline-flex items-center gap-1.5 rounded-md border border-amber-300 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50">{@render icon(IC.lockOpen)}Unlock range</button>
+					<button
+						title="Reopen locked days (super admin)"
+						class="inline-flex items-center gap-1.5 rounded-md border border-amber-300 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50"
+						>{@render icon(IC.lockOpen)}Unlock range</button
+					>
 				</form>
 			{/if}
-			<a href={exportHref} class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">{@render icon(IC.download)}Export CSV</a>
+			<a
+				href={exportHref}
+				class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
+				>{@render icon(IC.download)}Export CSV</a
+			>
 			<form method="POST" action="?/saveTimesheet" use:enhance>
 				<input type="hidden" name="employeeId" value={data.selectedEmployeeId} />
 				<input type="hidden" name="from" value={data.from} />
 				<input type="hidden" name="to" value={data.to} />
-				<button title="Persist this range as a Timesheet record" class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">{@render icon(IC.document)}Save as timesheet</button>
+				<button
+					title="Persist this range as a Timesheet record"
+					class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
+					>{@render icon(IC.document)}Save as timesheet</button
+				>
 			</form>
 		</div>
 	{:else if data.canManage && data.view === 'team'}
 		<div class="flex flex-wrap gap-2">
 			<form method="POST" action="?/deriveTeam" use:enhance>
 				<input type="hidden" name="date" value={data.date} />
-				<button title="Re-pull from punches (updates unlocked days)" class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">{@render icon(IC.refresh)}Refresh</button>
+				<button
+					title="Re-pull from punches (updates unlocked days)"
+					class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
+					>{@render icon(IC.refresh)}Refresh</button
+				>
 			</form>
 			<form method="POST" action="?/lockTeam" use:enhance>
 				<input type="hidden" name="date" value={data.date} />
-				<button class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">Lock day</button>
+				<button class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
+					>Lock day</button
+				>
 			</form>
 			{#if data.canUnlock}
 				<form method="POST" action="?/unlockTeam" use:enhance>
 					<input type="hidden" name="date" value={data.date} />
-					<button title="Reopen locked days (super admin)" class="inline-flex items-center gap-1.5 rounded-md border border-amber-300 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50">{@render icon(IC.lockOpen)}Unlock day</button>
+					<button
+						title="Reopen locked days (super admin)"
+						class="inline-flex items-center gap-1.5 rounded-md border border-amber-300 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50"
+						>{@render icon(IC.lockOpen)}Unlock day</button
+					>
 				</form>
 			{/if}
-			<a href={exportHref} class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">{@render icon(IC.download)}Export CSV</a>
+			<a
+				href={exportHref}
+				class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
+				>{@render icon(IC.download)}Export CSV</a
+			>
 		</div>
 	{:else}
 		<!-- Employees can export their own timesheet -->
 		<div class="flex gap-2">
-			<a href={exportHref} class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">{@render icon(IC.download)}Export CSV</a>
+			<a
+				href={exportHref}
+				class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
+				>{@render icon(IC.download)}Export CSV</a
+			>
 		</div>
 	{/if}
 
@@ -251,39 +363,101 @@
 					{#each data.team as t (t.id)}
 						{@const d = t.day}
 						{@const editable = data.canManage && d && !d.isLocked}
-						<tr class="hover:bg-muted/30 {d && (d.status === 'ABSENT' || d.status === 'INCOMPLETE') ? 'bg-red-500/5' : ''}">
-							<td class="px-3 py-2 font-medium whitespace-nowrap">{t.name} <span class="text-xs text-muted-foreground">({t.employeeNumber})</span></td>
+						<tr
+							class="hover:bg-muted/30 {d && (d.status === 'ABSENT' || d.status === 'INCOMPLETE')
+								? 'bg-red-500/5'
+								: ''}"
+						>
+							<td class="px-3 py-2 font-medium whitespace-nowrap"
+								>{t.name}
+								<span class="text-xs text-muted-foreground">({t.employeeNumber})</span></td
+							>
 							<td class="px-3 py-2 text-muted-foreground">{t.departmentName ?? '—'}</td>
 							<td class="px-3 py-2">
 								{#if editable && d}
 									<select name="status" form="c-{d.id}" class={CELL_SEL}>
-										{#each STATUSES as s (s)}<option value={s} selected={s === d.status}>{s}</option>{/each}
+										{#each STATUSES as s (s)}<option value={s} selected={s === d.status}>{s}</option
+											>{/each}
 									</select>
 								{:else if d}
-									<span class="rounded-full px-2 py-0.5 text-xs font-medium {badge[d.status] ?? 'bg-gray-100 text-gray-600'}">{d.status}</span>
-									{#if d.isLocked}<span title="locked" class="ml-1 inline-flex align-middle text-muted-foreground">{@render icon(IC.lock, 'h-3.5 w-3.5')}</span>{/if}
+									<span
+										class="rounded-full px-2 py-0.5 text-xs font-medium {badge[d.status] ??
+											'bg-gray-100 text-gray-600'}">{d.status}</span
+									>
+									{#if d.isLocked}<span
+											title="locked"
+											class="ml-1 inline-flex align-middle text-muted-foreground"
+											>{@render icon(IC.lock, 'h-3.5 w-3.5')}</span
+										>{/if}
 								{:else}
 									<span class="text-xs text-muted-foreground">no record</span>
 								{/if}
 							</td>
-							<td class="px-3 py-2 text-muted-foreground">{#if editable && d}<input name="timeIn" form="c-{d.id}" type="time" value={toTimeInput(d.timeIn)} oninput={recalcHours} class={CELL_TIME} />{:else}{fmtTime(d?.timeIn ?? null)}{/if}</td>
-							<td class="px-3 py-2 text-muted-foreground">{#if editable && d}<input name="timeOut" form="c-{d.id}" type="time" value={toTimeInput(d.timeOut)} oninput={recalcHours} class={CELL_TIME} />{:else}{fmtTime(d?.timeOut ?? null)}{/if}</td>
-							<td class="px-3 py-2 text-right font-mono">{#if editable && d}<input name="regularHours" form="c-{d.id}" type="number" step="0.25" min="0" value={n(d.regularHours)} class={CELL_NUM} />{:else}{d ? n(d.regularHours).toFixed(2) : '—'}{/if}</td>
-							<td class="px-3 py-2 text-right font-mono">{#if editable && d}<input name="overtimeHours" form="c-{d.id}" type="number" step="0.25" min="0" value={n(d.overtimeHours)} class={CELL_NUM} />{:else}{d ? n(d.overtimeHours).toFixed(2) : '—'}{/if}</td>
+							<td class="px-3 py-2 text-muted-foreground"
+								>{#if editable && d}<input
+										name="timeIn"
+										form="c-{d.id}"
+										type="time"
+										value={toTimeInput(d.timeIn)}
+										oninput={recalcHours}
+										class={CELL_TIME}
+									/>{:else}{fmtTime(d?.timeIn ?? null)}{/if}</td
+							>
+							<td class="px-3 py-2 text-muted-foreground"
+								>{#if editable && d}<input
+										name="timeOut"
+										form="c-{d.id}"
+										type="time"
+										value={toTimeInput(d.timeOut)}
+										oninput={recalcHours}
+										class={CELL_TIME}
+									/>{:else}{fmtTime(d?.timeOut ?? null)}{/if}</td
+							>
+							<td class="px-3 py-2 text-right font-mono"
+								>{#if editable && d}<input
+										name="regularHours"
+										form="c-{d.id}"
+										type="number"
+										step="0.25"
+										min="0"
+										value={n(d.regularHours)}
+										class={CELL_NUM}
+									/>{:else}{d ? n(d.regularHours).toFixed(2) : '—'}{/if}</td
+							>
+							<td class="px-3 py-2 text-right font-mono"
+								>{#if editable && d}<input
+										name="overtimeHours"
+										form="c-{d.id}"
+										type="number"
+										step="0.25"
+										min="0"
+										value={n(d.overtimeHours)}
+										class={CELL_NUM}
+									/>{:else}{d ? n(d.overtimeHours).toFixed(2) : '—'}{/if}</td
+							>
 							<td class="w-[1%] whitespace-nowrap px-3 py-2">
 								{#if editable && d}
 									<form id="c-{d.id}" method="POST" action="?/correct" use:enhance={keepValues}>
 										<input type="hidden" name="id" value={d.id} />
 										<input type="hidden" name="date" value={toDateKey(d.date)} />
-										<button class="rounded bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90">Save</button>
+										<button
+											class="rounded bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+											>Save</button
+										>
 									</form>
 								{:else if d?.isLocked}
-									<span class="inline-flex h-7 items-center text-xs text-muted-foreground">locked</span>
+									<span class="inline-flex h-7 items-center text-xs text-muted-foreground"
+										>locked</span
+									>
 								{/if}
 							</td>
 						</tr>
 					{:else}
-						<tr><td colspan="8" class="px-3 py-8 text-center text-muted-foreground">No active employees.</td></tr>
+						<tr
+							><td colspan="8" class="px-3 py-8 text-center text-muted-foreground"
+								>No active employees.</td
+							></tr
+						>
 					{/each}
 				</tbody>
 			</table>
@@ -308,47 +482,116 @@
 				<tbody class="divide-y">
 					{#each data.days as d (d.id)}
 						{@const editable = data.canManage && !d.isLocked}
-						<tr class="hover:bg-muted/30 {d.status === 'ABSENT' || d.status === 'INCOMPLETE' ? 'bg-red-500/5' : ''}">
-							<td class="px-3 py-2 whitespace-nowrap">{fmtDate(d.date)} {#if d.isLocked}<span title="locked" class="inline-flex align-middle text-muted-foreground">{@render icon(IC.lock, 'h-3.5 w-3.5')}</span>{/if}</td>
+						<tr
+							class="hover:bg-muted/30 {d.status === 'ABSENT' || d.status === 'INCOMPLETE'
+								? 'bg-red-500/5'
+								: ''}"
+						>
+							<td class="px-3 py-2 whitespace-nowrap"
+								>{fmtDate(d.date)}
+								{#if d.isLocked}<span
+										title="locked"
+										class="inline-flex align-middle text-muted-foreground"
+										>{@render icon(IC.lock, 'h-3.5 w-3.5')}</span
+									>{/if}</td
+							>
 							<td class="px-3 py-2">
 								{#if editable}
 									<select name="status" form="c-{d.id}" class={CELL_SEL}>
-										{#each STATUSES as s (s)}<option value={s} selected={s === d.status}>{s}</option>{/each}
+										{#each STATUSES as s (s)}<option value={s} selected={s === d.status}>{s}</option
+											>{/each}
 									</select>
 								{:else}
-									<span class="rounded-full px-2 py-0.5 text-xs font-medium {badge[d.status] ?? 'bg-gray-100 text-gray-600'}">{d.status}</span>
+									<span
+										class="rounded-full px-2 py-0.5 text-xs font-medium {badge[d.status] ??
+											'bg-gray-100 text-gray-600'}">{d.status}</span
+									>
 								{/if}
 							</td>
-							<td class="px-3 py-2 text-muted-foreground">{#if editable}<input name="timeIn" form="c-{d.id}" type="time" value={toTimeInput(d.timeIn)} oninput={recalcHours} class={CELL_TIME} />{:else}{fmtTime(d.timeIn)}{/if}</td>
-							<td class="px-3 py-2 text-muted-foreground">{#if editable}<input name="timeOut" form="c-{d.id}" type="time" value={toTimeInput(d.timeOut)} oninput={recalcHours} class={CELL_TIME} />{:else}{fmtTime(d.timeOut)}{/if}</td>
+							<td class="px-3 py-2 text-muted-foreground"
+								>{#if editable}<input
+										name="timeIn"
+										form="c-{d.id}"
+										type="time"
+										value={toTimeInput(d.timeIn)}
+										oninput={recalcHours}
+										class={CELL_TIME}
+									/>{:else}{fmtTime(d.timeIn)}{/if}</td
+							>
+							<td class="px-3 py-2 text-muted-foreground"
+								>{#if editable}<input
+										name="timeOut"
+										form="c-{d.id}"
+										type="time"
+										value={toTimeInput(d.timeOut)}
+										oninput={recalcHours}
+										class={CELL_TIME}
+									/>{:else}{fmtTime(d.timeOut)}{/if}</td
+							>
 							<td class="px-3 py-2 text-right font-mono">
 								{#if editable}
-									<input name="regularHours" form="c-{d.id}" type="number" step="0.25" min="0" value={n(d.regularHours)} class={CELL_NUM} />
+									<input
+										name="regularHours"
+										form="c-{d.id}"
+										type="number"
+										step="0.25"
+										min="0"
+										value={n(d.regularHours)}
+										class={CELL_NUM}
+									/>
 								{:else}{n(d.regularHours).toFixed(2)}{/if}
 							</td>
 							<td class="px-3 py-2 text-right font-mono">
 								{#if editable}
-									<input name="overtimeHours" form="c-{d.id}" type="number" step="0.25" min="0" value={n(d.overtimeHours)} class={CELL_NUM} />
-								{:else}{n(d.overtimeHours).toFixed(2)}{#if n(d.rawOvertimeHours) > n(d.overtimeHours)}<span class="ml-1 text-xs text-amber-600" title="unapproved OT">(+{(n(d.rawOvertimeHours) - n(d.overtimeHours)).toFixed(1)})</span>{/if}{/if}
+									<input
+										name="overtimeHours"
+										form="c-{d.id}"
+										type="number"
+										step="0.25"
+										min="0"
+										value={n(d.overtimeHours)}
+										class={CELL_NUM}
+									/>
+								{:else}{n(d.overtimeHours).toFixed(
+										2
+									)}{#if n(d.rawOvertimeHours) > n(d.overtimeHours)}<span
+											class="ml-1 text-xs text-amber-600"
+											title="unapproved OT"
+											>(+{(n(d.rawOvertimeHours) - n(d.overtimeHours)).toFixed(1)})</span
+										>{/if}{/if}
 							</td>
 							<td class="px-3 py-2 text-right font-mono">{n(d.nightDiffHours).toFixed(2)}</td>
-							<td class="px-3 py-2 text-right font-mono text-muted-foreground">{d.lateMinutes}/{d.undertimeMinutes}</td>
+							<td class="px-3 py-2 text-right font-mono text-muted-foreground"
+								>{d.lateMinutes}/{d.undertimeMinutes}</td
+							>
 							{#if data.canManage}
 								<td class="w-[1%] whitespace-nowrap px-3 py-2">
 									{#if d.isLocked}
-										<span class="inline-flex h-7 items-center text-xs text-muted-foreground">locked</span>
+										<span class="inline-flex h-7 items-center text-xs text-muted-foreground"
+											>locked</span
+										>
 									{:else}
 										<form id="c-{d.id}" method="POST" action="?/correct" use:enhance={keepValues}>
 											<input type="hidden" name="id" value={d.id} />
-										<input type="hidden" name="date" value={toDateKey(d.date)} />
-											<button class="rounded bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90">Save</button>
+											<input type="hidden" name="date" value={toDateKey(d.date)} />
+											<button
+												class="rounded bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+												>Save</button
+											>
 										</form>
 									{/if}
 								</td>
 							{/if}
 						</tr>
 					{:else}
-						<tr><td colspan={data.canManage ? 9 : 8} class="px-3 py-8 text-center text-muted-foreground">No attendance for this range{#if data.canManage} — no punches yet, or use Refresh{/if}.</td></tr>
+						<tr
+							><td
+								colspan={data.canManage ? 9 : 8}
+								class="px-3 py-8 text-center text-muted-foreground"
+								>No attendance for this range{#if data.canManage}
+									— no punches yet, or use Refresh{/if}.</td
+							></tr
+						>
 					{/each}
 				</tbody>
 			</table>

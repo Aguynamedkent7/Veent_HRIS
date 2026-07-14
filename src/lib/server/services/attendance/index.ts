@@ -279,7 +279,10 @@ export async function createTimesheetFromAttendance(
 	to: Date,
 	ctx: AuditContext
 ) {
-	const emp = await db.employee.findFirst({ where: { id: employeeId, organizationId }, select: { id: true } })
+	const emp = await db.employee.findFirst({
+		where: { id: employeeId, organizationId },
+		select: { id: true }
+	})
 	if (!emp) error(404, 'Employee not found')
 
 	const fromKey = manilaDayKey(from)
@@ -382,6 +385,11 @@ export async function unlockRange(
 		},
 		data: { isLocked: false }
 	})
-	await writeAuditLog(ctx, { action: 'UPDATE', entityType: 'AttendanceDay', entityId: range.employeeId ?? organizationId, newValue: { unlocked: res.count, from: fromKey, to: toKey } })
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'AttendanceDay',
+		entityId: range.employeeId ?? organizationId,
+		newValue: { unlocked: res.count, from: fromKey, to: toKey }
+	})
 	return { unlocked: res.count }
 }
