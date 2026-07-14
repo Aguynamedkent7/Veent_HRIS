@@ -392,10 +392,13 @@ model Timesheet {
 }
 
 model TimesheetEntry {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   timesheetId String
   date        DateTime
-  hoursWorked Decimal  @db.Decimal(4, 2)
+  timeIn      DateTime?
+  timeOut     DateTime?
+  hoursWorked Decimal   @db.Decimal(4, 2) // total worked (regular + OT)
+  otHours     Decimal   @default(0) @db.Decimal(4, 2) // portion outside the 08:00–17:00 window
   notes       String?
 
   timesheet Timesheet @relation(fields: [timesheetId], references: [id], onDelete: Cascade)

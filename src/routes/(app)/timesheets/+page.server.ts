@@ -51,13 +51,29 @@ const createSchema = z.object({
 	periodEnd: z.coerce.date()
 })
 
+// Entries arrive with date (YYYY-MM-DD) + optional HH:MM times; the server rebuilds PHT
+// timestamps from date + time. hoursWorked is total worked; otHours is the OT portion.
 const entriesSchema = z.array(
 	z.object({
-		date: z.coerce.date(),
+		date: z.string().min(1),
+		timeIn: z.string().optional(),
+		timeOut: z.string().optional(),
 		hoursWorked: z.coerce.number().min(0).max(24),
+		otHours: z.coerce.number().min(0).max(24).optional(),
 		notes: z.string().optional()
 	})
 )
+
+function toEntryInputs(rows: z.infer<typeof entriesSchema>) {
+	return rows.map((e) => ({
+		date: new Date(e.date),
+		timeIn: e.timeIn ? new Date(`${e.date}T${e.timeIn}:00+08:00`) : null,
+		timeOut: e.timeOut ? new Date(`${e.date}T${e.timeOut}:00+08:00`) : null,
+		hoursWorked: e.hoursWorked,
+		otHours: e.otHours ?? 0,
+		notes: e.notes
+	}))
+}
 
 export const actions: Actions = {
 	create: async (event) => {
@@ -104,7 +120,12 @@ export const actions: Actions = {
 			return fail(400, { error: 'Invalid timesheet entries' })
 		}
 		try {
-			await updateTimesheetEntries(id, event.locals.user!.organizationId, parsed, ctxOf(event))
+			await updateTimesheetEntries(
+				id,
+				event.locals.user!.organizationId,
+				toEntryInputs(parsed),
+				ctxOf(event)
+			)
 			return { saved: 'Timesheet entries saved.' }
 		} catch (e) {
 			return toFail(e)
@@ -151,7 +172,10 @@ export const actions: Actions = {
 	// Submit each selected (draft) timesheet the current user owns; others are skipped.
 	submitMany: async (event) => {
 		const user = event.locals.user!
-		const myEmployee = await db.employee.findUnique({ where: { userId: user.id }, select: { id: true } })
+		const myEmployee = await db.employee.findUnique({
+			where: { userId: user.id },
+			select: { id: true }
+		})
 		if (!myEmployee) return fail(400, { error: 'No employee profile found' })
 		const ids = String((await event.request.formData()).get('ids') ?? '')
 			.split(',')

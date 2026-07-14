@@ -300,8 +300,11 @@ export async function createTimesheetFromAttendance(
 		const worked = Number(d.regularHours) + ot
 		return {
 			date: d.date,
+			timeIn: d.timeIn,
+			timeOut: d.timeOut,
 			hoursWorked: worked,
-			notes: ot > 0 ? `${d.status} (OT ${ot.toFixed(2)})` : d.status
+			otHours: ot,
+			notes: d.status
 		}
 	})
 

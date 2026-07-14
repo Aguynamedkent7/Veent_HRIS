@@ -322,14 +322,31 @@ async function main() {
 	}
 
 	// --- Sample timesheets (unique on employeeId+periodStart → idempotent) ---
+	// Regular window is 08:00–17:00; Wednesday runs 07:00–18:00 to show 2h of OT.
 	const weekEntries = (startISO: string) => {
 		const start = new Date(startISO)
-		const out: { date: Date; hoursWorked: number; notes: string }[] = []
+		const out: {
+			date: Date
+			timeIn: Date
+			timeOut: Date
+			hoursWorked: number
+			otHours: number
+			notes: string
+		}[] = []
 		for (let i = 0; i < 5; i++) {
 			// Mon–Fri
 			const d = new Date(start)
 			d.setUTCDate(start.getUTCDate() + i)
-			out.push({ date: d, hoursWorked: 8, notes: 'Regular day' })
+			const day = d.toISOString().slice(0, 10)
+			const ot = i === 2
+			out.push({
+				date: d,
+				timeIn: new Date(`${day}T${ot ? '07' : '08'}:00:00+08:00`),
+				timeOut: new Date(`${day}T${ot ? '18' : '17'}:00:00+08:00`),
+				hoursWorked: ot ? 11 : 9,
+				otHours: ot ? 2 : 0,
+				notes: ot ? 'Overtime' : 'Regular day'
+			})
 		}
 		return out
 	}

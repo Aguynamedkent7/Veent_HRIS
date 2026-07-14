@@ -11,7 +11,14 @@
 
 	// ─── Review modal ─────────────────────────────────────────────────────────
 	type Timesheet = Awaited<PageData['timesheets']>[number]
-	type Row = { date: string; hoursWorked: number; notes: string }
+	type Row = {
+		date: string
+		timeIn: string
+		timeOut: string
+		reg: number
+		ot: number
+		notes: string
+	}
 	let openTs = $state<Timesheet | null>(null)
 	let entries = $state<Row[]>([])
 	let rejecting = $state(false)
@@ -37,7 +44,20 @@
 		}
 	}
 
-	const total = $derived(entries.reduce((s, e) => s + (Number(e.hoursWorked) || 0), 0))
+	const totalReg = $derived(entries.reduce((s, e) => s + (Number(e.reg) || 0), 0))
+	const totalOt = $derived(entries.reduce((s, e) => s + (Number(e.ot) || 0), 0))
+	const total = $derived(totalReg + totalOt)
+	// Payload sent to the server: total hoursWorked = reg + ot; otHours = ot.
+	const entriesPayload = $derived(
+		entries.map((e) => ({
+			date: e.date,
+			timeIn: e.timeIn,
+			timeOut: e.timeOut,
+			hoursWorked: +(Number(e.reg) + Number(e.ot)).toFixed(2),
+			otHours: +Number(e.ot).toFixed(2),
+			notes: e.notes
+		}))
+	)
 	const canEdit = $derived(data.isManager && openTs && openTs.status !== 'APPROVED')
 	const canReview = $derived(data.isManager && openTs && openTs.status === 'SUBMITTED')
 	const canDelete = $derived(data.isManager && openTs)
@@ -58,13 +78,40 @@
 	function toDateKey(d: string | Date) {
 		return new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' })
 	}
+	function toTimeInput(d: string | Date | null) {
+		if (!d) return ''
+		return new Date(d).toLocaleTimeString('en-GB', {
+			hour: '2-digit',
+			minute: '2-digit',
+			hour12: false,
+			timeZone: 'Asia/Manila'
+		})
+	}
+	// Regular window is 08:00–17:00; time worked outside it is OT.
+	const REG_START = 8 * 60
+	const REG_END = 17 * 60
+	function recalcRow(row: Row) {
+		if (!row.timeIn || !row.timeOut) return
+		const [ih, im] = row.timeIn.split(':').map(Number)
+		const [oh, om] = row.timeOut.split(':').map(Number)
+		let inM = ih * 60 + im
+		let outM = oh * 60 + om
+		if (outM <= inM) outM += 1440 // overnight
+		const worked = outM - inM
+		const reg = Math.max(0, Math.min(outM, REG_END) - Math.max(inM, REG_START))
+		row.reg = +(reg / 60).toFixed(2)
+		row.ot = +((worked - reg) / 60).toFixed(2)
+	}
 	function openReview(ts: Timesheet) {
 		openTs = ts
 		rejecting = false
 		confirmDelete = false
 		entries = ts.entries.map((e) => ({
 			date: toDateKey(e.date),
-			hoursWorked: Number(e.hoursWorked),
+			timeIn: toTimeInput(e.timeIn),
+			timeOut: toTimeInput(e.timeOut),
+			reg: Number(e.hoursWorked) - Number(e.otHours),
+			ot: Number(e.otHours),
 			notes: e.notes ?? ''
 		}))
 	}
@@ -73,7 +120,17 @@
 	}
 	function addRow() {
 		const last = entries.at(-1)
-		entries = [...entries, { date: last?.date ?? toDateKey(new Date()), hoursWorked: 0, notes: '' }]
+		entries = [
+			...entries,
+			{
+				date: last?.date ?? toDateKey(new Date()),
+				timeIn: '',
+				timeOut: '',
+				reg: 0,
+				ot: 0,
+				notes: ''
+			}
+		]
 	}
 	function removeRow(i: number) {
 		entries = entries.filter((_, idx) => idx !== i)
@@ -285,7 +342,7 @@
 	>
 		<div
 			bind:this={dialogEl}
-			class="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border bg-card shadow-2xl focus:outline-none"
+			class="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border bg-card shadow-2xl focus:outline-none"
 			onclick={(e) => e.stopPropagation()}
 			role="dialog"
 			aria-modal="true"
@@ -331,10 +388,18 @@
 			<!-- Body (scrollable) -->
 			<div class="flex-1 space-y-4 overflow-y-auto px-6 py-4">
 				<!-- Summary -->
-				<div class="grid grid-cols-2 gap-3 sm:max-w-xs">
+				<div class="grid grid-cols-2 gap-3 sm:max-w-lg sm:grid-cols-4">
 					<div class="rounded-lg border bg-muted/30 px-4 py-2">
-						<p class="text-xs text-muted-foreground">Total hours</p>
+						<p class="text-xs text-muted-foreground">Total</p>
 						<p class="font-mono text-lg font-semibold">{total.toFixed(2)}</p>
+					</div>
+					<div class="rounded-lg border bg-muted/30 px-4 py-2">
+						<p class="text-xs text-muted-foreground">Regular</p>
+						<p class="font-mono text-lg font-semibold">{totalReg.toFixed(2)}</p>
+					</div>
+					<div class="rounded-lg border bg-muted/30 px-4 py-2">
+						<p class="text-xs text-muted-foreground">Overtime</p>
+						<p class="font-mono text-lg font-semibold text-amber-600">{totalOt.toFixed(2)}</p>
 					</div>
 					<div class="rounded-lg border bg-muted/30 px-4 py-2">
 						<p class="text-xs text-muted-foreground">Entries</p>
@@ -358,12 +423,18 @@
 				{/if}
 
 				<!-- Entries table -->
-				<div class="overflow-hidden rounded-lg border">
+				<p class="text-xs text-muted-foreground">
+					Regular hours are 8:00 AM–5:00 PM; time worked outside that window is overtime.
+				</p>
+				<div class="overflow-x-auto rounded-lg border">
 					<table class="w-full text-sm">
 						<thead class="border-b bg-muted/50">
 							<tr>
 								<th class="px-3 py-2 text-left font-medium text-muted-foreground">Date</th>
-								<th class="px-3 py-2 text-right font-medium text-muted-foreground">Hours</th>
+								<th class="px-3 py-2 text-left font-medium text-muted-foreground">In</th>
+								<th class="px-3 py-2 text-left font-medium text-muted-foreground">Out</th>
+								<th class="px-3 py-2 text-right font-medium text-muted-foreground">Reg</th>
+								<th class="px-3 py-2 text-right font-medium text-muted-foreground">OT</th>
 								<th class="px-3 py-2 text-left font-medium text-muted-foreground">Notes</th>
 								{#if canEdit}<th class="w-[1%] px-3 py-2"></th>{/if}
 							</tr>
@@ -377,11 +448,37 @@
 										>
 										<td class="px-3 py-1.5"
 											><input
+												type="time"
+												bind:value={row.timeIn}
+												oninput={() => recalcRow(row)}
+												class={inputClass}
+											/></td
+										>
+										<td class="px-3 py-1.5"
+											><input
+												type="time"
+												bind:value={row.timeOut}
+												oninput={() => recalcRow(row)}
+												class={inputClass}
+											/></td
+										>
+										<td class="px-3 py-1.5"
+											><input
 												type="number"
 												step="0.25"
 												min="0"
 												max="24"
-												bind:value={row.hoursWorked}
+												bind:value={row.reg}
+												class="{inputClass} text-right"
+											/></td
+										>
+										<td class="px-3 py-1.5"
+											><input
+												type="number"
+												step="0.25"
+												min="0"
+												max="24"
+												bind:value={row.ot}
 												class="{inputClass} text-right"
 											/></td
 										>
@@ -420,7 +517,7 @@
 									</tr>
 								{:else}
 									<tr
-										><td colspan="4" class="px-3 py-6 text-center text-muted-foreground"
+										><td colspan="7" class="px-3 py-6 text-center text-muted-foreground"
 											>No entries yet — add a row below.</td
 										></tr
 									>
@@ -429,14 +526,21 @@
 								{#each openTs.entries as e (e.id)}
 									<tr>
 										<td class="px-3 py-1.5 whitespace-nowrap">{formatShortDate(e.date)}</td>
-										<td class="px-3 py-1.5 text-right font-mono"
-											>{Number(e.hoursWorked).toFixed(2)}</td
+										<td class="px-3 py-1.5 text-muted-foreground"
+											>{e.timeIn ? toTimeInput(e.timeIn) : '—'}</td
 										>
+										<td class="px-3 py-1.5 text-muted-foreground"
+											>{e.timeOut ? toTimeInput(e.timeOut) : '—'}</td
+										>
+										<td class="px-3 py-1.5 text-right font-mono"
+											>{(Number(e.hoursWorked) - Number(e.otHours)).toFixed(2)}</td
+										>
+										<td class="px-3 py-1.5 text-right font-mono">{Number(e.otHours).toFixed(2)}</td>
 										<td class="px-3 py-1.5 text-muted-foreground">{e.notes ?? '—'}</td>
 									</tr>
 								{:else}
 									<tr
-										><td colspan="3" class="px-3 py-6 text-center text-muted-foreground"
+										><td colspan="6" class="px-3 py-6 text-center text-muted-foreground"
 											>No entries recorded.</td
 										></tr
 									>
@@ -525,7 +629,7 @@
 					{#if canEdit}
 						<form method="POST" action="?/saveEntries" use:enhance={keepOpen}>
 							<input type="hidden" name="id" value={openTs.id} />
-							<input type="hidden" name="entries" value={JSON.stringify(entries)} />
+							<input type="hidden" name="entries" value={JSON.stringify(entriesPayload)} />
 							<button disabled={busy} class={btnGhost}>Save entries</button>
 						</form>
 					{/if}

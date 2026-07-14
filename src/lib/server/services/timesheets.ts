@@ -5,8 +5,23 @@ import type { AuditContext } from './types'
 
 interface TimesheetEntryInput {
 	date: Date
+	timeIn?: Date | null
+	timeOut?: Date | null
 	hoursWorked: number
+	otHours?: number
 	notes?: string
+}
+
+// Persist-shape for an entry row (fills defaults for the optional columns).
+function entryData(e: TimesheetEntryInput) {
+	return {
+		date: e.date,
+		timeIn: e.timeIn ?? null,
+		timeOut: e.timeOut ?? null,
+		hoursWorked: e.hoursWorked,
+		otHours: e.otHours ?? 0,
+		notes: e.notes
+	}
 }
 
 export async function listTimesheets(params: {
@@ -75,7 +90,7 @@ export async function createTimesheet(
 			periodStart,
 			periodEnd,
 			totalHours,
-			entries: { create: entries }
+			entries: { create: entries.map(entryData) }
 		},
 		include: { entries: true }
 	})
@@ -114,7 +129,7 @@ export async function updateTimesheetEntries(
 			data: {
 				totalHours,
 				entries: {
-					create: entries.map((e) => ({ date: e.date, hoursWorked: e.hoursWorked, notes: e.notes }))
+					create: entries.map(entryData)
 				}
 			},
 			include: { entries: { orderBy: { date: 'asc' } } }
