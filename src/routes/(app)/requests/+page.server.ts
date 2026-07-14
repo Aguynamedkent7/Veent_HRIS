@@ -247,6 +247,10 @@ export const actions: Actions = {
 			return fail(400, { error: 'Missing request id or invalid decision' })
 		}
 
+		if (['REJECTED', 'RETURNED'].includes(decision) && (!note || note.trim() === '')) {
+			return fail(400, { error: 'A note is required for rejected or returned requests.' })
+		}
+
 		const myEmployee = await db.employee.findUnique({
 			where: { userId: user.id },
 			select: { id: true }

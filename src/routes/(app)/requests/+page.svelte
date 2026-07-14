@@ -28,6 +28,8 @@
 	const today = formatDateISO(new Date())
 	let startDate = $state('')
 
+	let rejectReturnNote = $state('')
+
 	const isDayHours = (t: string) =>
 		['OVERTIME', 'UNDERTIME', 'REST_DAY_WORK', 'HOLIDAY_WORK'].includes(t)
 
@@ -475,6 +477,7 @@
 									rows="1"
 									placeholder="Note (required to reject/return)"
 									class="w-full rounded-md border border-input bg-background px-2 py-1 text-xs"
+									bind:value={rejectReturnNote}
 								></textarea>
 								<div class="flex gap-2">
 									<button
@@ -488,15 +491,15 @@
 										type="submit"
 										name="decision"
 										value="RETURNED"
-										class="flex-1 rounded-md bg-orange-500 px-2 py-1 text-xs font-medium text-white hover:bg-orange-600"
-										>Return</button
+										class="flex-1 rounded-md bg-orange-500 px-2 py-1 text-xs font-medium text-white hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed"
+										disabled={rejectReturnNote.trim() === ''}>Return</button
 									>
 									<button
 										type="submit"
 										name="decision"
 										value="REJECTED"
-										class="flex-1 rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700"
-										>Reject</button
+										class="flex-1 rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+										disabled={rejectReturnNote.trim() === ''}>Reject</button
 									>
 								</div>
 							</form>
