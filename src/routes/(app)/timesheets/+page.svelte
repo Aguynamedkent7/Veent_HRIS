@@ -342,7 +342,7 @@
 	>
 		<div
 			bind:this={dialogEl}
-			class="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border bg-card shadow-2xl focus:outline-none"
+			class="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border bg-card shadow-2xl focus:outline-none"
 			onclick={(e) => e.stopPropagation()}
 			role="dialog"
 			aria-modal="true"
