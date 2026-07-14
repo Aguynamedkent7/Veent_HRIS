@@ -53,7 +53,9 @@
 	{:else}
 		<div class="flex flex-wrap gap-4">
 			{#each data.pendingRequests as req (req.id)}
-				<div class="flex h-[38vh] min-h-[18rem] w-[22vw] flex-col rounded-lg border bg-card p-4">
+				<div
+					class="flex h-[38vh] min-h-[18rem] w-full min-w-[18rem] flex-col rounded-lg border bg-card p-4 sm:w-[22vw]"
+				>
 					<div class="flex flex-1 flex-col gap-2 overflow-hidden">
 						<div class="flex items-center justify-between gap-2">
 							<span class="truncate font-medium">{typeLabel(req.type)}</span>
