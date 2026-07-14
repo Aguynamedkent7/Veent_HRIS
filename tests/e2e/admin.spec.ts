@@ -9,7 +9,7 @@ test.describe('HR Admin', () => {
 	test('dashboard shows organisation metrics', async ({ page }) => {
 		await login(page, USERS.admin)
 		await expect(page.getByText('Active Employees')).toBeVisible()
-		await expect(page.getByText('Timesheets for Review')).toBeVisible()
+		await expect(page.getByText('Pending Approvals')).toBeVisible()
 	})
 
 	test('onboards a new employee via the onboarding form', async ({ page }) => {
