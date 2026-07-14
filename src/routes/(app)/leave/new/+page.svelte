@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import { formatDateISO } from '$lib/utils/dates'
 	import BalanceSummary from '$lib/components/leave/BalanceSummary.svelte'
 	import type { PageData, ActionData } from './$types'
 
@@ -8,6 +9,10 @@
 	let selectedLeaveTypeId = $state('')
 
 	let selectedBalance = $derived(data.balances.find((b) => b.leaveTypeId === selectedLeaveTypeId))
+
+	// Date guards: start can't be before today; end can't be before start.
+	const today = formatDateISO(new Date())
+	let startDate = $state('')
 </script>
 
 <svelte:head>
@@ -61,6 +66,8 @@
 					name="startDate"
 					type="date"
 					required
+					min={today}
+					bind:value={startDate}
 					class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 				/>
 			</div>
@@ -71,6 +78,7 @@
 					name="endDate"
 					type="date"
 					required
+					min={startDate || today}
 					class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 				/>
 			</div>
