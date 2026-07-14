@@ -53,6 +53,35 @@ export function listAttendanceDays(employeeId: string, from: Date, to: Date) {
 }
 
 /**
+ * Team view for a single PHT day: every active employee with their AttendanceDay for that
+ * day (or null if none derived yet). AttendanceDays are stored keyed at midnight UTC of the
+ * PHT day (see deriveRange), so `dateKey` ('YYYY-MM-DD') is matched exactly.
+ */
+export async function listTeamDay(organizationId: string, dateKey: string) {
+	const date = new Date(dateKey)
+	const employees = await db.employee.findMany({
+		where: { user: { organizationId }, employmentStatus: 'ACTIVE' },
+		select: {
+			id: true,
+			firstName: true,
+			lastName: true,
+			employeeNumber: true,
+			department: { select: { name: true } },
+			attendanceDays: { where: { date }, take: 1 }
+		},
+		orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }]
+	})
+
+	return employees.map((e) => ({
+		id: e.id,
+		name: `${e.lastName}, ${e.firstName}`,
+		employeeNumber: e.employeeNumber,
+		departmentName: e.department?.name ?? null,
+		day: e.attendanceDays[0] ?? null
+	}))
+}
+
+/**
  * Derive AttendanceDay records for [from, to] (PHT days). Idempotent — skips locked days.
  */
 export async function deriveRange(
