@@ -3,6 +3,7 @@ import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import { manilaDayKey } from '$lib/utils/dates'
 import { deriveAttendanceDay, type AttPunchType, type DayType, type ScheduleDay } from './derive'
+import { createTimesheet } from '../timesheets'
 import type { AuditContext } from '../types'
 
 /**
@@ -263,6 +264,43 @@ export async function autoDeriveFromPunches(
 
 	const res = await deriveRange(organizationId, range, ctx, { onlyMissing: true })
 	return { derived: res.derived, flagged: res.flagged.length }
+}
+
+/**
+ * Materialise an employee's derived attendance over [from, to] into a persisted Timesheet
+ * (the artifact /team and payroll consume). Per-employee only. Each day becomes one entry with
+ * hoursWorked = regular + overtime; the day status (and OT) is kept in the entry note. Relies on
+ * the Timesheet @@unique([employeeId, periodStart]) to reject duplicates (createTimesheet → 409).
+ */
+export async function createTimesheetFromAttendance(
+	employeeId: string,
+	organizationId: string,
+	from: Date,
+	to: Date,
+	ctx: AuditContext
+) {
+	const emp = await db.employee.findFirst({ where: { id: employeeId, organizationId }, select: { id: true } })
+	if (!emp) error(404, 'Employee not found')
+
+	const fromKey = manilaDayKey(from)
+	const toKey = manilaDayKey(to)
+	const days = await db.attendanceDay.findMany({
+		where: { employeeId, date: { gte: new Date(fromKey), lte: new Date(toKey) } },
+		orderBy: { date: 'asc' }
+	})
+	if (days.length === 0) error(400, 'No attendance in this range to save as a timesheet.')
+
+	const entries = days.map((d) => {
+		const ot = Number(d.overtimeHours)
+		const worked = Number(d.regularHours) + ot
+		return {
+			date: d.date,
+			hoursWorked: worked,
+			notes: ot > 0 ? `${d.status} (OT ${ot.toFixed(2)})` : d.status
+		}
+	})
+
+	return createTimesheet(employeeId, new Date(fromKey), new Date(toKey), entries, ctx)
 }
 
 /** HR correction of a single AttendanceDay. Rejected if the day is locked. */

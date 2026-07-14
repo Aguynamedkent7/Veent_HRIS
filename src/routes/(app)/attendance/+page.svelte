@@ -39,7 +39,9 @@
 		lockOpen:
 			'M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z',
 		download:
-			'M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3'
+			'M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3',
+		document:
+			'M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z'
 	}
 </script>
 
@@ -68,6 +70,9 @@
 
 	{#if form?.error}
 		<div class="rounded-md border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-red-400">{form.error}</div>
+	{/if}
+	{#if form?.saved}
+		<div class="rounded-md border border-green-500/20 bg-green-500/10 px-4 py-3 text-sm text-green-600">{form.saved}</div>
 	{/if}
 
 	{#if data.canManage}
@@ -146,6 +151,12 @@
 				</form>
 			{/if}
 			<a href={exportHref} class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">{@render icon(IC.download)}Export CSV</a>
+			<form method="POST" action="?/saveTimesheet" use:enhance>
+				<input type="hidden" name="employeeId" value={data.selectedEmployeeId} />
+				<input type="hidden" name="from" value={data.from} />
+				<input type="hidden" name="to" value={data.to} />
+				<button title="Persist this range as a Timesheet record" class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">{@render icon(IC.document)}Save as timesheet</button>
+			</form>
 		</div>
 	{:else if data.canManage && data.view === 'team'}
 		<div class="flex flex-wrap gap-2">

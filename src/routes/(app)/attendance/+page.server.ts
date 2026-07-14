@@ -2,7 +2,7 @@ import { fail } from '@sveltejs/kit'
 import { z } from 'zod'
 import { db } from '$lib/server/db'
 import { requireMinRole, requireRole } from '$lib/server/rbac'
-import { listAttendanceDays, listTeamDay, deriveRange, autoDeriveFromPunches, correctDay, lockRange, unlockRange } from '$lib/server/services/attendance'
+import { listAttendanceDays, listTeamDay, deriveRange, autoDeriveFromPunches, correctDay, lockRange, unlockRange, createTimesheetFromAttendance } from '$lib/server/services/attendance'
 import { manilaDayKey } from '$lib/utils/dates'
 import type { Actions, PageServerLoad, RequestEvent } from './$types'
 
@@ -151,6 +151,20 @@ export const actions: Actions = {
 		if (!parsed.success) return fail(400, { error: 'Invalid date' })
 		try {
 			await unlockRange(event.locals.user!.organizationId, { from: parsed.data.date, to: parsed.data.date }, ctxOf(event))
+		} catch (e) {
+			return toFail(e)
+		}
+	},
+
+	// Persist the selected employee's range as a Timesheet record (per-employee tab only).
+	saveTimesheet: async (event) => {
+		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
+		const parsed = rangeSchema.safeParse(Object.fromEntries(await event.request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Invalid range' })
+		if (spanExceeded(parsed.data.from, parsed.data.to)) return fail(400, { error: 'Range exceeds the 2-month limit.' })
+		try {
+			const ts = await createTimesheetFromAttendance(parsed.data.employeeId, event.locals.user!.organizationId, parsed.data.from, parsed.data.to, ctxOf(event))
+			return { saved: `Timesheet saved (${ts.entries.length} day${ts.entries.length === 1 ? '' : 's'}).` }
 		} catch (e) {
 			return toFail(e)
 		}
