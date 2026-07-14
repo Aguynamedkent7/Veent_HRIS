@@ -9,7 +9,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 }
 
 export const actions: Actions = {
-	override: async ({ request, locals, params, getClientAddress }) => {
+	override: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
 		requirePayrollManage(user.role)
 

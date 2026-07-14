@@ -182,7 +182,7 @@ export const actions: Actions = {
 		return { success: true }
 	},
 
-	deleteDocument: async ({ request, locals, params, getClientAddress }) => {
+	deleteDocument: async ({ request, locals, getClientAddress }) => {
 		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
 		const docId = (await request.formData()).get('docId') as string
 		if (!docId) return fail(400, { error: 'Missing document id.' })

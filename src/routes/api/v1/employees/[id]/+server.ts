@@ -1,4 +1,4 @@
-import { json, error } from '@sveltejs/kit'
+import { json } from '@sveltejs/kit'
 import { requireRole, requireMinRole } from '$lib/server/rbac'
 import { getEmployee, updateEmployee, offboardEmployee } from '$lib/server/services/employees'
 import { apiError } from '$lib/server/api-error'

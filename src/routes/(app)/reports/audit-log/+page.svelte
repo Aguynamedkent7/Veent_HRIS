@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { formatDate } from '$lib/utils/format'
 	import type { PageData } from './$types'
 
 	let { data }: { data: PageData } = $props()
@@ -21,12 +20,6 @@
 		const params = new URLSearchParams(window.location.search)
 		params.set('page', String(p))
 		return `?${params.toString()}`
-	}
-
-	function diffLabel(log: { oldValue: unknown; newValue: unknown }): string {
-		if (log.newValue === null && log.oldValue === null) return '—'
-		if (log.newValue !== null) return JSON.stringify(log.newValue, null, 0)
-		return '—'
 	}
 </script>
 

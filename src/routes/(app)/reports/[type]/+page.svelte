@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { formatCurrency, formatDate } from '$lib/utils/format'
+	import { formatCurrency } from '$lib/utils/format'
 	import { navigating } from '$app/stores'
 	import TableSkeleton from '$lib/components/ui/TableSkeleton.svelte'
 	import type { PageData } from './$types'

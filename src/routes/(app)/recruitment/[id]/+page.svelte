@@ -138,6 +138,6 @@
 	<!-- Applicant Kanban -->
 	<div class="space-y-2">
 		<h2 class="text-lg font-semibold">Applicants ({applicants.length})</h2>
-		<ApplicantKanban {applicants} postingId={posting.id} readonly={!isHrAdmin} />
+		<ApplicantKanban {applicants} readonly={!isHrAdmin} />
 	</div>
 </div>

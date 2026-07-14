@@ -1,4 +1,4 @@
-import { json, error } from '@sveltejs/kit'
+import { json } from '@sveltejs/kit'
 import { requireRole, requirePayrollManage } from '$lib/server/rbac'
 import { getRunWithEntries, approveRun, voidRun } from '$lib/server/services/payroll/runs'
 import { apiError } from '$lib/server/api-error'

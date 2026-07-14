@@ -12,11 +12,9 @@
 
 	let {
 		applicants,
-		postingId,
 		readonly = false
 	}: {
 		applicants: Applicant[]
-		postingId: string
 		readonly?: boolean
 	} = $props()
 

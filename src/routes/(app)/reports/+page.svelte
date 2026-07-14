@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { page } from '$app/stores'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
 	import type { PageData } from './$types'
 

@@ -26,7 +26,7 @@ export const PATCH: RequestHandler = async ({ params, request, locals, getClient
 		return apiError(400, 'Invalid JSON body')
 	}
 
-	const { action, rejectionReason, note } = body
+	const { action, rejectionReason } = body
 
 	if (action !== 'approve' && action !== 'reject' && action !== 'override-approve') {
 		return apiError(400, 'action must be "approve", "reject", or "override-approve"')
