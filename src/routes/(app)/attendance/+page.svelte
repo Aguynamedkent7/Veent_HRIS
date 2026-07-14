@@ -229,7 +229,7 @@
 										<button class="rounded bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90">Save</button>
 									</form>
 								{:else if d?.isLocked}
-									<span class="text-xs text-muted-foreground">locked</span>
+									<span class="inline-flex h-7 items-center text-xs text-muted-foreground">locked</span>
 								{/if}
 							</td>
 						</tr>
@@ -270,7 +270,7 @@
 							{#if data.canManage}
 								<td class="px-3 py-2">
 									{#if d.isLocked}
-										<span class="text-xs text-muted-foreground">locked</span>
+										<span class="inline-flex h-7 items-center text-xs text-muted-foreground">locked</span>
 									{:else}
 										<form method="POST" action="?/correct" use:enhance class="flex items-center gap-1">
 											<input type="hidden" name="id" value={d.id} />
