@@ -45,6 +45,70 @@ function ctxOf(locals: App.Locals, ip: string) {
 	}
 }
 
+// Onboarding checklist (T178 / FR-071): derived from the employee's own record so
+// completing the 201 file *is* completing onboarding — no separate data entry, and
+// everything flows straight into payroll/attendance.
+type OnboardingStep = { key: string; label: string; done: boolean; hint: string }
+function buildOnboarding(
+	emp: Awaited<ReturnType<typeof getEmployee>>,
+	documents: { category: string }[]
+) {
+	const hasContract = documents.some((d) => d.category === 'CONTRACT')
+	const hasDisbursement = !!((emp.bankName && emp.bankAccountNumber) || emp.gcashNumber)
+	const govComplete = !!(
+		emp.sssNumber &&
+		emp.philhealthNumber &&
+		emp.pagibigNumber &&
+		emp.tinNumber
+	)
+	const steps: OnboardingStep[] = [
+		{
+			key: 'account',
+			label: 'Company account created',
+			done: !!emp.user?.isActive,
+			hint: 'A login is generated with the employee record.'
+		},
+		{
+			key: 'position',
+			label: 'Position assigned',
+			done: !!emp.positionId,
+			hint: 'Set “Position” in Update Profile below.'
+		},
+		{
+			key: 'schedule',
+			label: 'Work schedule assigned',
+			done: !!emp.workScheduleId,
+			hint: 'Set “Work Schedule” below — this starts attendance tracking.'
+		},
+		{
+			key: 'salary',
+			label: 'Compensation set',
+			done: Number(emp.basicMonthlySalary ?? 0) > 0,
+			hint: 'Set “Basic Monthly Salary” below.'
+		},
+		{
+			key: 'disbursement',
+			label: 'Payroll disbursement registered',
+			done: hasDisbursement,
+			hint: 'Add bank or GCash details under Disbursement.'
+		},
+		{
+			key: 'govids',
+			label: 'Government IDs on file',
+			done: govComplete,
+			hint: 'SSS, PhilHealth, Pag-IBIG, and TIN.'
+		},
+		{
+			key: 'contract',
+			label: 'Signed contract uploaded',
+			done: hasContract,
+			hint: 'Upload a “Contract” document below.'
+		}
+	]
+	const doneCount = steps.filter((s) => s.done).length
+	return { steps, doneCount, total: steps.length, complete: doneCount === steps.length }
+}
+
 export const load: PageServerLoad = async ({ locals, params }) => {
 	requireMinRole(locals.user!.role, 'MANAGER')
 
@@ -79,6 +143,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		canManage ? getEmploymentHistory(params.id, locals.user!.organizationId) : Promise.resolve([])
 	])
 	const schedules = canManage ? await listSchedules(locals.user!.organizationId) : []
+	const onboarding = canManage ? buildOnboarding(employee, documents) : null
 
 	return {
 		employee,
@@ -89,7 +154,8 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		schedules,
 		documents,
 		positions,
-		history
+		history,
+		onboarding
 	}
 }
 
@@ -122,6 +188,27 @@ const updateSchema = z.object({
 	// Position from the catalog. Empty string clears the assignment.
 	positionId: z
 		.string()
+		.optional()
+		.transform((v) => (v ? v : null)),
+	// Government / statutory IDs (payroll registration). Empty clears the field.
+	sssNumber: z
+		.string()
+		.trim()
+		.optional()
+		.transform((v) => (v ? v : null)),
+	philhealthNumber: z
+		.string()
+		.trim()
+		.optional()
+		.transform((v) => (v ? v : null)),
+	pagibigNumber: z
+		.string()
+		.trim()
+		.optional()
+		.transform((v) => (v ? v : null)),
+	tinNumber: z
+		.string()
+		.trim()
 		.optional()
 		.transform((v) => (v ? v : null)),
 	// Disbursement details (sensitive, HR-only). Empty string clears the field.

@@ -346,7 +346,7 @@ their own `/speckit-plan` pass before task breakdown — this is a module-level 
 ### 11.7 Recruitment & onboarding (FR-068–FR-071)
 
 - [ ] T177 Interview scheduling + notes; issue offers; offer→onboarding transition ([#29](https://github.com/Aguynamedkent7/Veent_HRIS/issues/29))
-- [ ] T178 Onboarding checklist (contract upload, account gen, payroll registration, start attendance) ([#30](https://github.com/Aguynamedkent7/Veent_HRIS/issues/30))
+- [x] T178 Onboarding checklist (contract upload, account gen, payroll registration, start attendance) ([#30](https://github.com/Aguynamedkent7/Veent_HRIS/issues/30))
 - [ ] T179 [P] _(integration, deferred)_ Publish postings to external job boards (FR-070) ([#31](https://github.com/Aguynamedkent7/Veent_HRIS/issues/31))
 
 ### 11.8 Separation (FR-072)

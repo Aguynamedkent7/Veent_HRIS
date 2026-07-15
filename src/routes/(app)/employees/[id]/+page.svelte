@@ -57,6 +57,57 @@
 	</div>
 
 	<div class="grid gap-6 lg:grid-cols-2">
+		<!-- Onboarding checklist (HR-only, T178) -->
+		{#if canManage && data.onboarding}
+			<section
+				class="rounded-lg border p-6 space-y-4 lg:col-span-2 {data.onboarding.complete
+					? 'border-green-500/30 bg-green-500/5'
+					: 'border-amber-500/30 bg-amber-500/5'}"
+			>
+				<div class="flex flex-wrap items-center justify-between gap-2">
+					<h2 class="font-semibold">
+						Onboarding
+						{#if data.onboarding.complete}
+							<span class="ml-1 text-sm font-normal text-green-600">✓ Complete</span>
+						{/if}
+					</h2>
+					<span class="text-sm text-muted-foreground">
+						{data.onboarding.doneCount} / {data.onboarding.total} steps
+					</span>
+				</div>
+
+				{#if !data.onboarding.complete}
+					<div class="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+						<div
+							class="h-full rounded-full bg-primary transition-all"
+							style="width: {(data.onboarding.doneCount / data.onboarding.total) * 100}%"
+						></div>
+					</div>
+					<ul class="grid gap-2 sm:grid-cols-2">
+						{#each data.onboarding.steps as step (step.key)}
+							<li class="flex items-start gap-2 text-sm">
+								<span
+									class="mt-0.5 flex h-4 w-4 flex-none items-center justify-center rounded-full text-[10px] font-bold {step.done
+										? 'bg-green-500 text-white'
+										: 'border border-muted-foreground/40 text-transparent'}"
+								>
+									✓
+								</span>
+								<span>
+									<span class={step.done ? 'text-foreground' : 'font-medium text-foreground'}>
+										{step.label}
+									</span>
+									{#if !step.done}
+										<span class="block text-xs text-muted-foreground">{step.hint}</span>
+									{/if}
+								</span>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</section>
+		{/if}
+
 		<!-- Profile Card -->
 		<div class="rounded-lg border bg-card p-6 space-y-4">
 			<h2 class="font-semibold">Profile</h2>
@@ -225,6 +276,43 @@
 						<p class="mt-1 text-xs text-muted-foreground">
 							Sets the pay band used for the salary check above.
 						</p>
+					</div>
+					<div class="sm:col-span-3 border-t pt-3">
+						<h3 class="text-sm font-semibold text-muted-foreground">
+							Government IDs <span class="font-normal">(payroll registration)</span>
+						</h3>
+					</div>
+					<div>
+						<label class="text-sm font-medium">SSS Number</label>
+						<input
+							name="sssNumber"
+							value={employee.sssNumber ?? ''}
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+					</div>
+					<div>
+						<label class="text-sm font-medium">PhilHealth No.</label>
+						<input
+							name="philhealthNumber"
+							value={employee.philhealthNumber ?? ''}
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+					</div>
+					<div>
+						<label class="text-sm font-medium">Pag-IBIG No.</label>
+						<input
+							name="pagibigNumber"
+							value={employee.pagibigNumber ?? ''}
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+					</div>
+					<div>
+						<label class="text-sm font-medium">TIN</label>
+						<input
+							name="tinNumber"
+							value={employee.tinNumber ?? ''}
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
 					</div>
 					<div class="sm:col-span-3 border-t pt-3">
 						<h3 class="text-sm font-semibold text-muted-foreground">

@@ -48,10 +48,10 @@ interface UpdateEmployeeInput {
 	endDate?: Date
 	basicMonthlySalary?: number
 	rateType?: RateType
-	sssNumber?: string
-	philhealthNumber?: string
-	pagibigNumber?: string
-	tinNumber?: string
+	sssNumber?: string | null
+	philhealthNumber?: string | null
+	pagibigNumber?: string | null
+	tinNumber?: string | null
 	bankName?: string | null
 	bankAccountNumber?: string | null
 	gcashNumber?: string | null
