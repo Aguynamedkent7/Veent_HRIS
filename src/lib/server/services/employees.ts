@@ -52,6 +52,9 @@ interface UpdateEmployeeInput {
 	philhealthNumber?: string
 	pagibigNumber?: string
 	tinNumber?: string
+	bankName?: string | null
+	bankAccountNumber?: string | null
+	gcashNumber?: string | null
 	reportsToId?: string
 	discordId?: string | null
 	workScheduleId?: string | null
@@ -93,13 +96,15 @@ export async function getEmployee(id: string, organizationId: string, viewerRole
 			department: true,
 			user: { select: { email: true, role: true, isActive: true, lastLoginAt: true } },
 			reportsTo: { select: { id: true, firstName: true, lastName: true } },
-			position: { include: { salaryGrade: true } }
+			position: { include: { salaryGrade: true } },
+			emergencyContacts: { orderBy: { createdAt: 'asc' } }
 		}
 	})
 	if (!employee) error(404, 'Employee not found')
 
-	// Compensation and government IDs are HR-only. A MANAGER may view a report's
-	// record but must not see salary or tax/government identifiers.
+	// Compensation, government IDs, and disbursement details are HR-only. A MANAGER
+	// may view a report's record but must not see salary, tax/government identifiers,
+	// or bank/GCash details.
 	if (viewerRole && ROLE_HIERARCHY[viewerRole] < ROLE_HIERARCHY.HR_ADMIN) {
 		return {
 			...employee,
@@ -107,7 +112,10 @@ export async function getEmployee(id: string, organizationId: string, viewerRole
 			sssNumber: null,
 			philhealthNumber: null,
 			pagibigNumber: null,
-			tinNumber: null
+			tinNumber: null,
+			bankName: null,
+			bankAccountNumber: null,
+			gcashNumber: null
 		}
 	}
 	return employee

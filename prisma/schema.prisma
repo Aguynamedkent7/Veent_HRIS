@@ -338,6 +338,10 @@ model Employee {
   philhealthNumber   String?
   pagibigNumber      String?
   tinNumber          String?
+  // Disbursement details — sensitive PII, HR-only (FR-048). Nulled for non-HR viewers.
+  bankName           String?
+  bankAccountNumber  String?
+  gcashNumber        String?
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
 
@@ -362,9 +366,25 @@ model Employee {
   cashAdvances       CashAdvance[]
   workSchedule       WorkSchedule?       @relation(fields: [workScheduleId], references: [id])
   attendanceDays     AttendanceDay[]
+  emergencyContacts  EmergencyContact[]
 
   @@unique([organizationId, employeeNumber])
   @@map("employees")
+}
+
+// Emergency contact(s) on the 201 file (FR-047). An employee may have several.
+model EmergencyContact {
+  id           String   @id @default(cuid())
+  employeeId   String
+  name         String
+  relationship String
+  phone        String
+  createdAt    DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@map("emergency_contacts")
 }
 
 // ─── Timesheet ────────────────────────────────────────────────────────────────

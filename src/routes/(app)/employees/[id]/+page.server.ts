@@ -13,6 +13,10 @@ import {
 	saveEmployeeDocument,
 	deleteEmployeeDocument
 } from '$lib/server/services/documents'
+import {
+	addEmergencyContact,
+	deleteEmergencyContact
+} from '$lib/server/services/emergencyContacts'
 import { db } from '$lib/server/db'
 import { z } from 'zod'
 import type { Actions, PageServerLoad } from './$types'
@@ -80,7 +84,29 @@ const updateSchema = z.object({
 	workScheduleId: z
 		.string()
 		.optional()
+		.transform((v) => (v ? v : null)),
+	// Disbursement details (sensitive, HR-only). Empty string clears the field.
+	bankName: z
+		.string()
+		.trim()
+		.optional()
+		.transform((v) => (v ? v : null)),
+	bankAccountNumber: z
+		.string()
+		.trim()
+		.optional()
+		.transform((v) => (v ? v : null)),
+	gcashNumber: z
+		.string()
+		.trim()
+		.optional()
 		.transform((v) => (v ? v : null))
+})
+
+const emergencyContactSchema = z.object({
+	name: z.string().trim().min(1),
+	relationship: z.string().trim().min(1),
+	phone: z.string().trim().min(1)
 })
 
 export const actions: Actions = {
@@ -150,6 +176,41 @@ export const actions: Actions = {
 			actorRole: user.role,
 			ipAddress: getClientAddress()
 		})
+		return { success: true }
+	},
+
+	addEmergencyContact: async ({ request, locals, params, getClientAddress }) => {
+		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		const parsed = emergencyContactSchema.safeParse(Object.fromEntries(await request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Name, relationship, and phone are required.' })
+		try {
+			await addEmergencyContact(
+				params.id,
+				locals.user!.organizationId,
+				parsed.data,
+				ctxOf(locals, getClientAddress())
+			)
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
+		}
+		return { success: true }
+	},
+
+	deleteEmergencyContact: async ({ request, locals, getClientAddress }) => {
+		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		const contactId = (await request.formData()).get('contactId') as string
+		if (!contactId) return fail(400, { error: 'Missing contact id.' })
+		try {
+			await deleteEmergencyContact(
+				contactId,
+				locals.user!.organizationId,
+				ctxOf(locals, getClientAddress())
+			)
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
+		}
 		return { success: true }
 	},
 

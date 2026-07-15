@@ -4,7 +4,9 @@
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
-	const { employee } = data
+	// Reactive: after a form action re-runs `load`, these must reflect the fresh data
+	// (a plain destructure would stay stale until a full page refresh).
+	const employee = $derived(data.employee)
 	const canManage = $derived(data.canManage)
 
 	const DOC_CATEGORIES = [
@@ -108,6 +110,22 @@
 					<dd>{employee.tinNumber ?? '—'}</dd>
 				</dl>
 			</div>
+
+			<!-- Disbursement details Card (sensitive, HR-only) -->
+			<div class="rounded-lg border bg-card p-6 space-y-4">
+				<h2 class="font-semibold">
+					Disbursement
+					<span class="text-xs font-normal text-muted-foreground">(bank / GCash — sensitive)</span>
+				</h2>
+				<dl class="grid grid-cols-2 gap-3 text-sm">
+					<dt class="text-muted-foreground">Bank</dt>
+					<dd>{employee.bankName ?? '—'}</dd>
+					<dt class="text-muted-foreground">Account No.</dt>
+					<dd class="font-mono">{employee.bankAccountNumber ?? '—'}</dd>
+					<dt class="text-muted-foreground">GCash No.</dt>
+					<dd class="font-mono">{employee.gcashNumber ?? '—'}</dd>
+				</dl>
+			</div>
 		{/if}
 
 		<!-- Edit Form (HR-only; the update/offboard actions require HR_ADMIN) -->
@@ -188,6 +206,38 @@
 							{/each}
 						</select>
 					</div>
+					<div class="sm:col-span-3 border-t pt-3">
+						<h3 class="text-sm font-semibold text-muted-foreground">
+							Disbursement <span class="font-normal">(bank / GCash — sensitive)</span>
+						</h3>
+					</div>
+					<div>
+						<label class="text-sm font-medium">Bank Name</label>
+						<input
+							name="bankName"
+							value={employee.bankName ?? ''}
+							placeholder="e.g. BDO"
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+					</div>
+					<div>
+						<label class="text-sm font-medium">Bank Account No.</label>
+						<input
+							name="bankAccountNumber"
+							value={employee.bankAccountNumber ?? ''}
+							placeholder="Account number"
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+					</div>
+					<div>
+						<label class="text-sm font-medium">GCash No.</label>
+						<input
+							name="gcashNumber"
+							value={employee.gcashNumber ?? ''}
+							placeholder="e.g. 0917xxxxxxx"
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+					</div>
 				</div>
 				<div class="flex justify-end">
 					<button
@@ -223,6 +273,97 @@
 				</div>
 			</form>
 		{/if}
+
+		<!-- Emergency Contacts (visible to any viewer of the 201 file; HR manages) -->
+		<section class="rounded-lg border bg-card p-6 space-y-4 lg:col-span-2">
+			<h2 class="font-semibold">
+				Emergency Contacts
+				<span class="text-xs font-normal text-muted-foreground">(name, relationship, phone)</span>
+			</h2>
+
+			{#if employee.emergencyContacts.length}
+				<div class="rounded-md border">
+					<table class="w-full text-sm">
+						<thead class="border-b bg-muted/50">
+							<tr>
+								<th class="px-3 py-2 text-left font-medium text-muted-foreground">Name</th>
+								<th class="px-3 py-2 text-left font-medium text-muted-foreground">Relationship</th>
+								<th class="px-3 py-2 text-left font-medium text-muted-foreground">Phone</th>
+								{#if canManage}<th class="px-3 py-2"></th>{/if}
+							</tr>
+						</thead>
+						<tbody class="divide-y">
+							{#each employee.emergencyContacts as c (c.id)}
+								<tr class="hover:bg-muted/30">
+									<td class="px-3 py-2 font-medium">{c.name}</td>
+									<td class="px-3 py-2">{c.relationship}</td>
+									<td class="px-3 py-2 font-mono">{c.phone}</td>
+									{#if canManage}
+										<td class="px-3 py-2 text-right">
+											<form method="POST" action="?/deleteEmergencyContact" use:enhance>
+												<input type="hidden" name="contactId" value={c.id} />
+												<button type="submit" class="text-xs text-red-600 hover:underline"
+													>Remove</button
+												>
+											</form>
+										</td>
+									{/if}
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{:else}
+				<p class="text-xs text-muted-foreground">No emergency contacts on record.</p>
+			{/if}
+
+			{#if canManage}
+				<form
+					method="POST"
+					action="?/addEmergencyContact"
+					use:enhance
+					class="flex flex-wrap items-end gap-2 border-t pt-3"
+				>
+					<div class="grid gap-1">
+						<label for="ec-name" class="text-xs font-medium text-muted-foreground">Name</label>
+						<input
+							id="ec-name"
+							name="name"
+							type="text"
+							required
+							placeholder="Full name"
+							class="h-8 w-44 rounded-md border border-input bg-background px-2 text-xs"
+						/>
+					</div>
+					<div class="grid gap-1">
+						<label for="ec-rel" class="text-xs font-medium text-muted-foreground">Relationship</label>
+						<input
+							id="ec-rel"
+							name="relationship"
+							type="text"
+							required
+							placeholder="e.g. Spouse"
+							class="h-8 w-32 rounded-md border border-input bg-background px-2 text-xs"
+						/>
+					</div>
+					<div class="grid gap-1">
+						<label for="ec-phone" class="text-xs font-medium text-muted-foreground">Phone</label>
+						<input
+							id="ec-phone"
+							name="phone"
+							type="tel"
+							required
+							placeholder="e.g. 0917xxxxxxx"
+							class="h-8 w-40 rounded-md border border-input bg-background px-2 text-xs"
+						/>
+					</div>
+					<button
+						class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+						>Add Contact</button
+					>
+				</form>
+			{/if}
+		</section>
 
 		{#if canManage}
 			<section class="rounded-lg border bg-card p-6 space-y-4 lg:col-span-2">

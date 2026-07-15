@@ -317,7 +317,7 @@ their own `/speckit-plan` pass before task breakdown — this is a module-level 
 
 ### 11.2 Employee 201 File (FR-047–FR-051)
 
-- [ ] T164 Emergency contacts, bank/GCash details (sensitive, HR-only), document uploads on the employee record ([#23](https://github.com/Aguynamedkent7/Veent_HRIS/issues/23))
+- [x] T164 Emergency contacts, bank/GCash details (sensitive, HR-only), document uploads on the employee record ([#23](https://github.com/Aguynamedkent7/Veent_HRIS/issues/23))
 - [ ] T165 Assign Position + Work Schedule to employees; surface employment history from the audit trail ([#24](https://github.com/Aguynamedkent7/Veent_HRIS/issues/24))
 
 ### 11.3 Attendance engine (FR-052–FR-055) — needs a plan pass

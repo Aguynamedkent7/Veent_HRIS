@@ -103,7 +103,9 @@
 					{#each data.members as member (member.id)}
 						<tr class="hover:bg-muted/30">
 							<td class="px-4 py-3 font-medium whitespace-nowrap sticky left-0 bg-background z-10">
-								{member.lastName}, {member.firstName}
+								<a href="/employees/{member.id}" class="text-primary hover:underline">
+									{member.lastName}, {member.firstName}
+								</a>
 							</td>
 							{#each data.dates as date (date)}
 								{@const status = data.attendanceMap[member.id]?.[date]}
