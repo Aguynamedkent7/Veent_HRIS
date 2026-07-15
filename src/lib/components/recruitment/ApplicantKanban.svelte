@@ -30,13 +30,15 @@
 		REJECTED: 'Rejected'
 	}
 
+	// Left-border accent per stage — keeps cards on the theme surface (bg-card) so
+	// they stay readable in dark mode instead of a hardcoded white background.
 	const STAGE_COLORS: Record<Stage, string> = {
-		APPLIED: 'bg-blue-50 border-blue-200',
-		SCREENING: 'bg-yellow-50 border-yellow-200',
-		INTERVIEW: 'bg-purple-50 border-purple-200',
-		OFFER: 'bg-orange-50 border-orange-200',
-		HIRED: 'bg-green-50 border-green-200',
-		REJECTED: 'bg-red-50 border-red-200'
+		APPLIED: 'border-l-blue-400',
+		SCREENING: 'border-l-yellow-400',
+		INTERVIEW: 'border-l-purple-400',
+		OFFER: 'border-l-orange-400',
+		HIRED: 'border-l-green-400',
+		REJECTED: 'border-l-red-400'
 	}
 
 	const STAGE_HEADER_COLORS: Record<Stage, string> = {
@@ -88,7 +90,7 @@
 				<!-- Cards -->
 				<div class="space-y-2">
 					{#each stageApplicants as applicant (applicant.id)}
-						<div class="rounded-md border p-3 shadow-sm {STAGE_COLORS[stage]} bg-white">
+						<div class="rounded-md border border-l-4 p-3 shadow-sm {STAGE_COLORS[stage]} bg-card">
 							{#if readonly}
 								<p class="text-sm font-medium text-foreground">
 									{applicant.firstName}
