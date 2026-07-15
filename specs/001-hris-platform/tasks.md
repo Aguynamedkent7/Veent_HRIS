@@ -269,9 +269,9 @@ routes are deferred and enumerated below. `[X]` = done this pass, `[ ]` = follow
 - [x] T136 [P] Unit tests `tests/unit/hmac.test.ts`, `tests/unit/timelog-aggregate.test.ts`
 - [ ] T137 `GET /api/v1/timesheets/[employeeId]/punches` route (list raw punches; owner/manager/HR) ([#2](https://github.com/Aguynamedkent7/Veent_HRIS/issues/2))
 - [ ] T138 `POST /api/v1/timesheets/aggregate` route wrapping `aggregateTimeLogsToTimesheet` (HR_ADMIN+) ([#3](https://github.com/Aguynamedkent7/Veent_HRIS/issues/3))
-- [ ] T139 HR "Time Logs → Timesheet" review UI on `(app)/timesheets` — per-PHT-day punch table with computed hours + warnings, an "Aggregate week" action, inline edit of `TimesheetEntry.hoursWorked`, then Approve via existing flow ([#4](https://github.com/Aguynamedkent7/Veent_HRIS/issues/4))
+- [x] T139 HR "Time Logs → Timesheet" review UI on `(app)/timesheets` — per-PHT-day punch table with computed hours + warnings, an "Aggregate week" action, inline edit of `TimesheetEntry.hoursWorked`, then Approve via existing flow ([#4](https://github.com/Aguynamedkent7/Veent_HRIS/issues/4))
 - [ ] T140 [P] Employee read-only punch view + `discordId` field in the employee profile / onboarding forms ([#5](https://github.com/Aguynamedkent7/Veent_HRIS/issues/5))
-- [ ] T141 [P] Bot production hardening (pm2/systemd unit) and optional slash-command fallback — docs only for now ([#6](https://github.com/Aguynamedkent7/Veent_HRIS/issues/6))
+- [x] T141 [P] Bot production hardening (pm2/systemd unit) and optional slash-command fallback — docs only for now ([#6](https://github.com/Aguynamedkent7/Veent_HRIS/issues/6))
 - [ ] T142 [P] E2E: signed punch → aggregate → approve happy path (`tests/e2e/`) ([#7](https://github.com/Aguynamedkent7/Veent_HRIS/issues/7))
 
 ### 10.3 Benefits Administration
