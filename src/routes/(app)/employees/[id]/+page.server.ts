@@ -1,6 +1,12 @@
 import { error, fail, isHttpError } from '@sveltejs/kit'
 import { requireMinRole, requireRole } from '$lib/server/rbac'
-import { getEmployee, updateEmployee, offboardEmployee } from '$lib/server/services/employees'
+import {
+	getEmployee,
+	updateEmployee,
+	offboardEmployee,
+	getEmploymentHistory
+} from '$lib/server/services/employees'
+import { listPositions } from '$lib/server/services/settings/org'
 import {
 	listLoans,
 	listCashAdvances,
@@ -59,18 +65,32 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		}
 	}
 
-	const [departments, loans, cashAdvances, documents] = await Promise.all([
+	const [departments, loans, cashAdvances, documents, positions, history] = await Promise.all([
 		db.department.findMany({
 			where: { organizationId: locals.user!.organizationId },
 			orderBy: { name: 'asc' }
 		}),
 		canManage ? listLoans(params.id) : Promise.resolve([]),
 		canManage ? listCashAdvances(params.id) : Promise.resolve([]),
-		canManage ? listEmployeeDocuments(params.id, locals.user!.organizationId) : Promise.resolve([])
+		canManage
+			? listEmployeeDocuments(params.id, locals.user!.organizationId)
+			: Promise.resolve([]),
+		canManage ? listPositions(locals.user!.organizationId) : Promise.resolve([]),
+		canManage ? getEmploymentHistory(params.id, locals.user!.organizationId) : Promise.resolve([])
 	])
 	const schedules = canManage ? await listSchedules(locals.user!.organizationId) : []
 
-	return { employee, departments, canManage, loans, cashAdvances, schedules, documents }
+	return {
+		employee,
+		departments,
+		canManage,
+		loans,
+		cashAdvances,
+		schedules,
+		documents,
+		positions,
+		history
+	}
 }
 
 const loanSchema = z.object({
@@ -96,6 +116,11 @@ const updateSchema = z.object({
 		.optional()
 		.transform((v) => (v ? v : null)),
 	workScheduleId: z
+		.string()
+		.optional()
+		.transform((v) => (v ? v : null)),
+	// Position from the catalog. Empty string clears the assignment.
+	positionId: z
 		.string()
 		.optional()
 		.transform((v) => (v ? v : null)),

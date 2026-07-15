@@ -211,6 +211,21 @@
 							{/each}
 						</select>
 					</div>
+					<div>
+						<label class="text-sm font-medium">Position</label>
+						<select
+							name="positionId"
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						>
+							<option value="">— No position —</option>
+							{#each data.positions as p (p.id)}
+								<option value={p.id} selected={p.id === employee.positionId}>{p.title}</option>
+							{/each}
+						</select>
+						<p class="mt-1 text-xs text-muted-foreground">
+							Sets the pay band used for the salary check above.
+						</p>
+					</div>
 					<div class="sm:col-span-3 border-t pt-3">
 						<h3 class="text-sm font-semibold text-muted-foreground">
 							Disbursement <span class="font-normal">(bank / GCash — sensitive)</span>
@@ -612,6 +627,54 @@
 						>Upload</button
 					>
 				</form>
+			</section>
+		{/if}
+
+		{#if canManage}
+			<section class="rounded-lg border bg-card p-6 space-y-4 lg:col-span-2">
+				<h2 class="font-semibold">
+					Employment History
+					<span class="text-xs font-normal text-muted-foreground"
+						>(promotions, salary, transfers, status — from the audit trail)</span
+					>
+				</h2>
+
+				{#if data.history.length}
+					<ol class="relative space-y-5 border-l pl-6">
+						{#each data.history as ev (ev.id)}
+							<li class="relative">
+								<span
+									class="absolute -left-[27px] mt-1 h-3 w-3 rounded-full border-2 border-background {ev.type ===
+									'HIRED'
+										? 'bg-green-500'
+										: 'bg-primary'}"
+								></span>
+								<div class="flex flex-wrap items-baseline justify-between gap-2">
+									<span class="text-sm font-medium">
+										{ev.type === 'HIRED' ? 'Hired / record created' : 'Profile updated'}
+									</span>
+									<span class="text-xs text-muted-foreground">{formatShortDate(ev.date)}</span>
+								</div>
+								{#if ev.changes.length}
+									<ul class="mt-1 space-y-0.5 text-sm text-muted-foreground">
+										{#each ev.changes as c (c.label)}
+											<li>
+												<span class="font-medium text-foreground">{c.label}:</span>
+												{c.from} <span aria-hidden="true">→</span>
+												<span class="text-foreground">{c.to}</span>
+											</li>
+										{/each}
+									</ul>
+								{/if}
+								{#if ev.actorEmail}
+									<p class="mt-1 text-xs text-muted-foreground/70">by {ev.actorEmail}</p>
+								{/if}
+							</li>
+						{/each}
+					</ol>
+				{:else}
+					<p class="text-xs text-muted-foreground">No recorded changes yet.</p>
+				{/if}
 			</section>
 		{/if}
 	</div>

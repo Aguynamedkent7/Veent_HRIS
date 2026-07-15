@@ -55,9 +55,34 @@ interface UpdateEmployeeInput {
 	bankName?: string | null
 	bankAccountNumber?: string | null
 	gcashNumber?: string | null
+	positionId?: string | null
 	reportsToId?: string
 	discordId?: string | null
 	workScheduleId?: string | null
+}
+
+// Fields whose changes make up the employment-history timeline (FR-051):
+// promotions, salary adjustments, department/position transfers, status changes.
+// Everything else (bank/GCash, government IDs, Discord) is intentionally excluded
+// so sensitive PII never lands in the audit trail.
+const HISTORY_FIELDS = [
+	'jobTitle',
+	'departmentId',
+	'positionId',
+	'basicMonthlySalary',
+	'employmentType',
+	'employmentStatus',
+	'workScheduleId'
+] as const
+
+const HISTORY_LABELS: Record<(typeof HISTORY_FIELDS)[number], string> = {
+	jobTitle: 'Job title',
+	departmentId: 'Department',
+	positionId: 'Position',
+	basicMonthlySalary: 'Basic salary',
+	employmentType: 'Employment type',
+	employmentStatus: 'Status',
+	workScheduleId: 'Work schedule'
 }
 
 export async function listEmployees(
@@ -196,13 +221,37 @@ export async function updateEmployee(
 		include: { department: true, user: { select: { email: true, role: true } } }
 	})
 
-	await writeAuditLog(ctx, {
-		action: 'UPDATE',
-		entityType: 'Employee',
-		entityId: id,
-		oldValue: { employmentStatus: existing.employmentStatus, jobTitle: existing.jobTitle },
-		newValue: input as Record<string, unknown>
-	})
+	// Curated audit diff: before/after values for the employment-history fields
+	// only, plus the names (not values) of any other changed fields. This powers
+	// the history timeline (FR-051) and keeps sensitive PII out of the audit log.
+	const norm = (v: unknown) =>
+		v == null ? null : typeof v === 'object' && 'toString' in v ? (v as object).toString() : v
+	const oldValue: Record<string, unknown> = {}
+	const newValue: Record<string, unknown> = {}
+	const otherChanged: string[] = []
+	for (const key of Object.keys(input) as (keyof UpdateEmployeeInput)[]) {
+		const before = norm((existing as Record<string, unknown>)[key])
+		const after = norm((updated as Record<string, unknown>)[key])
+		if (String(before) === String(after)) continue
+		if ((HISTORY_FIELDS as readonly string[]).includes(key)) {
+			oldValue[key] = before
+			newValue[key] = after
+		} else {
+			otherChanged.push(key)
+		}
+	}
+
+	// Only record an audit entry when something actually changed.
+	if (Object.keys(newValue).length > 0 || otherChanged.length > 0) {
+		if (otherChanged.length > 0) newValue._otherFields = otherChanged
+		await writeAuditLog(ctx, {
+			action: 'UPDATE',
+			entityType: 'Employee',
+			entityId: id,
+			oldValue,
+			newValue
+		})
+	}
 
 	return updated
 }
@@ -234,4 +283,92 @@ export async function offboardEmployee(
 	})
 
 	return employee
+}
+
+export interface EmploymentHistoryChange {
+	label: string
+	from: string
+	to: string
+}
+export interface EmploymentHistoryEvent {
+	id: string
+	date: Date
+	actorEmail: string | null
+	type: 'HIRED' | 'CHANGE'
+	changes: EmploymentHistoryChange[]
+}
+
+// Surface an employee's employment history (FR-051) from the audit trail:
+// hiring, promotions, salary adjustments, department/position transfers, and
+// status changes — derived by diffing the HISTORY_FIELDS on each audit entry.
+export async function getEmploymentHistory(
+	employeeId: string,
+	organizationId: string
+): Promise<EmploymentHistoryEvent[]> {
+	const logs = await db.auditLog.findMany({
+		where: {
+			organizationId,
+			entityType: 'Employee',
+			entityId: employeeId,
+			action: { in: ['CREATE', 'UPDATE'] }
+		},
+		orderBy: { createdAt: 'desc' },
+		include: { actor: { select: { email: true } } }
+	})
+
+	// Resolve foreign-key ids to human-readable names for display.
+	const [departments, positions, schedules] = await Promise.all([
+		db.department.findMany({ where: { organizationId }, select: { id: true, name: true } }),
+		db.position.findMany({ where: { organizationId }, select: { id: true, title: true } }),
+		db.workSchedule.findMany({ where: { organizationId }, select: { id: true, name: true } })
+	])
+	const deptMap = new Map(departments.map((d) => [d.id, d.name]))
+	const posMap = new Map(positions.map((p) => [p.id, p.title]))
+	const schedMap = new Map(schedules.map((s) => [s.id, s.name]))
+	const money = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' })
+
+	const display = (field: string, raw: unknown): string => {
+		if (raw == null || raw === '') return '—'
+		const v = String(raw)
+		if (field === 'departmentId') return deptMap.get(v) ?? '(removed)'
+		if (field === 'positionId') return posMap.get(v) ?? '(removed)'
+		if (field === 'workScheduleId') return schedMap.get(v) ?? 'Default schedule'
+		if (field === 'basicMonthlySalary') return money.format(Number(raw))
+		if (field === 'employmentType' || field === 'employmentStatus') return v.replace(/_/g, ' ')
+		return v
+	}
+
+	const events: EmploymentHistoryEvent[] = []
+	for (const log of logs) {
+		if (log.action === 'CREATE') {
+			events.push({
+				id: log.id,
+				date: log.createdAt,
+				actorEmail: log.actor?.email ?? null,
+				type: 'HIRED',
+				changes: []
+			})
+			continue
+		}
+		const oldValue = (log.oldValue ?? {}) as Record<string, unknown>
+		const newValue = (log.newValue ?? {}) as Record<string, unknown>
+		const changes: EmploymentHistoryChange[] = []
+		for (const field of HISTORY_FIELDS) {
+			if (!(field in newValue)) continue
+			const from = display(field, oldValue[field])
+			const to = display(field, newValue[field])
+			if (from === to) continue
+			changes.push({ label: HISTORY_LABELS[field], from, to })
+		}
+		if (changes.length > 0) {
+			events.push({
+				id: log.id,
+				date: log.createdAt,
+				actorEmail: log.actor?.email ?? null,
+				type: 'CHANGE',
+				changes
+			})
+		}
+	}
+	return events
 }
