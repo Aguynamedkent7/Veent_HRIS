@@ -539,7 +539,9 @@ async function main() {
 	console.log('  Finance:         finance@veent.ph / Finance@1234')
 	console.log('')
 	console.log('Time-log punches seeded for Elena Employee (EMP-003), aggregatable at /timesheets:')
-	console.log('  Week of 2026-07-06 — clean; also pre-aggregated into a DRAFT timesheet (no warnings)')
+	console.log(
+		'  Week of 2026-07-06 — clean; also pre-aggregated into a DRAFT timesheet (no warnings)'
+	)
 	console.log('  Week of 2026-07-13 — overnight + stray-OUT + missing-OUT warnings')
 }
 

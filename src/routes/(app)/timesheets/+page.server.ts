@@ -128,7 +128,9 @@ export const actions: Actions = {
 			parsed.data.employeeId,
 			new Date(parsed.data.weekOf)
 		)
-		return { preview: { ...preview, employeeId: parsed.data.employeeId, weekOf: parsed.data.weekOf } }
+		return {
+			preview: { ...preview, employeeId: parsed.data.employeeId, weekOf: parsed.data.weekOf }
+		}
 	},
 
 	// HR only — commit the week's punches into a DRAFT timesheet (idempotent for drafts).

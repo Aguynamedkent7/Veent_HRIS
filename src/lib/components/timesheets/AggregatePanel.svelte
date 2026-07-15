@@ -116,9 +116,12 @@
 					Week of {formatShortDate(preview.periodStart)} – {formatShortDate(preview.periodEnd)}
 				</p>
 				<p class="text-sm text-muted-foreground">
-					OT <span class="font-mono font-semibold text-amber-600">{preview.totalOt.toFixed(2)}</span>
+					OT <span class="font-mono font-semibold text-amber-600">{preview.totalOt.toFixed(2)}</span
+					>
 					· Total
-					<span class="font-mono font-semibold text-foreground">{preview.totalHours.toFixed(2)}</span> hrs
+					<span class="font-mono font-semibold text-foreground"
+						>{preview.totalHours.toFixed(2)}</span
+					> hrs
 				</p>
 			</div>
 
@@ -138,7 +141,9 @@
 								<td class="px-3 py-1.5 whitespace-nowrap">{weekdayOf(row.day)} · {row.day}</td>
 								<td class="px-3 py-1.5 text-right font-mono">{row.reg.toFixed(2)}</td>
 								<td class="px-3 py-1.5 text-right font-mono text-amber-600">{row.ot.toFixed(2)}</td>
-								<td class="px-3 py-1.5 text-right font-mono font-semibold">{row.total.toFixed(2)}</td>
+								<td class="px-3 py-1.5 text-right font-mono font-semibold"
+									>{row.total.toFixed(2)}</td
+								>
 							</tr>
 						{:else}
 							<tr
