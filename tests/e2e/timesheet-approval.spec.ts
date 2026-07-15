@@ -34,12 +34,15 @@ test('employee submits a timesheet and the manager approves it', async ({ browse
 	await mgrPage.goto('/requests/timesheets')
 
 	// The direct report's submitted timesheet is waiting here. Clicking the card opens the
-	// read-only review modal; Approve lives inside it now.
+	// read-only review modal client-side, so retry the click until the page has hydrated
+	// and the dialog appears (a pre-hydration click would otherwise be dropped).
 	const card = mgrPage.locator('[role="button"]', { hasText: 'Employee, Elena' }).first()
 	await expect(card).toBeVisible()
-	await card.click()
 	const dialog = mgrPage.getByRole('dialog')
-	await expect(dialog).toBeVisible()
+	await expect(async () => {
+		await card.click()
+		await expect(dialog).toBeVisible({ timeout: 1000 })
+	}).toPass({ timeout: 15000 })
 	await dialog.getByRole('button', { name: 'Approve' }).click()
 
 	// Once approved it leaves the pending queue.
