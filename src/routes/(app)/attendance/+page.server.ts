@@ -85,7 +85,7 @@ export const load: PageServerLoad = async ({ locals, url, getClientAddress }) =>
 
 	const days =
 		view === 'employee' && selectedEmployeeId
-			? await listAttendanceDays(selectedEmployeeId, new Date(from), new Date(to))
+			? await listAttendanceDays(selectedEmployeeId, new Date(from), new Date(to), 'desc')
 			: []
 
 	const team = view === 'team' ? await listTeamDay(user.organizationId, date) : []

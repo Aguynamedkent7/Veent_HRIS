@@ -46,10 +46,15 @@ function groupPunchesByDay(
 	return byDay
 }
 
-export function listAttendanceDays(employeeId: string, from: Date, to: Date) {
+export function listAttendanceDays(
+	employeeId: string,
+	from: Date,
+	to: Date,
+	order: 'asc' | 'desc' = 'asc'
+) {
 	return db.attendanceDay.findMany({
 		where: { employeeId, date: { gte: from, lte: to } },
-		orderBy: { date: 'asc' }
+		orderBy: { date: order }
 	})
 }
 
