@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import { formatShortDate } from '$lib/utils/format'
+	import { formatDateISO } from '$lib/utils/dates'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -19,6 +20,10 @@
 	let selectedType = $state('LEAVE')
 	let showForm = $state(false)
 
+	// Date guards: start can't be before today; end can't be before start.
+	const today = formatDateISO(new Date())
+	let startDate = $state('')
+
 	const isDayHours = (t: string) =>
 		['OVERTIME', 'UNDERTIME', 'REST_DAY_WORK', 'HOLIDAY_WORK'].includes(t)
 
@@ -32,23 +37,23 @@
 </script>
 
 <svelte:head>
-	<title>Requests — Veent HRIS</title>
+	<title>My Requests — Veent HRIS</title>
 </svelte:head>
 
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
 		<div>
-			<h1 class="text-2xl font-bold tracking-tight">Requests</h1>
-			<p class="text-sm text-muted-foreground">
-				File and track leave, overtime, and other requests.
-			</p>
+			<h1 class="text-2xl font-bold tracking-tight">My Requests</h1>
+			<p class="text-sm text-muted-foreground">File and track your requests.</p>
 		</div>
-		<button
-			onclick={() => (showForm = !showForm)}
-			class="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-		>
-			{showForm ? 'Close' : 'New Request'}
-		</button>
+		{#if data.hasEmployee}
+			<button
+				onclick={() => (showForm = !showForm)}
+				class="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+			>
+				{showForm ? 'Close' : 'New Request'}
+			</button>
+		{/if}
 	</div>
 
 	{#if form?.error}
@@ -105,13 +110,15 @@
 						{/each}
 					</select>
 				</div>
-				<div class="grid grid-cols-2 gap-3">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					<div class="grid gap-1.5">
 						<label for="startDate" class="text-sm font-medium">Start</label>
 						<input
 							id="startDate"
 							name="startDate"
 							type="date"
+							min={today}
+							bind:value={startDate}
 							class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 						/>
 					</div>
@@ -121,18 +128,21 @@
 							id="endDate"
 							name="endDate"
 							type="date"
+							min={startDate || today}
 							class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 						/>
 					</div>
 				</div>
 			{:else if selectedType === 'OFFICIAL_BUSINESS'}
-				<div class="grid grid-cols-2 gap-3">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					<div class="grid gap-1.5">
 						<label for="startDate" class="text-sm font-medium">Start</label>
 						<input
 							id="startDate"
 							name="startDate"
 							type="date"
+							min={today}
+							bind:value={startDate}
 							class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 						/>
 					</div>
@@ -142,6 +152,7 @@
 							id="endDate"
 							name="endDate"
 							type="date"
+							min={startDate || today}
 							class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 						/>
 					</div>
@@ -165,7 +176,7 @@
 					/>
 				</div>
 			{:else if isDayHours(selectedType)}
-				<div class="grid grid-cols-2 gap-3">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					<div class="grid gap-1.5">
 						<label for="date" class="text-sm font-medium">Date</label>
 						<input
@@ -232,7 +243,7 @@
 		</form>
 	{/if}
 
-	<div class="rounded-lg border">
+	<div class="overflow-x-auto rounded-lg border">
 		<table class="w-full text-sm">
 			<thead class="border-b bg-muted/50">
 				<tr>

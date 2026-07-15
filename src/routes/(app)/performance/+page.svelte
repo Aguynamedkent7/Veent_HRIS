@@ -209,7 +209,7 @@
 				>
 			</form>
 			{#if data.cycles.length}
-				<div class="rounded-lg border">
+				<div class="overflow-x-auto rounded-lg border">
 					<table class="w-full text-sm">
 						<thead class="border-b bg-muted/50">
 							<tr>
@@ -275,7 +275,7 @@
 	<!-- My Reviews -->
 	<section class="space-y-3">
 		<h2 class="text-lg font-semibold">My Reviews</h2>
-		<div class="rounded-lg border">
+		<div class="overflow-x-auto rounded-lg border">
 			<table class="w-full text-sm">
 				<thead class="border-b bg-muted/50">
 					<tr>
@@ -322,7 +322,7 @@
 	{#if data.isManager && data.teamGoals.length}
 		<section class="space-y-3">
 			<h2 class="text-lg font-semibold">Team Goals</h2>
-			<div class="rounded-lg border">
+			<div class="overflow-x-auto rounded-lg border">
 				<table class="w-full text-sm">
 					<thead class="border-b bg-muted/50">
 						<tr>
@@ -356,7 +356,7 @@
 	{#if data.reviewsToGive.length}
 		<section class="space-y-3">
 			<h2 class="text-lg font-semibold">Reviews to Complete</h2>
-			<div class="rounded-lg border">
+			<div class="overflow-x-auto rounded-lg border">
 				<table class="w-full text-sm">
 					<thead class="border-b bg-muted/50">
 						<tr>

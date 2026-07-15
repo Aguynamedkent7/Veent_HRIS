@@ -8,7 +8,9 @@ export const USERS = {
 
 /** Log in through the real login form and wait for the dashboard. */
 export async function login(page: Page, user: { email: string; password: string }) {
-	await page.goto('/login')
+	// domcontentloaded (not the default 'load') so we don't block on external font/webfont
+	// requests that may never settle in sandboxed/offline runners.
+	await page.goto('/login', { waitUntil: 'domcontentloaded' })
 	await page.getByLabel('Email').fill(user.email)
 	await page.getByLabel('Password').fill(user.password)
 	await page.getByRole('button', { name: 'Sign In' }).click()

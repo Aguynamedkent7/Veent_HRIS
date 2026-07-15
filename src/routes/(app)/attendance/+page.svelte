@@ -11,6 +11,12 @@
 		async ({ update }) =>
 			update({ reset: false })
 
+	// Reset discards the manual correction and re-derives from punches — confirm first.
+	const confirmReset: SubmitFunction = ({ cancel }) => {
+		if (!confirm('Discard the manual edit for this day and re-derive it from punches?')) cancel()
+		return async ({ update }) => update({ reset: false })
+	}
+
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 
 	const badge: Record<string, string> = {
@@ -447,7 +453,7 @@
 											>
 										</form>
 										{#if d.manuallyEdited}
-											<form method="POST" action="?/resetDay" use:enhance={keepValues}>
+											<form method="POST" action="?/resetDay" use:enhance={confirmReset}>
 												<input type="hidden" name="id" value={d.id} />
 												<button
 													type="submit"
@@ -594,7 +600,7 @@
 												>
 											</form>
 											{#if d.manuallyEdited}
-												<form method="POST" action="?/resetDay" use:enhance={keepValues}>
+												<form method="POST" action="?/resetDay" use:enhance={confirmReset}>
 													<input type="hidden" name="id" value={d.id} />
 													<button
 														type="submit"

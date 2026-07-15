@@ -4,7 +4,6 @@ import {
 	listTimesheets,
 	createTimesheet,
 	submitTimesheet,
-	reviewTimesheet,
 	updateTimesheetEntries,
 	deleteTimesheet
 } from '$lib/server/services/timesheets'
@@ -20,12 +19,18 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
 
+	// A non-manager without an employee record owns no timesheets — return empty rather
+	// than passing an undefined employeeId (which would list the whole org).
+	const canList = isManager || Boolean(myEmployee)
+
 	// Stream the timesheet list so the page renders a skeleton while it loads.
-	const timesheets = listTimesheets({
-		organizationId: user.organizationId,
-		employeeId: isManager ? undefined : myEmployee?.id,
-		status
-	})
+	const timesheets = canList
+		? listTimesheets({
+				organizationId: user.organizationId,
+				employeeId: isManager ? undefined : myEmployee?.id,
+				status
+			})
+		: Promise.resolve([])
 
 	return { timesheets, myEmployeeId: myEmployee?.id, isManager }
 }
@@ -54,14 +59,19 @@ const createSchema = z.object({
 // Entries arrive with date (YYYY-MM-DD) + optional HH:MM times; the server rebuilds PHT
 // timestamps from date + time. hoursWorked is total worked; otHours is the OT portion.
 const entriesSchema = z.array(
-	z.object({
-		date: z.string().min(1),
-		timeIn: z.string().optional(),
-		timeOut: z.string().optional(),
-		hoursWorked: z.coerce.number().min(0).max(24),
-		otHours: z.coerce.number().min(0).max(24).optional(),
-		notes: z.string().optional()
-	})
+	z
+		.object({
+			date: z.string().min(1),
+			timeIn: z.string().optional(),
+			timeOut: z.string().optional(),
+			hoursWorked: z.coerce.number().min(0).max(24),
+			otHours: z.coerce.number().min(0).max(24).optional(),
+			notes: z.string().optional()
+		})
+		.refine((e) => (e.otHours ?? 0) <= e.hoursWorked, {
+			message: 'OT hours cannot exceed hours worked',
+			path: ['otHours']
+		})
 )
 
 function toEntryInputs(rows: z.infer<typeof entriesSchema>) {
@@ -85,13 +95,17 @@ export const actions: Actions = {
 		const parsed = createSchema.safeParse(raw)
 		if (!parsed.success) return fail(400, { error: 'Invalid dates' })
 
-		await createTimesheet(
-			myEmployee.id,
-			parsed.data.periodStart,
-			parsed.data.periodEnd,
-			[],
-			ctxOf(event)
-		)
+		try {
+			await createTimesheet(
+				myEmployee.id,
+				parsed.data.periodStart,
+				parsed.data.periodEnd,
+				[],
+				ctxOf(event)
+			)
+		} catch (e) {
+			return toFail(e)
+		}
 	},
 
 	submit: async (event) => {
@@ -140,32 +154,6 @@ export const actions: Actions = {
 			return { saved: 'Timesheet deleted.' }
 		} catch (e) {
 			return toFail(e)
-		}
-	},
-
-	// Approve each selected (submitted) timesheet; non-submitted ones are skipped.
-	approveMany: async (event) => {
-		requireMinRole(event.locals.user!.role, 'MANAGER')
-		const ids = String((await event.request.formData()).get('ids') ?? '')
-			.split(',')
-			.map((s) => s.trim())
-			.filter(Boolean)
-		if (!ids.length) return fail(400, { error: 'No timesheets selected' })
-
-		const org = event.locals.user!.organizationId
-		const ctx = ctxOf(event)
-		let done = 0
-		let skipped = 0
-		for (const id of ids) {
-			try {
-				await reviewTimesheet(id, org, true, undefined, ctx)
-				done++
-			} catch {
-				skipped++
-			}
-		}
-		return {
-			saved: `Approved ${done} timesheet${done === 1 ? '' : 's'}${skipped ? `, ${skipped} skipped` : ''}.`
 		}
 	},
 
@@ -222,28 +210,6 @@ export const actions: Actions = {
 		}
 		return {
 			saved: `Deleted ${deleted} timesheet${deleted === 1 ? '' : 's'}${skipped ? `, ${skipped} skipped` : ''}.`
-		}
-	},
-
-	review: async (event) => {
-		requireMinRole(event.locals.user!.role, 'MANAGER')
-		const data = await event.request.formData()
-		const id = data.get('id') as string
-		const approved = data.get('approved') === 'true'
-		const rejectionReason = (data.get('rejectionReason') as string) || undefined
-		if (!approved && !rejectionReason)
-			return fail(400, { error: 'A reason is required to reject.' })
-		try {
-			await reviewTimesheet(
-				id,
-				event.locals.user!.organizationId,
-				approved,
-				rejectionReason,
-				ctxOf(event)
-			)
-			return { saved: approved ? 'Timesheet approved.' : 'Timesheet rejected.' }
-		} catch (e) {
-			return toFail(e)
 		}
 	}
 }

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
+	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -59,7 +60,7 @@
 		<!-- Profile Card -->
 		<div class="rounded-lg border bg-card p-6 space-y-4">
 			<h2 class="font-semibold">Profile</h2>
-			<dl class="grid grid-cols-2 gap-3 text-sm">
+			<dl class="grid grid-cols-1 gap-3 sm:grid-cols-2 text-sm">
 				<dt class="text-muted-foreground">Employee No.</dt>
 				<dd class="font-medium">{employee.employeeNumber}</dd>
 				<dt class="text-muted-foreground">Email</dt>
@@ -103,7 +104,7 @@
 		{#if canManage}
 			<div class="rounded-lg border bg-card p-6 space-y-4">
 				<h2 class="font-semibold">Government IDs</h2>
-				<dl class="grid grid-cols-2 gap-3 text-sm">
+				<dl class="grid grid-cols-1 gap-3 sm:grid-cols-2 text-sm">
 					<dt class="text-muted-foreground">SSS Number</dt>
 					<dd>{employee.sssNumber ?? '—'}</dd>
 					<dt class="text-muted-foreground">PhilHealth No.</dt>
@@ -517,7 +518,7 @@
 				</h2>
 
 				{#if data.documents.length}
-					<div class="rounded-md border">
+					<div class="overflow-x-auto rounded-md border">
 						<table class="w-full text-sm">
 							<thead class="border-b bg-muted/50">
 								<tr>
@@ -544,12 +545,14 @@
 											>{formatShortDate(doc.uploadedAt)}</td
 										>
 										<td class="px-3 py-2 text-right">
-											<form method="POST" action="?/deleteDocument" use:enhance>
+											<ConfirmButton
+												action="?/deleteDocument"
+												title="Delete document?"
+												message="“{doc.label}” will be permanently removed."
+												triggerClass="text-xs text-red-600 hover:underline"
+											>
 												<input type="hidden" name="docId" value={doc.id} />
-												<button type="submit" class="text-xs text-red-600 hover:underline"
-													>Delete</button
-												>
-											</form>
+											</ConfirmButton>
 										</td>
 									</tr>
 								{/each}

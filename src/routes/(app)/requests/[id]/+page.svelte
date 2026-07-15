@@ -1,9 +1,16 @@
 <script lang="ts">
+	import { page } from '$app/stores'
 	import { formatShortDate, formatDate } from '$lib/utils/format'
 	import type { PageData } from './$types'
 
 	let { data }: { data: PageData } = $props()
 	const req = $derived(data.request)
+
+	// Return to wherever the user came from: the approvals queue links here with
+	// ?from=approvals; everything else (My Requests) goes back to /requests.
+	const backHref = $derived(
+		$page.url.searchParams.get('from') === 'approvals' ? '/requests/approvals' : '/requests'
+	)
 
 	const typeLabels: Record<string, string> = {
 		LEAVE: 'Leave',
@@ -23,10 +30,27 @@
 		return 'bg-yellow-100 text-yellow-700'
 	}
 
-	// payload is Json; render its key/values (dropping the redundant `type`).
+	// payload is Json; show only the type-specific extras. Fields already surfaced in
+	// their own rows (dates, hours, reason) or that are internal ids are hidden so they
+	// don't get dumped raw (e.g. startDate/endDate/leaveTypeId).
+	const HIDDEN_PAYLOAD_KEYS = new Set([
+		'type',
+		'startDate',
+		'endDate',
+		'date',
+		'hours',
+		'reason',
+		'leaveTypeId'
+	])
+	const humanize = (k: string) => k.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase())
 	const payloadEntries = $derived(
-		Object.entries((req.payload ?? {}) as Record<string, unknown>).filter(([k]) => k !== 'type')
+		Object.entries((req.payload ?? {}) as Record<string, unknown>).filter(
+			([k, v]) => !HIDDEN_PAYLOAD_KEYS.has(k) && v != null && v !== ''
+		)
 	)
+	// For Official Business, `reason` mirrors `purpose` (already shown) — don't repeat it.
+	const shownPayloadValues = $derived(new Set(payloadEntries.map(([, v]) => String(v))))
+	const showReason = $derived(Boolean(req.reason) && !shownPayloadValues.has(String(req.reason)))
 	function stageLabel(step: { stageKind: string; role: string | null }) {
 		return step.stageKind === 'SUPERVISOR' ? 'Supervisor' : (step.role ?? 'Approver')
 	}
@@ -37,7 +61,7 @@
 </svelte:head>
 
 <div class="mx-auto max-w-2xl space-y-6">
-	<a href="/requests" class="text-sm text-muted-foreground hover:underline">← Back to requests</a>
+	<a href={backHref} class="text-sm text-muted-foreground hover:underline">← Back to requests</a>
 
 	<div class="flex items-center justify-between">
 		<h1 class="text-2xl font-bold tracking-tight">{typeLabels[req.type] ?? req.type}</h1>
@@ -62,10 +86,10 @@
 				<dd class="col-span-2">{req.hours}</dd>
 			{/if}
 			{#each payloadEntries as [k, v] (k)}
-				<dt class="text-muted-foreground">{k}</dt>
+				<dt class="text-muted-foreground">{humanize(k)}</dt>
 				<dd class="col-span-2 break-words">{String(v)}</dd>
 			{/each}
-			{#if req.reason}
+			{#if showReason}
 				<dt class="text-muted-foreground">Reason</dt>
 				<dd class="col-span-2">{req.reason}</dd>
 			{/if}

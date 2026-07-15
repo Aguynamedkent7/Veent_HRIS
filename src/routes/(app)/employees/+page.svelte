@@ -151,8 +151,8 @@
 	{#await data.employees}
 		<TableSkeleton rows={6} cols={6} />
 	{:then employees}
-		<div class="rounded-lg border">
-			<table class="w-full text-sm">
+		<div class="overflow-x-auto rounded-lg border">
+			<table class="w-full min-w-max text-sm">
 				<thead class="border-b bg-muted/50">
 					<tr>
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Employee</th>

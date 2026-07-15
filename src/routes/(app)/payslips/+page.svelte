@@ -15,7 +15,7 @@
 		<p class="mt-1 text-sm text-muted-foreground">View and download your approved payslips.</p>
 	</div>
 
-	<div class="rounded-md border">
+	<div class="overflow-x-auto rounded-md border">
 		<table class="w-full text-sm">
 			<thead class="border-b bg-muted/50">
 				<tr>
