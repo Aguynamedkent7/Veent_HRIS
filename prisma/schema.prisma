@@ -141,6 +141,18 @@ enum ApplicantStage {
   REJECTED
 }
 
+enum InterviewMode {
+  ONSITE
+  VIDEO
+  PHONE
+}
+
+enum OfferStatus {
+  SENT
+  ACCEPTED
+  DECLINED
+}
+
 enum HolidayType {
   REGULAR
   SPECIAL_NON_WORKING
@@ -278,6 +290,7 @@ model Department {
   employees        Employee[]
   jobPostings      JobPosting[]
   positions        Position[]
+  offers           Offer[]
 
   @@unique([organizationId, name])
   @@map("departments")
@@ -736,6 +749,8 @@ model Applicant {
   jobPosting        JobPosting              @relation(fields: [jobPostingId], references: [id])
   convertedEmployee Employee?               @relation("ConvertedEmployee", fields: [convertedToEmployeeId], references: [id])
   stageHistory      ApplicantStageHistory[]
+  interviews        Interview[]
+  offer             Offer?
 
   @@map("applicants")
 }
@@ -751,6 +766,45 @@ model ApplicantStageHistory {
   applicant Applicant @relation(fields: [applicantId], references: [id])
 
   @@map("applicant_stage_history")
+}
+
+// Scheduled interview + post-interview feedback for an applicant (FR-068).
+model Interview {
+  id          String        @id @default(cuid())
+  applicantId String
+  scheduledAt DateTime
+  mode        InterviewMode @default(ONSITE)
+  interviewer String // interviewer name(s)
+  location    String? // room, address, or video link
+  feedback    String?       @db.Text // recorded after the interview
+  createdById String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  applicant Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+
+  @@index([applicantId])
+  @@map("interviews")
+}
+
+// A job offer issued to an applicant; acceptance feeds straight into onboarding (FR-069).
+model Offer {
+  id            String      @id @default(cuid())
+  applicantId   String      @unique
+  jobTitle      String
+  departmentId  String?
+  monthlySalary Decimal     @db.Decimal(12, 2)
+  startDate     DateTime
+  status        OfferStatus @default(SENT)
+  notes         String?     @db.Text
+  createdById   String
+  createdAt     DateTime    @default(now())
+  respondedAt   DateTime?
+
+  applicant  Applicant   @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  department Department? @relation(fields: [departmentId], references: [id])
+
+  @@map("offers")
 }
 
 // ─── Audit Log ────────────────────────────────────────────────────────────────

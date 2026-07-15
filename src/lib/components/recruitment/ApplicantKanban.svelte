@@ -89,10 +89,20 @@
 				<div class="space-y-2">
 					{#each stageApplicants as applicant (applicant.id)}
 						<div class="rounded-md border p-3 shadow-sm {STAGE_COLORS[stage]} bg-white">
-							<p class="text-sm font-medium text-foreground">
-								{applicant.firstName}
-								{applicant.lastName}
-							</p>
+							{#if readonly}
+								<p class="text-sm font-medium text-foreground">
+									{applicant.firstName}
+									{applicant.lastName}
+								</p>
+							{:else}
+								<a
+									href="/recruitment/applicant/{applicant.id}"
+									class="text-sm font-medium text-primary hover:underline"
+								>
+									{applicant.firstName}
+									{applicant.lastName}
+								</a>
+							{/if}
 							<p class="mt-0.5 truncate text-xs text-muted-foreground">{applicant.email}</p>
 							<p class="mt-1 text-xs text-muted-foreground">
 								Applied {formatDate(applicant.createdAt)}
