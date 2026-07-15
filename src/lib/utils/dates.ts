@@ -62,6 +62,20 @@ export function manilaDayKey(date: Date): string {
 	return new Date(date.getTime() + MANILA_OFFSET_MS).toISOString().slice(0, 10)
 }
 
+/** Human-readable PHT timestamp for messages, e.g. "Jul 16, 2026, 5:00 PM PHT". */
+export function manilaDateTime(date: Date): string {
+	const s = date.toLocaleString('en-US', {
+		timeZone: 'Asia/Manila',
+		year: 'numeric',
+		month: 'short',
+		day: 'numeric',
+		hour: 'numeric',
+		minute: '2-digit',
+		hour12: true
+	})
+	return `${s} PHT`
+}
+
 /** UTC instant corresponding to 00:00 PHT of the PHT day containing `date`. */
 export function manilaDayStart(date: Date): Date {
 	const [y, m, d] = manilaDayKey(date).split('-').map(Number)

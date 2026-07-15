@@ -5,6 +5,7 @@
 	import { formatShortDate } from '$lib/utils/format'
 	import TableSkeleton from '$lib/components/ui/TableSkeleton.svelte'
 	import TimesheetModal from '$lib/components/timesheets/TimesheetModal.svelte'
+	import AggregatePanel from '$lib/components/timesheets/AggregatePanel.svelte'
 	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
 	import type { PageData, ActionData } from './$types'
 
@@ -197,6 +198,10 @@
 		</div>
 	{/if}
 
+	{#if data.isHrAdmin}
+		<AggregatePanel employees={data.employees} />
+	{/if}
+
 	{#if showCreate}
 		<form method="POST" action="?/create" use:enhance class="rounded-lg border p-4 space-y-3">
 			<h2 class="font-semibold">Create Timesheet</h2>
@@ -248,6 +253,7 @@
 	bind:ts={openTs}
 	mode="edit"
 	isManager={data.isManager}
+	isHrAdmin={data.isHrAdmin}
 	myEmployeeId={data.myEmployeeId}
 	{form}
 />

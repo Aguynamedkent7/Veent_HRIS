@@ -440,12 +440,107 @@ async function main() {
 		})
 	}
 
+	// --- Raw time-log punches (source for the HR "aggregate from time logs" flow) ---
+	// TimeLog has no natural unique key, so re-seeding would duplicate; delete this
+	// employee's punches in the seeded window first, then recreate them (unlinked, so
+	// they're freshly aggregatable). Timestamps are stored UTC; built via +08:00 (PHT).
+	const punchWindowStart = new Date('2026-07-06T00:00:00+08:00')
+	const punchWindowEnd = new Date('2026-07-18T00:00:00+08:00')
+	await db.timeLog.deleteMany({
+		where: {
+			employeeId: employee.id,
+			timestamp: { gte: punchWindowStart, lte: punchWindowEnd }
+		}
+	})
+	const at = (dayISO: string, hhmm: string) => new Date(`${dayISO}T${hhmm}:00+08:00`)
+	const punch = (dayISO: string, hhmm: string, punchType: 'IN' | 'OUT') => ({
+		employeeId: employee.id,
+		punchType: punchType as 'IN' | 'OUT',
+		source: 'DISCORD' as const,
+		timestamp: at(dayISO, hhmm)
+	})
+
+	// Week of Mon 2026-07-06 — clean day shifts; aggregates warning-free. Kept as data so we
+	// can both insert the raw punches and pre-build the aggregated timesheet from the same source.
+	const cleanShifts = [
+		{ day: '2026-07-06', in: '08:00', out: '17:00' },
+		{ day: '2026-07-07', in: '08:00', out: '17:00' },
+		{ day: '2026-07-08', in: '07:00', out: '19:00' }, // long day
+		{ day: '2026-07-09', in: '08:00', out: '17:00' },
+		{ day: '2026-07-10', in: '08:00', out: '17:00' }
+	]
+	// Split a day shift into paid total (less the unpaid 12:00–13:00 lunch) and its OT portion
+	// (time outside the 08:00–17:00 window) — matches pairPunchesToDailyHours / the modal.
+	const toMin = (t: string) => {
+		const [h, m] = t.split(':').map(Number)
+		return h * 60 + m
+	}
+	const workedHours = (inHHMM: string, outHHMM: string) => {
+		const inM = toMin(inHHMM)
+		const outM = toMin(outHHMM)
+		const lunch = Math.max(0, Math.min(outM, 13 * 60) - Math.max(inM, 12 * 60))
+		return (outM - inM - lunch) / 60
+	}
+	const otHours = (inHHMM: string, outHHMM: string) => {
+		const inM = toMin(inHHMM)
+		const outM = toMin(outHHMM)
+		const regWindow = Math.max(0, Math.min(outM, 17 * 60) - Math.max(inM, 8 * 60))
+		return (outM - inM - regWindow) / 60
+	}
+
+	await db.timeLog.createMany({
+		data: [
+			...cleanShifts.flatMap((s) => [punch(s.day, s.in, 'IN'), punch(s.day, s.out, 'OUT')]),
+
+			// Week of Mon 2026-07-13 — edge cases the aggregation warns on:
+			punch('2026-07-13', '08:00', 'IN'),
+			punch('2026-07-13', '17:00', 'OUT'), // clean day
+			punch('2026-07-14', '22:00', 'IN'), // overnight shift…
+			punch('2026-07-15', '06:00', 'OUT'), // …closes on the 15th, 8h attributed to the 14th (PHT)
+			punch('2026-07-16', '17:00', 'OUT'), // stray OUT → "OUT without a matching IN" warning
+			punch('2026-07-17', '08:00', 'IN') // never closed → "Missing OUT" warning
+		]
+	})
+
+	// A pre-aggregated, warning-free DRAFT timesheet built from the clean week's punches —
+	// the same shape aggregateTimeLogsToTimesheet produces (period = PHT week, lunch deducted,
+	// punches linked). Lets testers see/edit/approve an "aggregate" without re-running it first.
+	const cleanWeekStart = new Date('2026-07-05T16:00:00.000Z') // Mon 2026-07-06 00:00 PHT
+	const cleanWeekEnd = new Date('2026-07-12T15:59:59.999Z') // Sun 2026-07-12 23:59:59.999 PHT
+	await db.timesheet.deleteMany({
+		where: { employeeId: employee.id, periodStart: cleanWeekStart }
+	})
+	const aggEntries = cleanShifts.map((s) => ({
+		date: new Date(`${s.day}T00:00:00.000Z`),
+		hoursWorked: workedHours(s.in, s.out),
+		otHours: otHours(s.in, s.out),
+		notes: 'Aggregated from Discord time logs'
+	}))
+	const aggTimesheet = await db.timesheet.create({
+		data: {
+			employeeId: employee.id,
+			periodStart: cleanWeekStart,
+			periodEnd: cleanWeekEnd,
+			status: 'DRAFT',
+			totalHours: aggEntries.reduce((a, e) => a + e.hoursWorked, 0),
+			entries: { create: aggEntries }
+		}
+	})
+	await db.timeLog.updateMany({
+		where: { employeeId: employee.id, timestamp: { gte: cleanWeekStart, lte: cleanWeekEnd } },
+		data: { timesheetId: aggTimesheet.id }
+	})
+
 	console.log('Seed complete. Logins:')
 	console.log('  Super Admin:     admin@veent.ph / Admin@1234')
 	console.log('  Manager:         manager@veent.ph / Manager@1234')
 	console.log('  Employee:        employee@veent.ph / Employee@1234')
 	console.log('  Payroll Officer: payroll@veent.ph / Payroll@1234')
 	console.log('  Finance:         finance@veent.ph / Finance@1234')
+	console.log('')
+	console.log('Time-log punches seeded for Elena Employee (EMP-003), aggregatable at /timesheets:')
+	console.log('  Week of 2026-07-06 — clean; also pre-aggregated into a DRAFT timesheet (no warnings)')
+	console.log('  Week of 2026-07-13 — overnight + stray-OUT + missing-OUT warnings')
 }
 
 main()
