@@ -441,17 +441,16 @@ async function main() {
 	}
 
 	// --- Raw time-log punches (source for the HR "aggregate from time logs" flow) ---
-	// TimeLog has no natural unique key, so re-seeding would duplicate; delete this
-	// employee's punches in the seeded window first, then recreate them (unlinked, so
-	// they're freshly aggregatable). Timestamps are stored UTC; built via +08:00 (PHT).
+	// TimeLog has no natural unique key, so re-seeding would duplicate; delete this employee's
+	// punches in the seeded window first, then recreate them. Reseeding must NOT destroy a
+	// timesheet someone finalized: delete only punches that are unlinked or linked to a DRAFT
+	// timesheet, and only recreate a week's data when that week has no finalized timesheet.
 	const punchWindowStart = new Date('2026-07-06T00:00:00+08:00')
 	const punchWindowEnd = new Date('2026-07-18T00:00:00+08:00')
-	await db.timeLog.deleteMany({
-		where: {
-			employeeId: employee.id,
-			timestamp: { gte: punchWindowStart, lte: punchWindowEnd }
-		}
-	})
+	const cleanWeekStart = new Date('2026-07-05T16:00:00.000Z') // Mon 2026-07-06 00:00 PHT
+	const cleanWeekEnd = new Date('2026-07-12T15:59:59.999Z') // Sun 2026-07-12 23:59:59.999 PHT
+	const warnWeekStart = new Date('2026-07-12T16:00:00.000Z') // Mon 2026-07-13 00:00 PHT
+
 	const at = (dayISO: string, hhmm: string) => new Date(`${dayISO}T${hhmm}:00+08:00`)
 	const punch = (dayISO: string, hhmm: string, punchType: 'IN' | 'OUT') => ({
 		employeeId: employee.id,
@@ -488,48 +487,70 @@ async function main() {
 		return (outM - inM - regWindow) / 60
 	}
 
-	await db.timeLog.createMany({
-		data: [
-			...cleanShifts.flatMap((s) => [punch(s.day, s.in, 'IN'), punch(s.day, s.out, 'OUT')]),
+	const cleanPunches = cleanShifts.flatMap((s) => [
+		punch(s.day, s.in, 'IN'),
+		punch(s.day, s.out, 'OUT')
+	])
+	// Week of Mon 2026-07-13 — a couple of valid shifts plus two warning cases.
+	const warnPunches = [
+		punch('2026-07-13', '08:00', 'IN'),
+		punch('2026-07-13', '17:00', 'OUT'), // clean day
+		punch('2026-07-14', '22:00', 'IN'), // valid overnight shift…
+		punch('2026-07-15', '06:00', 'OUT'), // …closes on the 15th: a normal 8h shift attributed to the 14th (PHT)
+		punch('2026-07-16', '17:00', 'OUT'), // stray OUT → "OUT without a matching IN" warning
+		punch('2026-07-17', '08:00', 'IN') // never closed → "Missing OUT" warning
+	]
 
-			// Week of Mon 2026-07-13 — edge cases the aggregation warns on:
-			punch('2026-07-13', '08:00', 'IN'),
-			punch('2026-07-13', '17:00', 'OUT'), // clean day
-			punch('2026-07-14', '22:00', 'IN'), // overnight shift…
-			punch('2026-07-15', '06:00', 'OUT'), // …closes on the 15th, 8h attributed to the 14th (PHT)
-			punch('2026-07-16', '17:00', 'OUT'), // stray OUT → "OUT without a matching IN" warning
-			punch('2026-07-17', '08:00', 'IN') // never closed → "Missing OUT" warning
-		]
+	// Is a given week already finalized (a non-DRAFT timesheet)? If so, leave it untouched.
+	const isFinalized = async (periodStart: Date) => {
+		const ts = await db.timesheet.findUnique({
+			where: { employeeId_periodStart: { employeeId: employee.id, periodStart } },
+			select: { status: true }
+		})
+		return ts != null && ts.status !== 'DRAFT'
+	}
+	const cleanFinalized = await isFinalized(cleanWeekStart)
+	const warnFinalized = await isFinalized(warnWeekStart)
+
+	await db.timeLog.deleteMany({
+		where: {
+			employeeId: employee.id,
+			timestamp: { gte: punchWindowStart, lte: punchWindowEnd },
+			OR: [{ timesheetId: null }, { timesheet: { status: 'DRAFT' } }]
+		}
+	})
+	await db.timeLog.createMany({
+		data: [...(cleanFinalized ? [] : cleanPunches), ...(warnFinalized ? [] : warnPunches)]
 	})
 
 	// A pre-aggregated, warning-free DRAFT timesheet built from the clean week's punches —
-	// the same shape aggregateTimeLogsToTimesheet produces (period = PHT week, lunch deducted,
-	// punches linked). Lets testers see/edit/approve an "aggregate" without re-running it first.
-	const cleanWeekStart = new Date('2026-07-05T16:00:00.000Z') // Mon 2026-07-06 00:00 PHT
-	const cleanWeekEnd = new Date('2026-07-12T15:59:59.999Z') // Sun 2026-07-12 23:59:59.999 PHT
-	await db.timesheet.deleteMany({
-		where: { employeeId: employee.id, periodStart: cleanWeekStart }
-	})
-	const aggEntries = cleanShifts.map((s) => ({
-		date: new Date(`${s.day}T00:00:00.000Z`),
-		hoursWorked: workedHours(s.in, s.out),
-		otHours: otHours(s.in, s.out),
-		notes: 'Aggregated from Discord time logs'
-	}))
-	const aggTimesheet = await db.timesheet.create({
-		data: {
-			employeeId: employee.id,
-			periodStart: cleanWeekStart,
-			periodEnd: cleanWeekEnd,
-			status: 'DRAFT',
-			totalHours: aggEntries.reduce((a, e) => a + e.hoursWorked, 0),
-			entries: { create: aggEntries }
-		}
-	})
-	await db.timeLog.updateMany({
-		where: { employeeId: employee.id, timestamp: { gte: cleanWeekStart, lte: cleanWeekEnd } },
-		data: { timesheetId: aggTimesheet.id }
-	})
+	// the same shape aggregateTimeLogsToTimesheet produces. Skipped if that week already has a
+	// finalized timesheet (preserved above); the DRAFT delete keeps re-runs idempotent.
+	if (!cleanFinalized) {
+		await db.timesheet.deleteMany({
+			where: { employeeId: employee.id, periodStart: cleanWeekStart, status: 'DRAFT' }
+		})
+		const aggEntries = cleanShifts.map((s) => ({
+			date: new Date(`${s.day}T00:00:00.000Z`),
+			hoursWorked: workedHours(s.in, s.out),
+			otHours: otHours(s.in, s.out),
+			notes: 'Aggregated from Discord time logs'
+		}))
+		const aggTimesheet = await db.timesheet.create({
+			data: {
+				employeeId: employee.id,
+				periodStart: cleanWeekStart,
+				periodEnd: cleanWeekEnd,
+				status: 'DRAFT',
+				totalHours: aggEntries.reduce((a, e) => a + e.hoursWorked, 0),
+				entries: { create: aggEntries }
+			}
+		})
+		await db.timeLog.updateMany({
+			where: { employeeId: employee.id, timestamp: { gte: cleanWeekStart, lte: cleanWeekEnd } },
+			data: { timesheetId: aggTimesheet.id }
+		})
+	}
 
 	console.log('Seed complete. Logins:')
 	console.log('  Super Admin:     admin@veent.ph / Admin@1234')
@@ -542,7 +563,7 @@ async function main() {
 	console.log(
 		'  Week of 2026-07-06 — clean; also pre-aggregated into a DRAFT timesheet (no warnings)'
 	)
-	console.log('  Week of 2026-07-13 — overnight + stray-OUT + missing-OUT warnings')
+	console.log('  Week of 2026-07-13 — a valid overnight shift + stray-OUT and missing-OUT warnings')
 }
 
 main()

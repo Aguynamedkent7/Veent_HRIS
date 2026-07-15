@@ -73,7 +73,15 @@ const createSchema = z.object({
 
 const aggregateSchema = z.object({
 	employeeId: z.string().min(1),
-	weekOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'weekOf must be YYYY-MM-DD')
+	weekOf: z
+		.string()
+		.regex(/^\d{4}-\d{2}-\d{2}$/, 'weekOf must be YYYY-MM-DD')
+		// Reject calendar-invalid dates (e.g. 2026-02-31) that Date would silently roll over.
+		.refine((v) => {
+			const [y, m, d] = v.split('-').map(Number)
+			const dt = new Date(Date.UTC(y, m - 1, d))
+			return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d
+		}, 'weekOf is not a valid calendar date')
 })
 
 // Scope the target employee to the caller's org; returns its id or null.
@@ -161,7 +169,8 @@ export const actions: Actions = {
 	// HR only — submit + approve an aggregated draft in place.
 	approve: async (event) => {
 		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
-		const id = (await event.request.formData()).get('id') as string
+		const id = (await event.request.formData()).get('id')
+		if (typeof id !== 'string' || !id) return fail(400, { error: 'Missing timesheet id' })
 		try {
 			await approveDraftByHr(id, event.locals.user!.organizationId, ctxOf(event))
 			return { saved: 'Timesheet approved.' }

@@ -56,6 +56,16 @@ describe('pairPunchesToDailyHours', () => {
 		expect(otByDay).toEqual({ '2026-07-06': 0.5 })
 	})
 
+	it('keeps the next-day regular window for an overnight shift (16:00→10:00)', () => {
+		const { hoursByDay, otByDay } = pairPunchesToDailyHours([
+			p('IN', '2026-07-06T08:00:00Z'), // 16:00 PHT Jul 6
+			p('OUT', '2026-07-07T02:00:00Z') // 10:00 PHT Jul 7
+		])
+		// 18h worked; regular = 16:00–17:00 (1h) + next day 08:00–10:00 (2h) = 3h; OT = 15h.
+		expect(hoursByDay).toEqual({ '2026-07-06': 18 })
+		expect(otByDay).toEqual({ '2026-07-06': 15 })
+	})
+
 	it('treats an overnight shift as all overtime and deducts no lunch', () => {
 		const { hoursByDay, otByDay, warnings } = pairPunchesToDailyHours([
 			p('IN', '2026-07-06T15:00:00Z'), // 23:00 PHT Jul 6

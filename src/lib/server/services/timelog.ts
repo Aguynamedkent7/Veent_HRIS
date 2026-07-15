@@ -138,12 +138,25 @@ const LUNCH_END_H = 13
 // This also keeps a day's total within the entry's Decimal(4,2) column (max 99.99).
 const MAX_SHIFT_HOURS = 24
 
-/** Milliseconds of [inTime, outTime] overlapping [dayStart+startH, dayStart+endH] (PHT-anchored). */
+/**
+ * Milliseconds of [inTime, outTime] overlapping the [startH, endH] PHT window on EVERY PHT
+ * day the shift touches. Iterating per day (each a fixed 24h — PHT has no DST) means an
+ * overnight shift keeps the next day's regular/lunch time instead of counting it all as OT.
+ */
 function windowOverlapMs(inTime: Date, outTime: Date, startH: number, endH: number): number {
-	const dayStart = manilaDayStart(inTime).getTime()
-	const winStart = dayStart + startH * 3_600_000
-	const winEnd = dayStart + endH * 3_600_000
-	return Math.max(0, Math.min(outTime.getTime(), winEnd) - Math.max(inTime.getTime(), winStart))
+	const inMs = inTime.getTime()
+	const outMs = outTime.getTime()
+	let total = 0
+	for (
+		let dayStart = manilaDayStart(inTime).getTime();
+		dayStart + startH * 3_600_000 < outMs;
+		dayStart += 24 * 3_600_000
+	) {
+		const winStart = dayStart + startH * 3_600_000
+		const winEnd = dayStart + endH * 3_600_000
+		total += Math.max(0, Math.min(outMs, winEnd) - Math.max(inMs, winStart))
+	}
+	return total
 }
 
 /**

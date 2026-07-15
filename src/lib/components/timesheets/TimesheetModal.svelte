@@ -69,12 +69,9 @@
 		mode === 'edit' && ts != null && ts.employeeId === myEmployeeId && ts.status === 'DRAFT'
 	)
 	// HR can submit+approve an aggregated draft in place (not owner-restricted like canSubmit).
+	// Only DRAFT is eligible — SUBMITTED/REJECTED go through the normal review flow.
 	const canApproveInEdit = $derived(
-		mode === 'edit' &&
-			isHrAdmin &&
-			ts != null &&
-			ts.status !== 'APPROVED' &&
-			ts.status !== 'REJECTED'
+		mode === 'edit' && isHrAdmin && ts != null && ts.status === 'DRAFT'
 	)
 
 	const totalReg = $derived(entries.reduce((s, e) => s + (Number(e.reg) || 0), 0))
@@ -140,17 +137,24 @@
 	const REG_END = 17 * 60
 	const LUNCH_START = 12 * 60
 	const LUNCH_END = 13 * 60
+	const overlapMin = (a1: number, a2: number, b1: number, b2: number) =>
+		Math.max(0, Math.min(a2, b2) - Math.max(a1, b1))
 	function recalcRow(row: Row) {
 		if (!row.timeIn || !row.timeOut) return
 		const [ih, im] = row.timeIn.split(':').map(Number)
 		const [oh, om] = row.timeOut.split(':').map(Number)
-		let inM = ih * 60 + im
+		const inM = ih * 60 + im
 		let outM = oh * 60 + om
-		if (outM <= inM) outM += 1440 // overnight
+		if (outM <= inM) outM += 1440 // overnight → next day
 		const worked = outM - inM
-		// Time inside the regular window, then remove the unpaid lunch overlap.
-		const regWindow = Math.max(0, Math.min(outM, REG_END) - Math.max(inM, REG_START))
-		const lunch = Math.max(0, Math.min(outM, LUNCH_END) - Math.max(inM, LUNCH_START))
+		// Regular window and lunch on each day the shift touches (day 0 and, for an overnight
+		// shift, the next day) so next-day morning hours stay regular instead of counting as OT.
+		const regWindow =
+			overlapMin(inM, outM, REG_START, REG_END) +
+			overlapMin(inM, outM, REG_START + 1440, REG_END + 1440)
+		const lunch =
+			overlapMin(inM, outM, LUNCH_START, LUNCH_END) +
+			overlapMin(inM, outM, LUNCH_START + 1440, LUNCH_END + 1440)
 		row.reg = +((regWindow - lunch) / 60).toFixed(2)
 		row.ot = +((worked - regWindow) / 60).toFixed(2)
 	}

@@ -44,13 +44,19 @@
 		})
 	}
 
-	// Capture the preview payload into local state on success; keep the picker inputs.
+	// A preview only describes the employee+week it was generated for; drop it whenever the
+	// selection changes so a stale preview can't be shown or committed.
+	function clearPreview() {
+		preview = null
+	}
+
+	// Capture the preview payload into local state on success; clear it on failure. Keep inputs.
 	const capturePreview: SubmitFunction = () => {
 		busy = true
 		return async ({ result, update }) => {
 			await update({ reset: false })
 			busy = false
-			if (result.type === 'success') preview = (result.data?.preview as Preview) ?? null
+			preview = result.type === 'success' ? ((result.data?.preview as Preview) ?? null) : null
 		}
 	}
 	const keepInputs: SubmitFunction = () => {
@@ -62,6 +68,10 @@
 	}
 
 	const canRun = $derived(Boolean(employeeId) && Boolean(weekOf))
+	// Only commit what was actually previewed: the preview must match the current selection.
+	const canAggregate = $derived(
+		preview != null && preview.employeeId === employeeId && preview.weekOf === weekOf
+	)
 	const inputClass =
 		'h-9 w-full rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 </script>
@@ -77,7 +87,12 @@
 	<div class="flex flex-wrap items-end gap-3">
 		<div class="min-w-56 flex-1">
 			<label for="agg-employee" class="text-sm font-medium">Employee</label>
-			<select id="agg-employee" bind:value={employeeId} class="mt-1 {inputClass}">
+			<select
+				id="agg-employee"
+				bind:value={employeeId}
+				onchange={clearPreview}
+				class="mt-1 {inputClass}"
+			>
 				<option value="" disabled>Select an employee…</option>
 				{#each employees as e (e.id)}
 					<option value={e.id}>{e.lastName}, {e.firstName} ({e.employeeNumber})</option>
@@ -86,7 +101,13 @@
 		</div>
 		<div>
 			<label for="agg-week" class="text-sm font-medium">Week (any day in it)</label>
-			<input id="agg-week" type="date" bind:value={weekOf} class="mt-1 {inputClass}" />
+			<input
+				id="agg-week"
+				type="date"
+				bind:value={weekOf}
+				oninput={clearPreview}
+				class="mt-1 {inputClass}"
+			/>
 		</div>
 
 		<form method="POST" action="?/previewAggregate" use:enhance={capturePreview}>
@@ -102,7 +123,8 @@
 			<input type="hidden" name="employeeId" value={employeeId} />
 			<input type="hidden" name="weekOf" value={weekOf} />
 			<button
-				disabled={busy || !canRun}
+				disabled={busy || !canAggregate}
+				title={canAggregate ? undefined : 'Preview this employee and week first'}
 				class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
 				>Aggregate week</button
 			>
