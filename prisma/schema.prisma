@@ -392,10 +392,13 @@ model Timesheet {
 }
 
 model TimesheetEntry {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   timesheetId String
   date        DateTime
-  hoursWorked Decimal  @db.Decimal(4, 2)
+  timeIn      DateTime?
+  timeOut     DateTime?
+  hoursWorked Decimal   @db.Decimal(4, 2) // total worked (regular + OT)
+  otHours     Decimal   @default(0) @db.Decimal(4, 2) // portion outside the 08:00–17:00 window
   notes       String?
 
   timesheet Timesheet @relation(fields: [timesheetId], references: [id], onDelete: Cascade)
@@ -1123,10 +1126,12 @@ model AttendanceDay {
   undertimeMinutes      Int     @default(0)
   breakMinutes          Int     @default(0)
 
-  isLocked  Boolean  @default(false)
-  note      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isLocked       Boolean  @default(false)
+  // Set when HR hand-corrects a day; keeps re-derive (Refresh) from overwriting the override.
+  manuallyEdited Boolean  @default(false)
+  note           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   employee Employee @relation(fields: [employeeId], references: [id])
 

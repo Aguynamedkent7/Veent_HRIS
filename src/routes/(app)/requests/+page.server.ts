@@ -9,6 +9,8 @@ import {
 import { requestSchema } from '$lib/server/schemas/requests'
 import type { Actions, PageServerLoad } from './$types'
 
+// Self-service: the current user's own requests. Approvals live under
+// /requests/timesheets and /requests/approvals.
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!
 	const myEmployee = await db.employee.findUnique({

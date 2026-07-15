@@ -22,6 +22,9 @@ async function globalSetup() {
 		await db.timesheetEntry.deleteMany({ where: { timesheet: { employeeId: employee.id } } })
 		await db.timesheet.deleteMany({ where: { employeeId: employee.id } })
 		await db.leaveRequest.deleteMany({ where: { employeeId: employee.id } })
+		// Leave now flows through the unified Request model; reset it too (steps/documents
+		// cascade) so leave-filing tests stay deterministic across repeated runs.
+		await db.request.deleteMany({ where: { employeeId: employee.id } })
 
 		// Restore full leave balances (approved requests in prior runs decrement them).
 		const balances = await db.leaveBalance.findMany({ where: { employeeId: employee.id } })

@@ -10,6 +10,7 @@ import {
 	correctDay,
 	lockRange,
 	unlockRange,
+	resetDayToDerived,
 	createTimesheetFromAttendance
 } from '$lib/server/services/attendance'
 import { manilaDayKey } from '$lib/utils/dates'
@@ -178,6 +179,18 @@ export const actions: Actions = {
 		}
 		try {
 			await correctDay(id, event.locals.user!.organizationId, data, ctxOf(event))
+		} catch (e) {
+			return toFail(e)
+		}
+	},
+
+	// Discard a manual override on a day and re-derive it from punches.
+	resetDay: async (event) => {
+		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
+		const id = (await event.request.formData()).get('id') as string
+		if (!id) return fail(400, { error: 'Missing day id' })
+		try {
+			await resetDayToDerived(id, event.locals.user!.organizationId, ctxOf(event))
 		} catch (e) {
 			return toFail(e)
 		}

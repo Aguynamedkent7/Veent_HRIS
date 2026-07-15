@@ -5,8 +5,23 @@ import type { AuditContext } from './types'
 
 interface TimesheetEntryInput {
 	date: Date
+	timeIn?: Date | null
+	timeOut?: Date | null
 	hoursWorked: number
+	otHours?: number
 	notes?: string
+}
+
+// Persist-shape for an entry row (fills defaults for the optional columns).
+function entryData(e: TimesheetEntryInput) {
+	return {
+		date: e.date,
+		timeIn: e.timeIn ?? null,
+		timeOut: e.timeOut ?? null,
+		hoursWorked: e.hoursWorked,
+		otHours: e.otHours ?? 0,
+		notes: e.notes
+	}
 }
 
 export async function listTimesheets(params: {
@@ -75,7 +90,7 @@ export async function createTimesheet(
 			periodStart,
 			periodEnd,
 			totalHours,
-			entries: { create: entries }
+			entries: { create: entries.map(entryData) }
 		},
 		include: { entries: true }
 	})
@@ -88,6 +103,48 @@ export async function createTimesheet(
 	})
 
 	return ts
+}
+
+/**
+ * Replace a timesheet's entries and recompute its total (HR review edits). Managers are scoped
+ * to their direct reports; approved timesheets are locked. Runs in a transaction so the entries
+ * and total stay consistent.
+ */
+export async function updateTimesheetEntries(
+	id: string,
+	organizationId: string,
+	entries: TimesheetEntryInput[],
+	ctx: AuditContext
+) {
+	const ts = await getTimesheet(id, organizationId)
+	await assertManagesEmployee(ctx, ts.employee.reportsToId)
+	if (ts.status === 'APPROVED') error(400, 'Approved timesheets cannot be edited')
+
+	const totalHours = entries.reduce((sum, e) => sum + e.hoursWorked, 0)
+
+	const updated = await db.$transaction(async (tx) => {
+		await tx.timesheetEntry.deleteMany({ where: { timesheetId: id } })
+		return tx.timesheet.update({
+			where: { id },
+			data: {
+				totalHours,
+				entries: {
+					create: entries.map(entryData)
+				}
+			},
+			include: { entries: { orderBy: { date: 'asc' } } }
+		})
+	})
+
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'Timesheet',
+		entityId: id,
+		oldValue: { entries: ts.entries.length, totalHours: Number(ts.totalHours) },
+		newValue: { entries: entries.length, totalHours }
+	})
+
+	return updated
 }
 
 export async function submitTimesheet(id: string, employeeId: string, ctx: AuditContext) {
@@ -108,6 +165,31 @@ export async function submitTimesheet(id: string, employeeId: string, ctx: Audit
 	})
 
 	return updated
+}
+
+/**
+ * Delete a timesheet of any status (entries cascade). Managers are scoped to their direct
+ * reports; HR/super act org-wide. Deletion is explicit (confirmed in the UI), never automatic.
+ */
+export async function deleteTimesheet(id: string, organizationId: string, ctx: AuditContext) {
+	const ts = await getTimesheet(id, organizationId)
+	await assertManagesEmployee(ctx, ts.employee.reportsToId)
+
+	await db.timesheet.delete({ where: { id } })
+
+	await writeAuditLog(ctx, {
+		action: 'DELETE',
+		entityType: 'Timesheet',
+		entityId: id,
+		oldValue: {
+			periodStart: ts.periodStart,
+			periodEnd: ts.periodEnd,
+			status: ts.status,
+			entries: ts.entries.length
+		}
+	})
+
+	return { deleted: true }
 }
 
 export async function reviewTimesheet(

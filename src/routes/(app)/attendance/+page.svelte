@@ -11,6 +11,12 @@
 		async ({ update }) =>
 			update({ reset: false })
 
+	// Reset discards the manual correction and re-derives from punches — confirm first.
+	const confirmReset: SubmitFunction = ({ cancel }) => {
+		if (!confirm('Discard the manual edit for this day and re-derive it from punches?')) cancel()
+		return async ({ update }) => update({ reset: false })
+	}
+
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 
 	const badge: Record<string, string> = {
@@ -437,14 +443,27 @@
 							>
 							<td class="w-[1%] whitespace-nowrap px-3 py-2">
 								{#if editable && d}
-									<form id="c-{d.id}" method="POST" action="?/correct" use:enhance={keepValues}>
-										<input type="hidden" name="id" value={d.id} />
-										<input type="hidden" name="date" value={toDateKey(d.date)} />
-										<button
-											class="rounded bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-											>Save</button
-										>
-									</form>
+									<div class="flex items-center gap-1">
+										<form id="c-{d.id}" method="POST" action="?/correct" use:enhance={keepValues}>
+											<input type="hidden" name="id" value={d.id} />
+											<input type="hidden" name="date" value={toDateKey(d.date)} />
+											<button
+												class="rounded bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+												>Save</button
+											>
+										</form>
+										{#if d.manuallyEdited}
+											<form method="POST" action="?/resetDay" use:enhance={confirmReset}>
+												<input type="hidden" name="id" value={d.id} />
+												<button
+													type="submit"
+													title="Discard manual edit and re-derive from punches"
+													class="rounded border px-2 py-1 text-xs text-muted-foreground hover:bg-accent"
+													>Reset</button
+												>
+											</form>
+										{/if}
+									</div>
 								{:else if d?.isLocked}
 									<span class="inline-flex h-7 items-center text-xs text-muted-foreground"
 										>locked</span
@@ -571,14 +590,27 @@
 											>locked</span
 										>
 									{:else}
-										<form id="c-{d.id}" method="POST" action="?/correct" use:enhance={keepValues}>
-											<input type="hidden" name="id" value={d.id} />
-											<input type="hidden" name="date" value={toDateKey(d.date)} />
-											<button
-												class="rounded bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-												>Save</button
-											>
-										</form>
+										<div class="flex items-center gap-1">
+											<form id="c-{d.id}" method="POST" action="?/correct" use:enhance={keepValues}>
+												<input type="hidden" name="id" value={d.id} />
+												<input type="hidden" name="date" value={toDateKey(d.date)} />
+												<button
+													class="rounded bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+													>Save</button
+												>
+											</form>
+											{#if d.manuallyEdited}
+												<form method="POST" action="?/resetDay" use:enhance={confirmReset}>
+													<input type="hidden" name="id" value={d.id} />
+													<button
+														type="submit"
+														title="Discard manual edit and re-derive from punches"
+														class="rounded border px-2 py-1 text-xs text-muted-foreground hover:bg-accent"
+														>Reset</button
+													>
+												</form>
+											{/if}
+										</div>
 									{/if}
 								</td>
 							{/if}

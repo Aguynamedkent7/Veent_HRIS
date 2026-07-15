@@ -1,10 +1,22 @@
 <script lang="ts">
-	import { enhance } from '$app/forms'
 	import { formatShortDate } from '$lib/utils/format'
-	import type { PageData, ActionData } from './$types'
+	import type { PageData } from './$types'
 
-	let { data, form }: { data: PageData; form: ActionData } = $props()
-	let showRequest = $state(false)
+	let { data }: { data: PageData } = $props()
+
+	// Leave type name lives in the unified Request payload (leaveTypeId).
+	const leaveName = (payload: unknown) => {
+		const id = (payload as { leaveTypeId?: string })?.leaveTypeId
+		return data.leaveTypes.find((lt) => lt.id === id)?.name ?? '—'
+	}
+
+	function statusClass(s: string) {
+		if (s === 'APPROVED') return 'bg-green-100 text-green-700'
+		if (s === 'REJECTED') return 'bg-red-100 text-red-700'
+		if (s === 'RETURNED') return 'bg-orange-100 text-orange-700'
+		if (s === 'CANCELLED') return 'bg-gray-100 text-gray-600'
+		return 'bg-yellow-100 text-yellow-700'
+	}
 </script>
 
 <svelte:head>
@@ -13,15 +25,13 @@
 
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
-		<h1 class="text-2xl font-bold tracking-tight">Leave</h1>
-		{#if data.myEmployeeId}
-			<button
-				onclick={() => (showRequest = !showRequest)}
-				class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-			>
-				File Leave
-			</button>
-		{/if}
+		<div>
+			<h1 class="text-2xl font-bold tracking-tight">Leave</h1>
+			<p class="text-sm text-muted-foreground">
+				Your leave balances and history. File leave from
+				<a href="/requests" class="text-primary hover:underline">Requests/Approvals</a>.
+			</p>
+		</div>
 	</div>
 
 	<!-- Balances -->
@@ -37,69 +47,8 @@
 		</div>
 	{/if}
 
-	<!-- Request form -->
-	{#if showRequest}
-		<form method="POST" action="?/request" use:enhance class="rounded-lg border p-4 space-y-4">
-			<h2 class="font-semibold">File Leave Request</h2>
-			{#if form?.error}
-				<div class="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">{form.error}</div>
-			{/if}
-			<div class="grid gap-3 sm:grid-cols-2">
-				<div>
-					<label class="text-sm font-medium">Leave Type</label>
-					<select
-						name="leaveTypeId"
-						required
-						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-					>
-						{#each data.leaveTypes as lt (lt.id)}
-							<option value={lt.id}>{lt.name}</option>
-						{/each}
-					</select>
-				</div>
-				<div>
-					<label class="text-sm font-medium">Reason (optional)</label>
-					<input
-						name="reason"
-						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-					/>
-				</div>
-				<div>
-					<label class="text-sm font-medium">Start Date</label>
-					<input
-						name="startDate"
-						type="date"
-						required
-						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-					/>
-				</div>
-				<div>
-					<label class="text-sm font-medium">End Date</label>
-					<input
-						name="endDate"
-						type="date"
-						required
-						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-					/>
-				</div>
-			</div>
-			<div class="flex gap-2 justify-end">
-				<button
-					type="button"
-					onclick={() => (showRequest = false)}
-					class="rounded-md border px-4 py-2 text-sm hover:bg-accent">Cancel</button
-				>
-				<button
-					type="submit"
-					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-					>Submit Request</button
-				>
-			</div>
-		</form>
-	{/if}
-
-	<!-- Requests table -->
-	<div class="rounded-lg border">
+	<!-- Requests table (read-only) -->
+	<div class="overflow-x-auto rounded-lg border">
 		<table class="w-full text-sm">
 			<thead class="border-b bg-muted/50">
 				<tr>
@@ -108,9 +57,9 @@
 						>{/if}
 					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Leave Type</th>
 					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Dates</th>
-					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Days</th>
+					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Stage</th>
 					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
-					<th class="px-4 py-3"></th>
+					<th class="px-4 py-3 text-right font-medium text-muted-foreground">Filed</th>
 				</tr>
 			</thead>
 			<tbody class="divide-y">
@@ -119,37 +68,28 @@
 						{#if data.isManager}
 							<td class="px-4 py-3">{req.employee.lastName}, {req.employee.firstName}</td>
 						{/if}
-						<td class="px-4 py-3">{req.leaveType.name}</td>
-						<td class="px-4 py-3 text-muted-foreground"
-							>{formatShortDate(req.startDate)} – {formatShortDate(req.endDate)}</td
-						>
-						<td class="px-4 py-3">{Number(req.totalDays)}</td>
-						<td class="px-4 py-3">
-							<span
-								class="rounded-full px-2 py-0.5 text-xs font-medium {req.status === 'APPROVED'
-									? 'bg-green-100 text-green-700'
-									: req.status === 'REJECTED'
-										? 'bg-red-100 text-red-700'
-										: 'bg-yellow-100 text-yellow-700'}"
-							>
-								{req.status}
-							</span>
+						<td class="px-4 py-3 font-medium">
+							<a href="/requests/{req.id}" class="hover:underline">{leaveName(req.payload)}</a>
 						</td>
-						<td class="px-4 py-3">
-							{#if req.status === 'PENDING' && data.isManager}
-								<form method="POST" action="?/review" use:enhance class="flex gap-2">
-									<input type="hidden" name="id" value={req.id} />
-									<button
-										name="approved"
-										value="true"
-										class="text-green-600 text-xs hover:underline">Approve</button
-									>
-									<button name="approved" value="false" class="text-red-600 text-xs hover:underline"
-										>Reject</button
-									>
-								</form>
+						<td class="px-4 py-3 text-muted-foreground">
+							{#if req.dateFrom}
+								{formatShortDate(req.dateFrom)}{#if req.dateTo && req.dateTo !== req.dateFrom}
+									– {formatShortDate(req.dateTo)}{/if}
+							{:else}
+								—
 							{/if}
 						</td>
+						<td class="px-4 py-3 text-muted-foreground">
+							{req.status === 'PENDING' ? `${req.currentStage + 1} of ${req.steps.length}` : '—'}
+						</td>
+						<td class="px-4 py-3">
+							<span class="rounded-full px-2 py-0.5 text-xs font-medium {statusClass(req.status)}"
+								>{req.status}</span
+							>
+						</td>
+						<td class="px-4 py-3 text-right text-muted-foreground"
+							>{formatShortDate(req.createdAt)}</td
+						>
 					</tr>
 				{:else}
 					<tr>

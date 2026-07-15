@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import { formatDateISO } from '$lib/utils/dates'
 	import BalanceSummary from '$lib/components/leave/BalanceSummary.svelte'
 	import type { PageData, ActionData } from './$types'
 
@@ -8,6 +9,10 @@
 	let selectedLeaveTypeId = $state('')
 
 	let selectedBalance = $derived(data.balances.find((b) => b.leaveTypeId === selectedLeaveTypeId))
+
+	// Date guards: start can't be before today; end can't be before start.
+	const today = formatDateISO(new Date())
+	let startDate = $state('')
 </script>
 
 <svelte:head>
@@ -27,11 +32,6 @@
 	{#if form?.error}
 		<div class="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
 			{form.error}
-			{#if 'remaining' in form && 'requested' in form && form.remaining !== undefined && form.requested !== undefined}
-				<span class="block mt-1">
-					Remaining: {form.remaining} days &mdash; Requested: {form.requested} days
-				</span>
-			{/if}
 		</div>
 	{/if}
 
@@ -66,6 +66,8 @@
 					name="startDate"
 					type="date"
 					required
+					min={today}
+					bind:value={startDate}
 					class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 				/>
 			</div>
@@ -76,6 +78,7 @@
 					name="endDate"
 					type="date"
 					required
+					min={startDate || today}
 					class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 				/>
 			</div>

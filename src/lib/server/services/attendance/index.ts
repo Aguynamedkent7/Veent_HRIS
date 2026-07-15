@@ -183,9 +183,11 @@ export async function deriveRange(
 
 			const existing = await db.attendanceDay.findUnique({
 				where: { employeeId_date: { employeeId: emp.id, date: cur } },
-				select: { isLocked: true }
+				select: { isLocked: true, manuallyEdited: true }
 			})
 			if (existing?.isLocked) continue
+			// Never overwrite a manual HR override, even on a full Refresh re-derive.
+			if (existing?.manuallyEdited) continue
 			// Auto-derive only fills gaps — never overwrites an existing (possibly hand-corrected) day.
 			if (opts.onlyMissing && existing) continue
 
@@ -298,8 +300,11 @@ export async function createTimesheetFromAttendance(
 		const worked = Number(d.regularHours) + ot
 		return {
 			date: d.date,
+			timeIn: d.timeIn,
+			timeOut: d.timeOut,
 			hoursWorked: worked,
-			notes: ot > 0 ? `${d.status} (OT ${ot.toFixed(2)})` : d.status
+			otHours: ot,
+			notes: d.note ?? d.status
 		}
 	})
 
@@ -329,7 +334,11 @@ export async function correctDay(
 	if (!day) error(404, 'Attendance day not found')
 	if (day.isLocked) error(409, 'This attendance day is locked and cannot be edited')
 
-	const updated = await db.attendanceDay.update({ where: { id }, data })
+	// Flag the day so a later re-derive (Refresh) won't overwrite this manual override.
+	const updated = await db.attendanceDay.update({
+		where: { id },
+		data: { ...data, manuallyEdited: true }
+	})
 	await writeAuditLog(ctx, {
 		action: 'UPDATE',
 		entityType: 'AttendanceDay',
@@ -342,6 +351,43 @@ export async function correctDay(
 		newValue: data as Record<string, unknown>
 	})
 	return updated
+}
+
+/**
+ * Discard a manual override on a single day and re-derive it from punches. Clears the
+ * manuallyEdited flag so the re-derive is allowed to overwrite the hand-entered values.
+ */
+export async function resetDayToDerived(id: string, organizationId: string, ctx: AuditContext) {
+	const day = await db.attendanceDay.findFirst({
+		where: { id, employee: { user: { organizationId } } },
+		select: {
+			employeeId: true,
+			date: true,
+			isLocked: true,
+			employee: { select: { employmentStatus: true } }
+		}
+	})
+	if (!day) error(404, 'Attendance day not found')
+	if (day.isLocked) error(409, 'This attendance day is locked and cannot be edited')
+	// deriveRange only processes ACTIVE employees; resetting a non-active employee would
+	// clear the override without re-deriving, reporting a success that never happened.
+	if (day.employee.employmentStatus !== 'ACTIVE')
+		error(409, 'Cannot reset — employee is not active, so the day cannot be re-derived.')
+
+	await db.attendanceDay.update({ where: { id }, data: { manuallyEdited: false } })
+	await deriveRange(
+		organizationId,
+		{ from: day.date, to: day.date, employeeId: day.employeeId },
+		ctx
+	)
+
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'AttendanceDay',
+		entityId: id,
+		newValue: { resetToDerived: true }
+	})
+	return { reset: true }
 }
 
 /** Lock AttendanceDays in a range so payroll can import them (read-only thereafter). */

@@ -139,3 +139,52 @@ export async function listPendingRequestsForApprover(
 		return step != null && canActOnStage(step, actorRole, actorEmployeeId, r.employee.reportsToId)
 	})
 }
+
+// Roles that can reach the approvals surface. Payroll Officer sits on the Payroll
+// stage of request chains; timesheet approval is MANAGER+ only.
+export const APPROVER_ROLES: Role[] = ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN', 'PAYROLL_OFFICER']
+
+export interface PendingApprovalCounts {
+	timesheets: number
+	requests: number
+	total: number
+}
+
+// Count items awaiting this user's decision — pending requests at their stage and
+// SUBMITTED timesheets they can approve — split by type for the sidebar dropdown
+// dot + per-child badges. Zeros for non-approver roles.
+export async function countPendingApprovals(user: {
+	id: string
+	role: Role
+	organizationId: string
+}): Promise<PendingApprovalCounts> {
+	if (!APPROVER_ROLES.includes(user.role)) return { timesheets: 0, requests: 0, total: 0 }
+
+	const myEmployee = await db.employee.findUnique({
+		where: { userId: user.id },
+		select: { id: true }
+	})
+
+	const isManagerLadder = ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
+	const isAdmin = ['HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
+	// A non-admin manager scopes to their direct reports, so without an employee record
+	// there is nothing to scope by — count 0 rather than falling through to org-wide.
+	const canCountTimesheets = isManagerLadder && (isAdmin || Boolean(myEmployee))
+
+	const [requests, timesheets] = await Promise.all([
+		listPendingRequestsForApprover(user.organizationId, user.role, myEmployee?.id ?? null),
+		canCountTimesheets
+			? db.timesheet.count({
+					where: {
+						status: 'SUBMITTED',
+						employee: {
+							user: { organizationId: user.organizationId },
+							...(!isAdmin ? { reportsToId: myEmployee!.id } : {})
+						}
+					}
+				})
+			: Promise.resolve(0)
+	])
+
+	return { timesheets, requests: requests.length, total: timesheets + requests.length }
+}

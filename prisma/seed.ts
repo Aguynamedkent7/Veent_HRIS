@@ -321,6 +321,125 @@ async function main() {
 		})
 	}
 
+	// --- Sample timesheets (unique on employeeId+periodStart → idempotent) ---
+	// Regular window is 08:00–17:00; Wednesday runs 07:00–18:00 to show 2h of OT.
+	const weekEntries = (startISO: string) => {
+		const start = new Date(startISO)
+		const out: {
+			date: Date
+			timeIn: Date
+			timeOut: Date
+			hoursWorked: number
+			otHours: number
+			notes: string
+		}[] = []
+		for (let i = 0; i < 5; i++) {
+			// Mon–Fri
+			const d = new Date(start)
+			d.setUTCDate(start.getUTCDate() + i)
+			const day = d.toISOString().slice(0, 10)
+			const ot = i === 2
+			out.push({
+				date: d,
+				timeIn: new Date(`${day}T${ot ? '07' : '08'}:00:00+08:00`),
+				timeOut: new Date(`${day}T${ot ? '18' : '17'}:00:00+08:00`),
+				hoursWorked: ot ? 11 : 9,
+				otHours: ot ? 2 : 0,
+				notes: ot ? 'Overtime' : 'Regular day'
+			})
+		}
+		return out
+	}
+	const sampleSheets: {
+		empId: string
+		start: string
+		status: 'APPROVED' | 'SUBMITTED' | 'REJECTED' | 'DRAFT'
+		rejectionReason?: string
+	}[] = [
+		{ empId: employee.id, start: '2026-06-01', status: 'APPROVED' },
+		{ empId: employee.id, start: '2026-06-08', status: 'SUBMITTED' },
+		{
+			empId: employee.id,
+			start: '2026-06-15',
+			status: 'REJECTED',
+			rejectionReason: 'Friday hours look off — please recheck before resubmitting.'
+		},
+		{ empId: employee.id, start: '2026-06-22', status: 'DRAFT' },
+		{ empId: managerEmployee.id, start: '2026-06-08', status: 'SUBMITTED' }
+	]
+	for (const s of sampleSheets) {
+		const entries = weekEntries(s.start)
+		const totalHours = entries.reduce((a, e) => a + e.hoursWorked, 0)
+		const periodStart = new Date(s.start)
+		const periodEnd = new Date(s.start)
+		periodEnd.setUTCDate(periodEnd.getUTCDate() + 6)
+		const reviewed = s.status === 'APPROVED' || s.status === 'REJECTED'
+		await db.timesheet.upsert({
+			where: { employeeId_periodStart: { employeeId: s.empId, periodStart } },
+			update: {},
+			create: {
+				employeeId: s.empId,
+				periodStart,
+				periodEnd,
+				status: s.status,
+				totalHours,
+				submittedAt: s.status !== 'DRAFT' ? new Date() : null,
+				reviewedAt: reviewed ? new Date() : null,
+				reviewedById: reviewed ? managerUser.id : null,
+				rejectionReason: s.status === 'REJECTED' ? s.rejectionReason : null,
+				entries: { create: entries }
+			}
+		})
+	}
+
+	// A full month (all weekdays) in one timesheet to stress-test the review UI.
+	const monthEntries = (year: number, month: number) => {
+		const out: {
+			date: Date
+			timeIn: Date
+			timeOut: Date
+			hoursWorked: number
+			otHours: number
+			notes: string
+		}[] = []
+		const cur = new Date(Date.UTC(year, month - 1, 1))
+		const last = new Date(Date.UTC(year, month, 0))
+		for (; cur <= last; cur.setUTCDate(cur.getUTCDate() + 1)) {
+			const dow = cur.getUTCDay()
+			if (dow === 0 || dow === 6) continue // skip weekends
+			const day = cur.toISOString().slice(0, 10)
+			const ot = cur.getUTCDate() % 5 === 0 // OT every 5th of the month
+			out.push({
+				date: new Date(cur),
+				timeIn: new Date(`${day}T${ot ? '07' : '08'}:00:00+08:00`),
+				timeOut: new Date(`${day}T${ot ? '19' : '17'}:00:00+08:00`),
+				hoursWorked: ot ? 12 : 9,
+				otHours: ot ? 3 : 0,
+				notes: ot ? 'Overtime' : 'Regular day'
+			})
+		}
+		return out
+	}
+	{
+		const entries = monthEntries(2026, 5) // May 2026
+		const totalHours = entries.reduce((a, e) => a + e.hoursWorked, 0)
+		await db.timesheet.upsert({
+			where: {
+				employeeId_periodStart: { employeeId: employee.id, periodStart: new Date('2026-05-01') }
+			},
+			update: {},
+			create: {
+				employeeId: employee.id,
+				periodStart: new Date('2026-05-01'),
+				periodEnd: new Date('2026-05-31'),
+				status: 'SUBMITTED',
+				totalHours,
+				submittedAt: new Date(),
+				entries: { create: entries }
+			}
+		})
+	}
+
 	console.log('Seed complete. Logins:')
 	console.log('  Super Admin:     admin@veent.ph / Admin@1234')
 	console.log('  Manager:         manager@veent.ph / Manager@1234')

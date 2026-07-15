@@ -1,7 +1,8 @@
-import { fail, redirect } from '@sveltejs/kit'
-import { z } from 'zod'
+import { fail, isHttpError, redirect } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
-import { requestLeave, getLeaveBalances } from '$lib/server/services/leave'
+import { getLeaveBalances } from '$lib/server/services/leave'
+import { createRequest } from '$lib/server/services/requests'
+import { requestSchema } from '$lib/server/schemas/requests'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -32,66 +33,44 @@ export const load: PageServerLoad = async ({ locals }) => {
 	}
 }
 
-const createSchema = z.object({
-	leaveTypeId: z.string().min(1, 'Leave type is required'),
-	startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid start date'),
-	endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid end date'),
-	reason: z.string().optional()
-})
-
 export const actions: Actions = {
-	create: async ({ request, locals }) => {
+	// Files a unified Request (type=LEAVE) — same flow as the Requests/Approvals page,
+	// so leave shows there, in /leave, and routes through the approval chain.
+	create: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
 
-		const employee = await db.employee.findUnique({ where: { userId: user.id } })
-		if (!employee) {
-			return fail(400, { error: 'No employee profile found.' })
-		}
-
-		const formData = await request.formData()
-		const result = createSchema.safeParse({
-			leaveTypeId: formData.get('leaveTypeId'),
-			startDate: formData.get('startDate'),
-			endDate: formData.get('endDate'),
-			reason: formData.get('reason') || undefined
+		const employee = await db.employee.findUnique({
+			where: { userId: user.id },
+			select: { id: true }
 		})
+		if (!employee) return fail(400, { error: 'No employee profile found.' })
 
-		if (!result.success) {
-			const firstError = result.error.errors[0]
-			return fail(422, { error: firstError?.message ?? 'Validation error.' })
+		const f = await request.formData()
+		const parsed = requestSchema.safeParse({
+			type: 'LEAVE',
+			leaveTypeId: (f.get('leaveTypeId') as string) || undefined,
+			startDate: (f.get('startDate') as string) || undefined,
+			endDate: (f.get('endDate') as string) || undefined,
+			reason: (f.get('reason') as string) || undefined
+		})
+		if (!parsed.success) {
+			return fail(422, { error: parsed.error.errors[0]?.message ?? 'Invalid input.' })
 		}
-
-		const { leaveTypeId, startDate, endDate, reason } = result.data
-
-		const start = new Date(startDate)
-		const end = new Date(endDate)
-
-		if (end < start) {
+		if (parsed.data.type === 'LEAVE' && parsed.data.endDate < parsed.data.startDate) {
 			return fail(422, { error: 'End date must be on or after start date.' })
 		}
 
-		const ctx = {
-			organizationId: user.organizationId,
-			actorId: user.id,
-			actorRole: user.role
-		}
-
 		try {
-			await requestLeave(
-				employee.id,
-				user.organizationId,
-				{ leaveTypeId, startDate: start, endDate: end, reason },
-				ctx
-			)
-		} catch (err: unknown) {
-			const e = err as { status?: number; body?: { message?: string }; message?: string }
-			const message = e?.body?.message ?? e?.message ?? 'Failed to submit leave request.'
-
-			// Try to extract remaining/requested from the error message
-			const remainingMatch = message.match(/Available:\s*([\d.]+)/)
-			const remaining = remainingMatch ? parseFloat(remainingMatch[1]) : undefined
-
-			return fail(422, { error: message, remaining, requested: undefined })
+			await createRequest(employee.id, user.organizationId, parsed.data, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			if (e instanceof Error) return fail(422, { error: e.message })
+			throw e
 		}
 
 		redirect(303, '/leave')
