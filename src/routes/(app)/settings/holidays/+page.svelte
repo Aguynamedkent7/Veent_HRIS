@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import { formatShortDate } from '$lib/utils/format'
+	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -224,18 +225,14 @@
 									>
 										Edit
 									</button>
-									<form method="POST" action="?/delete" use:enhance>
+									<ConfirmButton
+										action="?/delete"
+										title="Delete holiday?"
+										message="“{holiday.name}” will be removed from the calendar."
+										triggerClass="text-xs text-destructive hover:underline"
+									>
 										<input type="hidden" name="id" value={holiday.id} />
-										<button
-											type="submit"
-											onclick={(e) => {
-												if (!confirm(`Delete "${holiday.name}"?`)) e.preventDefault()
-											}}
-											class="text-xs text-destructive hover:underline"
-										>
-											Delete
-										</button>
-									</form>
+									</ConfirmButton>
 								</div>
 							</td>
 						</tr>

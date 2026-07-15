@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
+	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -399,12 +400,14 @@
 											>{formatShortDate(doc.uploadedAt)}</td
 										>
 										<td class="px-3 py-2 text-right">
-											<form method="POST" action="?/deleteDocument" use:enhance>
+											<ConfirmButton
+												action="?/deleteDocument"
+												title="Delete document?"
+												message="“{doc.label}” will be permanently removed."
+												triggerClass="text-xs text-red-600 hover:underline"
+											>
 												<input type="hidden" name="docId" value={doc.id} />
-												<button type="submit" class="text-xs text-red-600 hover:underline"
-													>Delete</button
-												>
-											</form>
+											</ConfirmButton>
 										</td>
 									</tr>
 								{/each}

@@ -5,6 +5,7 @@
 	import { formatShortDate } from '$lib/utils/format'
 	import TableSkeleton from '$lib/components/ui/TableSkeleton.svelte'
 	import TimesheetModal from '$lib/components/timesheets/TimesheetModal.svelte'
+	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -121,14 +122,19 @@
 						class="mr-1 text-sm text-muted-foreground hover:underline">Clear</button
 					>
 					{#if data.isManager}
-						<form method="POST" action="?/deleteMany" use:enhance={clearOnSuccess}>
+						<ConfirmButton
+							action="?/deleteMany"
+							title="Delete selected timesheets?"
+							message="{selected.length} timesheet{selected.length === 1
+								? ''
+								: 's'} will be permanently deleted."
+							triggerLabel="Delete selected"
+							triggerClass="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+							disabled={busy}
+							submit={clearOnSuccess}
+						>
 							<input type="hidden" name="ids" value={selected.join(',')} />
-							<button
-								disabled={busy}
-								class="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
-								>Delete selected</button
-							>
-						</form>
+						</ConfirmButton>
 					{:else}
 						<form method="POST" action="?/submitMany" use:enhance={clearOnSuccess}>
 							<input type="hidden" name="ids" value={selected.join(',')} />

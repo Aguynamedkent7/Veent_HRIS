@@ -3,6 +3,7 @@
 	import type { SubmitFunction } from '@sveltejs/kit'
 	import { fade, scale, slide } from 'svelte/transition'
 	import { formatShortDate } from '$lib/utils/format'
+	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
 
 	// Fields the modal reads. Both the /timesheets list rows and the /requests/timesheets
 	// approvals-load rows satisfy this shape. Decimal columns are typed loosely (they arrive
@@ -48,7 +49,6 @@
 	}
 	let entries = $state<Row[]>([])
 	let rejecting = $state(false)
-	let confirmDelete = $state(false)
 	let busy = $state(false)
 	let dialogEl = $state<HTMLElement>()
 
@@ -94,7 +94,6 @@
 	$effect(() => {
 		if (!ts) return
 		rejecting = false
-		confirmDelete = false
 		entries = ts.entries.map((e) => ({
 			date: toDateKey(e.date),
 			timeIn: toTimeInput(e.timeIn),
@@ -506,33 +505,16 @@
 			<div class="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/20 px-6 py-3">
 				<div>
 					{#if canDelete}
-						{#if confirmDelete}
-							<form
-								method="POST"
-								action="?/delete"
-								use:enhance={closeOnSuccess}
-								class="flex items-center gap-2"
-							>
-								<input type="hidden" name="id" value={ts.id} />
-								<span class="text-sm text-muted-foreground">Delete permanently?</span>
-								<button
-									disabled={busy}
-									class="rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-									>Yes, delete</button
-								>
-								<button
-									type="button"
-									onclick={() => (confirmDelete = false)}
-									class="rounded-md border px-3 py-1.5 text-sm hover:bg-accent">Cancel</button
-								>
-							</form>
-						{:else}
-							<button
-								type="button"
-								onclick={() => (confirmDelete = true)}
-								class="text-sm font-medium text-destructive hover:underline">Delete</button
-							>
-						{/if}
+						<ConfirmButton
+							action="?/delete"
+							title="Delete timesheet?"
+							message="This permanently deletes the timesheet and all its entries."
+							triggerClass="text-sm font-medium text-destructive hover:underline"
+							disabled={busy}
+							submit={closeOnSuccess}
+						>
+							<input type="hidden" name="id" value={ts.id} />
+						</ConfirmButton>
 					{/if}
 				</div>
 
