@@ -30,13 +30,15 @@
 		REJECTED: 'Rejected'
 	}
 
+	// Left-border accent per stage — keeps cards on the theme surface (bg-card) so
+	// they stay readable in dark mode instead of a hardcoded white background.
 	const STAGE_COLORS: Record<Stage, string> = {
-		APPLIED: 'bg-blue-50 border-blue-200',
-		SCREENING: 'bg-yellow-50 border-yellow-200',
-		INTERVIEW: 'bg-purple-50 border-purple-200',
-		OFFER: 'bg-orange-50 border-orange-200',
-		HIRED: 'bg-green-50 border-green-200',
-		REJECTED: 'bg-red-50 border-red-200'
+		APPLIED: 'border-l-blue-400',
+		SCREENING: 'border-l-yellow-400',
+		INTERVIEW: 'border-l-purple-400',
+		OFFER: 'border-l-orange-400',
+		HIRED: 'border-l-green-400',
+		REJECTED: 'border-l-red-400'
 	}
 
 	const STAGE_HEADER_COLORS: Record<Stage, string> = {
@@ -88,11 +90,21 @@
 				<!-- Cards -->
 				<div class="space-y-2">
 					{#each stageApplicants as applicant (applicant.id)}
-						<div class="rounded-md border p-3 shadow-sm {STAGE_COLORS[stage]} bg-white">
-							<p class="text-sm font-medium text-foreground">
-								{applicant.firstName}
-								{applicant.lastName}
-							</p>
+						<div class="rounded-md border border-l-4 p-3 shadow-sm {STAGE_COLORS[stage]} bg-card">
+							{#if readonly}
+								<p class="text-sm font-medium text-foreground">
+									{applicant.firstName}
+									{applicant.lastName}
+								</p>
+							{:else}
+								<a
+									href="/recruitment/applicant/{applicant.id}"
+									class="text-sm font-medium text-primary hover:underline"
+								>
+									{applicant.firstName}
+									{applicant.lastName}
+								</a>
+							{/if}
 							<p class="mt-0.5 truncate text-xs text-muted-foreground">{applicant.email}</p>
 							<p class="mt-1 text-xs text-muted-foreground">
 								Applied {formatDate(applicant.createdAt)}
@@ -101,7 +113,23 @@
 							{#if !readonly}
 								{@const nextStage = getNextStage(stage as Stage)}
 								<div class="mt-2 flex flex-wrap gap-1">
-									{#if nextStage}
+									{#if nextStage === 'INTERVIEW'}
+										<!-- Advancing to Interview means scheduling one — open that form. -->
+										<a
+											href="/recruitment/applicant/{applicant.id}#schedule"
+											class="rounded px-2 py-0.5 text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90"
+										>
+											Schedule interview →
+										</a>
+									{:else if nextStage === 'OFFER'}
+										<!-- Advancing to Offer means issuing one — open that form. -->
+										<a
+											href="/recruitment/applicant/{applicant.id}#offer"
+											class="rounded px-2 py-0.5 text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90"
+										>
+											Give offer →
+										</a>
+									{:else if nextStage}
 										<form method="POST" action="?/advanceStage" use:enhance>
 											<input type="hidden" name="applicantId" value={applicant.id} />
 											<input type="hidden" name="stage" value={nextStage} />

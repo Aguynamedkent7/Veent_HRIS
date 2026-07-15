@@ -1,10 +1,31 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import { goto } from '$app/navigation'
 	import { formatShortDate } from '$lib/utils/format'
 	import type { PageData } from './$types'
 
 	let { data }: { data: PageData } = $props()
 	let showCreate = $state(false)
+	let selectedIds = $state<string[]>([])
+
+	const draftIds = $derived(
+		data.postings.filter((p: { status: string }) => p.status === 'DRAFT').map((p) => p.id)
+	)
+	const selectedDraftIds = $derived(selectedIds.filter((id) => draftIds.includes(id)))
+	const allDraftsSelected = $derived(
+		draftIds.length > 0 && draftIds.every((id) => selectedIds.includes(id))
+	)
+
+	function toggle(id: string) {
+		selectedIds = selectedIds.includes(id)
+			? selectedIds.filter((x) => x !== id)
+			: [...selectedIds, id]
+	}
+	function toggleAllDrafts() {
+		selectedIds = allDraftsSelected
+			? selectedIds.filter((id) => !draftIds.includes(id))
+			: [...draftIds]
+	}
 </script>
 
 <svelte:head>
@@ -12,14 +33,38 @@
 </svelte:head>
 
 <div class="space-y-6">
-	<div class="flex items-center justify-between">
+	<div class="flex flex-wrap items-center justify-between gap-2">
 		<h1 class="text-2xl font-bold tracking-tight">Recruitment</h1>
-		<button
-			onclick={() => (showCreate = !showCreate)}
-			class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-		>
-			New Job Posting
-		</button>
+		<div class="flex items-center gap-2">
+			{#if selectedDraftIds.length}
+				<form
+					method="POST"
+					action="?/publishMany"
+					use:enhance={() => {
+						return async ({ update }) => {
+							selectedIds = []
+							await update()
+						}
+					}}
+				>
+					{#each selectedDraftIds as id (id)}
+						<input type="hidden" name="ids" value={id} />
+					{/each}
+					<button
+						type="submit"
+						class="rounded-md border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/20"
+					>
+						Publish selected ({selectedDraftIds.length})
+					</button>
+				</form>
+			{/if}
+			<button
+				onclick={() => (showCreate = !showCreate)}
+				class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+			>
+				New Job Posting
+			</button>
+		</div>
 	</div>
 
 	{#if showCreate}
@@ -75,17 +120,48 @@
 		<table class="w-full text-sm">
 			<thead class="border-b bg-muted/50">
 				<tr>
+					<th class="w-10 px-4 py-3">
+						{#if draftIds.length}
+							<input
+								type="checkbox"
+								checked={allDraftsSelected}
+								onchange={toggleAllDrafts}
+								title="Select all drafts"
+								class="h-4 w-4 rounded border-input"
+							/>
+						{/if}
+					</th>
 					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Position</th>
 					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Department</th>
 					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Applicants</th>
 					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
 					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Posted</th>
-					<th class="px-4 py-3"></th>
 				</tr>
 			</thead>
 			<tbody class="divide-y">
 				{#each data.postings as jp (jp.id)}
-					<tr class="hover:bg-muted/30">
+					<tr
+						class="cursor-pointer hover:bg-muted/30"
+						role="link"
+						tabindex="0"
+						onclick={() => goto(`/recruitment/${jp.id}`)}
+						onkeydown={(e) => {
+							if (e.key === 'Enter' || e.key === ' ') {
+								e.preventDefault()
+								goto(`/recruitment/${jp.id}`)
+							}
+						}}
+					>
+						<td class="px-4 py-3" onclick={(e) => e.stopPropagation()}>
+							{#if jp.status === 'DRAFT'}
+								<input
+									type="checkbox"
+									checked={selectedIds.includes(jp.id)}
+									onchange={() => toggle(jp.id)}
+									class="h-4 w-4 rounded border-input"
+								/>
+							{/if}
+						</td>
 						<td class="px-4 py-3 font-medium">{jp.title}</td>
 						<td class="px-4 py-3 text-muted-foreground">{jp.department.name}</td>
 						<td class="px-4 py-3">{jp._count.applicants}</td>
@@ -103,16 +179,6 @@
 						<td class="px-4 py-3 text-muted-foreground"
 							>{jp.postedAt ? formatShortDate(jp.postedAt) : '—'}</td
 						>
-						<td class="px-4 py-3 flex gap-2">
-							{#if jp.status === 'DRAFT'}
-								<form method="POST" action="?/publish" use:enhance>
-									<input type="hidden" name="id" value={jp.id} />
-									<button type="submit" class="text-primary text-xs hover:underline">Publish</button
-									>
-								</form>
-							{/if}
-							<a href="/recruitment/{jp.id}" class="text-primary text-xs hover:underline">View</a>
-						</td>
 					</tr>
 				{:else}
 					<tr>

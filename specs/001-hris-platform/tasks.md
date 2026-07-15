@@ -317,8 +317,8 @@ their own `/speckit-plan` pass before task breakdown — this is a module-level 
 
 ### 11.2 Employee 201 File (FR-047–FR-051)
 
-- [ ] T164 Emergency contacts, bank/GCash details (sensitive, HR-only), document uploads on the employee record ([#23](https://github.com/Aguynamedkent7/Veent_HRIS/issues/23))
-- [ ] T165 Assign Position + Work Schedule to employees; surface employment history from the audit trail ([#24](https://github.com/Aguynamedkent7/Veent_HRIS/issues/24))
+- [x] T164 Emergency contacts, bank/GCash details (sensitive, HR-only), document uploads on the employee record ([#23](https://github.com/Aguynamedkent7/Veent_HRIS/issues/23))
+- [x] T165 Assign Position + Work Schedule to employees; surface employment history from the audit trail ([#24](https://github.com/Aguynamedkent7/Veent_HRIS/issues/24))
 
 ### 11.3 Attendance engine (FR-052–FR-055) — needs a plan pass
 
@@ -345,8 +345,8 @@ their own `/speckit-plan` pass before task breakdown — this is a module-level 
 
 ### 11.7 Recruitment & onboarding (FR-068–FR-071)
 
-- [ ] T177 Interview scheduling + notes; issue offers; offer→onboarding transition ([#29](https://github.com/Aguynamedkent7/Veent_HRIS/issues/29))
-- [ ] T178 Onboarding checklist (contract upload, account gen, payroll registration, start attendance) ([#30](https://github.com/Aguynamedkent7/Veent_HRIS/issues/30))
+- [x] T177 Interview scheduling + notes; issue offers; offer→onboarding transition ([#29](https://github.com/Aguynamedkent7/Veent_HRIS/issues/29))
+- [x] T178 Onboarding checklist (contract upload, account gen, payroll registration, start attendance) ([#30](https://github.com/Aguynamedkent7/Veent_HRIS/issues/30))
 - [ ] T179 [P] _(integration, deferred)_ Publish postings to external job boards (FR-070) ([#31](https://github.com/Aguynamedkent7/Veent_HRIS/issues/31))
 
 ### 11.8 Separation (FR-072)

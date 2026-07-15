@@ -1,9 +1,8 @@
-import { fail, redirect } from '@sveltejs/kit'
+import { fail, isHttpError, redirect } from '@sveltejs/kit'
 import { z } from 'zod'
 import { requireRole } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
-import { advanceApplicant } from '$lib/server/services/recruitment'
-import { createEmployee } from '$lib/server/services/employees'
+import { advanceApplicant, convertApplicantToEmployee } from '$lib/server/services/recruitment'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ params, locals }) => {
@@ -99,67 +98,22 @@ export const actions: Actions = {
 
 		const data = await request.formData()
 		const applicantId = data.get('applicantId') as string
-
 		if (!applicantId) {
 			return fail(400, { error: 'Applicant ID required' })
 		}
 
-		const applicant = await db.applicant.findFirst({
-			where: { id: applicantId, jobPosting: { organizationId: user.organizationId } }
-		})
-
-		if (!applicant) {
-			return fail(404, { error: 'Applicant not found' })
+		let newEmployee
+		try {
+			newEmployee = await convertApplicantToEmployee(applicantId, user.organizationId, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
 		}
-
-		if (applicant.convertedToEmployeeId) {
-			return fail(409, { error: 'Applicant already converted to employee' })
-		}
-
-		// Generate a temporary password
-		const tempPassword =
-			Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6).toUpperCase()
-
-		const ctx = {
-			organizationId: user.organizationId,
-			actorId: user.id,
-			actorRole: user.role,
-			ipAddress: getClientAddress()
-		}
-
-		// Get a default department for conversion
-		const defaultDepartment = await db.department.findFirst({
-			where: { organizationId: user.organizationId },
-			orderBy: { name: 'asc' }
-		})
-
-		if (!defaultDepartment) {
-			return fail(400, { error: 'No departments found. Please create a department first.' })
-		}
-
-		const newEmployee = await createEmployee(
-			user.organizationId,
-			{
-				email: applicant.email,
-				password: tempPassword,
-				role: 'EMPLOYEE',
-				firstName: applicant.firstName,
-				lastName: applicant.lastName,
-				departmentId: defaultDepartment.id,
-				jobTitle: 'New Employee',
-				employmentType: 'PROBATIONARY',
-				startDate: new Date(),
-				basicMonthlySalary: 0,
-				contactPhone: applicant.phone ?? undefined
-			},
-			ctx
-		)
-
-		// Link the applicant to the new employee record
-		await db.applicant.update({
-			where: { id: applicantId },
-			data: { convertedToEmployeeId: newEmployee.id }
-		})
 
 		return redirect(302, `/employees/${newEmployee.id}`)
 	}

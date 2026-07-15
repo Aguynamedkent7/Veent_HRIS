@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit'
 import { requireRole, requireMinRole } from '$lib/server/rbac'
 import { getEmployee, updateEmployee, offboardEmployee } from '$lib/server/services/employees'
 import { apiError } from '$lib/server/api-error'
+import { db } from '$lib/server/db'
 import { z } from 'zod'
 import type { RequestHandler } from './$types'
 
@@ -31,16 +32,25 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 	if (!locals.user) return apiError(401, 'Unauthorized')
 
 	try {
-		// Allow own profile access or MANAGER+
-		if (locals.user.id !== params.id) {
-			requireMinRole(locals.user.role, 'MANAGER')
-		}
+		requireMinRole(locals.user.role, 'MANAGER')
 	} catch {
 		return apiError(403, 'Insufficient permissions')
 	}
 
 	try {
 		const employee = await getEmployee(params.id, locals.user.organizationId, locals.user.role)
+
+		// Object-level access control: a MANAGER may only read their own direct
+		// reports. HR/Super-Admin are unrestricted. Mirrors the 201-file page load.
+		if (locals.user.role === 'MANAGER') {
+			const self = await db.employee.findUnique({
+				where: { userId: locals.user.id },
+				select: { id: true }
+			})
+			if (!self || employee.reportsToId !== self.id) {
+				return apiError(403, 'You can only view your own team members.')
+			}
+		}
 		return json({ data: employee })
 	} catch (e: unknown) {
 		const err = e as { status?: number; body?: { message?: string } }

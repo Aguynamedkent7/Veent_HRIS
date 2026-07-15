@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import { page } from '$app/stores'
+	import { goto } from '$app/navigation'
 	import { formatShortDate } from '$lib/utils/format'
 	import TableSkeleton from '$lib/components/ui/TableSkeleton.svelte'
 	import type { PageData } from './$types'
@@ -160,12 +161,22 @@
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Type</th>
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Start Date</th>
-						<th class="px-4 py-3"></th>
 					</tr>
 				</thead>
 				<tbody class="divide-y">
 					{#each employees as emp (emp.id)}
-						<tr class="hover:bg-muted/30">
+						<tr
+							class="cursor-pointer hover:bg-muted/30"
+							role="link"
+							tabindex="0"
+							onclick={() => goto(`/employees/${emp.id}`)}
+							onkeydown={(e) => {
+								if (e.key === 'Enter' || e.key === ' ') {
+									e.preventDefault()
+									goto(`/employees/${emp.id}`)
+								}
+							}}
+						>
 							<td class="px-4 py-3">
 								<div class="font-medium">{emp.lastName}, {emp.firstName}</div>
 								<div class="text-xs text-muted-foreground">{emp.employeeNumber}</div>
@@ -185,13 +196,10 @@
 								</span>
 							</td>
 							<td class="px-4 py-3 text-muted-foreground">{formatShortDate(emp.startDate)}</td>
-							<td class="px-4 py-3">
-								<a href="/employees/{emp.id}" class="text-primary hover:underline text-xs">View</a>
-							</td>
 						</tr>
 					{:else}
 						<tr>
-							<td colspan="7" class="px-4 py-8 text-center text-muted-foreground"
+							<td colspan="6" class="px-4 py-8 text-center text-muted-foreground"
 								>No employees found</td
 							>
 						</tr>

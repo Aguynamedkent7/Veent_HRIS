@@ -5,7 +5,9 @@
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
-	const { employee } = data
+	// Reactive: after a form action re-runs `load`, these must reflect the fresh data
+	// (a plain destructure would stay stale until a full page refresh).
+	const employee = $derived(data.employee)
 	const canManage = $derived(data.canManage)
 
 	const DOC_CATEGORIES = [
@@ -39,7 +41,11 @@
 
 <div class="space-y-6">
 	<div class="flex items-center gap-4">
-		<a href="/employees" class="text-sm text-muted-foreground hover:text-foreground">← Employees</a>
+		<a
+			href={canManage ? '/employees' : '/team'}
+			class="text-sm text-muted-foreground hover:text-foreground"
+			>← {canManage ? 'Employees' : 'Team'}</a
+		>
 		<h1 class="text-2xl font-bold">{employee.lastName}, {employee.firstName}</h1>
 		<span
 			class="rounded-full px-2.5 py-1 text-xs font-medium {employee.employmentStatus === 'ACTIVE'
@@ -51,6 +57,57 @@
 	</div>
 
 	<div class="grid gap-6 lg:grid-cols-2">
+		<!-- Onboarding checklist (HR-only, T178) -->
+		{#if canManage && data.onboarding}
+			<section
+				class="rounded-lg border p-6 space-y-4 lg:col-span-2 {data.onboarding.complete
+					? 'border-green-500/30 bg-green-500/5'
+					: 'border-amber-500/30 bg-amber-500/5'}"
+			>
+				<div class="flex flex-wrap items-center justify-between gap-2">
+					<h2 class="font-semibold">
+						Onboarding
+						{#if data.onboarding.complete}
+							<span class="ml-1 text-sm font-normal text-green-600">✓ Complete</span>
+						{/if}
+					</h2>
+					<span class="text-sm text-muted-foreground">
+						{data.onboarding.doneCount} / {data.onboarding.total} steps
+					</span>
+				</div>
+
+				{#if !data.onboarding.complete}
+					<div class="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+						<div
+							class="h-full rounded-full bg-primary transition-all"
+							style="width: {(data.onboarding.doneCount / data.onboarding.total) * 100}%"
+						></div>
+					</div>
+					<ul class="columns-1 gap-x-8 sm:columns-2">
+						{#each data.onboarding.steps as step (step.key)}
+							<li class="mb-2.5 flex items-start gap-2 break-inside-avoid text-sm">
+								<span
+									class="mt-0.5 flex h-4 w-4 flex-none items-center justify-center rounded-full text-[10px] font-bold {step.done
+										? 'bg-green-500 text-white'
+										: 'border border-muted-foreground/40 text-transparent'}"
+								>
+									✓
+								</span>
+								<span>
+									<span class={step.done ? 'text-foreground' : 'font-medium text-foreground'}>
+										{step.label}
+									</span>
+									{#if !step.done}
+										<span class="block text-xs text-muted-foreground">{step.hint}</span>
+									{/if}
+								</span>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</section>
+		{/if}
+
 		<!-- Profile Card -->
 		<div class="rounded-lg border bg-card p-6 space-y-4">
 			<h2 class="font-semibold">Profile</h2>
@@ -107,6 +164,22 @@
 					<dd>{employee.pagibigNumber ?? '—'}</dd>
 					<dt class="text-muted-foreground">TIN</dt>
 					<dd>{employee.tinNumber ?? '—'}</dd>
+				</dl>
+			</div>
+
+			<!-- Disbursement details Card (sensitive, HR-only) -->
+			<div class="rounded-lg border bg-card p-6 space-y-4">
+				<h2 class="font-semibold">
+					Disbursement
+					<span class="text-xs font-normal text-muted-foreground">(bank / GCash — sensitive)</span>
+				</h2>
+				<dl class="grid grid-cols-2 gap-3 text-sm">
+					<dt class="text-muted-foreground">Bank</dt>
+					<dd>{employee.bankName ?? '—'}</dd>
+					<dt class="text-muted-foreground">Account No.</dt>
+					<dd class="font-mono">{employee.bankAccountNumber ?? '—'}</dd>
+					<dt class="text-muted-foreground">GCash No.</dt>
+					<dd class="font-mono">{employee.gcashNumber ?? '—'}</dd>
 				</dl>
 			</div>
 		{/if}
@@ -189,6 +262,90 @@
 							{/each}
 						</select>
 					</div>
+					<div>
+						<label class="text-sm font-medium">Position</label>
+						<select
+							name="positionId"
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						>
+							<option value="">— No position —</option>
+							{#each data.positions as p (p.id)}
+								<option value={p.id} selected={p.id === employee.positionId}>{p.title}</option>
+							{/each}
+						</select>
+						<p class="mt-1 text-xs text-muted-foreground">
+							Sets the pay band used for the salary check above.
+						</p>
+					</div>
+					<div class="sm:col-span-3 border-t pt-3">
+						<h3 class="text-sm font-semibold text-muted-foreground">
+							Government IDs <span class="font-normal">(payroll registration)</span>
+						</h3>
+					</div>
+					<div>
+						<label class="text-sm font-medium">SSS Number</label>
+						<input
+							name="sssNumber"
+							value={employee.sssNumber ?? ''}
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+					</div>
+					<div>
+						<label class="text-sm font-medium">PhilHealth No.</label>
+						<input
+							name="philhealthNumber"
+							value={employee.philhealthNumber ?? ''}
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+					</div>
+					<div>
+						<label class="text-sm font-medium">Pag-IBIG No.</label>
+						<input
+							name="pagibigNumber"
+							value={employee.pagibigNumber ?? ''}
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+					</div>
+					<div>
+						<label class="text-sm font-medium">TIN</label>
+						<input
+							name="tinNumber"
+							value={employee.tinNumber ?? ''}
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+					</div>
+					<div class="sm:col-span-3 border-t pt-3">
+						<h3 class="text-sm font-semibold text-muted-foreground">
+							Disbursement <span class="font-normal">(bank / GCash — sensitive)</span>
+						</h3>
+					</div>
+					<div>
+						<label class="text-sm font-medium">Bank Name</label>
+						<input
+							name="bankName"
+							value={employee.bankName ?? ''}
+							placeholder="e.g. BDO"
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+					</div>
+					<div>
+						<label class="text-sm font-medium">Bank Account No.</label>
+						<input
+							name="bankAccountNumber"
+							value={employee.bankAccountNumber ?? ''}
+							placeholder="Account number"
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+					</div>
+					<div>
+						<label class="text-sm font-medium">GCash No.</label>
+						<input
+							name="gcashNumber"
+							value={employee.gcashNumber ?? ''}
+							placeholder="e.g. 0917xxxxxxx"
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+					</div>
 				</div>
 				<div class="flex justify-end">
 					<button
@@ -224,6 +381,99 @@
 				</div>
 			</form>
 		{/if}
+
+		<!-- Emergency Contacts (visible to any viewer of the 201 file; HR manages) -->
+		<section class="rounded-lg border bg-card p-6 space-y-4 lg:col-span-2">
+			<h2 class="font-semibold">
+				Emergency Contacts
+				<span class="text-xs font-normal text-muted-foreground">(name, relationship, phone)</span>
+			</h2>
+
+			{#if employee.emergencyContacts.length}
+				<div class="rounded-md border">
+					<table class="w-full text-sm">
+						<thead class="border-b bg-muted/50">
+							<tr>
+								<th class="px-3 py-2 text-left font-medium text-muted-foreground">Name</th>
+								<th class="px-3 py-2 text-left font-medium text-muted-foreground">Relationship</th>
+								<th class="px-3 py-2 text-left font-medium text-muted-foreground">Phone</th>
+								{#if canManage}<th class="px-3 py-2"></th>{/if}
+							</tr>
+						</thead>
+						<tbody class="divide-y">
+							{#each employee.emergencyContacts as c (c.id)}
+								<tr class="hover:bg-muted/30">
+									<td class="px-3 py-2 font-medium">{c.name}</td>
+									<td class="px-3 py-2">{c.relationship}</td>
+									<td class="px-3 py-2 font-mono">{c.phone}</td>
+									{#if canManage}
+										<td class="px-3 py-2 text-right">
+											<form method="POST" action="?/deleteEmergencyContact" use:enhance>
+												<input type="hidden" name="contactId" value={c.id} />
+												<button type="submit" class="text-xs text-red-600 hover:underline"
+													>Remove</button
+												>
+											</form>
+										</td>
+									{/if}
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{:else}
+				<p class="text-xs text-muted-foreground">No emergency contacts on record.</p>
+			{/if}
+
+			{#if canManage}
+				<form
+					method="POST"
+					action="?/addEmergencyContact"
+					use:enhance
+					class="flex flex-wrap items-end gap-2 border-t pt-3"
+				>
+					<div class="grid gap-1">
+						<label for="ec-name" class="text-xs font-medium text-muted-foreground">Name</label>
+						<input
+							id="ec-name"
+							name="name"
+							type="text"
+							required
+							placeholder="Full name"
+							class="h-8 w-44 rounded-md border border-input bg-background px-2 text-xs"
+						/>
+					</div>
+					<div class="grid gap-1">
+						<label for="ec-rel" class="text-xs font-medium text-muted-foreground"
+							>Relationship</label
+						>
+						<input
+							id="ec-rel"
+							name="relationship"
+							type="text"
+							required
+							placeholder="e.g. Spouse"
+							class="h-8 w-32 rounded-md border border-input bg-background px-2 text-xs"
+						/>
+					</div>
+					<div class="grid gap-1">
+						<label for="ec-phone" class="text-xs font-medium text-muted-foreground">Phone</label>
+						<input
+							id="ec-phone"
+							name="phone"
+							type="tel"
+							required
+							placeholder="e.g. 0917xxxxxxx"
+							class="h-8 w-40 rounded-md border border-input bg-background px-2 text-xs"
+						/>
+					</div>
+					<button
+						class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+						>Add Contact</button
+					>
+				</form>
+			{/if}
+		</section>
 
 		{#if canManage}
 			<section class="rounded-lg border bg-card p-6 space-y-4 lg:col-span-2">
@@ -467,6 +717,54 @@
 						>Upload</button
 					>
 				</form>
+			</section>
+		{/if}
+
+		{#if canManage}
+			<section class="rounded-lg border bg-card p-6 space-y-4 lg:col-span-2">
+				<h2 class="font-semibold">
+					Employment History
+					<span class="text-xs font-normal text-muted-foreground"
+						>(promotions, salary, transfers, status — from the audit trail)</span
+					>
+				</h2>
+
+				{#if data.history.length}
+					<ol class="relative space-y-5 border-l pl-6">
+						{#each data.history as ev (ev.id)}
+							<li class="relative">
+								<span
+									class="absolute -left-[27px] mt-1 h-3 w-3 rounded-full border-2 border-background {ev.type ===
+									'HIRED'
+										? 'bg-green-500'
+										: 'bg-primary'}"
+								></span>
+								<div class="flex flex-wrap items-baseline justify-between gap-2">
+									<span class="text-sm font-medium">
+										{ev.type === 'HIRED' ? 'Hired / record created' : 'Profile updated'}
+									</span>
+									<span class="text-xs text-muted-foreground">{formatShortDate(ev.date)}</span>
+								</div>
+								{#if ev.changes.length}
+									<ul class="mt-1 space-y-0.5 text-sm text-muted-foreground">
+										{#each ev.changes as c (c.label)}
+											<li>
+												<span class="font-medium text-foreground">{c.label}:</span>
+												{c.from} <span aria-hidden="true">→</span>
+												<span class="text-foreground">{c.to}</span>
+											</li>
+										{/each}
+									</ul>
+								{/if}
+								{#if ev.actorEmail}
+									<p class="mt-1 text-xs text-muted-foreground/70">by {ev.actorEmail}</p>
+								{/if}
+							</li>
+						{/each}
+					</ol>
+				{:else}
+					<p class="text-xs text-muted-foreground">No recorded changes yet.</p>
+				{/if}
 			</section>
 		{/if}
 	</div>

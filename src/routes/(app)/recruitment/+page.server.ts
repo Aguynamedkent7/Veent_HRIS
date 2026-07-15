@@ -62,6 +62,31 @@ export const actions: Actions = {
 		})
 	},
 
+	// Bulk-publish selected draft postings (mass posting).
+	publishMany: async ({ request, locals, getClientAddress }) => {
+		const user = locals.user!
+		requireMinRole(user.role, 'HR_ADMIN')
+
+		const ids = (await request.formData()).getAll('ids').map(String).filter(Boolean)
+		if (!ids.length) return fail(400, { error: 'No postings selected.' })
+
+		const ctx = {
+			organizationId: user.organizationId,
+			actorId: user.id,
+			actorRole: user.role,
+			ipAddress: getClientAddress()
+		}
+		// Publish each; skip any that aren't drafts (already open/closed) rather than failing the batch.
+		for (const id of ids) {
+			try {
+				await publishJobPosting(id, user.organizationId, ctx)
+			} catch {
+				// ignore individual failures (e.g. not a draft) so the rest still publish
+			}
+		}
+		return { published: ids.length }
+	},
+
 	advance: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
 		requireMinRole(user.role, 'HR_ADMIN')
