@@ -364,7 +364,7 @@
 												class={inputClass}
 											/></td
 										>
-										<td class="px-3 py-1.5"
+										<td class="px-3 py-1.5 min-w-20"
 											><input
 												type="number"
 												step="0.25"
@@ -377,7 +377,7 @@
 												class="{inputClass} text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 											/></td
 										>
-										<td class="px-3 py-1.5"
+										<td class="px-3 py-1.5 min-w-20"
 											><input
 												type="number"
 												step="0.25"
@@ -390,7 +390,7 @@
 												class="{inputClass} text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 											/></td
 										>
-										<td class="px-3 py-1.5"
+										<td class="px-3 py-1.5 min-w-36"
 											><input
 												type="text"
 												bind:value={row.notes}
