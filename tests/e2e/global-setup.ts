@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client'
+import { E2E_DISCORD_ID } from './helpers'
 
 /**
  * Resets the seeded employee's transactional data before the E2E run so tests
@@ -18,6 +19,11 @@ async function globalSetup() {
 				'E2E seed missing: employee@veent.ph not found. Run `pnpm db:seed` before the E2E suite.'
 			)
 		}
+
+		// Raw punches accumulate across runs and would otherwise mis-pair on re-aggregation,
+		// so clear them and pin a known discordId for the signed-punch → aggregate E2E.
+		await db.timeLog.deleteMany({ where: { employeeId: employee.id } })
+		await db.employee.update({ where: { id: employee.id }, data: { discordId: E2E_DISCORD_ID } })
 
 		await db.timesheetEntry.deleteMany({ where: { timesheet: { employeeId: employee.id } } })
 		await db.timesheet.deleteMany({ where: { employeeId: employee.id } })

@@ -6,6 +6,11 @@ export const USERS = {
 	employee: { email: 'employee@veent.ph', password: 'Employee@1234' }
 }
 
+// Deterministic Discord link for the punch → aggregate → approve E2E. `global-setup`
+// pins this onto employee@veent.ph so the signed-punch test doesn't depend on the
+// seed's Discord id and stays isolated from real Discord accounts.
+export const E2E_DISCORD_ID = 'e2e-punch-elena'
+
 /** Log in through the real login form and wait for the dashboard. */
 export async function login(page: Page, user: { email: string; password: string }) {
 	// domcontentloaded (not the default 'load') so we don't block on external font/webfont

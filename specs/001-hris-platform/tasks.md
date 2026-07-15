@@ -272,7 +272,7 @@ routes are deferred and enumerated below. `[X]` = done this pass, `[ ]` = follow
 - [x] T139 HR "Time Logs → Timesheet" review UI on `(app)/timesheets` — per-PHT-day punch table with computed hours + warnings, an "Aggregate week" action, inline edit of `TimesheetEntry.hoursWorked`, then Approve via existing flow ([#4](https://github.com/Aguynamedkent7/Veent_HRIS/issues/4))
 - [x] T140 [P] Employee read-only punch view + `discordId` field in the employee profile / onboarding forms ([#5](https://github.com/Aguynamedkent7/Veent_HRIS/issues/5))
 - [x] T141 [P] Bot production hardening (pm2/systemd unit) and optional slash-command fallback — docs only for now ([#6](https://github.com/Aguynamedkent7/Veent_HRIS/issues/6))
-- [ ] T142 [P] E2E: signed punch → aggregate → approve happy path (`tests/e2e/`) ([#7](https://github.com/Aguynamedkent7/Veent_HRIS/issues/7))
+- [x] T142 [P] E2E: signed punch → aggregate → approve happy path (`tests/e2e/`) ([#7](https://github.com/Aguynamedkent7/Veent_HRIS/issues/7))
 
 ### 10.3 Benefits Administration
 
