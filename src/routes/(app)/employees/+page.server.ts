@@ -6,7 +6,9 @@ import { z } from 'zod'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals, url }) => {
-	requireMinRole(locals.user!.role, 'MANAGER')
+	// The full roster is HR-only. Managers reach a report's 201 file via the Team
+	// tab (which links straight to /employees/[id]) — they must not see everyone.
+	requireMinRole(locals.user!.role, 'HR_ADMIN')
 
 	const search = url.searchParams.get('search') ?? undefined
 	const departmentId = url.searchParams.get('department') ?? undefined

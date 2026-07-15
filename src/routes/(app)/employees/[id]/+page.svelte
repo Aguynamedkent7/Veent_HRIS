@@ -40,7 +40,11 @@
 
 <div class="space-y-6">
 	<div class="flex items-center gap-4">
-		<a href="/employees" class="text-sm text-muted-foreground hover:text-foreground">← Employees</a>
+		<a
+			href={canManage ? '/employees' : '/team'}
+			class="text-sm text-muted-foreground hover:text-foreground"
+			>← {canManage ? 'Employees' : 'Team'}</a
+		>
 		<h1 class="text-2xl font-bold">{employee.lastName}, {employee.firstName}</h1>
 		<span
 			class="rounded-full px-2.5 py-1 text-xs font-medium {employee.employmentStatus === 'ACTIVE'
