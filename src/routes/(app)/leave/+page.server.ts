@@ -12,12 +12,18 @@ export const load: PageServerLoad = async ({ locals }) => {
 	const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
 	const year = new Date().getFullYear()
 
+	// Non-managers without an employee record have no leave to show — return an empty
+	// list rather than passing an undefined employeeId (which would leak org-wide rows).
+	const canListLeave = isManager || Boolean(myEmployee)
+
 	const [requests, leaveTypes, balances] = await Promise.all([
-		listRequests({
-			organizationId: user.organizationId,
-			employeeId: isManager ? undefined : myEmployee?.id,
-			type: 'LEAVE'
-		}),
+		canListLeave
+			? listRequests({
+					organizationId: user.organizationId,
+					employeeId: isManager ? undefined : myEmployee?.id,
+					type: 'LEAVE'
+				})
+			: Promise.resolve([]),
 		db.leaveType.findMany({
 			where: { organizationId: user.organizationId, isActive: true },
 			orderBy: { name: 'asc' },

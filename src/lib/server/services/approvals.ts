@@ -167,16 +167,19 @@ export async function countPendingApprovals(user: {
 
 	const isManagerLadder = ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
 	const isAdmin = ['HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
+	// A non-admin manager scopes to their direct reports, so without an employee record
+	// there is nothing to scope by — count 0 rather than falling through to org-wide.
+	const canCountTimesheets = isManagerLadder && (isAdmin || Boolean(myEmployee))
 
 	const [requests, timesheets] = await Promise.all([
 		listPendingRequestsForApprover(user.organizationId, user.role, myEmployee?.id ?? null),
-		isManagerLadder
+		canCountTimesheets
 			? db.timesheet.count({
 					where: {
 						status: 'SUBMITTED',
 						employee: {
 							user: { organizationId: user.organizationId },
-							...(!isAdmin && myEmployee ? { reportsToId: myEmployee.id } : {})
+							...(!isAdmin ? { reportsToId: myEmployee!.id } : {})
 						}
 					}
 				})

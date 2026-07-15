@@ -30,7 +30,7 @@
 	<section class="space-y-3 rounded-lg border bg-card p-4">
 		<h2 class="font-semibold">Grades</h2>
 		<div class="overflow-x-auto rounded-md border">
-			<table class="w-full text-sm">
+			<table class="w-full min-w-max text-sm">
 				<thead class="border-b bg-muted/50">
 					<tr>
 						<th class="px-3 py-2 text-left font-medium text-muted-foreground">Grade</th>
@@ -125,7 +125,7 @@
 		<h2 class="font-semibold">Position Grades</h2>
 		{#if data.positions.length}
 			<div class="overflow-x-auto rounded-md border">
-				<table class="w-full text-sm">
+				<table class="w-full min-w-max text-sm">
 					<thead class="border-b bg-muted/50">
 						<tr>
 							<th class="px-3 py-2 text-left font-medium text-muted-foreground">Position</th>

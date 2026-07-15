@@ -1,9 +1,16 @@
 <script lang="ts">
+	import { page } from '$app/stores'
 	import { formatShortDate, formatDate } from '$lib/utils/format'
 	import type { PageData } from './$types'
 
 	let { data }: { data: PageData } = $props()
 	const req = $derived(data.request)
+
+	// Return to wherever the user came from: the approvals queue links here with
+	// ?from=approvals; everything else (My Requests) goes back to /requests.
+	const backHref = $derived(
+		$page.url.searchParams.get('from') === 'approvals' ? '/requests/approvals' : '/requests'
+	)
 
 	const typeLabels: Record<string, string> = {
 		LEAVE: 'Leave',
@@ -54,9 +61,7 @@
 </svelte:head>
 
 <div class="mx-auto max-w-2xl space-y-6">
-	<a href="/requests/approvals" class="text-sm text-muted-foreground hover:underline"
-		>← Back to requests</a
-	>
+	<a href={backHref} class="text-sm text-muted-foreground hover:underline">← Back to requests</a>
 
 	<div class="flex items-center justify-between">
 		<h1 class="text-2xl font-bold tracking-tight">{typeLabels[req.type] ?? req.type}</h1>

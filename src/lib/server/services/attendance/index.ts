@@ -304,7 +304,7 @@ export async function createTimesheetFromAttendance(
 			timeOut: d.timeOut,
 			hoursWorked: worked,
 			otHours: ot,
-			notes: d.status
+			notes: d.note ?? d.status
 		}
 	})
 
@@ -360,10 +360,19 @@ export async function correctDay(
 export async function resetDayToDerived(id: string, organizationId: string, ctx: AuditContext) {
 	const day = await db.attendanceDay.findFirst({
 		where: { id, employee: { user: { organizationId } } },
-		select: { employeeId: true, date: true, isLocked: true }
+		select: {
+			employeeId: true,
+			date: true,
+			isLocked: true,
+			employee: { select: { employmentStatus: true } }
+		}
 	})
 	if (!day) error(404, 'Attendance day not found')
 	if (day.isLocked) error(409, 'This attendance day is locked and cannot be edited')
+	// deriveRange only processes ACTIVE employees; resetting a non-active employee would
+	// clear the override without re-deriving, reporting a success that never happened.
+	if (day.employee.employmentStatus !== 'ACTIVE')
+		error(409, 'Cannot reset — employee is not active, so the day cannot be re-derived.')
 
 	await db.attendanceDay.update({ where: { id }, data: { manuallyEdited: false } })
 	await deriveRange(

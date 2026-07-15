@@ -16,13 +16,17 @@ export const load: PageServerLoad = async ({ locals }) => {
 		select: { id: true }
 	})
 
+	// A non-admin manager scopes to their direct reports; without an employee record there
+	// is nothing to scope by, so show nothing rather than falling through to org-wide.
+	if (!isAdmin && !myEmployee) return { pendingTimesheets: [] }
+
 	// MANAGER sees direct reports; admins see all.
 	const pendingTimesheets = await db.timesheet.findMany({
 		where: {
 			status: 'SUBMITTED',
 			employee: {
 				user: { organizationId: user.organizationId },
-				...(!isAdmin && myEmployee ? { reportsToId: myEmployee.id } : {})
+				...(!isAdmin ? { reportsToId: myEmployee!.id } : {})
 			}
 		},
 		include: { employee: { select: { id: true, firstName: true, lastName: true } } },
@@ -60,8 +64,9 @@ export const actions: Actions = {
 
 		const data = await request.formData()
 		const id = data.get('id') as string
-		const rejectionReason = (data.get('rejectionReason') as string) || undefined
+		const rejectionReason = ((data.get('rejectionReason') as string) ?? '').trim()
 		if (!id) return fail(400, { error: 'Missing timesheet id' })
+		if (!rejectionReason) return fail(400, { error: 'A reason is required to reject.' })
 
 		try {
 			await reviewTimesheet(id, user.organizationId, false, rejectionReason, {

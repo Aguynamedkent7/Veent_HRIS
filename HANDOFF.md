@@ -4,15 +4,16 @@
 
 ## ⚠️ Environment note (read first)
 
-- **DB is on port 5433** (container `veent-db-5433`, user/pass/db all `veent`). `.env`'s
-  `DATABASE_URL` points to `localhost:5433`. `./start.sh` brings up the container, syncs the schema,
-  seeds if empty, and runs `pnpm dev` + `pnpm bot`.
+- **DB is on port 5433** (local dev container). Credentials come from `.env`'s `DATABASE_URL`
+  (not checked in). `./start.sh` brings up the container, syncs the schema, seeds if empty, and runs
+  `pnpm dev` + `pnpm bot`. The dev container binds to localhost only and must never be reused outside
+  local development.
 - **This session changed the Prisma schema** — after pulling, run `pnpm db:push` (or `./start.sh`)
   to apply, then restart `pnpm dev` (the running server caches the Prisma client and will 500 on new
   columns until restarted).
-- Seeded logins: `admin@veent.ph`/`Admin@1234` (Super Admin) · `manager@veent.ph`/`Manager@1234` ·
-  `employee@veent.ph`/`Employee@1234` · `payroll@veent.ph`/`Payroll@1234` (Payroll Officer) ·
-  `finance@veent.ph`/`Finance@1234`.
+- Seeded logins (Super Admin, Manager, Employee, Payroll Officer, Finance) are created by
+  `prisma/seed.ts` — see the seed script for the local-only credentials. These are development
+  defaults; never commit real passwords here.
 
 ## Schema changes this session (require `pnpm db:push`)
 

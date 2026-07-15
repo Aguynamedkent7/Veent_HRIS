@@ -77,8 +77,9 @@
 						{#if req.reason}
 							<p class="line-clamp-3 text-xs text-muted-foreground">{req.reason}</p>
 						{/if}
-						<a href="/requests/{req.id}" class="mt-auto text-xs text-primary hover:underline"
-							>View detail →</a
+						<a
+							href="/requests/{req.id}?from=approvals"
+							class="mt-auto text-xs text-primary hover:underline">View detail →</a
 						>
 					</div>
 					<form

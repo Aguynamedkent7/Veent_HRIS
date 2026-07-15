@@ -36,7 +36,7 @@
 	{/if}
 
 	<div class="overflow-x-auto rounded-lg border">
-		<table class="w-full text-sm">
+		<table class="w-full min-w-max text-sm">
 			<thead class="border-b bg-muted/50">
 				<tr>
 					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Email</th>

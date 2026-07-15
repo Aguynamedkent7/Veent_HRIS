@@ -267,7 +267,7 @@
 	{:then timesheets}
 		{@const allIds = timesheets.map((t) => t.id)}
 		{@const allSelected = allIds.length > 0 && allIds.every((id) => selected.includes(id))}
-		{@const cols = data.isManager ? 4 : 3}
+		{@const cols = data.isManager ? 5 : 4}
 
 		<!-- Bulk actions (top-right of the table); appear when rows are selected -->
 		{#if selected.length}
@@ -429,7 +429,7 @@
 			<!-- Body (scrollable) -->
 			<div class="flex-1 space-y-4 overflow-y-auto px-6 py-4">
 				<!-- Summary -->
-				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:max-w-lg sm:grid-cols-4">
+				<div class="grid grid-cols-1 gap-3 sm:max-w-lg sm:grid-cols-2 md:grid-cols-4">
 					<div class="rounded-lg border bg-muted/30 px-4 py-2">
 						<p class="text-xs text-muted-foreground">Total</p>
 						<p class="font-mono text-lg font-semibold">{total.toFixed(2)}</p>
