@@ -113,7 +113,23 @@
 							{#if !readonly}
 								{@const nextStage = getNextStage(stage as Stage)}
 								<div class="mt-2 flex flex-wrap gap-1">
-									{#if nextStage}
+									{#if nextStage === 'INTERVIEW'}
+										<!-- Advancing to Interview means scheduling one — open that form. -->
+										<a
+											href="/recruitment/applicant/{applicant.id}#schedule"
+											class="rounded px-2 py-0.5 text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90"
+										>
+											Schedule interview →
+										</a>
+									{:else if nextStage === 'OFFER'}
+										<!-- Advancing to Offer means issuing one — open that form. -->
+										<a
+											href="/recruitment/applicant/{applicant.id}#offer"
+											class="rounded px-2 py-0.5 text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90"
+										>
+											Give offer →
+										</a>
+									{:else if nextStage}
 										<form method="POST" action="?/advanceStage" use:enhance>
 											<input type="hidden" name="applicantId" value={applicant.id} />
 											<input type="hidden" name="stage" value={nextStage} />

@@ -1,11 +1,26 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import { page } from '$app/stores'
+	import { tick } from 'svelte'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 	const applicant = $derived(data.applicant)
 	const offer = $derived(data.applicant.offer)
+
+	// Arriving from the Kanban's "Schedule interview" / "Give offer" links opens
+	// the matching form: scroll it into view and focus its first field.
+	$effect(() => {
+		const hash = $page.url.hash
+		const sel = hash === '#schedule' ? '#iv-date' : hash === '#offer' ? '#of-title' : null
+		if (!sel) return
+		tick().then(() => {
+			const el = document.querySelector<HTMLElement>(sel)
+			el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+			el?.focus()
+		})
+	})
 
 	const STAGE_LABELS: Record<string, string> = {
 		APPLIED: 'Applied',
@@ -135,13 +150,32 @@
 		{/if}
 
 		<!-- Schedule form -->
-		<form method="POST" action="?/scheduleInterview" use:enhance class="grid gap-2 border-t pt-3 sm:grid-cols-2">
+		<form
+			id="schedule"
+			method="POST"
+			action="?/scheduleInterview"
+			use:enhance
+			class="grid scroll-mt-20 gap-2 border-t pt-3 sm:grid-cols-2"
+		>
 			<div class="grid gap-1">
-				<label for="iv-when" class="text-xs font-medium text-muted-foreground">Date &amp; time</label>
+				<label for="iv-date" class="text-xs font-medium text-muted-foreground">Date</label>
 				<input
-					id="iv-when"
-					name="scheduledAt"
-					type="datetime-local"
+					id="iv-date"
+					name="scheduledDate"
+					type="date"
+					required
+					onkeydown={(e) => {
+						if (e.key !== 'Tab') e.preventDefault()
+					}}
+					class="h-9 rounded-md border border-input bg-background px-2 text-sm"
+				/>
+			</div>
+			<div class="grid gap-1">
+				<label for="iv-time" class="text-xs font-medium text-muted-foreground">Time</label>
+				<input
+					id="iv-time"
+					name="scheduledTime"
+					type="time"
 					required
 					onkeydown={(e) => {
 						if (e.key !== 'Tab') e.preventDefault()
@@ -195,7 +229,7 @@
 	</section>
 
 	<!-- Offer -->
-	<section class="rounded-lg border bg-card p-6 space-y-4">
+	<section id="offer" class="scroll-mt-20 rounded-lg border bg-card p-6 space-y-4">
 		<h2 class="font-semibold">Job Offer</h2>
 
 		{#if offer}

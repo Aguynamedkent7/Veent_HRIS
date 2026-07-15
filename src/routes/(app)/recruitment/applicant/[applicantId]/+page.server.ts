@@ -40,7 +40,9 @@ function ctxOf(locals: App.Locals, ip: string) {
 }
 
 const interviewSchema = z.object({
-	scheduledAt: z.coerce.date(),
+	// Date and time come from separate GUI pickers, combined server-side.
+	scheduledDate: z.string().min(1),
+	scheduledTime: z.string().min(1),
 	mode: z.enum(['ONSITE', 'VIDEO', 'PHONE']),
 	interviewer: z.string().trim().min(1),
 	location: z
@@ -69,12 +71,19 @@ export const actions: Actions = {
 	scheduleInterview: async ({ request, locals, params, getClientAddress }) => {
 		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
 		const parsed = interviewSchema.safeParse(Object.fromEntries(await request.formData()))
-		if (!parsed.success) return fail(400, { error: 'Date, mode, and interviewer are required.' })
+		if (!parsed.success) return fail(400, { error: 'Date, time, mode, and interviewer are required.' })
+		const scheduledAt = new Date(`${parsed.data.scheduledDate}T${parsed.data.scheduledTime}`)
+		if (Number.isNaN(scheduledAt.getTime())) return fail(400, { error: 'Invalid date or time.' })
 		try {
 			await scheduleInterview(
 				params.applicantId,
 				locals.user!.organizationId,
-				parsed.data,
+				{
+					scheduledAt,
+					mode: parsed.data.mode,
+					interviewer: parsed.data.interviewer,
+					location: parsed.data.location
+				},
 				ctxOf(locals, getClientAddress())
 			)
 		} catch (e: unknown) {
