@@ -18,22 +18,34 @@
 	let busy = $state(false)
 
 	// ─── Bulk selection ─────────────────────────────────────────────────────────
-	let selected = $state<string[]>([])
-	function toggle(id: string) {
-		selected = selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]
+	// Managers see two tables (their own timesheets vs. the team's); each keeps its own
+	// selection so a bulk action only ever touches the section it was triggered from.
+	type Kind = 'mine' | 'team'
+	let selectedMine = $state<string[]>([])
+	let selectedTeam = $state<string[]>([])
+	const selOf = (kind: Kind) => (kind === 'team' ? selectedTeam : selectedMine)
+	function setSel(kind: Kind, v: string[]) {
+		if (kind === 'team') selectedTeam = v
+		else selectedMine = v
 	}
-	function toggleAll(ids: string[], on: boolean) {
-		selected = on ? ids : []
+	function toggle(kind: Kind, id: string) {
+		const cur = selOf(kind)
+		setSel(kind, cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id])
 	}
-	// Clear the selection after a successful bulk delete/submit.
-	const clearOnSuccess: SubmitFunction = () => {
-		busy = true
-		return async ({ result, update }) => {
-			await update()
-			busy = false
-			if (result.type === 'success') selected = []
+	function toggleAll(kind: Kind, ids: string[], on: boolean) {
+		setSel(kind, on ? ids : [])
+	}
+	// Clear that section's selection after a successful bulk delete/submit.
+	const clearOnSuccess =
+		(kind: Kind): SubmitFunction =>
+		() => {
+			busy = true
+			return async ({ result, update }) => {
+				await update()
+				busy = false
+				if (result.type === 'success') setSel(kind, [])
+			}
 		}
-	}
 
 	function openReview(ts: Timesheet) {
 		openTs = ts
@@ -55,7 +67,116 @@
 	<title>Timesheets — Veent HRIS</title>
 </svelte:head>
 
-<div class="space-y-6">
+{#snippet section(title: string, rows: Timesheet[], kind: Kind, showEmployee: boolean)}
+	{@const ids = rows.map((t) => t.id)}
+	{@const selectedIds = selOf(kind)}
+	{@const allSelected = ids.length > 0 && ids.every((id) => selectedIds.includes(id))}
+	{@const cols = showEmployee ? 5 : 4}
+	<section class="space-y-3">
+		<h2 class="text-lg font-semibold">{title}</h2>
+
+		<!-- Bulk actions for this section; appear when its rows are selected -->
+		{#if selectedIds.length}
+			<div
+				class="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-2"
+				transition:slide={{ duration: 120 }}
+			>
+				<span class="text-sm font-medium">{selectedIds.length} selected</span>
+				<div class="flex items-center gap-2">
+					<button
+						onclick={() => setSel(kind, [])}
+						class="mr-1 text-sm text-muted-foreground hover:underline">Clear</button
+					>
+					{#if kind === 'mine'}
+						<form method="POST" action="?/submitMany" use:enhance={clearOnSuccess('mine')}>
+							<input type="hidden" name="ids" value={selectedIds.join(',')} />
+							<button disabled={busy} class={btnPrimary}>Submit selected</button>
+						</form>
+					{:else}
+						<ConfirmButton
+							action="?/deleteMany"
+							title="Delete selected timesheets?"
+							message="{selectedIds.length} timesheet{selectedIds.length === 1
+								? ''
+								: 's'} will be permanently deleted."
+							triggerLabel="Delete selected"
+							triggerClass="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+							disabled={busy}
+							submit={clearOnSuccess('team')}
+						>
+							<input type="hidden" name="ids" value={selectedIds.join(',')} />
+						</ConfirmButton>
+					{/if}
+				</div>
+			</div>
+		{/if}
+
+		<div class="overflow-x-auto rounded-lg border">
+			<table class="w-full text-sm">
+				<thead class="border-b bg-muted/50">
+					<tr>
+						<th class="w-[1%] px-4 py-3">
+							<input
+								type="checkbox"
+								checked={allSelected}
+								onchange={(e) => toggleAll(kind, ids, e.currentTarget.checked)}
+								aria-label="Select all"
+								class="align-middle"
+							/>
+						</th>
+						{#if showEmployee}
+							<th class="px-4 py-3 text-left font-medium text-muted-foreground">Employee</th>
+						{/if}
+						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Period</th>
+						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Total Hours</th>
+						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
+					</tr>
+				</thead>
+				<tbody class="divide-y">
+					{#each rows as ts (ts.id)}
+						<tr
+							onclick={() => openReview(ts)}
+							onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && openReview(ts)}
+							tabindex="0"
+							class={`cursor-pointer hover:bg-muted/30 focus:bg-muted/40 focus:outline-none ${selectedIds.includes(ts.id) ? 'bg-primary/5' : ''}`}
+						>
+							<td class="px-4 py-3" onclick={(e) => e.stopPropagation()}>
+								<input
+									type="checkbox"
+									checked={selectedIds.includes(ts.id)}
+									onchange={() => toggle(kind, ts.id)}
+									aria-label="Select timesheet"
+									class="align-middle"
+								/>
+							</td>
+							{#if showEmployee}
+								<td class="px-4 py-3">{ts.employee.lastName}, {ts.employee.firstName}</td>
+							{/if}
+							<td class="px-4 py-3 whitespace-nowrap"
+								>{formatShortDate(ts.periodStart)} – {formatShortDate(ts.periodEnd)}</td
+							>
+							<td class="px-4 py-3">{Number(ts.totalHours).toFixed(2)} hrs</td>
+							<td class="px-4 py-3"
+								><span
+									class={`rounded-full px-2 py-0.5 text-xs font-medium ${statusClass[ts.status] ?? 'bg-gray-100 text-gray-600'}`}
+									>{ts.status}</span
+								></td
+							>
+						</tr>
+					{:else}
+						<tr>
+							<td colspan={cols} class="px-4 py-8 text-center text-muted-foreground"
+								>No timesheets found</td
+							>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+	</section>
+{/snippet}
+
+<div class="space-y-8">
 	<div class="flex items-center justify-between">
 		<h1 class="text-2xl font-bold tracking-tight">Timesheets</h1>
 		{#if data.myEmployeeId}
@@ -105,108 +226,21 @@
 	{#await data.timesheets}
 		<TableSkeleton rows={5} cols={data.isManager ? 4 : 3} />
 	{:then timesheets}
-		{@const allIds = timesheets.map((t) => t.id)}
-		{@const allSelected = allIds.length > 0 && allIds.every((id) => selected.includes(id))}
-		{@const cols = data.isManager ? 5 : 4}
-
-		<!-- Bulk actions (top-right of the table); appear when rows are selected -->
-		{#if selected.length}
-			<div
-				class="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-2"
-				transition:slide={{ duration: 120 }}
-			>
-				<span class="text-sm font-medium">{selected.length} selected</span>
-				<div class="flex items-center gap-2">
-					<button
-						onclick={() => (selected = [])}
-						class="mr-1 text-sm text-muted-foreground hover:underline">Clear</button
-					>
-					{#if data.isManager}
-						<ConfirmButton
-							action="?/deleteMany"
-							title="Delete selected timesheets?"
-							message="{selected.length} timesheet{selected.length === 1
-								? ''
-								: 's'} will be permanently deleted."
-							triggerLabel="Delete selected"
-							triggerClass="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
-							disabled={busy}
-							submit={clearOnSuccess}
-						>
-							<input type="hidden" name="ids" value={selected.join(',')} />
-						</ConfirmButton>
-					{:else}
-						<form method="POST" action="?/submitMany" use:enhance={clearOnSuccess}>
-							<input type="hidden" name="ids" value={selected.join(',')} />
-							<button disabled={busy} class={btnPrimary}>Submit selected</button>
-						</form>
-					{/if}
-				</div>
-			</div>
+		{@const mine = data.isManager
+			? timesheets.filter((t) => t.employeeId === data.myEmployeeId)
+			: timesheets}
+		{@const team = data.isManager
+			? timesheets.filter((t) => t.employeeId !== data.myEmployeeId)
+			: []}
+		{#if data.myEmployeeId}
+			{@render section('My Timesheets', mine, 'mine', false)}
 		{/if}
-
-		<div class="overflow-x-auto rounded-lg border">
-			<table class="w-full text-sm">
-				<thead class="border-b bg-muted/50">
-					<tr>
-						<th class="w-[1%] px-4 py-3">
-							<input
-								type="checkbox"
-								checked={allSelected}
-								onchange={(e) => toggleAll(allIds, e.currentTarget.checked)}
-								aria-label="Select all"
-								class="align-middle"
-							/>
-						</th>
-						{#if data.isManager}
-							<th class="px-4 py-3 text-left font-medium text-muted-foreground">Employee</th>
-						{/if}
-						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Period</th>
-						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Total Hours</th>
-						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
-					</tr>
-				</thead>
-				<tbody class="divide-y">
-					{#each timesheets as ts (ts.id)}
-						<tr
-							onclick={() => openReview(ts)}
-							onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && openReview(ts)}
-							tabindex="0"
-							class={`cursor-pointer hover:bg-muted/30 focus:bg-muted/40 focus:outline-none ${selected.includes(ts.id) ? 'bg-primary/5' : ''}`}
-						>
-							<td class="px-4 py-3" onclick={(e) => e.stopPropagation()}>
-								<input
-									type="checkbox"
-									checked={selected.includes(ts.id)}
-									onchange={() => toggle(ts.id)}
-									aria-label="Select timesheet"
-									class="align-middle"
-								/>
-							</td>
-							{#if data.isManager}
-								<td class="px-4 py-3">{ts.employee.lastName}, {ts.employee.firstName}</td>
-							{/if}
-							<td class="px-4 py-3 whitespace-nowrap"
-								>{formatShortDate(ts.periodStart)} – {formatShortDate(ts.periodEnd)}</td
-							>
-							<td class="px-4 py-3">{Number(ts.totalHours).toFixed(2)} hrs</td>
-							<td class="px-4 py-3"
-								><span
-									class={`rounded-full px-2 py-0.5 text-xs font-medium ${statusClass[ts.status] ?? 'bg-gray-100 text-gray-600'}`}
-									>{ts.status}</span
-								></td
-							>
-						</tr>
-					{:else}
-						<tr>
-							<td colspan={cols} class="px-4 py-8 text-center text-muted-foreground"
-								>No timesheets found</td
-							>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
+		{#if data.isManager}
+			{@render section('Team Timesheets', team, 'team', true)}
+		{/if}
+		{#if !data.myEmployeeId && !data.isManager}
+			<p class="text-sm text-muted-foreground">No employee profile found.</p>
+		{/if}
 	{/await}
 </div>
 

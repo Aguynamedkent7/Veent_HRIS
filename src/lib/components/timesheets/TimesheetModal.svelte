@@ -228,6 +228,7 @@
 		role="presentation"
 		transition:fade={{ duration: 120 }}
 	>
+		<!-- svelte-ignore a11y_click_events_have_key_events  -->
 		<div
 			bind:this={dialogEl}
 			class="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border bg-card shadow-2xl focus:outline-none"
