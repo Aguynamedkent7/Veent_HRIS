@@ -74,18 +74,18 @@ root:
 
 ```js
 module.exports = {
-  apps: [
-    {
-      name: 'veent-hris-bot',
-      script: 'pnpm',
-      args: 'bot',
-      cwd: '/opt/veent-hris', // absolute path to the repo on the server
-      autorestart: true,
-      max_restarts: 10,
-      restart_delay: 5000, // back off 5s between restarts to avoid Discord rate limits
-      env: { NODE_ENV: 'production' }
-    }
-  ]
+	apps: [
+		{
+			name: 'veent-hris-bot',
+			script: 'pnpm',
+			args: 'bot',
+			cwd: '/opt/veent-hris', // absolute path to the repo on the server
+			autorestart: true,
+			max_restarts: 10,
+			restart_delay: 5000, // back off 5s between restarts to avoid Discord rate limits
+			env: { NODE_ENV: 'production' }
+		}
+	]
 }
 ```
 
