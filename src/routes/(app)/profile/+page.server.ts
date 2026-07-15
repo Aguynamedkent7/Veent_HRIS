@@ -4,7 +4,20 @@ import { db } from '$lib/server/db'
 import { getEmployee, updateEmployee } from '$lib/server/services/employees'
 import { listEmployeeDocuments } from '$lib/server/services/documents'
 import { listEnrollmentsForEmployee } from '$lib/server/services/benefits'
+import { listPunches } from '$lib/server/services/timelog'
+import { manilaDateTime, manilaDayKey } from '$lib/utils/dates'
 import type { Actions, PageServerLoad } from './$types'
+
+// How far back the read-only punch view looks. Discord punches accumulate quickly, so a
+// two-week window keeps the list useful without paging.
+const PUNCH_WINDOW_DAYS = 14
+
+const PUNCH_LABELS: Record<string, string> = {
+	IN: 'Clock in',
+	OUT: 'Clock out',
+	BREAK_START: 'Break start',
+	BREAK_END: 'Break end'
+}
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!
@@ -16,13 +29,28 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	if (!employeeRecord) redirect(303, '/dashboard')
 
-	const [employee, documents, benefits] = await Promise.all([
+	const from = new Date(Date.now() - PUNCH_WINDOW_DAYS * 24 * 60 * 60 * 1000)
+
+	const [employee, documents, benefits, rawPunches] = await Promise.all([
 		getEmployee(employeeRecord.id, user.organizationId),
 		listEmployeeDocuments(employeeRecord.id, user.organizationId),
-		listEnrollmentsForEmployee(employeeRecord.id)
+		listEnrollmentsForEmployee(employeeRecord.id),
+		listPunches(employeeRecord.id, { from })
 	])
 
-	return { employee, documents, benefits }
+	// Format PHT date/time server-side (newest first) so the read-only view is timezone-safe.
+	const punches = rawPunches
+		.map((p) => ({
+			id: p.id,
+			type: p.punchType,
+			label: PUNCH_LABELS[p.punchType] ?? p.punchType,
+			source: p.source,
+			dayKey: manilaDayKey(p.timestamp),
+			at: manilaDateTime(p.timestamp)
+		}))
+		.reverse()
+
+	return { employee, documents, benefits, punches, punchWindowDays: PUNCH_WINDOW_DAYS }
 }
 
 const updateSchema = z.object({

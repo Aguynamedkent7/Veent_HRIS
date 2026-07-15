@@ -59,7 +59,13 @@ const createSchema = z.object({
 	reportsToId: z
 		.string()
 		.optional()
-		.or(z.literal('').transform(() => undefined))
+		.or(z.literal('').transform(() => undefined)),
+	// Empty string leaves the Discord link unset; a value sets it (unique per employee).
+	discordId: z
+		.string()
+		.trim()
+		.optional()
+		.transform((v) => (v ? v : null))
 })
 
 export const actions: Actions = {
@@ -103,6 +109,13 @@ export const actions: Actions = {
 			if (errMsg.includes('Email already in use') || errMsg.includes('409')) {
 				return fail(409, {
 					error: 'An account with this email already exists.',
+					values: raw as Record<string, string>
+				})
+			}
+			// Unique constraint on Employee.discordId
+			if (e && typeof e === 'object' && 'code' in e && (e as { code?: string }).code === 'P2002') {
+				return fail(409, {
+					error: 'That Discord ID is already linked to another employee.',
 					values: raw as Record<string, string>
 				})
 			}

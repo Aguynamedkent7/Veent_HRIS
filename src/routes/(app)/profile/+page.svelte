@@ -103,6 +103,19 @@
 						</dd>
 					</div>
 				</div>
+				<div class="grid grid-cols-2 gap-4">
+					<div>
+						<dt class="text-xs text-muted-foreground">Discord</dt>
+						<dd class="mt-0.5 text-sm font-medium">
+							{#if emp.discordId}
+								<span class="badge-green">Linked</span>
+							{:else}
+								<span class="text-muted-foreground">Not linked — ask HR to add your Discord ID</span
+								>
+							{/if}
+						</dd>
+					</div>
+				</div>
 			</dl>
 		</section>
 
@@ -174,6 +187,47 @@
 			</form>
 		</section>
 	</div>
+
+	<!-- My Time Punches (read-only; recorded via the Discord bot) -->
+	<section class="card space-y-4">
+		<div class="flex items-baseline justify-between">
+			<h2 class="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+				My Time Punches
+			</h2>
+			<span class="text-xs text-muted-foreground">Last {data.punchWindowDays} days</span>
+		</div>
+		{#if data.punches.length}
+			<div class="overflow-x-auto rounded-md border">
+				<table class="w-full text-sm">
+					<thead class="border-b bg-muted/50">
+						<tr>
+							<th class="px-3 py-2 text-left font-medium text-muted-foreground">When (PHT)</th>
+							<th class="px-3 py-2 text-left font-medium text-muted-foreground">Punch</th>
+							<th class="px-3 py-2 text-left font-medium text-muted-foreground">Source</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y">
+						{#each data.punches as p (p.id)}
+							<tr class="hover:bg-muted/30">
+								<td class="px-3 py-2 text-muted-foreground">{p.at}</td>
+								<td class="px-3 py-2 font-medium">{p.label}</td>
+								<td class="px-3 py-2 text-muted-foreground">{p.source}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+			<p class="text-xs text-muted-foreground">
+				These are your raw clock in/out and break punches. HR aggregates them into your timesheet;
+				if something looks wrong, contact HR.
+			</p>
+		{:else}
+			<p class="text-xs text-muted-foreground">
+				No punches in the last {data.punchWindowDays} days. Use the Discord bot's <code>/in</code>,
+				<code>/out</code>, and <code>/break</code> commands to clock in and out.
+			</p>
+		{/if}
+	</section>
 
 	<!-- My Documents (read-only; HR maintains the 201 file) -->
 	<section class="card space-y-4">
