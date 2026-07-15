@@ -444,7 +444,9 @@
 						/>
 					</div>
 					<div class="grid gap-1">
-						<label for="ec-rel" class="text-xs font-medium text-muted-foreground">Relationship</label>
+						<label for="ec-rel" class="text-xs font-medium text-muted-foreground"
+							>Relationship</label
+						>
 						<input
 							id="ec-rel"
 							name="relationship"

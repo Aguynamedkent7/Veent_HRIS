@@ -19,10 +19,7 @@ import {
 	saveEmployeeDocument,
 	deleteEmployeeDocument
 } from '$lib/server/services/documents'
-import {
-	addEmergencyContact,
-	deleteEmergencyContact
-} from '$lib/server/services/emergencyContacts'
+import { addEmergencyContact, deleteEmergencyContact } from '$lib/server/services/emergencyContacts'
 import { db } from '$lib/server/db'
 import { z } from 'zod'
 import type { Actions, PageServerLoad } from './$types'
@@ -139,9 +136,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		}),
 		canManage ? listLoans(params.id) : Promise.resolve([]),
 		canManage ? listCashAdvances(params.id) : Promise.resolve([]),
-		canManage
-			? listEmployeeDocuments(params.id, locals.user!.organizationId)
-			: Promise.resolve([]),
+		canManage ? listEmployeeDocuments(params.id, locals.user!.organizationId) : Promise.resolve([]),
 		canManage ? listPositions(locals.user!.organizationId) : Promise.resolve([]),
 		canManage ? getEmploymentHistory(params.id, locals.user!.organizationId) : Promise.resolve([])
 	])

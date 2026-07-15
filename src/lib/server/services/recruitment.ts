@@ -356,7 +356,9 @@ export async function respondToOffer(
 export async function deleteOffer(offerId: string, organizationId: string, ctx: AuditContext) {
 	const offer = await db.offer.findFirst({
 		where: { id: offerId, applicant: { jobPosting: { organizationId } } },
-		include: { applicant: { select: { id: true, currentStage: true, convertedToEmployeeId: true } } }
+		include: {
+			applicant: { select: { id: true, currentStage: true, convertedToEmployeeId: true } }
+		}
 	})
 	if (!offer) error(404, 'Offer not found')
 	if (offer.applicant.convertedToEmployeeId)

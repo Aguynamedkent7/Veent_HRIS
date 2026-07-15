@@ -62,7 +62,9 @@
 	</div>
 
 	{#if form?.error}
-		<div class="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-red-500">
+		<div
+			class="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-red-500"
+		>
 			{form.error}
 		</div>
 	{/if}
@@ -95,7 +97,9 @@
 						<div class="flex flex-wrap items-center justify-between gap-2">
 							<div class="text-sm">
 								<span class="font-medium">{fmtDateTime(iv.scheduledAt)}</span>
-								<span class="ml-2 rounded-full bg-muted px-2 py-0.5 text-xs">{MODE_LABELS[iv.mode]}</span>
+								<span class="ml-2 rounded-full bg-muted px-2 py-0.5 text-xs"
+									>{MODE_LABELS[iv.mode]}</span
+								>
 							</div>
 							<form method="POST" action="?/deleteInterview" use:enhance>
 								<input type="hidden" name="interviewId" value={iv.id} />
@@ -107,7 +111,8 @@
 							</form>
 						</div>
 						<p class="mt-1 text-sm text-muted-foreground">
-							{iv.interviewer}{#if iv.location} · {iv.location}{/if}
+							{iv.interviewer}{#if iv.location}
+								· {iv.location}{/if}
 						</p>
 						{#if iv.feedback}
 							<p class="mt-2 whitespace-pre-wrap rounded bg-muted/50 p-2 text-sm">{iv.feedback}</p>
@@ -119,7 +124,8 @@
 									name="feedback"
 									rows="3"
 									placeholder="Interview notes / feedback…"
-									class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm">{iv.feedback ?? ''}</textarea
+									class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+									>{iv.feedback ?? ''}</textarea
 								>
 								<div class="flex gap-2">
 									<button
@@ -330,7 +336,9 @@
 					>
 						<option value="">— Select —</option>
 						{#each data.departments as d (d.id)}
-							<option value={d.id} selected={d.id === applicant.jobPosting.departmentId}>{d.name}</option>
+							<option value={d.id} selected={d.id === applicant.jobPosting.departmentId}
+								>{d.name}</option
+							>
 						{/each}
 					</select>
 				</div>
@@ -386,7 +394,9 @@
 			<h2 class="font-semibold">Stage History</h2>
 			<ol class="space-y-2 text-sm">
 				{#each applicant.stageHistory as h (h.id)}
-					<li class="flex flex-wrap items-baseline justify-between gap-2 border-b pb-1 last:border-0">
+					<li
+						class="flex flex-wrap items-baseline justify-between gap-2 border-b pb-1 last:border-0"
+					>
 						<span>
 							<span class="font-medium">{STAGE_LABELS[h.stage] ?? h.stage}</span>
 							{#if h.notes}<span class="text-muted-foreground"> — {h.notes}</span>{/if}

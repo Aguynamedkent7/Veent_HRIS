@@ -71,7 +71,8 @@ export const actions: Actions = {
 	scheduleInterview: async ({ request, locals, params, getClientAddress }) => {
 		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
 		const parsed = interviewSchema.safeParse(Object.fromEntries(await request.formData()))
-		if (!parsed.success) return fail(400, { error: 'Date, time, mode, and interviewer are required.' })
+		if (!parsed.success)
+			return fail(400, { error: 'Date, time, mode, and interviewer are required.' })
 		const scheduledAt = new Date(`${parsed.data.scheduledDate}T${parsed.data.scheduledTime}`)
 		if (Number.isNaN(scheduledAt.getTime())) return fail(400, { error: 'Invalid date or time.' })
 		try {
