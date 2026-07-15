@@ -191,7 +191,8 @@ export async function createEmployee(
 				philhealthNumber: input.philhealthNumber,
 				pagibigNumber: input.pagibigNumber,
 				tinNumber: input.tinNumber,
-				reportsToId: input.reportsToId
+				reportsToId: input.reportsToId,
+				discordId: input.discordId
 			},
 			include: { department: true, user: { select: { email: true, role: true } } }
 		})

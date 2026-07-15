@@ -143,6 +143,22 @@
 						<option value="HR_ADMIN">HR Admin</option>
 					</select>
 				</div>
+				<div>
+					<label for="discordId" class="text-sm font-medium">Discord ID</label>
+					<input
+						id="discordId"
+						name="discordId"
+						value={form?.values?.discordId ?? ''}
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					/>
+					<p class="mt-1 text-xs text-muted-foreground">
+						Links this employee to the Discord time-tracking bot. In Discord: Developer Mode →
+						right-click the user → Copy User ID. Optional — can be set later.
+					</p>
+					{#if form?.fieldErrors?.discordId}
+						<p class="mt-1 text-xs text-destructive">{form.fieldErrors.discordId[0]}</p>
+					{/if}
+				</div>
 			</div>
 		</fieldset>
 
