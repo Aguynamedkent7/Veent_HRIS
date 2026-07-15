@@ -1,4 +1,4 @@
-import { fail, isHttpError } from '@sveltejs/kit'
+import { error, fail, isHttpError } from '@sveltejs/kit'
 import { requireMinRole, requireRole } from '$lib/server/rbac'
 import { getEmployee, updateEmployee, offboardEmployee } from '$lib/server/services/employees'
 import {
@@ -44,8 +44,22 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 
 	const canManage = ['HR_ADMIN', 'SUPER_ADMIN'].includes(locals.user!.role)
 
-	const [employee, departments, loans, cashAdvances, documents] = await Promise.all([
-		getEmployee(params.id, locals.user!.organizationId, locals.user!.role),
+	const employee = await getEmployee(params.id, locals.user!.organizationId, locals.user!.role)
+
+	// Object-level access control: a MANAGER may only open their own direct
+	// reports' 201 file. HR/Super-Admin are unrestricted. (Field-level masking of
+	// salary/government IDs/bank details is handled inside getEmployee.)
+	if (!canManage) {
+		const self = await db.employee.findUnique({
+			where: { userId: locals.user!.id },
+			select: { id: true }
+		})
+		if (!self || employee.reportsToId !== self.id) {
+			error(403, 'You can only view your own team members.')
+		}
+	}
+
+	const [departments, loans, cashAdvances, documents] = await Promise.all([
 		db.department.findMany({
 			where: { organizationId: locals.user!.organizationId },
 			orderBy: { name: 'asc' }
