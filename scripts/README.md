@@ -54,8 +54,115 @@ pnpm bot
 
 On startup the bot registers `/in`, `/out`, `/break` to every server it has joined. Members type
 `/in` (optionally `/in 9:00` to backfill), get a private confirmation, and the bot posts the public
-announcement. For production, run it under a process manager (pm2 / systemd) — that hardening is
-intentionally out of scope here.
+announcement. `pnpm bot` is fine for local development, but for production run it under a process
+manager so it restarts on crash and on server reboot — see **Production deployment** below.
+
+## Production deployment
+
+The bot is a single long-lived process. It holds one Discord gateway connection and makes outbound
+HMAC-signed HTTP calls to the HRIS — it does **not** listen on any port, so there is nothing to
+reverse-proxy. Production hardening is therefore just: keep it running, restart it on failure, start
+it on boot, and rotate its logs. Either pm2 or systemd below does this; pick one.
+
+Run the bot from the repo root with the same `.env` used by `pnpm bot`. Ensure `tsx` is installed
+(it is a dev dependency; on a production box run `pnpm install` or install `tsx` globally).
+
+### Option A — pm2
+
+Good if you already manage other Node processes with pm2. Create `ecosystem.config.cjs` in the repo
+root:
+
+```js
+module.exports = {
+  apps: [
+    {
+      name: 'veent-hris-bot',
+      script: 'pnpm',
+      args: 'bot',
+      cwd: '/opt/veent-hris', // absolute path to the repo on the server
+      autorestart: true,
+      max_restarts: 10,
+      restart_delay: 5000, // back off 5s between restarts to avoid Discord rate limits
+      env: { NODE_ENV: 'production' }
+    }
+  ]
+}
+```
+
+```bash
+pm2 start ecosystem.config.cjs
+pm2 save                     # persist the process list
+pm2 startup                  # print the command to enable pm2 on boot — run what it prints
+pm2 logs veent-hris-bot      # tail logs
+```
+
+pm2 captures stdout/stderr and rotates logs if you add the `pm2-logrotate` module
+(`pm2 install pm2-logrotate`).
+
+### Option B — systemd (no pm2 dependency)
+
+Preferred if you want the bot supervised by the OS with no extra runtime. Create
+`/etc/systemd/system/veent-hris-bot.service`:
+
+```ini
+[Unit]
+Description=Veent HRIS Discord time-tracking bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=veent
+WorkingDirectory=/opt/veent-hris
+EnvironmentFile=/opt/veent-hris/.env
+ExecStart=/usr/bin/pnpm bot
+Restart=on-failure
+RestartSec=5
+# Discord rate-limits reconnect storms; cap restart attempts per window.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now veent-hris-bot   # start now + on boot
+sudo systemctl status veent-hris-bot
+journalctl -u veent-hris-bot -f              # tail logs (rotated by journald)
+```
+
+Notes:
+
+- `EnvironmentFile` reads the same `.env` (`DISCORD_BOT_TOKEN`, `HRIS_API_URL`, `TIMELOG_API_SECRET`).
+  Keep it `chmod 600` and owned by the service user — it holds the bot token and HMAC secret.
+- If `pnpm` is not on the system `PATH` for the service user, use the absolute path in `ExecStart`
+  (`which pnpm`), or `ExecStart=/usr/bin/node /path/to/tsx scripts/discord-bot.ts`.
+- After a code update, `sudo systemctl restart veent-hris-bot` (pm2: `pm2 restart veent-hris-bot`).
+
+### Health & recovery
+
+- On boot the bot re-registers `/in`, `/out`, `/break` in every guild — restarting is always safe and
+  idempotent, no manual re-registration needed.
+- A wrong or revoked `DISCORD_BOT_TOKEN` makes login fail immediately; the process exits and the
+  supervisor keeps retrying. Check the logs — do **not** raise `max_restarts` to mask a bad token.
+- The bot is stateless: every punch is derived from the member's last `TimeLog` by the HRIS, so a
+  restart never loses or double-counts punches.
+
+## Fallback when the bot is down
+
+Punching is a convenience layer over `TimeLog`; attendance is never blocked by the bot being offline.
+If the bot is unavailable (deploy in progress, token issue, Discord outage), record time via either:
+
+- **HRIS timesheet review UI** — HR can add or edit punches directly on the timesheet review page,
+  then aggregate and approve as usual. This is the normal correction path for a missed or wrong punch.
+- **Backfill after recovery** — once the bot is back, members can supply the forgotten time inline:
+  `/in 9:00`, `/out 5:30pm`. The optional `time` argument writes the punch at the intended PHT time
+  rather than "now", so a bot outage during the day can be reconciled without HR intervention.
+
+Because `/break` and the `IN`/`OUT` resolution are computed from the member's last punch on the HRIS
+side, these fallback edits and later slash commands stay consistent with each other automatically.
 
 ## Security model
 
