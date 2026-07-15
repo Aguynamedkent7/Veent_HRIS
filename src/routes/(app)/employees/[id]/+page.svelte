@@ -83,9 +83,9 @@
 							style="width: {(data.onboarding.doneCount / data.onboarding.total) * 100}%"
 						></div>
 					</div>
-					<ul class="grid gap-2 sm:grid-cols-2">
+					<ul class="columns-1 gap-x-8 sm:columns-2">
 						{#each data.onboarding.steps as step (step.key)}
-							<li class="flex items-start gap-2 text-sm">
+							<li class="mb-2.5 flex items-start gap-2 break-inside-avoid text-sm">
 								<span
 									class="mt-0.5 flex h-4 w-4 flex-none items-center justify-center rounded-full text-[10px] font-bold {step.done
 										? 'bg-green-500 text-white'
