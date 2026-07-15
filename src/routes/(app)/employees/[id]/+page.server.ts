@@ -76,8 +76,11 @@ function buildOnboarding(
 		},
 		{
 			key: 'schedule',
-			label: 'Work schedule assigned',
-			done: !!emp.workScheduleId,
+			// The built-in default (Mon–Fri 9–6) applies when none is explicitly
+			// assigned, so a schedule is always in effect and attendance always
+			// tracks — the default counts as satisfied here.
+			label: emp.workScheduleId ? 'Work schedule assigned' : 'Work schedule (default)',
+			done: true,
 			hint: 'Set “Work Schedule” below — this starts attendance tracking.'
 		},
 		{
