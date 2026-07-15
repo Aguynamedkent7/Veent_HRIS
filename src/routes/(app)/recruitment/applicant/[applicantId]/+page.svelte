@@ -84,7 +84,11 @@
 							</div>
 							<form method="POST" action="?/deleteInterview" use:enhance>
 								<input type="hidden" name="interviewId" value={iv.id} />
-								<button type="submit" class="text-xs text-red-600 hover:underline">Remove</button>
+								<button
+									type="submit"
+									class="rounded-md border border-destructive/30 px-2.5 py-1 text-xs font-medium text-destructive hover:bg-destructive/10"
+									>Remove</button
+								>
 							</form>
 						</div>
 						<p class="mt-1 text-sm text-muted-foreground">
@@ -119,7 +123,7 @@
 							<button
 								type="button"
 								onclick={() => (feedbackOpen = iv.id)}
-								class="mt-2 text-xs text-primary hover:underline"
+								class="mt-2 rounded-md border px-2.5 py-1 text-xs font-medium hover:bg-accent"
 								>{iv.feedback ? 'Edit feedback' : 'Add feedback'}</button
 							>
 						{/if}
@@ -139,6 +143,9 @@
 					name="scheduledAt"
 					type="datetime-local"
 					required
+					onkeydown={(e) => {
+						if (e.key !== 'Tab') e.preventDefault()
+					}}
 					class="h-9 rounded-md border border-input bg-background px-2 text-sm"
 				/>
 			</div>
@@ -239,6 +246,17 @@
 						</form>
 					</div>
 				{/if}
+
+				{#if !applicant.convertedEmployee}
+					<form method="POST" action="?/deleteOffer" use:enhance class="border-t pt-3">
+						<input type="hidden" name="offerId" value={offer.id} />
+						<button
+							type="submit"
+							class="rounded-md border border-destructive/30 px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10"
+							>Withdraw offer</button
+						>
+					</form>
+				{/if}
 			</div>
 
 			{#if offer.status === 'ACCEPTED' && !applicant.convertedEmployee}
@@ -293,7 +311,7 @@
 						min="0"
 						step="0.01"
 						required
-						class="h-9 rounded-md border border-input bg-background px-2 text-sm"
+						class="h-9 rounded-md border border-input bg-background px-2 text-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 					/>
 				</div>
 				<div class="grid gap-1">

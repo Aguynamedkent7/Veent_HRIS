@@ -198,11 +198,23 @@ export async function recordInterviewFeedback(
 	ctx: AuditContext
 ) {
 	const interview = await db.interview.findFirst({
-		where: { id: interviewId, applicant: { jobPosting: { organizationId } } }
+		where: { id: interviewId, applicant: { jobPosting: { organizationId } } },
+		include: { applicant: { select: { currentStage: true } } }
 	})
 	if (!interview) error(404, 'Interview not found')
 
 	const updated = await db.interview.update({ where: { id: interviewId }, data: { feedback } })
+
+	// Surface the feedback in the stage-history timeline (keeps the current stage).
+	await db.applicantStageHistory.create({
+		data: {
+			applicantId: interview.applicantId,
+			stage: interview.applicant.currentStage,
+			notes: 'Interview feedback recorded',
+			changedById: ctx.actorId
+		}
+	})
+
 	await writeAuditLog(ctx, {
 		action: 'UPDATE',
 		entityType: 'Interview',
@@ -218,11 +230,31 @@ export async function deleteInterview(
 	ctx: AuditContext
 ) {
 	const interview = await db.interview.findFirst({
-		where: { id: interviewId, applicant: { jobPosting: { organizationId } } }
+		where: { id: interviewId, applicant: { jobPosting: { organizationId } } },
+		include: { applicant: { select: { currentStage: true } } }
 	})
 	if (!interview) error(404, 'Interview not found')
 
 	await db.interview.delete({ where: { id: interviewId } })
+
+	// If that was the last interview and the applicant is still at the INTERVIEW
+	// stage (scheduling had auto-advanced them), send them back to SCREENING.
+	const remaining = await db.interview.count({ where: { applicantId: interview.applicantId } })
+	if (remaining === 0 && interview.applicant.currentStage === 'INTERVIEW') {
+		await db.applicant.update({
+			where: { id: interview.applicantId },
+			data: { currentStage: 'SCREENING' }
+		})
+		await db.applicantStageHistory.create({
+			data: {
+				applicantId: interview.applicantId,
+				stage: 'SCREENING',
+				notes: 'Interview removed',
+				changedById: ctx.actorId
+			}
+		})
+	}
+
 	await writeAuditLog(ctx, { action: 'DELETE', entityType: 'Interview', entityId: interviewId })
 }
 
@@ -318,6 +350,37 @@ export async function respondToOffer(
 		newValue: { status }
 	})
 	return updated
+}
+
+// Withdraw a job offer and roll the applicant back to their prior stage.
+export async function deleteOffer(offerId: string, organizationId: string, ctx: AuditContext) {
+	const offer = await db.offer.findFirst({
+		where: { id: offerId, applicant: { jobPosting: { organizationId } } },
+		include: { applicant: { select: { id: true, currentStage: true, convertedToEmployeeId: true } } }
+	})
+	if (!offer) error(404, 'Offer not found')
+	if (offer.applicant.convertedToEmployeeId)
+		error(409, 'Cannot withdraw — the applicant has already been converted to an employee.')
+
+	await db.offer.delete({ where: { id: offerId } })
+
+	// Roll back from OFFER/HIRED to the most recent meaningful stage.
+	if (offer.applicant.currentStage === 'OFFER' || offer.applicant.currentStage === 'HIRED') {
+		const hasInterviews =
+			(await db.interview.count({ where: { applicantId: offer.applicantId } })) > 0
+		const stage = hasInterviews ? 'INTERVIEW' : 'SCREENING'
+		await db.applicant.update({ where: { id: offer.applicantId }, data: { currentStage: stage } })
+		await db.applicantStageHistory.create({
+			data: {
+				applicantId: offer.applicantId,
+				stage,
+				notes: 'Offer withdrawn',
+				changedById: ctx.actorId
+			}
+		})
+	}
+
+	await writeAuditLog(ctx, { action: 'DELETE', entityType: 'Offer', entityId: offerId })
 }
 
 // Transition an applicant into an employee record (onboarding). When an accepted

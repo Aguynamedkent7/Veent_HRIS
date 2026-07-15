@@ -9,6 +9,7 @@ import {
 	deleteInterview,
 	issueOffer,
 	respondToOffer,
+	deleteOffer,
 	convertApplicantToEmployee
 } from '$lib/server/services/recruitment'
 import type { Actions, PageServerLoad } from './$types'
@@ -152,6 +153,19 @@ export const actions: Actions = {
 				accepted,
 				ctxOf(locals, getClientAddress())
 			)
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
+		}
+		return { success: true }
+	},
+
+	deleteOffer: async ({ request, locals, getClientAddress }) => {
+		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		const offerId = (await request.formData()).get('offerId') as string
+		if (!offerId) return fail(400, { error: 'Missing offer id.' })
+		try {
+			await deleteOffer(offerId, locals.user!.organizationId, ctxOf(locals, getClientAddress()))
 		} catch (e: unknown) {
 			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
 			throw e
