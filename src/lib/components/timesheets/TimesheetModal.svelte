@@ -33,11 +33,19 @@
 		ts: TimesheetLike | null
 		mode: 'edit' | 'review'
 		isManager: boolean
+		isHrAdmin?: boolean
 		myEmployeeId?: string | null
 		form?: { error?: string } | null
 	}
 
-	let { ts = $bindable(), mode, isManager, myEmployeeId = null, form = null }: Props = $props()
+	let {
+		ts = $bindable(),
+		mode,
+		isManager,
+		isHrAdmin = false,
+		myEmployeeId = null,
+		form = null
+	}: Props = $props()
 
 	type Row = {
 		date: string
@@ -59,6 +67,11 @@
 	const canDelete = $derived(mode === 'edit' && isManager && ts != null)
 	const canSubmit = $derived(
 		mode === 'edit' && ts != null && ts.employeeId === myEmployeeId && ts.status === 'DRAFT'
+	)
+	// HR can submit+approve an aggregated draft in place (not owner-restricted like canSubmit).
+	// Only DRAFT is eligible — SUBMITTED/REJECTED go through the normal review flow.
+	const canApproveInEdit = $derived(
+		mode === 'edit' && isHrAdmin && ts != null && ts.status === 'DRAFT'
 	)
 
 	const totalReg = $derived(entries.reduce((s, e) => s + (Number(e.reg) || 0), 0))
@@ -118,20 +131,32 @@
 		}
 	})
 
-	// Regular window is 08:00–17:00; time worked outside it is OT.
+	// Regular window is 08:00–17:00; time worked outside it is OT. The 12:00–13:00 lunch
+	// break is unpaid, so any of it worked is subtracted from regular hours (not OT).
 	const REG_START = 8 * 60
 	const REG_END = 17 * 60
+	const LUNCH_START = 12 * 60
+	const LUNCH_END = 13 * 60
+	const overlapMin = (a1: number, a2: number, b1: number, b2: number) =>
+		Math.max(0, Math.min(a2, b2) - Math.max(a1, b1))
 	function recalcRow(row: Row) {
 		if (!row.timeIn || !row.timeOut) return
 		const [ih, im] = row.timeIn.split(':').map(Number)
 		const [oh, om] = row.timeOut.split(':').map(Number)
-		let inM = ih * 60 + im
+		const inM = ih * 60 + im
 		let outM = oh * 60 + om
-		if (outM <= inM) outM += 1440 // overnight
+		if (outM <= inM) outM += 1440 // overnight → next day
 		const worked = outM - inM
-		const reg = Math.max(0, Math.min(outM, REG_END) - Math.max(inM, REG_START))
-		row.reg = +(reg / 60).toFixed(2)
-		row.ot = +((worked - reg) / 60).toFixed(2)
+		// Regular window and lunch on each day the shift touches (day 0 and, for an overnight
+		// shift, the next day) so next-day morning hours stay regular instead of counting as OT.
+		const regWindow =
+			overlapMin(inM, outM, REG_START, REG_END) +
+			overlapMin(inM, outM, REG_START + 1440, REG_END + 1440)
+		const lunch =
+			overlapMin(inM, outM, LUNCH_START, LUNCH_END) +
+			overlapMin(inM, outM, LUNCH_START + 1440, LUNCH_END + 1440)
+		row.reg = +((regWindow - lunch) / 60).toFixed(2)
+		row.ot = +((worked - regWindow) / 60).toFixed(2)
 	}
 	function addRow() {
 		const last = entries.at(-1)
@@ -313,7 +338,8 @@
 
 				<!-- Entries table -->
 				<p class="text-xs text-muted-foreground">
-					Regular hours are 8:00 AM–5:00 PM; time worked outside that window is overtime.
+					Reg and OT are computed from In/Out: regular hours are 8:00 AM–5:00 PM less the unpaid
+					12:00–1:00 PM lunch; time worked outside that window is overtime.
 				</p>
 				<div class="overflow-x-auto rounded-lg border">
 					<table class="w-full text-sm">
@@ -364,40 +390,21 @@
 												class={inputClass}
 											/></td
 										>
-										<td class="px-3 py-1.5 min-w-20"
-											><input
-												type="number"
-												step="0.25"
-												min="0"
-												max="24"
-												bind:value={row.reg}
-												data-r={i}
-												data-c={3}
-												onkeydown={(e) => cellKeydown(e, i, 3)}
-												class="{inputClass} text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-											/></td
-										>
-										<td class="px-3 py-1.5 min-w-20"
-											><input
-												type="number"
-												step="0.25"
-												min="0"
-												max="24"
-												bind:value={row.ot}
-												data-r={i}
-												data-c={4}
-												onkeydown={(e) => cellKeydown(e, i, 4)}
-												class="{inputClass} text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-											/></td
-										>
+										<!-- Reg/OT are derived from In/Out (read-only); edit the times to change them. -->
+										<td class="px-3 py-1.5 text-right font-mono tabular-nums">
+											{(Number(row.reg) || 0).toFixed(2)}
+										</td>
+										<td class="px-3 py-1.5 text-right font-mono tabular-nums text-amber-600">
+											{(Number(row.ot) || 0).toFixed(2)}
+										</td>
 										<td class="px-3 py-1.5 min-w-36"
 											><input
 												type="text"
 												bind:value={row.notes}
 												placeholder="—"
 												data-r={i}
-												data-c={5}
-												onkeydown={(e) => cellKeydown(e, i, 5)}
+												data-c={3}
+												onkeydown={(e) => cellKeydown(e, i, 3)}
 												class={inputClass}
 											/></td
 										>
@@ -551,6 +558,16 @@
 								disabled={busy}
 								class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
 								>Submit for review</button
+							>
+						</form>
+					{/if}
+					{#if canApproveInEdit}
+						<form method="POST" action="?/approve" use:enhance={closeOnSuccess}>
+							<input type="hidden" name="id" value={ts.id} />
+							<button
+								disabled={busy}
+								class="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+								>Approve</button
 							>
 						</form>
 					{/if}

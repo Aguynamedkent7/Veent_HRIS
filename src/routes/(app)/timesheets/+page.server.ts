@@ -5,8 +5,13 @@ import {
 	createTimesheet,
 	submitTimesheet,
 	updateTimesheetEntries,
-	deleteTimesheet
+	deleteTimesheet,
+	approveDraftByHr
 } from '$lib/server/services/timesheets'
+import {
+	previewTimeLogAggregation,
+	aggregateTimeLogsToTimesheet
+} from '$lib/server/services/timelog'
 import { db } from '$lib/server/db'
 import { z } from 'zod'
 import type { Actions, PageServerLoad, RequestEvent } from './$types'
@@ -14,6 +19,7 @@ import type { Actions, PageServerLoad, RequestEvent } from './$types'
 export const load: PageServerLoad = async ({ locals, url }) => {
 	const user = locals.user!
 	const isManager = ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
+	const isHrAdmin = ['HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
 
 	const status = url.searchParams.get('status') ?? undefined
 
@@ -32,7 +38,16 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			})
 		: Promise.resolve([])
 
-	return { timesheets, myEmployeeId: myEmployee?.id, isManager }
+	// HR gets the "Aggregate from time logs" panel, which needs an employee picker.
+	const employees = isHrAdmin
+		? await db.employee.findMany({
+				where: { user: { organizationId: user.organizationId }, employmentStatus: 'ACTIVE' },
+				select: { id: true, firstName: true, lastName: true, employeeNumber: true },
+				orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }]
+			})
+		: []
+
+	return { timesheets, myEmployeeId: myEmployee?.id, isManager, isHrAdmin, employees }
 }
 
 function ctxOf(event: RequestEvent) {
@@ -55,6 +70,27 @@ const createSchema = z.object({
 	periodStart: z.coerce.date(),
 	periodEnd: z.coerce.date()
 })
+
+const aggregateSchema = z.object({
+	employeeId: z.string().min(1),
+	weekOf: z
+		.string()
+		.regex(/^\d{4}-\d{2}-\d{2}$/, 'weekOf must be YYYY-MM-DD')
+		// Reject calendar-invalid dates (e.g. 2026-02-31) that Date would silently roll over.
+		.refine((v) => {
+			const [y, m, d] = v.split('-').map(Number)
+			const dt = new Date(Date.UTC(y, m - 1, d))
+			return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d
+		}, 'weekOf is not a valid calendar date')
+})
+
+// Scope the target employee to the caller's org; returns its id or null.
+async function resolveOrgEmployee(employeeId: string, organizationId: string) {
+	return db.employee.findFirst({
+		where: { id: employeeId, organizationId },
+		select: { id: true }
+	})
+}
 
 // Entries arrive with date (YYYY-MM-DD) + optional HH:MM times; the server rebuilds PHT
 // timestamps from date + time. hoursWorked is total worked; otHours is the OT portion.
@@ -86,6 +122,63 @@ function toEntryInputs(rows: z.infer<typeof entriesSchema>) {
 }
 
 export const actions: Actions = {
+	// HR only — non-destructive preview of a week's punch aggregation (no DB writes).
+	previewAggregate: async (event) => {
+		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
+		const org = event.locals.user!.organizationId
+		const parsed = aggregateSchema.safeParse(Object.fromEntries(await event.request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Pick an employee and a week.' })
+
+		if (!(await resolveOrgEmployee(parsed.data.employeeId, org)))
+			return fail(404, { error: 'Employee not found' })
+
+		const preview = await previewTimeLogAggregation(
+			parsed.data.employeeId,
+			new Date(parsed.data.weekOf)
+		)
+		return {
+			preview: { ...preview, employeeId: parsed.data.employeeId, weekOf: parsed.data.weekOf }
+		}
+	},
+
+	// HR only — commit the week's punches into a DRAFT timesheet (idempotent for drafts).
+	aggregate: async (event) => {
+		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
+		const org = event.locals.user!.organizationId
+		const parsed = aggregateSchema.safeParse(Object.fromEntries(await event.request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Pick an employee and a week.' })
+
+		if (!(await resolveOrgEmployee(parsed.data.employeeId, org)))
+			return fail(404, { error: 'Employee not found' })
+
+		try {
+			const result = await aggregateTimeLogsToTimesheet(
+				parsed.data.employeeId,
+				new Date(parsed.data.weekOf),
+				ctxOf(event)
+			)
+			const days = Object.keys(result.hoursByDay).length
+			return {
+				saved: `Aggregated ${result.totalHours.toFixed(2)} hrs across ${days} day${days === 1 ? '' : 's'} into a draft timesheet.`
+			}
+		} catch (e) {
+			return toFail(e)
+		}
+	},
+
+	// HR only — submit + approve an aggregated draft in place.
+	approve: async (event) => {
+		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
+		const id = (await event.request.formData()).get('id')
+		if (typeof id !== 'string' || !id) return fail(400, { error: 'Missing timesheet id' })
+		try {
+			await approveDraftByHr(id, event.locals.user!.organizationId, ctxOf(event))
+			return { saved: 'Timesheet approved.' }
+		} catch (e) {
+			return toFail(e)
+		}
+	},
+
 	create: async (event) => {
 		const user = event.locals.user!
 		const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
