@@ -33,10 +33,14 @@ test('employee submits a timesheet and the manager approves it', async ({ browse
 	// Timesheet approvals live on their own page under the Requests/Approvals dropdown.
 	await mgrPage.goto('/requests/timesheets')
 
-	// The direct report's submitted timesheet is waiting here.
-	const card = mgrPage.locator('div.rounded-md.border', { hasText: 'Employee, Elena' }).first()
+	// The direct report's submitted timesheet is waiting here. Clicking the card opens the
+	// read-only review modal; Approve lives inside it now.
+	const card = mgrPage.locator('[role="button"]', { hasText: 'Employee, Elena' }).first()
 	await expect(card).toBeVisible()
-	await card.getByRole('button', { name: 'Approve' }).click()
+	await card.click()
+	const dialog = mgrPage.getByRole('dialog')
+	await expect(dialog).toBeVisible()
+	await dialog.getByRole('button', { name: 'Approve' }).click()
 
 	// Once approved it leaves the pending queue.
 	await expect(mgrPage.getByText('No pending timesheets to review.')).toBeVisible()

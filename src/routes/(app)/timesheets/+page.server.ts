@@ -4,7 +4,6 @@ import {
 	listTimesheets,
 	createTimesheet,
 	submitTimesheet,
-	reviewTimesheet,
 	updateTimesheetEntries,
 	deleteTimesheet
 } from '$lib/server/services/timesheets'
@@ -158,32 +157,6 @@ export const actions: Actions = {
 		}
 	},
 
-	// Approve each selected (submitted) timesheet; non-submitted ones are skipped.
-	approveMany: async (event) => {
-		requireMinRole(event.locals.user!.role, 'MANAGER')
-		const ids = String((await event.request.formData()).get('ids') ?? '')
-			.split(',')
-			.map((s) => s.trim())
-			.filter(Boolean)
-		if (!ids.length) return fail(400, { error: 'No timesheets selected' })
-
-		const org = event.locals.user!.organizationId
-		const ctx = ctxOf(event)
-		let done = 0
-		let skipped = 0
-		for (const id of ids) {
-			try {
-				await reviewTimesheet(id, org, true, undefined, ctx)
-				done++
-			} catch {
-				skipped++
-			}
-		}
-		return {
-			saved: `Approved ${done} timesheet${done === 1 ? '' : 's'}${skipped ? `, ${skipped} skipped` : ''}.`
-		}
-	},
-
 	// Submit each selected (draft) timesheet the current user owns; others are skipped.
 	submitMany: async (event) => {
 		const user = event.locals.user!
@@ -237,28 +210,6 @@ export const actions: Actions = {
 		}
 		return {
 			saved: `Deleted ${deleted} timesheet${deleted === 1 ? '' : 's'}${skipped ? `, ${skipped} skipped` : ''}.`
-		}
-	},
-
-	review: async (event) => {
-		requireMinRole(event.locals.user!.role, 'MANAGER')
-		const data = await event.request.formData()
-		const id = data.get('id') as string
-		const approved = data.get('approved') === 'true'
-		const rejectionReason = (data.get('rejectionReason') as string) || undefined
-		if (!approved && !rejectionReason)
-			return fail(400, { error: 'A reason is required to reject.' })
-		try {
-			await reviewTimesheet(
-				id,
-				event.locals.user!.organizationId,
-				approved,
-				rejectionReason,
-				ctxOf(event)
-			)
-			return { saved: approved ? 'Timesheet approved.' : 'Timesheet rejected.' }
-		} catch (e) {
-			return toFail(e)
 		}
 	}
 }

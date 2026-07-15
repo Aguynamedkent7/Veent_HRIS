@@ -2,7 +2,7 @@ import { fail, isHttpError, redirect } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
 import { requireMinRole } from '$lib/server/rbac'
 import { reviewTimesheet } from '$lib/server/services/timesheets'
-import type { Actions, PageServerLoad } from './$types'
+import type { Actions, PageServerLoad, RequestEvent } from './$types'
 
 // Timesheet approvals — MANAGER+ only (Payroll Officer/Finance don't approve timesheets).
 export const load: PageServerLoad = async ({ locals }) => {
@@ -29,28 +29,49 @@ export const load: PageServerLoad = async ({ locals }) => {
 				...(!isAdmin ? { reportsToId: myEmployee!.id } : {})
 			}
 		},
-		include: { employee: { select: { id: true, firstName: true, lastName: true } } },
+		// Entries power the read-only review modal (mode="review").
+		include: {
+			employee: { select: { id: true, firstName: true, lastName: true } },
+			entries: { orderBy: { date: 'asc' } }
+		},
 		orderBy: { submittedAt: 'asc' }
 	})
 
 	return { pendingTimesheets }
 }
 
+function ctxOf(event: RequestEvent) {
+	const u = event.locals.user!
+	return {
+		organizationId: u.organizationId,
+		actorId: u.id,
+		actorRole: u.role,
+		ipAddress: event.getClientAddress()
+	}
+}
+
 export const actions: Actions = {
-	approveTimesheet: async ({ request, locals, getClientAddress }) => {
-		const user = locals.user!
+	// Single approve/reject from the review modal (matches the modal's ?/review contract).
+	review: async (event) => {
+		const user = event.locals.user!
 		requireMinRole(user.role, 'MANAGER')
 
-		const id = (await request.formData()).get('id') as string
+		const data = await event.request.formData()
+		const id = data.get('id') as string
+		const approved = data.get('approved') === 'true'
+		const rejectionReason = ((data.get('rejectionReason') as string) ?? '').trim()
 		if (!id) return fail(400, { error: 'Missing timesheet id' })
+		if (!approved && !rejectionReason)
+			return fail(400, { error: 'A reason is required to reject.' })
 
 		try {
-			await reviewTimesheet(id, user.organizationId, true, undefined, {
-				organizationId: user.organizationId,
-				actorId: user.id,
-				actorRole: user.role,
-				ipAddress: getClientAddress()
-			})
+			await reviewTimesheet(
+				id,
+				user.organizationId,
+				approved,
+				approved ? undefined : rejectionReason,
+				ctxOf(event)
+			)
 		} catch (e: unknown) {
 			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
 			if (e instanceof Error) return fail(400, { error: e.message })
@@ -58,27 +79,30 @@ export const actions: Actions = {
 		}
 	},
 
-	rejectTimesheet: async ({ request, locals, getClientAddress }) => {
-		const user = locals.user!
+	// Bulk approve each selected (submitted) timesheet; non-submitted ones are skipped.
+	approveMany: async (event) => {
+		const user = event.locals.user!
 		requireMinRole(user.role, 'MANAGER')
 
-		const data = await request.formData()
-		const id = data.get('id') as string
-		const rejectionReason = ((data.get('rejectionReason') as string) ?? '').trim()
-		if (!id) return fail(400, { error: 'Missing timesheet id' })
-		if (!rejectionReason) return fail(400, { error: 'A reason is required to reject.' })
+		const ids = String((await event.request.formData()).get('ids') ?? '')
+			.split(',')
+			.map((s) => s.trim())
+			.filter(Boolean)
+		if (!ids.length) return fail(400, { error: 'No timesheets selected' })
 
-		try {
-			await reviewTimesheet(id, user.organizationId, false, rejectionReason, {
-				organizationId: user.organizationId,
-				actorId: user.id,
-				actorRole: user.role,
-				ipAddress: getClientAddress()
-			})
-		} catch (e: unknown) {
-			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
-			if (e instanceof Error) return fail(400, { error: e.message })
-			throw e
+		const ctx = ctxOf(event)
+		let done = 0
+		let skipped = 0
+		for (const id of ids) {
+			try {
+				await reviewTimesheet(id, user.organizationId, true, undefined, ctx)
+				done++
+			} catch {
+				skipped++
+			}
+		}
+		return {
+			saved: `Approved ${done} timesheet${done === 1 ? '' : 's'}${skipped ? `, ${skipped} skipped` : ''}.`
 		}
 	}
 }
