@@ -21,7 +21,8 @@
 		overtime: 'Overtime Report',
 		'loan-summary': 'Loan Summary',
 		'government-remittance': 'Government Remittance',
-		'bir-withholding': 'BIR Withholding Report'
+		'bir-withholding': 'BIR Withholding Report',
+		separation: 'Separation Report'
 	}
 
 	const title = $derived(REPORT_LABELS[data.reportType] ?? 'Report')

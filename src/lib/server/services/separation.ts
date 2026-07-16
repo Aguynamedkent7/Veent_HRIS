@@ -272,17 +272,19 @@ export async function generateSeparationReport(
 		}
 	})
 
+	// TitleCase keys: the report table renders row[column] and the CSV export uses
+	// the keys as headers, matching the other report generators.
 	return records.map((r) => {
 		const cleared = r.clearanceItems.filter((c) => c.status === 'CLEARED').length
 		return {
-			employeeNumber: r.employee.employeeNumber,
-			employee: `${r.employee.lastName}, ${r.employee.firstName}`,
-			department: r.employee.department?.name ?? '',
-			type: r.type,
-			effectiveDate: r.effectiveDate.toISOString().slice(0, 10),
-			status: r.status,
-			clearance: `${cleared}/${r.clearanceItems.length}`,
-			finalPay: r.finalPayAmount ? Number(r.finalPayAmount).toFixed(2) : ''
+			EmployeeNumber: r.employee.employeeNumber,
+			Employee: `${r.employee.lastName}, ${r.employee.firstName}`,
+			Department: r.employee.department?.name ?? '',
+			Type: r.type,
+			EffectiveDate: r.effectiveDate.toISOString().slice(0, 10),
+			Status: r.status,
+			Clearance: `${cleared}/${r.clearanceItems.length}`,
+			FinalPay: r.finalPayAmount ? Number(r.finalPayAmount).toFixed(2) : ''
 		}
 	})
 }

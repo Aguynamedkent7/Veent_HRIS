@@ -65,6 +65,12 @@
 			label: 'BIR Withholding',
 			desc: 'Tax withheld per employee',
 			payroll: true
+		},
+		{
+			href: '/reports/separation',
+			label: 'Separation',
+			desc: 'Offboarding cases, clearance & final pay',
+			payroll: false
 		}
 	]
 	const reportCards = $derived(
