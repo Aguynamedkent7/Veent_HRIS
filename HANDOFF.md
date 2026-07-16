@@ -9,7 +9,7 @@
   seeds if empty, and runs `pnpm dev` + `pnpm bot`. The dev container binds to localhost only and
   must never be reused outside local development.
 - **The DB container uses `--network host`** (Postgres binds the host directly via `-c port=5433`),
-  *not* `-p` bridge publishing — so it never depends on the `docker0` bridge (which is kept
+  _not_ `-p` bridge publishing — so it never depends on the `docker0` bridge (which is kept
   down/IP-less here to stop it shadowing `wlan0`). If you have an old bridge-mode container, recreate
   it once: `docker rm -f veent-db-5433 && ./start.sh`. `start.sh` now probes host→DB reachability and
   fails loudly (instead of hanging on Prisma P1001) if the path is broken.
