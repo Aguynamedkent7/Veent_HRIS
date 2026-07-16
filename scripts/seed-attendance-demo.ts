@@ -32,17 +32,15 @@ const CYCLE: AttendanceStatus[] = [
 	'PRESENT'
 ]
 
-function dayKey(d: Date): string {
-	return d.toISOString().slice(0, 10)
-}
-
-// Last `count` weekdays (Mon–Fri) ending today (inclusive), oldest first.
+// Last `count` weekdays (Mon–Fri) ending today (inclusive), oldest first. Days are
+// reckoned in Asia/Manila (+08:00) — matching fieldsFor's wall-clock interpretation —
+// by shifting the clock +8h and reading it with UTC getters.
 function recentWeekdays(count: number): string[] {
 	const keys: string[] = []
-	const d = new Date()
+	const d = new Date(Date.now() + 8 * 60 * 60 * 1000)
 	while (keys.length < count) {
 		const dow = d.getUTCDay()
-		if (dow !== 0 && dow !== 6) keys.push(dayKey(d))
+		if (dow !== 0 && dow !== 6) keys.push(d.toISOString().slice(0, 10))
 		d.setUTCDate(d.getUTCDate() - 1)
 	}
 	return keys.reverse()

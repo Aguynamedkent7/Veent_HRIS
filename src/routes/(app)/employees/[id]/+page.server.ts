@@ -51,7 +51,10 @@ function buildOnboarding(
 	documents: { category: string }[]
 ) {
 	const hasContract = documents.some((d) => d.category === 'CONTRACT')
-	const hasDisbursement = !!((emp.bankName && emp.bankAccountNumber) || emp.gcashNumber)
+	const hasDisbursement = !!(
+		(emp.bankName && emp.bankAccountName && emp.bankAccountNumber) ||
+		emp.gcashNumber
+	)
 	const govComplete = !!(
 		emp.sssNumber &&
 		emp.philhealthNumber &&

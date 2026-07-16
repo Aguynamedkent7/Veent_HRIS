@@ -43,8 +43,20 @@ else
     -c port="${DB_PORT}"
 fi
 
-echo "==> Waiting for Postgres to accept connections..."
+echo "==> Waiting for Postgres to accept connections (up to 60s)..."
+# Bounded: a legacy bridge container runs Postgres on internal :5432, so pg_isready
+# against ${DB_PORT} would never succeed and this loop would otherwise hang forever.
+WAITED=0
 until docker exec "${CONTAINER}" pg_isready -U "${DB_USER}" -d "${DB_NAME}" -p "${DB_PORT}" >/dev/null 2>&1; do
+  WAITED=$((WAITED + 1))
+  if [ "${WAITED}" -ge 60 ]; then
+    echo "    ERROR: Postgres did not become ready on port ${DB_PORT} within 60s." >&2
+    echo "           If ${CONTAINER} is a legacy bridge container (published :${DB_PORT}->5432)," >&2
+    echo "           Postgres listens on :5432 inside it and will never answer on :${DB_PORT}." >&2
+    echo "           Fix: recreate on host networking — 'docker rm -f ${CONTAINER} && ./start.sh'" >&2
+    echo "           Otherwise check the container logs: docker logs ${CONTAINER}" >&2
+    exit 1
+  fi
   sleep 1
 done
 

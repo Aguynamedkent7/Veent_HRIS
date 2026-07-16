@@ -4,7 +4,8 @@ import {
 	getSeparation,
 	computeFinalPay,
 	setClearanceItem,
-	finalizeSeparation
+	finalizeSeparation,
+	type FinalPayResult
 } from '$lib/server/services/separation'
 import type { Actions, PageServerLoad } from './$types'
 
@@ -13,8 +14,12 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	requireMinRole(user.role, 'HR_ADMIN')
 
 	const separation = await getSeparation(params.id, user.organizationId)
-	// Live preview of what final pay would be if finalized now.
-	const finalPay = await computeFinalPay(params.id, user.organizationId)
+	// Finalized cases show the snapshot persisted at finalization; open cases get a
+	// live preview of what final pay would be if finalized now.
+	const finalPay =
+		separation.status === 'FINALIZED' && separation.finalPayBreakdown
+			? (separation.finalPayBreakdown as unknown as FinalPayResult)
+			: await computeFinalPay(params.id, user.organizationId)
 
 	return { separation, finalPay }
 }

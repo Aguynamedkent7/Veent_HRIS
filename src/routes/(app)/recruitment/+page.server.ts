@@ -79,14 +79,20 @@ export const actions: Actions = {
 			ipAddress: getClientAddress()
 		}
 		// Publish each; skip any that aren't drafts (already open/closed) rather than failing the batch.
+		let published = 0
 		for (const id of ids) {
 			try {
 				await publishJobPosting(id, user.organizationId, ctx)
+				published++
 			} catch {
 				// ignore individual failures (e.g. not a draft) so the rest still publish
 			}
 		}
-		return { published: ids.length }
+		return {
+			success: true,
+			published,
+			message: `${published} of ${ids.length} selected posting(s) published.`
+		}
 	},
 
 	advance: async ({ request, locals, getClientAddress }) => {

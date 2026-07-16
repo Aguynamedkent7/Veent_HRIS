@@ -202,9 +202,11 @@ export async function finalizeSeparation(id: string, organizationId: string, ctx
 
 	const finalPay = await computeFinalPay(id, organizationId)
 
-	await db.$transaction([
-		db.separationRecord.update({
-			where: { id },
+	await db.$transaction(async (tx) => {
+		// Status-guarded update: the check above is only preliminary — a concurrent
+		// finalize between it and here would otherwise double-snapshot.
+		const updated = await tx.separationRecord.updateMany({
+			where: { id, status: { not: 'FINALIZED' } },
 			data: {
 				status: 'FINALIZED',
 				finalPayAmount: new Prisma.Decimal(finalPay.total),
@@ -212,16 +214,29 @@ export async function finalizeSeparation(id: string, organizationId: string, ctx
 				finalizedAt: new Date(),
 				finalizedById: ctx.actorId
 			}
-		}),
-		db.employee.update({
+		})
+		if (updated.count === 0) error(409, 'Separation is already finalized')
+
+		// The outstanding balances were offset against final pay above — settle them
+		// so they don't linger as ACTIVE receivables on an offboarded employee.
+		await tx.loan.updateMany({
+			where: { employeeId: record.employee.id, status: 'ACTIVE' },
+			data: { balance: 0, status: 'PAID' }
+		})
+		await tx.cashAdvance.updateMany({
+			where: { employeeId: record.employee.id, status: 'ACTIVE' },
+			data: { balance: 0, status: 'PAID' }
+		})
+
+		await tx.employee.update({
 			where: { id: record.employee.id },
 			data: { employmentStatus: 'OFFBOARDED', endDate: record.effectiveDate }
-		}),
-		db.user.updateMany({
+		})
+		await tx.user.updateMany({
 			where: { employee: { id: record.employee.id } },
 			data: { isActive: false }
 		})
-	])
+	})
 
 	await writeAuditLog(ctx, {
 		action: 'UPDATE',
