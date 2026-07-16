@@ -116,6 +116,7 @@
 									<span
 										class="inline-flex h-6 min-w-6 items-center justify-center rounded px-1 text-xs font-bold {badge.class}"
 										title={badge.label}
+										aria-label={badge.label}
 									>
 										{badge.code}
 									</span>
