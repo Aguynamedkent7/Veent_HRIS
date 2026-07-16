@@ -223,27 +223,21 @@ export async function deleteTimesheet(id: string, organizationId: string, ctx: A
 }
 
 /**
- * HR-in-place submit + approve for an aggregated draft. HR builds a draft from time logs
- * on /timesheets (they don't own it, so the owner-only `submitTimesheet` can't be used);
- * this collapses submit + approve into one APPROVED transition. Only DRAFT timesheets are
- * eligible here — SUBMITTED/REJECTED go through the normal review flow. Managers are scoped
- * to their direct reports. The update and its audit log share one transaction.
+ * HR submits an aggregated draft on the employee's behalf. HR builds a draft from time
+ * logs on /timesheets (they don't own it, so the owner-only `submitTimesheet` can't be
+ * used); this moves it to SUBMITTED so it lands in the normal review queue — /timesheets
+ * never approves in place. Only DRAFT timesheets are eligible. Managers are scoped to
+ * their direct reports. The update and its audit log share one transaction.
  */
-export async function approveDraftByHr(id: string, organizationId: string, ctx: AuditContext) {
+export async function submitDraftByHr(id: string, organizationId: string, ctx: AuditContext) {
 	const ts = await getTimesheet(id, organizationId)
 	await assertManagesEmployee(ctx, ts.employee.reportsToId)
-	if (ts.status !== 'DRAFT') error(400, 'Only draft timesheets can be approved here')
+	if (ts.status !== 'DRAFT') error(400, 'Only draft timesheets can be submitted here')
 
 	return db.$transaction(async (tx) => {
 		const updated = await tx.timesheet.update({
 			where: { id },
-			data: {
-				status: 'APPROVED',
-				submittedAt: ts.submittedAt ?? new Date(),
-				reviewedAt: new Date(),
-				reviewedById: ctx.actorId,
-				rejectionReason: null
-			}
+			data: { status: 'SUBMITTED', submittedAt: new Date() }
 		})
 
 		await writeAuditLog(
@@ -253,7 +247,7 @@ export async function approveDraftByHr(id: string, organizationId: string, ctx: 
 				entityType: 'Timesheet',
 				entityId: id,
 				oldValue: { status: ts.status },
-				newValue: { status: 'APPROVED', source: 'hr_in_place_approve' }
+				newValue: { status: 'SUBMITTED', source: 'hr_submit_on_behalf' }
 			},
 			tx
 		)

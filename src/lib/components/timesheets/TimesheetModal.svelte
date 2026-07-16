@@ -76,10 +76,10 @@
 	const canSync = $derived(
 		mode === 'edit' && ts != null && ts.status === 'DRAFT' && (isOwner || isManager)
 	)
-	// HR can submit+approve an aggregated draft in place (not owner-restricted like canSubmit).
-	// Only DRAFT is eligible — SUBMITTED/REJECTED go through the normal review flow.
-	const canApproveInEdit = $derived(
-		mode === 'edit' && isHrAdmin && ts != null && ts.status === 'DRAFT'
+	// HR can submit someone else's aggregated draft on their behalf (canSubmit is
+	// owner-only). It lands in the review queue — the edit surface never approves.
+	const canSubmitForEmployee = $derived(
+		mode === 'edit' && isHrAdmin && !isOwner && ts != null && ts.status === 'DRAFT'
 	)
 
 	const totalReg = $derived(entries.reduce((s, e) => s + (Number(e.reg) || 0), 0))
@@ -579,13 +579,13 @@
 							>
 						</form>
 					{/if}
-					{#if canApproveInEdit}
-						<form method="POST" action="?/approve" use:enhance={closeOnSuccess}>
+					{#if canSubmitForEmployee}
+						<form method="POST" action="?/submitDraft" use:enhance={closeOnSuccess}>
 							<input type="hidden" name="id" value={ts.id} />
 							<button
 								disabled={busy}
-								class="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
-								>Approve</button
+								class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+								>Submit for review</button
 							>
 						</form>
 					{/if}
