@@ -462,6 +462,7 @@ model LeaveType {
   leaveBalances LeaveBalance[]
   leaveRequests LeaveRequest[]
 
+  @@unique([organizationId, name])
   @@map("leave_types")
 }
 

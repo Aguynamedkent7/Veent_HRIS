@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client'
 import { db } from '$lib/server/db'
 import { error } from '@sveltejs/kit'
 import { writeAuditLog } from '$lib/server/audit'
@@ -263,14 +264,29 @@ export async function createLeaveType(
 	const data = normalizeLeaveType(input)
 	const exists = await db.leaveType.findFirst({ where: { organizationId, name: data.name } })
 	if (exists) error(409, `Leave type "${data.name}" already exists`)
-	const created = await db.leaveType.create({ data: { organizationId, ...data } })
-	await writeAuditLog(ctx, {
-		action: 'CREATE',
-		entityType: 'LeaveType',
-		entityId: created.id,
-		newValue: { name: data.name }
-	})
-	return created
+	try {
+		// Mutation + audit share a transaction so a failed audit write rolls back the leave type.
+		return await db.$transaction(async (tx) => {
+			const created = await tx.leaveType.create({ data: { organizationId, ...data } })
+			await writeAuditLog(
+				ctx,
+				{
+					action: 'CREATE',
+					entityType: 'LeaveType',
+					entityId: created.id,
+					newValue: { name: data.name }
+				},
+				tx
+			)
+			return created
+		})
+	} catch (e) {
+		// A concurrent insert can slip past the findFirst check; the DB unique constraint is the
+		// backstop, surfaced as the same 409 rather than an unhandled 500.
+		if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002')
+			error(409, `Leave type "${data.name}" already exists`)
+		throw e
+	}
 }
 
 export async function updateLeaveType(
@@ -289,14 +305,21 @@ export async function updateLeaveType(
 		where: { organizationId, name: data.name, id: { not: id } }
 	})
 	if (dupe) error(409, `Leave type "${data.name}" already exists`)
-	const updated = await db.leaveType.update({ where: { id }, data })
-	await writeAuditLog(ctx, {
-		action: 'UPDATE',
-		entityType: 'LeaveType',
-		entityId: id,
-		newValue: { name: data.name }
-	})
-	return updated
+	try {
+		return await db.$transaction(async (tx) => {
+			const updated = await tx.leaveType.update({ where: { id }, data })
+			await writeAuditLog(
+				ctx,
+				{ action: 'UPDATE', entityType: 'LeaveType', entityId: id, newValue: { name: data.name } },
+				tx
+			)
+			return updated
+		})
+	} catch (e) {
+		if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002')
+			error(409, `Leave type "${data.name}" already exists`)
+		throw e
+	}
 }
 
 /** Soft delete: leave types are referenced by balances/requests, so we toggle active, not delete. */
@@ -306,12 +329,18 @@ export async function toggleLeaveType(organizationId: string, id: string, ctx: A
 		select: { id: true, isActive: true }
 	})
 	if (!lt) error(404, 'Leave type not found')
-	const updated = await db.leaveType.update({ where: { id }, data: { isActive: !lt.isActive } })
-	await writeAuditLog(ctx, {
-		action: 'UPDATE',
-		entityType: 'LeaveType',
-		entityId: id,
-		newValue: { isActive: updated.isActive }
+	return db.$transaction(async (tx) => {
+		const updated = await tx.leaveType.update({ where: { id }, data: { isActive: !lt.isActive } })
+		await writeAuditLog(
+			ctx,
+			{
+				action: 'UPDATE',
+				entityType: 'LeaveType',
+				entityId: id,
+				newValue: { isActive: updated.isActive }
+			},
+			tx
+		)
+		return updated
 	})
-	return updated
 }
