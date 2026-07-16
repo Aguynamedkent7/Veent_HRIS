@@ -205,6 +205,7 @@
 	{#if showCreate}
 		<form method="POST" action="?/create" use:enhance class="rounded-lg border p-4 space-y-3">
 			<h2 class="font-semibold">Create Timesheet</h2>
+			<!-- svelte-ignore a11y_label_has_associated_control -->
 			<div class="flex items-end gap-4">
 				<div>
 					<label class="text-sm font-medium">Period Start</label>
