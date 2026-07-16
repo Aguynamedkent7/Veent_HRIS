@@ -119,6 +119,10 @@ export const actions: Actions = {
 			return fail(400, { error: 'Invalid multiplier values (each must be between 0 and 10).' })
 		}
 
+		const existing = await db.payRateRule.findUnique({
+			where: { organizationId: user.organizationId }
+		})
+
 		const rule = await db.payRateRule.upsert({
 			where: { organizationId: user.organizationId },
 			create: { organizationId: user.organizationId, ...parsed.data },
@@ -136,6 +140,16 @@ export const actions: Actions = {
 				action: 'UPDATE',
 				entityType: 'PayRateRule',
 				entityId: rule.id,
+				oldValue: existing
+					? {
+							overtime: Number(existing.overtime),
+							overtimePremium: Number(existing.overtimePremium),
+							nightDiff: Number(existing.nightDiff),
+							restDay: Number(existing.restDay),
+							regularHoliday: Number(existing.regularHoliday),
+							specialHoliday: Number(existing.specialHoliday)
+						}
+					: undefined,
 				newValue: parsed.data
 			}
 		)
