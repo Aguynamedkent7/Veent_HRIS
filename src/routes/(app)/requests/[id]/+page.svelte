@@ -1,15 +1,24 @@
 <script lang="ts">
 	import { page } from '$app/stores'
+	import { afterNavigate } from '$app/navigation'
 	import { formatShortDate, formatDate } from '$lib/utils/format'
 	import type { PageData } from './$types'
 
 	let { data }: { data: PageData } = $props()
 	const req = $derived(data.request)
 
-	// Return to wherever the user came from: the approvals queue links here with
-	// ?from=approvals; everything else (My Requests) goes back to /requests.
+	// Return to wherever the user came from. Prefer the page actually navigated from — so a row in
+	// /requests, /leave or the approvals queue each go back to their own list — captured from the
+	// client-side navigation. Fall back to the ?from=approvals deep-link hint, then /requests, for
+	// hard loads / direct entry where there's no in-app history.
+	let cameFrom = $state<string | null>(null)
+	afterNavigate((nav) => {
+		const from = nav.from?.url
+		if (from && from.pathname !== $page.url.pathname) cameFrom = from.pathname + from.search
+	})
 	const backHref = $derived(
-		$page.url.searchParams.get('from') === 'approvals' ? '/requests/approvals' : '/requests'
+		cameFrom ??
+			($page.url.searchParams.get('from') === 'approvals' ? '/requests/approvals' : '/requests')
 	)
 
 	const typeLabels: Record<string, string> = {
@@ -61,7 +70,7 @@
 </svelte:head>
 
 <div class="mx-auto max-w-2xl space-y-6">
-	<a href={backHref} class="text-sm text-muted-foreground hover:underline">← Back to requests</a>
+	<a href={backHref} class="text-sm text-muted-foreground hover:underline">← Back</a>
 
 	<div class="flex items-center justify-between">
 		<h1 class="text-2xl font-bold tracking-tight">{typeLabels[req.type] ?? req.type}</h1>
@@ -74,6 +83,10 @@
 		<dl class="grid grid-cols-3 gap-y-2 text-sm">
 			<dt class="text-muted-foreground">Employee</dt>
 			<dd class="col-span-2">{req.employee.firstName} {req.employee.lastName}</dd>
+			{#if data.leaveTypeName}
+				<dt class="text-muted-foreground">Leave type</dt>
+				<dd class="col-span-2">{data.leaveTypeName}</dd>
+			{/if}
 			{#if req.dateFrom}
 				<dt class="text-muted-foreground">Dates</dt>
 				<dd class="col-span-2">

@@ -156,3 +156,34 @@ export async function cancelRequest(id: string, employeeId: string, ctx: AuditCo
 	})
 	return updated
 }
+
+// Hard-delete a request; its approval steps and documents cascade (schema onDelete: Cascade).
+// APPROVED requests are never deletable — final approval already moved leave balances and there is
+// no reversal path here, so dropping the row would desync the balance. Non-privileged callers may
+// delete only their own requests; HR_ADMIN / SUPER_ADMIN may delete any request in their org.
+export async function deleteRequest(id: string, organizationId: string, ctx: AuditContext) {
+	const req = await db.request.findFirst({
+		where: { id, employee: { user: { organizationId } } },
+		select: { id: true, status: true, type: true, employeeId: true }
+	})
+	if (!req) error(404, 'Request not found')
+
+	const isPrivileged = ctx.actorRole === 'HR_ADMIN' || ctx.actorRole === 'SUPER_ADMIN'
+	if (!isPrivileged) {
+		const me = await db.employee.findUnique({
+			where: { userId: ctx.actorId },
+			select: { id: true }
+		})
+		if (!me || me.id !== req.employeeId) error(403, 'You can only delete your own requests')
+	}
+	if (req.status === 'APPROVED') error(409, 'Approved requests cannot be deleted')
+
+	await db.request.delete({ where: { id } })
+	await writeAuditLog(ctx, {
+		action: 'DELETE',
+		entityType: 'Request',
+		entityId: id,
+		oldValue: { type: req.type, status: req.status }
+	})
+	return { deleted: true }
+}

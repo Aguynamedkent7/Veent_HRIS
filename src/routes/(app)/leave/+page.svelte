@@ -1,13 +1,41 @@
 <script lang="ts">
+	import { goto } from '$app/navigation'
+	import type { SubmitFunction } from '@sveltejs/kit'
+	import { slide } from 'svelte/transition'
 	import { formatShortDate } from '$lib/utils/format'
-	import type { PageData } from './$types'
+	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
+	import type { PageData, ActionData } from './$types'
 
-	let { data }: { data: PageData } = $props()
+	let { data, form }: { data: PageData; form: ActionData } = $props()
 
 	// Leave type name lives in the unified Request payload (leaveTypeId).
 	const leaveName = (payload: unknown) => {
 		const id = (payload as { leaveTypeId?: string })?.leaveTypeId
 		return data.leaveTypes.find((lt) => lt.id === id)?.name ?? '—'
+	}
+
+	// ─── Bulk selection ───────────────────────────────────────────────────────────
+	let selected = $state<string[]>([])
+	let busy = $state(false)
+	const ids = $derived(data.requests.map((r) => r.id))
+	const allSelected = $derived(ids.length > 0 && ids.every((id) => selected.includes(id)))
+	// Checkbox column + Leave Type/Dates/Stage/Status/Filed, plus Employee for managers.
+	const cols = $derived(data.isManager ? 7 : 6)
+
+	function toggle(id: string) {
+		selected = selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]
+	}
+	function toggleAll(on: boolean) {
+		selected = on ? ids : []
+	}
+	// Drop the selection after a successful bulk delete.
+	const clearOnSuccess: SubmitFunction = () => {
+		busy = true
+		return async ({ result, update }) => {
+			await update()
+			busy = false
+			if (result.type === 'success') selected = []
+		}
 	}
 
 	function statusClass(s: string) {
@@ -47,11 +75,55 @@
 		</div>
 	{/if}
 
-	<!-- Requests table (read-only) -->
+	{#if form?.saved}
+		<div
+			class="rounded-md border border-green-500/20 bg-green-500/10 px-4 py-2 text-sm text-green-600"
+		>
+			{form.saved}
+		</div>
+	{/if}
+
+	<!-- Bulk actions; appear once rows are selected -->
+	{#if selected.length}
+		<div
+			class="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-2"
+			transition:slide={{ duration: 120 }}
+		>
+			<span class="text-sm font-medium">{selected.length} selected</span>
+			<div class="flex items-center gap-2">
+				<button
+					onclick={() => (selected = [])}
+					class="mr-1 text-sm text-muted-foreground hover:underline">Clear</button
+				>
+				<ConfirmButton
+					action="?/deleteMany"
+					title="Delete selected leave requests?"
+					message="Selected leave requests will be permanently deleted. Approved requests, and any you're not allowed to remove, are skipped."
+					triggerLabel="Delete selected"
+					triggerClass="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+					disabled={busy}
+					submit={clearOnSuccess}
+				>
+					<input type="hidden" name="ids" value={selected.join(',')} />
+				</ConfirmButton>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Requests table -->
 	<div class="overflow-x-auto rounded-lg border">
 		<table class="w-full text-sm">
 			<thead class="border-b bg-muted/50">
 				<tr>
+					<th class="w-[1%] px-4 py-3">
+						<input
+							type="checkbox"
+							checked={allSelected}
+							onchange={(e) => toggleAll(e.currentTarget.checked)}
+							aria-label="Select all"
+							class="align-middle"
+						/>
+					</th>
 					{#if data.isManager}<th class="px-4 py-3 text-left font-medium text-muted-foreground"
 							>Employee</th
 						>{/if}
@@ -64,13 +136,36 @@
 			</thead>
 			<tbody class="divide-y">
 				{#each data.requests as req (req.id)}
-					<tr class="hover:bg-muted/30">
+					<tr
+						class={`cursor-pointer hover:bg-muted/30 focus:bg-muted/40 focus:outline-none ${selected.includes(req.id) ? 'bg-primary/5' : ''}`}
+						role="link"
+						tabindex="0"
+						onclick={(e) => {
+							// Don't navigate when the click is on the row's selection checkbox.
+							if ((e.target as HTMLElement).closest('input, label')) return
+							goto(`/requests/${req.id}`)
+						}}
+						onkeydown={(e) => {
+							if ((e.target as HTMLElement).closest('input, label')) return
+							if (e.key === 'Enter' || e.key === ' ') {
+								e.preventDefault()
+								goto(`/requests/${req.id}`)
+							}
+						}}
+					>
+						<td class="px-4 py-3" onclick={(e) => e.stopPropagation()}>
+							<input
+								type="checkbox"
+								checked={selected.includes(req.id)}
+								onchange={() => toggle(req.id)}
+								aria-label="Select leave request"
+								class="align-middle"
+							/>
+						</td>
 						{#if data.isManager}
 							<td class="px-4 py-3">{req.employee.lastName}, {req.employee.firstName}</td>
 						{/if}
-						<td class="px-4 py-3 font-medium">
-							<a href="/requests/{req.id}" class="hover:underline">{leaveName(req.payload)}</a>
-						</td>
+						<td class="px-4 py-3 font-medium">{leaveName(req.payload)}</td>
 						<td class="px-4 py-3 text-muted-foreground">
 							{#if req.dateFrom}
 								{formatShortDate(req.dateFrom)}{#if req.dateTo && req.dateTo !== req.dateFrom}
@@ -93,7 +188,7 @@
 					</tr>
 				{:else}
 					<tr>
-						<td colspan="6" class="px-4 py-8 text-center text-muted-foreground"
+						<td colspan={cols} class="px-4 py-8 text-center text-muted-foreground"
 							>No leave requests</td
 						>
 					</tr>

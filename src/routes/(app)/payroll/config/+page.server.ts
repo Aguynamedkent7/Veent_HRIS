@@ -3,17 +3,30 @@ import { z } from 'zod'
 import { requireRole } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
+import { ratesFromRule } from '$lib/server/services/payroll/rates'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
 	requireRole(locals.user!.role, 'SUPER_ADMIN')
 
-	const config = await db.payrollConfig.findUnique({
-		where: { organizationId: locals.user!.organizationId }
-	})
+	const [config, payRateRule] = await Promise.all([
+		db.payrollConfig.findUnique({ where: { organizationId: locals.user!.organizationId } }),
+		db.payRateRule.findUnique({ where: { organizationId: locals.user!.organizationId } })
+	])
 
-	return { config }
+	// Resolved multipliers (DOLE defaults when the org has no PayRateRule row yet).
+	return { config, rates: ratesFromRule(payRateRule) }
 }
+
+// Premium-pay multipliers against the base hourly rate; nightDiff is an additive fraction.
+const ratesSchema = z.object({
+	overtime: z.coerce.number().min(0).max(10),
+	overtimePremium: z.coerce.number().min(0).max(10),
+	nightDiff: z.coerce.number().min(0).max(10),
+	restDay: z.coerce.number().min(0).max(10),
+	regularHoliday: z.coerce.number().min(0).max(10),
+	specialHoliday: z.coerce.number().min(0).max(10)
+})
 
 const configSchema = z.object({
 	payFrequency: z.enum(['SEMI_MONTHLY', 'MONTHLY']),
@@ -91,6 +104,53 @@ export const actions: Actions = {
 					philhealthRate: philhealthRateDecimal,
 					pagibigRate: pagibigRateDecimal
 				}
+			}
+		)
+
+		return { success: true }
+	},
+
+	updateRates: async ({ request, locals, getClientAddress }) => {
+		const user = locals.user!
+		requireRole(user.role, 'SUPER_ADMIN')
+
+		const parsed = ratesSchema.safeParse(Object.fromEntries(await request.formData()))
+		if (!parsed.success) {
+			return fail(400, { error: 'Invalid multiplier values (each must be between 0 and 10).' })
+		}
+
+		const existing = await db.payRateRule.findUnique({
+			where: { organizationId: user.organizationId }
+		})
+
+		const rule = await db.payRateRule.upsert({
+			where: { organizationId: user.organizationId },
+			create: { organizationId: user.organizationId, ...parsed.data },
+			update: parsed.data
+		})
+
+		await writeAuditLog(
+			{
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			},
+			{
+				action: 'UPDATE',
+				entityType: 'PayRateRule',
+				entityId: rule.id,
+				oldValue: existing
+					? {
+							overtime: Number(existing.overtime),
+							overtimePremium: Number(existing.overtimePremium),
+							nightDiff: Number(existing.nightDiff),
+							restDay: Number(existing.restDay),
+							regularHoliday: Number(existing.regularHoliday),
+							specialHoliday: Number(existing.specialHoliday)
+						}
+					: undefined,
+				newValue: parsed.data
 			}
 		)
 

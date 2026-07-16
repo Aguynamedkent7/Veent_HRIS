@@ -38,3 +38,29 @@ export const DOLE_DEFAULT_RATES: PayRates = {
 export function resolveRates(overrides?: Partial<PayRates>): PayRates {
 	return { ...DOLE_DEFAULT_RATES, ...(overrides ?? {}) }
 }
+
+/** The multiplier keys, in display order — the single source of truth for the config UI + schema. */
+export const RATE_KEYS = [
+	'overtime',
+	'overtimePremium',
+	'nightDiff',
+	'restDay',
+	'regularHoliday',
+	'specialHoliday'
+] as const
+
+/**
+ * Convert a persisted `PayRateRule` row (Prisma Decimals) into resolved `PayRates`, falling back to
+ * the DOLE defaults when the org has no row yet. Accepts a loose shape so `rates.ts` stays Prisma-free.
+ */
+export function ratesFromRule(
+	rule: Partial<Record<keyof PayRates, unknown>> | null | undefined
+): PayRates {
+	if (!rule) return { ...DOLE_DEFAULT_RATES }
+	const out = { ...DOLE_DEFAULT_RATES }
+	for (const k of RATE_KEYS) {
+		const n = Number(rule[k])
+		if (Number.isFinite(n)) out[k] = n
+	}
+	return out
+}

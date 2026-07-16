@@ -3,6 +3,7 @@ import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import { Prisma } from '@prisma/client'
 import { computeEmployeeResult } from './calculator'
+import { ratesFromRule } from './rates'
 import { type AmortItem } from './deductions'
 import { emptyAttendance, round2, type EmployeeComp } from './types'
 import { buildAttendanceInput } from '../attendance/input'
@@ -61,7 +62,7 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	if (!run) error(404, 'Payroll run not found')
 	if (run.status !== 'DRAFT') error(400, 'Only draft payroll runs can be computed')
 
-	const [employees, config, earningTypes, loansAll, advancesAll, enrollmentsAll] =
+	const [employees, config, earningTypes, loansAll, advancesAll, enrollmentsAll, payRateRule] =
 		await Promise.all([
 			db.employee.findMany({ where: { user: { organizationId }, employmentStatus: 'ACTIVE' } }),
 			db.payrollConfig.findUnique({ where: { organizationId } }),
@@ -76,11 +77,14 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			db.benefitEnrollment.findMany({
 				where: { status: 'ACTIVE', plan: { organizationId, employeeCost: { gt: 0 } } },
 				select: { id: true, employeeId: true, plan: { select: { name: true, employeeCost: true } } }
-			})
+			}),
+			db.payRateRule.findUnique({ where: { organizationId } })
 		])
 
 	// Requirement #1 (review): taxability comes from EarningType config, not hard-coded defaults.
 	const taxableByCode = new Map(earningTypes.map((e) => [e.code, e.taxable]))
+	// Premium-pay multipliers from PayRateRule (falls back to DOLE defaults when unset).
+	const rates = ratesFromRule(payRateRule)
 	// Requirement #5 (review): prorate monthly statutory to the period.
 	const periodShare = (config?.payFrequency ?? 'SEMI_MONTHLY') === 'MONTHLY' ? 1 : 0.5
 	const loansByEmp = groupByEmployee(loansAll)
@@ -142,6 +146,7 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			{},
 			{
 				taxableByCode,
+				rates,
 				periodShare,
 				loans,
 				cashAdvances
