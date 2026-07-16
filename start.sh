@@ -43,6 +43,27 @@ until docker exec "${CONTAINER}" pg_isready -U "${DB_USER}" -d "${DB_NAME}" >/de
   sleep 1
 done
 
+# The pg_isready above only proves Postgres is up *inside* the container — it does
+# NOT prove the host can reach it. If the docker0 bridge is down (or a firewall drops
+# bridge traffic), docker-proxy still accepts on :${DB_PORT} but can't relay to the
+# container, so every DB connection hangs until Prisma times out with P1001. Probe the
+# real relay target here so that failure is loud and actionable instead of silent.
+echo "==> Verifying the host can actually reach the container..."
+CONTAINER_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${CONTAINER}" 2>/dev/null)
+if [ -n "${CONTAINER_IP}" ] && ! timeout 5 bash -c "exec 3<>/dev/tcp/${CONTAINER_IP}/5432" 2>/dev/null; then
+  echo "    ERROR: Postgres is running, but the host cannot reach it at ${CONTAINER_IP}:5432." >&2
+  echo "           docker-proxy accepts on :${DB_PORT} but can't relay to the bridge, so DB" >&2
+  echo "           connections would hang until Prisma times out (P1001)." >&2
+  DOCKER0_STATE=$(ip -br link show docker0 2>/dev/null | awk '{print $2}')
+  if [ "${DOCKER0_STATE}" != "UP" ] && [ "${DOCKER0_STATE}" != "UNKNOWN" ]; then
+    echo "           Cause: the docker0 bridge is ${DOCKER0_STATE:-missing}. Bring it up with:" >&2
+    echo "               sudo ip link set docker0 up" >&2
+  else
+    echo "           Check host firewall / nftables FORWARD rules for the docker bridge." >&2
+  fi
+  exit 1
+fi
+
 echo "==> Syncing Prisma schema..."
 pnpm exec prisma db push --skip-generate
 
