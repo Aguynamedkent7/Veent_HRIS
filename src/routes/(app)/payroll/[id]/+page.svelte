@@ -4,7 +4,7 @@
 	import type { PageData } from './$types'
 
 	let { data }: { data: PageData } = $props()
-	const { run } = data
+	const run = $derived(data.run)
 	let overrideEntryId = $state<string | null>(null)
 	let expandedEntryId = $state<string | null>(null)
 </script>

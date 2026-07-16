@@ -32,15 +32,15 @@
 		fetch('/api/v1/notifications/read', { method: 'POST' })
 	})
 
-	const role = data.user.role
-	const isManager = ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN'].includes(role)
-	const isAdmin = ['HR_ADMIN', 'SUPER_ADMIN'].includes(role)
-	const isSuperAdmin = role === 'SUPER_ADMIN'
+	const role = $derived(data.user.role)
+	const isManager = $derived(['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN'].includes(role))
+	const isAdmin = $derived(['HR_ADMIN', 'SUPER_ADMIN'].includes(role))
+	const isSuperAdmin = $derived(role === 'SUPER_ADMIN')
 	// Payroll Officer manages payroll; Finance reads payroll reports only.
-	const isPayroll = isAdmin || role === 'PAYROLL_OFFICER'
-	const canViewReports = isAdmin || ['PAYROLL_OFFICER', 'FINANCE'].includes(role)
+	const isPayroll = $derived(isAdmin || role === 'PAYROLL_OFFICER')
+	const canViewReports = $derived(isAdmin || ['PAYROLL_OFFICER', 'FINANCE'].includes(role))
 	// Approvers (manager ladder + Payroll Officer) get the Requests/Approvals dropdown.
-	const canApprove = isManager || role === 'PAYROLL_OFFICER'
+	const canApprove = $derived(isManager || role === 'PAYROLL_OFFICER')
 
 	const navItems = $derived(
 		[
