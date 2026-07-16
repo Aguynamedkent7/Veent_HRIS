@@ -13,6 +13,11 @@ import {
 	createLoan,
 	createCashAdvance
 } from '$lib/server/services/payroll/loans'
+import {
+	listEmployeeEarnings,
+	createEmployeeEarning,
+	endEmployeeEarning
+} from '$lib/server/services/payroll/employee-earnings'
 import { listSchedules } from '$lib/server/services/attendance/schedules'
 import {
 	listEmployeeDocuments,
@@ -132,17 +137,21 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		}
 	}
 
-	const [departments, loans, cashAdvances, documents, positions, history] = await Promise.all([
-		db.department.findMany({
-			where: { organizationId: locals.user!.organizationId },
-			orderBy: { name: 'asc' }
-		}),
-		canManage ? listLoans(params.id) : Promise.resolve([]),
-		canManage ? listCashAdvances(params.id) : Promise.resolve([]),
-		canManage ? listEmployeeDocuments(params.id, locals.user!.organizationId) : Promise.resolve([]),
-		canManage ? listPositions(locals.user!.organizationId) : Promise.resolve([]),
-		canManage ? getEmploymentHistory(params.id, locals.user!.organizationId) : Promise.resolve([])
-	])
+	const [departments, loans, cashAdvances, recurringEarnings, documents, positions, history] =
+		await Promise.all([
+			db.department.findMany({
+				where: { organizationId: locals.user!.organizationId },
+				orderBy: { name: 'asc' }
+			}),
+			canManage ? listLoans(params.id) : Promise.resolve([]),
+			canManage ? listCashAdvances(params.id) : Promise.resolve([]),
+			canManage ? listEmployeeEarnings(params.id) : Promise.resolve([]),
+			canManage
+				? listEmployeeDocuments(params.id, locals.user!.organizationId)
+				: Promise.resolve([]),
+			canManage ? listPositions(locals.user!.organizationId) : Promise.resolve([]),
+			canManage ? getEmploymentHistory(params.id, locals.user!.organizationId) : Promise.resolve([])
+		])
 	const schedules = canManage ? await listSchedules(locals.user!.organizationId) : []
 	const onboarding = canManage ? buildOnboarding(employee, documents) : null
 
@@ -152,6 +161,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		canManage,
 		loans,
 		cashAdvances,
+		recurringEarnings,
 		schedules,
 		documents,
 		positions,
@@ -168,6 +178,11 @@ const loanSchema = z.object({
 const cashAdvanceSchema = z.object({
 	amount: z.coerce.number().positive(),
 	installment: z.coerce.number().positive()
+})
+const earningSchema = z.object({
+	kind: z.enum(['ALLOWANCE', 'INCENTIVE']),
+	label: z.string().min(1).max(100),
+	monthlyAmount: z.coerce.number().positive()
 })
 
 const updateSchema = z.object({
@@ -312,6 +327,39 @@ export const actions: Actions = {
 			actorRole: user.role,
 			ipAddress: getClientAddress()
 		})
+		return { success: true }
+	},
+
+	addEarning: async ({ request, locals, params, getClientAddress }) => {
+		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		const user = locals.user!
+		const parsed = earningSchema.safeParse(Object.fromEntries(await request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Invalid recurring earning details' })
+		await createEmployeeEarning(params.id, user.organizationId, parsed.data, {
+			organizationId: user.organizationId,
+			actorId: user.id,
+			actorRole: user.role,
+			ipAddress: getClientAddress()
+		})
+		return { success: true }
+	},
+
+	endEarning: async ({ request, locals, getClientAddress }) => {
+		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		const user = locals.user!
+		const id = (await request.formData()).get('id') as string
+		if (!id) return fail(400, { error: 'Missing earning id' })
+		try {
+			await endEmployeeEarning(id, user.organizationId, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
+		}
 		return { success: true }
 	},
 

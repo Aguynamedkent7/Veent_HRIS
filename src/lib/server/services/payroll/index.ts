@@ -62,24 +62,36 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	if (!run) error(404, 'Payroll run not found')
 	if (run.status !== 'DRAFT') error(400, 'Only draft payroll runs can be computed')
 
-	const [employees, config, earningTypes, loansAll, advancesAll, enrollmentsAll, payRateRule] =
-		await Promise.all([
-			db.employee.findMany({ where: { user: { organizationId }, employmentStatus: 'ACTIVE' } }),
-			db.payrollConfig.findUnique({ where: { organizationId } }),
-			db.earningType.findMany({ where: { organizationId }, select: { code: true, taxable: true } }),
-			db.loan.findMany({
-				where: { employee: { organizationId }, status: 'ACTIVE', balance: { gt: 0 } }
-			}),
-			db.cashAdvance.findMany({
-				where: { employee: { organizationId }, status: 'ACTIVE', balance: { gt: 0 } }
-			}),
-			// Active benefit enrollments whose plan charges the employee (T148).
-			db.benefitEnrollment.findMany({
-				where: { status: 'ACTIVE', plan: { organizationId, employeeCost: { gt: 0 } } },
-				select: { id: true, employeeId: true, plan: { select: { name: true, employeeCost: true } } }
-			}),
-			db.payRateRule.findUnique({ where: { organizationId } })
-		])
+	const [
+		employees,
+		config,
+		earningTypes,
+		loansAll,
+		advancesAll,
+		enrollmentsAll,
+		payRateRule,
+		recurringAll
+	] = await Promise.all([
+		db.employee.findMany({ where: { user: { organizationId }, employmentStatus: 'ACTIVE' } }),
+		db.payrollConfig.findUnique({ where: { organizationId } }),
+		db.earningType.findMany({ where: { organizationId }, select: { code: true, taxable: true } }),
+		db.loan.findMany({
+			where: { employee: { organizationId }, status: 'ACTIVE', balance: { gt: 0 } }
+		}),
+		db.cashAdvance.findMany({
+			where: { employee: { organizationId }, status: 'ACTIVE', balance: { gt: 0 } }
+		}),
+		// Active benefit enrollments whose plan charges the employee (T148).
+		db.benefitEnrollment.findMany({
+			where: { status: 'ACTIVE', plan: { organizationId, employeeCost: { gt: 0 } } },
+			select: { id: true, employeeId: true, plan: { select: { name: true, employeeCost: true } } }
+		}),
+		db.payRateRule.findUnique({ where: { organizationId } }),
+		// Recurring allowance/incentive assignments feed the adjustment buckets (#65).
+		db.employeeEarning.findMany({
+			where: { employee: { organizationId }, isActive: true }
+		})
+	])
 
 	// Requirement #1 (review): taxability comes from EarningType config, not hard-coded defaults.
 	const taxableByCode = new Map(earningTypes.map((e) => [e.code, e.taxable]))
@@ -90,6 +102,7 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	const loansByEmp = groupByEmployee(loansAll)
 	const advancesByEmp = groupByEmployee(advancesAll)
 	const enrollmentsByEmp = groupByEmployee(enrollmentsAll)
+	const recurringByEmp = groupByEmployee(recurringAll)
 	const workingDays = computeWorkingDays(run.periodStart, run.periodEnd, [])
 
 	const perEmployee: Array<{
@@ -139,19 +152,23 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		const attInput = await buildAttendanceInput(emp.id, run.periodStart, run.periodEnd)
 		const attendance = attInput ?? { ...emptyAttendance(), regularHours }
 
+		// Recurring allowances/incentives, prorated to the period like statutory (#65).
+		const recurring = recurringByEmp.get(emp.id) ?? []
+		const monthlyOf = (kind: 'ALLOWANCE' | 'INCENTIVE') =>
+			recurring.filter((r) => r.kind === kind).reduce((s, r) => s + Number(r.monthlyAmount), 0)
+		const adjustments = {
+			allowances: round2(monthlyOf('ALLOWANCE') * periodShare),
+			incentives: round2(monthlyOf('INCENTIVE') * periodShare)
+		}
+
 		// Shared engine — identical to the Payroll Calculator for the same inputs.
-		const result = computeEmployeeResult(
-			comp,
-			attendance,
-			{},
-			{
-				taxableByCode,
-				rates,
-				periodShare,
-				loans,
-				cashAdvances
-			}
-		)
+		const result = computeEmployeeResult(comp, attendance, adjustments, {
+			taxableByCode,
+			rates,
+			periodShare,
+			loans,
+			cashAdvances
+		})
 		const paidHours =
 			attendance.regularHours +
 			attendance.overtimeHours +
