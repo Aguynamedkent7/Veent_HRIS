@@ -279,6 +279,32 @@ export async function autoDeriveFromPunches(
 }
 
 /**
+ * Read the materialised AttendanceDay rows over [from, to] (PHT) and map each to a timesheet
+ * entry: hoursWorked = regular + overtime, otHours = overtime, notes = the day note or status.
+ * Pure read — call autoDeriveFromPunches first if you need punches reflected. Returns [] when the
+ * range has no attendance, so callers decide whether an empty result is an error.
+ */
+export async function attendanceEntriesForRange(employeeId: string, from: Date, to: Date) {
+	const fromKey = manilaDayKey(from)
+	const toKey = manilaDayKey(to)
+	const days = await db.attendanceDay.findMany({
+		where: { employeeId, date: { gte: new Date(fromKey), lte: new Date(toKey) } },
+		orderBy: { date: 'asc' }
+	})
+	return days.map((d) => {
+		const ot = Number(d.overtimeHours)
+		return {
+			date: d.date,
+			timeIn: d.timeIn,
+			timeOut: d.timeOut,
+			hoursWorked: Number(d.regularHours) + ot,
+			otHours: ot,
+			notes: d.note ?? d.status
+		}
+	})
+}
+
+/**
  * Materialise an employee's derived attendance over [from, to] into a persisted Timesheet
  * (the artifact /team and payroll consume). Per-employee only. Each day becomes one entry with
  * hoursWorked = regular + overtime; the day status (and OT) is kept in the entry note. Relies on
@@ -297,28 +323,16 @@ export async function createTimesheetFromAttendance(
 	})
 	if (!emp) error(404, 'Employee not found')
 
-	const fromKey = manilaDayKey(from)
-	const toKey = manilaDayKey(to)
-	const days = await db.attendanceDay.findMany({
-		where: { employeeId, date: { gte: new Date(fromKey), lte: new Date(toKey) } },
-		orderBy: { date: 'asc' }
-	})
-	if (days.length === 0) error(400, 'No attendance in this range to save as a timesheet.')
+	const entries = await attendanceEntriesForRange(employeeId, from, to)
+	if (entries.length === 0) error(400, 'No attendance in this range to save as a timesheet.')
 
-	const entries = days.map((d) => {
-		const ot = Number(d.overtimeHours)
-		const worked = Number(d.regularHours) + ot
-		return {
-			date: d.date,
-			timeIn: d.timeIn,
-			timeOut: d.timeOut,
-			hoursWorked: worked,
-			otHours: ot,
-			notes: d.note ?? d.status
-		}
-	})
-
-	return createTimesheet(employeeId, new Date(fromKey), new Date(toKey), entries, ctx)
+	return createTimesheet(
+		employeeId,
+		new Date(manilaDayKey(from)),
+		new Date(manilaDayKey(to)),
+		entries,
+		ctx
+	)
 }
 
 /** HR correction of a single AttendanceDay. Rejected if the day is locked. */

@@ -93,6 +93,17 @@
 							<input type="hidden" name="ids" value={selectedIds.join(',')} />
 							<button disabled={busy} class={btnPrimary}>Submit selected</button>
 						</form>
+						<ConfirmButton
+							action="?/deleteMany"
+							title="Delete selected timesheets?"
+							message="Draft and rejected timesheets you own will be permanently deleted; submitted and approved ones are skipped."
+							triggerLabel="Delete selected"
+							triggerClass="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+							disabled={busy}
+							submit={clearOnSuccess('mine')}
+						>
+							<input type="hidden" name="ids" value={selectedIds.join(',')} />
+						</ConfirmButton>
 					{:else}
 						<ConfirmButton
 							action="?/deleteMany"

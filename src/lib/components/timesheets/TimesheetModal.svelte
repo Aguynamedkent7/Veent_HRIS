@@ -62,12 +62,18 @@
 
 	// Capabilities are gated by mode: edit surface can modify/delete/submit but never
 	// approve; review surface can only approve/reject and is read-only.
+	const isOwner = $derived(ts != null && ts.employeeId === myEmployeeId)
 	const canEdit = $derived(mode === 'edit' && isManager && ts != null && ts.status !== 'APPROVED')
 	const canReview = $derived(mode === 'review' && ts != null && ts.status === 'SUBMITTED')
-	const canDelete = $derived(mode === 'edit' && isManager && ts != null)
-	const canSubmit = $derived(
-		mode === 'edit' && ts != null && ts.employeeId === myEmployeeId && ts.status === 'DRAFT'
+	// Managers/HR may delete any of their scope; the owner may delete only their own draft/rejected.
+	const canDelete = $derived(
+		mode === 'edit' &&
+			ts != null &&
+			(isManager || (isOwner && (ts.status === 'DRAFT' || ts.status === 'REJECTED')))
 	)
+	const canSubmit = $derived(mode === 'edit' && isOwner && ts != null && ts.status === 'DRAFT')
+	// Repopulate a draft's entries from attendance — owner (own draft) or a manager/HR.
+	const canSync = $derived(mode === 'edit' && ts != null && ts.status === 'DRAFT' && (isOwner || isManager))
 	// HR can submit+approve an aggregated draft in place (not owner-restricted like canSubmit).
 	// Only DRAFT is eligible — SUBMITTED/REJECTED go through the normal review flow.
 	const canApproveInEdit = $derived(
@@ -548,6 +554,14 @@
 								disabled={busy}
 								class="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
 								>Approve</button
+							>
+						</form>
+					{/if}
+					{#if canSync}
+						<form method="POST" action="?/syncAttendance" use:enhance={closeOnSuccess}>
+							<input type="hidden" name="id" value={ts.id} />
+							<button disabled={busy} class={btnGhost} title="Replace entries with this period's attendance"
+								>Sync from attendance</button
 							>
 						</form>
 					{/if}
