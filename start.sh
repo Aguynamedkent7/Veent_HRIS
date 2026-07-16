@@ -53,11 +53,15 @@ done
 # here instead of hanging until Prisma times out with P1001. In host-network mode
 # Postgres binds the host directly; in legacy bridge mode we'd reach it over docker0.
 echo "==> Verifying the host can actually reach the DB..."
-CONTAINER_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${CONTAINER}" 2>/dev/null)
-if [ -n "${CONTAINER_IP}" ]; then
-  PROBE_HOST="${CONTAINER_IP}"; PROBE_PORT="5432"; BRIDGE_MODE=1
-else
+# Pick the probe target by network mode. Host networking (our default) binds the host
+# directly, so probe 127.0.0.1:DB_PORT. Legacy bridge mode must be reached over docker0
+# at the container IP (host-mode containers render an "invalid IP" here, so key off the
+# mode, not the address).
+if [ "$(docker inspect -f '{{.HostConfig.NetworkMode}}' "${CONTAINER}" 2>/dev/null)" = "host" ]; then
   PROBE_HOST="127.0.0.1"; PROBE_PORT="${DB_PORT}"; BRIDGE_MODE=0
+else
+  PROBE_HOST="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${CONTAINER}" 2>/dev/null)"
+  PROBE_PORT="5432"; BRIDGE_MODE=1
 fi
 if ! timeout 5 bash -c "exec 3<>/dev/tcp/${PROBE_HOST}/${PROBE_PORT}" 2>/dev/null; then
   echo "    ERROR: Postgres is running, but the host cannot reach it at ${PROBE_HOST}:${PROBE_PORT}." >&2
