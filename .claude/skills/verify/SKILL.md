@@ -21,4 +21,4 @@ description: How to build, launch, and drive Veent HRIS locally to verify a chan
 ## Clean up
 
 - Delete driver-created rows with a one-off `node --input-type=module -e` script using `@prisma/client` (give test records a distinctive `reason`/label to target them).
-- File uploads land in `uploads/` (gitignored) keyed by entity id — remove the matching subdirs.
+- File uploads land in the store configured by `UPLOAD_DIR` (default `uploads/`, gitignored) keyed by entity id — remove the matching entity-id subdirs wherever that points.

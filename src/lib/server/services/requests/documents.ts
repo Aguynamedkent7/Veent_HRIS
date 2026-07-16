@@ -2,6 +2,7 @@ import { db } from '$lib/server/db'
 import { error } from '@sveltejs/kit'
 import { writeAuditLog } from '$lib/server/audit'
 import { saveFile, deleteStoredFile, isAllowedType, MAX_UPLOAD_BYTES } from '$lib/server/storage'
+import type { RequestDocument } from '@prisma/client'
 import type { AuditContext } from '../types'
 
 // Supporting documents attached to a Request (issue #51). Bytes share the T162
@@ -16,21 +17,51 @@ export interface RequestUpload {
 	bytes: Buffer
 }
 
-// Validate a batch of uploads without touching disk — the create action calls this
-// BEFORE creating the request so a bad file never leaves an orphan request behind.
-export function assertValidRequestUploads(files: RequestUpload[], existingCount = 0) {
+// Shared count/size/type checks. File satisfies this shape, so the form parser can
+// validate metadata BEFORE buffering any bytes.
+function assertUploadMetadata(
+	files: { name: string; size: number; type: string }[],
+	existingCount = 0
+) {
 	if (files.length + existingCount > MAX_REQUEST_DOCS) {
 		error(400, `A request can have at most ${MAX_REQUEST_DOCS} supporting documents`)
 	}
 	for (const f of files) {
-		if (!f.bytes.byteLength) error(400, `"${f.fileName}" is empty`)
-		if (f.bytes.byteLength > MAX_UPLOAD_BYTES) {
-			error(413, `"${f.fileName}" exceeds the 10 MB limit`)
-		}
-		if (!isAllowedType(f.mimeType)) {
-			error(415, `"${f.fileName}" has an unsupported type. Allowed: PDF, PNG, JPEG, WEBP`)
+		if (!f.size) error(400, `"${f.name}" is empty`)
+		if (f.size > MAX_UPLOAD_BYTES) error(413, `"${f.name}" exceeds the 10 MB limit`)
+		if (!isAllowedType(f.type)) {
+			error(415, `"${f.name}" has an unsupported type. Allowed: PDF, PNG, JPEG, WEBP`)
 		}
 	}
+}
+
+// Validate a batch of uploads without touching disk — runs again inside
+// saveRequestDocuments with the request's existing document count.
+export function assertValidRequestUploads(files: RequestUpload[], existingCount = 0) {
+	assertUploadMetadata(
+		files.map((f) => ({ name: f.fileName, size: f.bytes.byteLength, type: f.mimeType })),
+		existingCount
+	)
+}
+
+// Collect the optional `documents` uploads from a form. Browsers submit an empty File
+// when the input is left blank — those are filtered out. Count/size/type are checked
+// from the File metadata before buffering, so an invalid batch never allocates and a
+// bad file fails before any request row is created.
+export async function uploadsFromForm(f: FormData): Promise<RequestUpload[]> {
+	const entries = f
+		.getAll('documents')
+		.filter((e): e is File => e instanceof File && e.size > 0 && Boolean(e.name))
+	assertUploadMetadata(entries)
+	const uploads: RequestUpload[] = []
+	for (const e of entries) {
+		uploads.push({
+			fileName: e.name,
+			mimeType: e.type,
+			bytes: Buffer.from(await e.arrayBuffer())
+		})
+	}
+	return uploads
 }
 
 // Attach uploads to the employee's own still-editable request. Used right after
@@ -54,26 +85,40 @@ export async function saveRequestDocuments(
 	}
 	assertValidRequestUploads(files, req._count.documents)
 
-	const docs = []
-	for (const f of files) {
-		const saved = await saveFile(f.bytes, f.mimeType, `requests/${requestId}`)
-		const doc = await db.requestDocument.create({
-			data: {
-				requestId,
-				label: f.fileName,
-				fileName: f.fileName,
-				mimeType: f.mimeType,
-				size: saved.size,
-				storageKey: saved.storageKey
-			}
-		})
-		docs.push(doc)
-		await writeAuditLog(ctx, {
-			action: 'CREATE',
-			entityType: 'RequestDocument',
-			entityId: doc.id,
-			newValue: { requestId, fileName: f.fileName, size: saved.size }
-		})
+	const docs: RequestDocument[] = []
+	const savedKeys: string[] = []
+	try {
+		for (const f of files) {
+			const saved = await saveFile(f.bytes, f.mimeType, `requests/${requestId}`)
+			savedKeys.push(saved.storageKey)
+			const doc = await db.requestDocument.create({
+				data: {
+					requestId,
+					label: f.fileName,
+					fileName: f.fileName,
+					mimeType: f.mimeType,
+					size: saved.size,
+					storageKey: saved.storageKey
+				}
+			})
+			docs.push(doc)
+			await writeAuditLog(ctx, {
+				action: 'CREATE',
+				entityType: 'RequestDocument',
+				entityId: doc.id,
+				newValue: { requestId, fileName: f.fileName, size: saved.size }
+			})
+		}
+	} catch (e) {
+		// A mid-batch failure must not leave earlier uploads half-attached: drop the rows
+		// and bytes stored so far (best-effort), then surface the original error.
+		if (docs.length) {
+			await db.requestDocument
+				.deleteMany({ where: { id: { in: docs.map((d) => d.id) } } })
+				.catch(() => {})
+		}
+		for (const key of savedKeys) await deleteStoredFile(key).catch(() => {})
+		throw e
 	}
 	return docs
 }
@@ -135,7 +180,11 @@ export async function deleteRequestDocument(
 	if (doc.verifiedAt) error(409, 'Verified documents cannot be removed')
 
 	await db.requestDocument.delete({ where: { id: doc.id } })
-	await deleteStoredFile(doc.storageKey)
+	// The row is gone, so a storage-cleanup failure must not surface as an error or
+	// skip the DELETE audit entry — the bytes just become an orphan to sweep later.
+	await deleteStoredFile(doc.storageKey).catch((e) =>
+		console.error('[storage] failed to remove', doc.storageKey, e)
+	)
 	await writeAuditLog(ctx, {
 		action: 'DELETE',
 		entityType: 'RequestDocument',

@@ -235,10 +235,13 @@ export async function submitDraftByHr(id: string, organizationId: string, ctx: A
 	if (ts.status !== 'DRAFT') error(400, 'Only draft timesheets can be submitted here')
 
 	return db.$transaction(async (tx) => {
-		const updated = await tx.timesheet.update({
-			where: { id },
+		// Re-check DRAFT inside the write itself — a concurrent submit or review between
+		// the read above and this update must not be stomped back to SUBMITTED.
+		const res = await tx.timesheet.updateMany({
+			where: { id, status: 'DRAFT' },
 			data: { status: 'SUBMITTED', submittedAt: new Date() }
 		})
+		if (res.count === 0) error(400, 'Only draft timesheets can be submitted here')
 
 		await writeAuditLog(
 			ctx,
@@ -252,7 +255,7 @@ export async function submitDraftByHr(id: string, organizationId: string, ctx: A
 			tx
 		)
 
-		return updated
+		return tx.timesheet.findUniqueOrThrow({ where: { id } })
 	})
 }
 

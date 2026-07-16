@@ -2,10 +2,10 @@ import { error, fail, isHttpError } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
 import { getRequest } from '$lib/server/services/requests'
 import {
+	uploadsFromForm,
 	saveRequestDocuments,
 	deleteRequestDocument,
-	setRequestDocumentVerified,
-	type RequestUpload
+	setRequestDocumentVerified
 } from '$lib/server/services/requests/documents'
 import { APPROVER_ROLES } from '$lib/server/services/approvals'
 import type { Actions, PageServerLoad } from './$types'
@@ -67,19 +67,9 @@ export const actions: Actions = {
 		if (!employeeId) return fail(400, { error: 'No employee profile found.' })
 
 		const data = await request.formData()
-		const uploads: RequestUpload[] = []
-		for (const entry of data.getAll('documents')) {
-			if (entry instanceof File && entry.size > 0 && entry.name) {
-				uploads.push({
-					fileName: entry.name,
-					mimeType: entry.type,
-					bytes: Buffer.from(await entry.arrayBuffer())
-				})
-			}
-		}
-		if (!uploads.length) return fail(400, { error: 'Please choose a file to upload.' })
-
 		try {
+			const uploads = await uploadsFromForm(data)
+			if (!uploads.length) return fail(400, { error: 'Please choose a file to upload.' })
 			await saveRequestDocuments(
 				params.id,
 				employeeId,

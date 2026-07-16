@@ -189,8 +189,14 @@ export async function deleteRequest(id: string, organizationId: string, ctx: Aud
 	if (req.status === 'APPROVED') error(409, 'Approved requests cannot be deleted')
 
 	await db.request.delete({ where: { id } })
-	// Row cascade removed the document rows; sweep their bytes off disk too.
-	for (const d of req.documents) await deleteStoredFile(d.storageKey)
+	// Row cascade removed the document rows; sweep their bytes off disk too. Each unlink
+	// is best-effort — the request is already gone, so one failed cleanup must not stop
+	// the rest of the sweep or skip the audit entry.
+	for (const d of req.documents) {
+		await deleteStoredFile(d.storageKey).catch((e) =>
+			console.error('[storage] failed to remove', d.storageKey, e)
+		)
+	}
 	await writeAuditLog(ctx, {
 		action: 'DELETE',
 		entityType: 'Request',

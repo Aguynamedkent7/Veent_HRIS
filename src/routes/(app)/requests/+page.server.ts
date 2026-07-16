@@ -4,13 +4,10 @@ import {
 	createRequest,
 	listRequests,
 	cancelRequest,
-	resubmitRequest
+	resubmitRequest,
+	deleteRequest
 } from '$lib/server/services/requests'
-import {
-	assertValidRequestUploads,
-	saveRequestDocuments,
-	type RequestUpload
-} from '$lib/server/services/requests/documents'
+import { uploadsFromForm, saveRequestDocuments } from '$lib/server/services/requests/documents'
 import { requestSchema } from '$lib/server/schemas/requests'
 import type { Actions, PageServerLoad } from './$types'
 
@@ -75,22 +72,6 @@ function rawFromForm(type: string, f: FormData): Record<string, unknown> {
 	}
 }
 
-// Collect the optional supporting-document uploads. Browsers submit an empty
-// File when the input is left blank — those are filtered out.
-async function uploadsFromForm(f: FormData): Promise<RequestUpload[]> {
-	const uploads: RequestUpload[] = []
-	for (const entry of f.getAll('documents')) {
-		if (entry instanceof File && entry.size > 0 && entry.name) {
-			uploads.push({
-				fileName: entry.name,
-				mimeType: entry.type,
-				bytes: Buffer.from(await entry.arrayBuffer())
-			})
-		}
-	}
-	return uploads
-}
-
 export const actions: Actions = {
 	create: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
@@ -113,7 +94,6 @@ export const actions: Actions = {
 			})
 		}
 
-		const uploads = await uploadsFromForm(f)
 		const ctx = {
 			organizationId: user.organizationId,
 			actorId: user.id,
@@ -121,10 +101,18 @@ export const actions: Actions = {
 			ipAddress: getClientAddress()
 		}
 		try {
-			// Validate uploads BEFORE creating so a bad file never leaves an orphan request.
-			assertValidRequestUploads(uploads)
+			// uploadsFromForm validates count/size/type up front, so a bad file fails
+			// here — before the request row is created.
+			const uploads = await uploadsFromForm(f)
 			const created = await createRequest(myEmployee.id, user.organizationId, parsed.data, ctx)
-			await saveRequestDocuments(created.id, myEmployee.id, user.organizationId, uploads, ctx)
+			try {
+				await saveRequestDocuments(created.id, myEmployee.id, user.organizationId, uploads, ctx)
+			} catch (e) {
+				// Documents failed to persist — remove the just-created request so no
+				// orphan is left behind; the original error is what the user sees.
+				await deleteRequest(created.id, user.organizationId, ctx).catch(() => {})
+				throw e
+			}
 		} catch (e: unknown) {
 			if (isHttpError(e))
 				return fail(e.status, {
