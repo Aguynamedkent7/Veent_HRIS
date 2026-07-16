@@ -6,6 +6,7 @@
 	let { data }: { data: PageData } = $props()
 	const { run } = data
 	let overrideEntryId = $state<string | null>(null)
+	let expandedEntryId = $state<string | null>(null)
 </script>
 
 <svelte:head>
@@ -90,14 +91,67 @@
 							>{formatCurrency(Number(entry.netPay))}</td
 						>
 						<td class="px-4 py-3">
-							{#if run.status !== 'APPROVED'}
+							<div class="flex items-center justify-end gap-3">
 								<button
-									onclick={() => (overrideEntryId = entry.id)}
-									class="text-xs text-primary hover:underline">Override</button
+									onclick={() => (expandedEntryId = expandedEntryId === entry.id ? null : entry.id)}
+									class="text-xs text-primary hover:underline"
+									>{expandedEntryId === entry.id ? 'Hide' : 'Breakdown'}</button
 								>
-							{/if}
+								{#if run.status !== 'APPROVED'}
+									<button
+										onclick={() => (overrideEntryId = entry.id)}
+										class="text-xs text-primary hover:underline">Override</button
+									>
+								{/if}
+							</div>
 						</td>
 					</tr>
+					{#if expandedEntryId === entry.id}
+						<tr>
+							<td colspan="8" class="bg-muted/30 px-4 py-3">
+								<div class="grid gap-6 sm:grid-cols-2">
+									<div>
+										<p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+											Earnings
+										</p>
+										<table class="mt-1 w-full text-sm">
+											<tbody>
+												{#each entry.earnings as c (c.id)}
+													<tr
+														><td class="py-0.5">{c.label}{c.taxable ? '' : ' (non-taxable)'}</td><td
+															class="py-0.5 text-right font-mono"
+															>{formatCurrency(Number(c.amount))}</td
+														></tr
+													>
+												{:else}
+													<tr><td class="py-0.5 text-muted-foreground">No earning lines.</td></tr>
+												{/each}
+											</tbody>
+										</table>
+									</div>
+									<div>
+										<p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+											Deductions
+										</p>
+										<table class="mt-1 w-full text-sm">
+											<tbody>
+												{#each entry.deductions as c (c.id)}
+													<tr
+														><td class="py-0.5">{c.label}</td><td
+															class="py-0.5 text-right font-mono text-muted-foreground"
+															>{formatCurrency(Number(c.amount))}</td
+														></tr
+													>
+												{:else}
+													<tr><td class="py-0.5 text-muted-foreground">No deduction lines.</td></tr>
+												{/each}
+											</tbody>
+										</table>
+									</div>
+								</div>
+							</td>
+						</tr>
+					{/if}
 					{#if overrideEntryId === entry.id}
 						<tr>
 							<td colspan="8" class="px-4 py-3 bg-muted/30">

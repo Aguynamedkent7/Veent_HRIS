@@ -347,7 +347,11 @@ export async function getPayrollRun(id: string, organizationId: string) {
 							employeeNumber: true,
 							department: { select: { name: true } }
 						}
-					}
+					},
+					// Itemized lines for the run-detail breakdown (allowances, incentives,
+					// OT, statutory, loans, …) — not just the aggregate columns.
+					earnings: true,
+					deductions: true
 				},
 				orderBy: { employee: { lastName: 'asc' } }
 			}
