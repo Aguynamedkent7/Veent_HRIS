@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import { goto } from '$app/navigation'
 	import { formatShortDate } from '$lib/utils/format'
 	import { formatDateISO } from '$lib/utils/dates'
 	import type { PageData, ActionData } from './$types'
@@ -331,10 +332,24 @@
 			</thead>
 			<tbody class="divide-y">
 				{#each data.requests as req (req.id)}
-					<tr class="hover:bg-muted/30">
-						<td class="px-4 py-3 font-medium"
-							><a href="/requests/{req.id}" class="hover:underline">{typeLabel(req.type)}</a></td
-						>
+					<tr
+						class="cursor-pointer hover:bg-muted/30"
+						role="link"
+						tabindex="0"
+						onclick={(e) => {
+							// Let the row's action buttons (Resubmit/Cancel) fire without also navigating.
+							if ((e.target as HTMLElement).closest('button, a, form')) return
+							goto(`/requests/${req.id}`)
+						}}
+						onkeydown={(e) => {
+							if ((e.target as HTMLElement).closest('button, a, form')) return
+							if (e.key === 'Enter' || e.key === ' ') {
+								e.preventDefault()
+								goto(`/requests/${req.id}`)
+							}
+						}}
+					>
+						<td class="px-4 py-3 font-medium">{typeLabel(req.type)}</td>
 						<td class="px-4 py-3 text-muted-foreground">
 							{#if req.dateFrom}
 								{formatShortDate(req.dateFrom)}{#if req.dateTo && req.dateTo !== req.dateFrom}
