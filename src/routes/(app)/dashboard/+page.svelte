@@ -4,7 +4,7 @@
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
-	const { metrics } = data
+	const metrics = $derived(data.metrics)
 	let showPost = $state(false)
 </script>
 

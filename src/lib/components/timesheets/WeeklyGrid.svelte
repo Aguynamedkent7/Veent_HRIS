@@ -31,24 +31,22 @@
 		})
 	}
 
-	let slots = $state(buildSlots(entries))
-
-	$effect(() => {
-		slots = buildSlots(entries)
-	})
+	// Writable derived: recomputes when `entries` changes, but local edits below
+	// can override it until then.
+	let slots = $derived(buildSlots(entries))
 
 	let totalHours = $derived(slots.reduce((sum, s) => sum + (s.hoursWorked || 0), 0))
 
 	function updateHours(index: number, value: string) {
 		const parsed = Math.min(24, Math.max(0, parseFloat(value) || 0))
-		slots[index] = { ...slots[index], hoursWorked: parsed }
+		slots = slots.map((s, i) => (i === index ? { ...s, hoursWorked: parsed } : s))
 		if (onchange) {
 			onchange(slots.map(({ _dayIndex: _i, ...rest }) => rest))
 		}
 	}
 
 	function updateNotes(index: number, value: string) {
-		slots[index] = { ...slots[index], notes: value }
+		slots = slots.map((s, i) => (i === index ? { ...s, notes: value } : s))
 		if (onchange) {
 			onchange(slots.map(({ _dayIndex: _i, ...rest }) => rest))
 		}

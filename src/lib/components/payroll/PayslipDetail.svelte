@@ -27,13 +27,13 @@
 
 	let { entry }: Props = $props()
 
-	const gross = Number(entry.grossPay)
-	const sss = Number(entry.sssEe)
-	const philhealth = Number(entry.philhealthEe)
-	const pagibig = Number(entry.pagibigEe)
-	const tax = Number(entry.withholdingTax)
-	const totalDed = Number(entry.totalDeductions)
-	const net = Number(entry.netPay)
+	const gross = $derived(Number(entry.grossPay))
+	const sss = $derived(Number(entry.sssEe))
+	const philhealth = $derived(Number(entry.philhealthEe))
+	const pagibig = $derived(Number(entry.pagibigEe))
+	const tax = $derived(Number(entry.withholdingTax))
+	const totalDed = $derived(Number(entry.totalDeductions))
+	const net = $derived(Number(entry.netPay))
 </script>
 
 <div class="mx-auto max-w-2xl bg-white p-8 text-sm print:p-4">
