@@ -7,7 +7,7 @@ import {
 	submitTimesheet,
 	updateTimesheetEntries,
 	deleteTimesheet,
-	approveDraftByHr
+	submitDraftByHr
 } from '$lib/server/services/timesheets'
 import {
 	previewTimeLogAggregation,
@@ -168,14 +168,15 @@ export const actions: Actions = {
 		}
 	},
 
-	// HR only — submit + approve an aggregated draft in place.
-	approve: async (event) => {
+	// HR only — submit an aggregated draft on the employee's behalf. Approval itself
+	// happens exclusively in the review queue (/requests/timesheets).
+	submitDraft: async (event) => {
 		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
 		const id = (await event.request.formData()).get('id')
 		if (typeof id !== 'string' || !id) return fail(400, { error: 'Missing timesheet id' })
 		try {
-			await approveDraftByHr(id, event.locals.user!.organizationId, ctxOf(event))
-			return { saved: 'Timesheet approved.' }
+			await submitDraftByHr(id, event.locals.user!.organizationId, ctxOf(event))
+			return { saved: 'Timesheet submitted for review.' }
 		} catch (e) {
 			return toFail(e)
 		}

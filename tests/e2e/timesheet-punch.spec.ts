@@ -4,8 +4,9 @@ import { login, USERS, E2E_DISCORD_ID } from './helpers'
 import { signPayload } from '../../src/lib/server/hmac'
 
 // T142 — happy path: a signed Discord punch pair is ingested over HMAC, HR rolls the
-// week into a draft timesheet from the review UI, then approves it in place.
-// Serial so the punch → aggregate → approve lifecycle stays deterministic.
+// week into a draft timesheet, submits it on the employee's behalf, and approves it
+// from the review queue (/timesheets itself never approves).
+// Serial so the punch → aggregate → submit → approve lifecycle stays deterministic.
 test.describe.configure({ mode: 'serial' })
 
 const SECRET = process.env.TIMELOG_API_SECRET
@@ -91,7 +92,7 @@ test('signed punch → aggregate → approve', async ({ browser, request }) => {
 	// 09:00–17:00 less the unpaid 12:00–13:00 lunch = 7.00 paid hours on one day.
 	await expect(page.getByText(/Aggregated 7\.00 hrs across 1 day/)).toBeVisible()
 
-	// --- 3. HR approves the aggregated draft in place ---
+	// --- 3. HR submits the aggregated draft on the employee's behalf ---
 	await page.reload()
 	// Disambiguate from the approval spec's current-week row by the unique 7.00 total.
 	const draftRow = page
@@ -100,17 +101,33 @@ test('signed punch → aggregate → approve', async ({ browser, request }) => {
 		.filter({ hasText: '7.00 hrs' })
 	await expect(draftRow).toHaveCount(1)
 
-	// The row opens the review modal client-side; retry the click until hydration lands.
+	// The row opens the modal client-side; retry the click until hydration lands.
 	const dialog = page.getByRole('dialog')
 	await expect(async () => {
 		await draftRow.click()
 		await expect(dialog).toBeVisible({ timeout: 1000 })
 	}).toPass({ timeout: 15000 })
+	// /timesheets never offers Approve — only submit-for-review.
+	await expect(dialog.getByRole('button', { name: 'Approve' })).toHaveCount(0)
+	await dialog.getByRole('button', { name: 'Submit for review' }).click()
+
+	await expect(page.getByText('Timesheet submitted for review.')).toBeVisible()
+
+	// --- 4. Approval happens in the review queue ---
+	await page.goto('/requests/timesheets')
+	const card = page
+		.locator('[role="button"]', { hasText: 'Employee, Elena' })
+		.filter({ hasText: '7.0 hrs' })
+	await expect(card).toHaveCount(1)
+	await expect(async () => {
+		await card.click()
+		await expect(dialog).toBeVisible({ timeout: 1000 })
+	}).toPass({ timeout: 15000 })
 	await dialog.getByRole('button', { name: 'Approve' }).click()
+	await expect(dialog).toBeHidden()
 
-	await expect(page.getByText('Timesheet approved.')).toBeVisible()
-
-	// --- 4. The aggregated week is now APPROVED ---
+	// --- 5. Back on /timesheets the aggregated week is APPROVED ---
+	await page.goto('/timesheets')
 	const approvedRow = page
 		.locator('tr', { hasText: 'Employee, Elena' })
 		.filter({ hasText: 'APPROVED' })
