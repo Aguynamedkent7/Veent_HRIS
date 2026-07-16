@@ -33,16 +33,18 @@
 			<h2 class="font-semibold">New Benefit Plan</h2>
 			<div class="grid gap-3 sm:grid-cols-2">
 				<div>
-					<label class="text-sm font-medium">Name</label>
+					<label for="name" class="text-sm font-medium">Name</label>
 					<input
+						id="name"
 						name="name"
 						required
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					/>
 				</div>
 				<div>
-					<label class="text-sm font-medium">Type</label>
+					<label for="type" class="text-sm font-medium">Type</label>
 					<select
+						id="type"
 						name="type"
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					>
@@ -55,22 +57,25 @@
 					</select>
 				</div>
 				<div>
-					<label class="text-sm font-medium">Provider</label>
+					<label for="provider" class="text-sm font-medium">Provider</label>
 					<input
+						id="provider"
 						name="provider"
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					/>
 				</div>
 				<div>
-					<label class="text-sm font-medium">Description</label>
+					<label for="description" class="text-sm font-medium">Description</label>
 					<input
+						id="description"
 						name="description"
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					/>
 				</div>
 				<div>
-					<label class="text-sm font-medium">Employee Cost (PHP)</label>
+					<label for="employeeCost" class="text-sm font-medium">Employee Cost (PHP)</label>
 					<input
+						id="employeeCost"
 						name="employeeCost"
 						type="number"
 						min="0"
@@ -79,8 +84,9 @@
 					/>
 				</div>
 				<div>
-					<label class="text-sm font-medium">Employer Cost (PHP)</label>
+					<label for="employerCost" class="text-sm font-medium">Employer Cost (PHP)</label>
 					<input
+						id="employerCost"
 						name="employerCost"
 						type="number"
 						min="0"

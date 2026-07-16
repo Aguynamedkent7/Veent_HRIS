@@ -158,8 +158,11 @@
 								<form method="POST" action="?/override" use:enhance class="flex items-end gap-3">
 									<input type="hidden" name="entryId" value={entry.id} />
 									<div>
-										<label class="text-xs font-medium">Override Net Pay</label>
+										<label for={'netPay-' + entry.id} class="text-xs font-medium"
+											>Override Net Pay</label
+										>
 										<input
+											id={'netPay-' + entry.id}
 											name="netPay"
 											type="number"
 											step="0.01"
@@ -168,8 +171,11 @@
 										/>
 									</div>
 									<div class="flex-1">
-										<label class="text-xs font-medium">Reason (required)</label>
+										<label for={'note-' + entry.id} class="text-xs font-medium"
+											>Reason (required)</label
+										>
 										<input
+											id={'note-' + entry.id}
 											name="note"
 											required
 											class="mt-1 flex h-8 w-full rounded border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"

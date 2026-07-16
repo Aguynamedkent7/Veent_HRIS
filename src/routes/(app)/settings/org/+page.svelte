@@ -54,16 +54,16 @@
 			<h2 class="font-semibold">New Position</h2>
 			<div class="grid gap-3 sm:grid-cols-3">
 				<div>
-					<label class="text-sm font-medium">Title</label>
-					<input name="title" required class={inputClass} />
+					<label for="title" class="text-sm font-medium">Title</label>
+					<input id="title" name="title" required class={inputClass} />
 				</div>
 				<div>
-					<label class="text-sm font-medium">Level</label>
-					<input name="level" type="number" min="0" class={inputClass} />
+					<label for="level" class="text-sm font-medium">Level</label>
+					<input id="level" name="level" type="number" min="0" class={inputClass} />
 				</div>
 				<div>
-					<label class="text-sm font-medium">Department</label>
-					<select name="departmentId" class={inputClass}>
+					<label for="departmentId" class="text-sm font-medium">Department</label>
+					<select id="departmentId" name="departmentId" class={inputClass}>
 						<option value="">— None —</option>
 						{#each data.orgChart as dept (dept.id)}
 							<option value={dept.id}>{dept.name}</option>
@@ -143,12 +143,19 @@
 									>
 										<input type="hidden" name="id" value={pos.id} />
 										<div>
-											<label class="text-xs font-medium">Title</label>
-											<input name="title" required value={pos.title} class={inputClass} />
+											<label for={'title-' + pos.id} class="text-xs font-medium">Title</label>
+											<input
+												id={'title-' + pos.id}
+												name="title"
+												required
+												value={pos.title}
+												class={inputClass}
+											/>
 										</div>
 										<div>
-											<label class="text-xs font-medium">Level</label>
+											<label for={'level-' + pos.id} class="text-xs font-medium">Level</label>
 											<input
+												id={'level-' + pos.id}
 												name="level"
 												type="number"
 												min="0"
@@ -157,8 +164,15 @@
 											/>
 										</div>
 										<div>
-											<label class="text-xs font-medium">Department</label>
-											<select name="departmentId" value={pos.departmentId ?? ''} class={inputClass}>
+											<label for={'departmentId-' + pos.id} class="text-xs font-medium"
+												>Department</label
+											>
+											<select
+												id={'departmentId-' + pos.id}
+												name="departmentId"
+												value={pos.departmentId ?? ''}
+												class={inputClass}
+											>
 												<option value="">— None —</option>
 												{#each data.orgChart as dept (dept.id)}
 													<option value={dept.id}>{dept.name}</option>
@@ -166,8 +180,11 @@
 											</select>
 										</div>
 										<div>
-											<label class="text-xs font-medium">Salary Grade</label>
+											<label for={'salaryGradeId-' + pos.id} class="text-xs font-medium"
+												>Salary Grade</label
+											>
 											<select
+												id={'salaryGradeId-' + pos.id}
 												name="salaryGradeId"
 												value={pos.salaryGradeId ?? ''}
 												class={inputClass}
@@ -179,8 +196,9 @@
 											</select>
 										</div>
 										<div>
-											<label class="text-xs font-medium">Status</label>
+											<label for={'isActive-' + pos.id} class="text-xs font-medium">Status</label>
 											<select
+												id={'isActive-' + pos.id}
 												name="isActive"
 												value={pos.isActive ? 'true' : 'false'}
 												class={inputClass}

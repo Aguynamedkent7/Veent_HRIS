@@ -86,8 +86,9 @@
 	<div class="flex items-center justify-between">
 		<h1 class="text-2xl font-bold tracking-tight">Reports</h1>
 		<form id="year-form" method="GET" class="flex items-center gap-2">
-			<label class="text-sm font-medium">Year</label>
+			<label for="year" class="text-sm font-medium">Year</label>
 			<select
+				id="year"
 				name="year"
 				onchange={() => {
 					if (typeof document !== 'undefined')
