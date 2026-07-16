@@ -13,6 +13,7 @@ import {
 	generateBIRWithholding,
 	exportToCSV
 } from '$lib/server/services/reports'
+import { generateSeparationReport } from '$lib/server/services/separation'
 import type { RequestHandler } from './$types'
 
 const VALID_TYPES = [
@@ -25,7 +26,8 @@ const VALID_TYPES = [
 	'overtime',
 	'loan-summary',
 	'government-remittance',
-	'bir-withholding'
+	'bir-withholding',
+	'separation'
 ] as const
 // Payroll reports are also visible to Payroll Officer / Finance; the rest are HR-only.
 const PAYROLL_REPORT_TYPES = [
@@ -81,6 +83,8 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
 		results = await generateGovernmentRemittance(user.organizationId, { startDate, endDate })
 	} else if (type === 'bir-withholding') {
 		results = await generateBIRWithholding(user.organizationId, { startDate, endDate })
+	} else if (type === 'separation') {
+		results = await generateSeparationReport(user.organizationId, { startDate, endDate })
 	}
 
 	if (exportCsv) {
