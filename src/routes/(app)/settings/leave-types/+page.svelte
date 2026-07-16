@@ -35,15 +35,43 @@
 		<form method="POST" action="?/add" use:enhance class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
 			<div class="lg:col-span-2">
 				<label for="add-name" class="text-xs font-medium text-muted-foreground">Name</label>
-				<input id="add-name" name="name" required placeholder="e.g. Vacation Leave" class="mt-1 {inputClass}" />
+				<input
+					id="add-name"
+					name="name"
+					required
+					placeholder="e.g. Vacation Leave"
+					class="mt-1 {inputClass}"
+				/>
 			</div>
 			<div>
-				<label for="add-days" class="text-xs font-medium text-muted-foreground">Default days / year</label>
-				<input id="add-days" name="defaultDaysPerYear" type="number" min="0" max="365" step="0.5" value="0" class="mt-1 {inputClass}" />
+				<label for="add-days" class="text-xs font-medium text-muted-foreground"
+					>Default days / year</label
+				>
+				<input
+					id="add-days"
+					name="defaultDaysPerYear"
+					type="number"
+					min="0"
+					max="365"
+					step="0.5"
+					value="0"
+					class="mt-1 {inputClass}"
+				/>
 			</div>
 			<div>
-				<label for="add-carry" class="text-xs font-medium text-muted-foreground">Max carry-over days</label>
-				<input id="add-carry" name="maxCarryOverDays" type="number" min="0" max="365" step="0.5" placeholder="0" class="mt-1 {inputClass}" />
+				<label for="add-carry" class="text-xs font-medium text-muted-foreground"
+					>Max carry-over days</label
+				>
+				<input
+					id="add-carry"
+					name="maxCarryOverDays"
+					type="number"
+					min="0"
+					max="365"
+					step="0.5"
+					placeholder="0"
+					class="mt-1 {inputClass}"
+				/>
 			</div>
 			<label class="flex items-center gap-2 text-sm">
 				<input type="checkbox" name="isPaid" checked class="align-middle" /> Paid
@@ -84,10 +112,22 @@
 						{#each data.leaveTypes as lt (lt.id)}
 							<tr class="hover:bg-muted/30 {lt.isActive ? '' : 'opacity-50'}">
 								<td class="px-3 py-2">
-									<input form="edit-{lt.id}" name="name" value={lt.name} required class={inputClass} />
+									<input
+										form="edit-{lt.id}"
+										name="name"
+										value={lt.name}
+										required
+										class={inputClass}
+									/>
 								</td>
 								<td class="px-3 py-2 text-center">
-									<input form="edit-{lt.id}" type="checkbox" name="isPaid" checked={lt.isPaid} class="align-middle" />
+									<input
+										form="edit-{lt.id}"
+										type="checkbox"
+										name="isPaid"
+										checked={lt.isPaid}
+										class="align-middle"
+									/>
 								</td>
 								<td class="px-3 py-2 text-right">
 									<input
@@ -102,7 +142,13 @@
 									/>
 								</td>
 								<td class="px-3 py-2 text-center">
-									<input form="edit-{lt.id}" type="checkbox" name="allowCarryOver" checked={lt.allowCarryOver} class="align-middle" />
+									<input
+										form="edit-{lt.id}"
+										type="checkbox"
+										name="allowCarryOver"
+										checked={lt.allowCarryOver}
+										class="align-middle"
+									/>
 								</td>
 								<td class="px-3 py-2 text-right">
 									<input
@@ -121,7 +167,8 @@
 										<input type="hidden" name="id" value={lt.id} />
 										<button
 											type="submit"
-											class="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent">Save</button
+											class="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent"
+											>Save</button
 										>
 									</form>
 								</td>

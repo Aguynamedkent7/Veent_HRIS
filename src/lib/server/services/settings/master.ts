@@ -279,7 +279,10 @@ export async function updateLeaveType(
 	input: LeaveTypeInput,
 	ctx: AuditContext
 ) {
-	const existing = await db.leaveType.findFirst({ where: { id, organizationId }, select: { id: true } })
+	const existing = await db.leaveType.findFirst({
+		where: { id, organizationId },
+		select: { id: true }
+	})
 	if (!existing) error(404, 'Leave type not found')
 	const data = normalizeLeaveType(input)
 	const dupe = await db.leaveType.findFirst({

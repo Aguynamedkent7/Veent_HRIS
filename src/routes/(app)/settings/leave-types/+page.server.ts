@@ -59,7 +59,11 @@ export const actions: Actions = {
 		const parsed = leaveTypeSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(422, { error: 'Invalid leave type values' })
 		return run(() =>
-			createLeaveType(locals.user!.organizationId, inputOf(parsed.data), ctxOf(locals, getClientAddress()))
+			createLeaveType(
+				locals.user!.organizationId,
+				inputOf(parsed.data),
+				ctxOf(locals, getClientAddress())
+			)
 		)
 	},
 
