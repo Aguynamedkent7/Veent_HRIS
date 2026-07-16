@@ -47,31 +47,35 @@
 			{/if}
 			<div class="grid gap-3 sm:grid-cols-2">
 				<div class="sm:col-span-2">
-					<label class="text-sm font-medium">Title</label>
+					<label for="title" class="text-sm font-medium">Title</label>
 					<input
+						id="title"
 						name="title"
 						required
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					/>
 				</div>
 				<div class="sm:col-span-2">
-					<label class="text-sm font-medium">Description (optional)</label>
+					<label for="description" class="text-sm font-medium">Description (optional)</label>
 					<textarea
+						id="description"
 						name="description"
 						rows="2"
 						class="mt-1 flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					></textarea>
 				</div>
 				<div>
-					<label class="text-sm font-medium">Category (optional)</label>
+					<label for="category" class="text-sm font-medium">Category (optional)</label>
 					<input
+						id="category"
 						name="category"
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					/>
 				</div>
 				<div>
-					<label class="text-sm font-medium">Target Date (optional)</label>
+					<label for="targetDate" class="text-sm font-medium">Target Date (optional)</label>
 					<input
+						id="targetDate"
 						name="targetDate"
 						type="date"
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -138,8 +142,11 @@
 						>
 							<input type="hidden" name="id" value={goal.id} />
 							<div class="flex-1">
-								<label class="text-xs font-medium text-muted-foreground">Progress</label>
+								<label for={'progress-' + goal.id} class="text-xs font-medium text-muted-foreground"
+									>Progress</label
+								>
 								<input
+									id={'progress-' + goal.id}
 									name="progress"
 									type="number"
 									min="0"
@@ -149,8 +156,11 @@
 								/>
 							</div>
 							<div class="flex-1">
-								<label class="text-xs font-medium text-muted-foreground">Status</label>
+								<label for={'status-' + goal.id} class="text-xs font-medium text-muted-foreground"
+									>Status</label
+								>
 								<select
+									id={'status-' + goal.id}
 									name="status"
 									class="mt-1 flex h-8 w-full rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 								>

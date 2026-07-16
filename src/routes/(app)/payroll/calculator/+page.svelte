@@ -53,8 +53,9 @@
 	<div class="grid gap-6 lg:grid-cols-2">
 		<form method="POST" action="?/preview" use:enhance class="rounded-lg border p-5 space-y-4">
 			<div>
-				<label class="text-sm font-medium">Employee</label>
+				<label for="employeeId" class="text-sm font-medium">Employee</label>
 				<select
+					id="employeeId"
 					name="employeeId"
 					required
 					bind:value={selectedEmployee}
@@ -74,8 +75,9 @@
 			<div class="grid gap-3 sm:grid-cols-2">
 				{#each fields as f (f.name)}
 					<div>
-						<label class="text-xs font-medium text-muted-foreground">{f.label}</label>
+						<label for={f.name} class="text-xs font-medium text-muted-foreground">{f.label}</label>
 						<input
+							id={f.name}
 							name={f.name}
 							type="number"
 							min="0"

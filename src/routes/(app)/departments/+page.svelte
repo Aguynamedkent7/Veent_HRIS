@@ -68,6 +68,7 @@
 			}}
 			class="flex items-center gap-3 rounded-md border bg-muted/50 p-4"
 		>
+			<!-- svelte-ignore a11y_autofocus — form only mounts on user action, so focusing it is expected -->
 			<input
 				name="name"
 				bind:value={newName}

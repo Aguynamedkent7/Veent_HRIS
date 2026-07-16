@@ -47,8 +47,9 @@
 			<h2 class="font-semibold">Open a Payroll Period</h2>
 			<div class="grid gap-3 sm:grid-cols-4">
 				<div>
-					<label class="text-sm font-medium">Name</label>
+					<label for="name" class="text-sm font-medium">Name</label>
 					<input
+						id="name"
 						name="name"
 						required
 						placeholder="Jul 1–15 2026"
@@ -56,8 +57,9 @@
 					/>
 				</div>
 				<div>
-					<label class="text-sm font-medium">Start</label>
+					<label for="start" class="text-sm font-medium">Start</label>
 					<input
+						id="start"
 						name="start"
 						type="date"
 						required
@@ -65,8 +67,9 @@
 					/>
 				</div>
 				<div>
-					<label class="text-sm font-medium">End</label>
+					<label for="end" class="text-sm font-medium">End</label>
 					<input
+						id="end"
 						name="end"
 						type="date"
 						required
@@ -74,10 +77,11 @@
 					/>
 				</div>
 				<div>
-					<label class="text-sm font-medium"
+					<label for="cutoff" class="text-sm font-medium"
 						>Cutoff <span class="text-muted-foreground">(day)</span></label
 					>
 					<input
+						id="cutoff"
 						name="cutoff"
 						type="number"
 						min="1"

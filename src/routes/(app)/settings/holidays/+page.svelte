@@ -154,8 +154,12 @@
 								>
 									<input type="hidden" name="id" value={holiday.id} />
 									<div>
-										<label class="text-xs font-medium text-muted-foreground">Date</label>
+										<label
+											for={'date-' + holiday.id}
+											class="text-xs font-medium text-muted-foreground">Date</label
+										>
 										<input
+											id={'date-' + holiday.id}
 											name="date"
 											type="date"
 											required
@@ -164,8 +168,12 @@
 										/>
 									</div>
 									<div class="flex-1 min-w-48">
-										<label class="text-xs font-medium text-muted-foreground">Name</label>
+										<label
+											for={'name-' + holiday.id}
+											class="text-xs font-medium text-muted-foreground">Name</label
+										>
 										<input
+											id={'name-' + holiday.id}
 											name="name"
 											required
 											value={holiday.name}
@@ -173,8 +181,12 @@
 										/>
 									</div>
 									<div>
-										<label class="text-xs font-medium text-muted-foreground">Type</label>
+										<label
+											for={'type-' + holiday.id}
+											class="text-xs font-medium text-muted-foreground">Type</label
+										>
 										<select
+											id={'type-' + holiday.id}
 											name="type"
 											class="mt-0.5 flex h-8 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 										>

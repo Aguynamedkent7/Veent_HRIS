@@ -41,8 +41,9 @@
 				</div>{/if}
 			<div class="flex items-end gap-4">
 				<div>
-					<label class="text-sm font-medium">Period Start</label>
+					<label for="periodStart" class="text-sm font-medium">Period Start</label>
 					<input
+						id="periodStart"
 						name="periodStart"
 						type="date"
 						required
@@ -50,8 +51,9 @@
 					/>
 				</div>
 				<div>
-					<label class="text-sm font-medium">Period End</label>
+					<label for="periodEnd" class="text-sm font-medium">Period End</label>
 					<input
+						id="periodEnd"
 						name="periodEnd"
 						type="date"
 						required
