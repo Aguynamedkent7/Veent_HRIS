@@ -31,6 +31,7 @@ interface CreateEmployeeInput {
 	reportsToId?: string
 	discordId?: string | null
 	workScheduleId?: string | null
+	positionId?: string | null
 }
 
 interface UpdateEmployeeInput {
@@ -192,7 +193,11 @@ export async function createEmployee(
 				pagibigNumber: input.pagibigNumber,
 				tinNumber: input.tinNumber,
 				reportsToId: input.reportsToId,
-				discordId: input.discordId
+				discordId: input.discordId,
+				// Onboarding sets the work schedule (attendance derivation depends on it) and the
+				// position; both are optional and left null when not chosen.
+				workScheduleId: input.workScheduleId ?? null,
+				positionId: input.positionId ?? null
 			},
 			include: { department: true, user: { select: { email: true, role: true } } }
 		})
