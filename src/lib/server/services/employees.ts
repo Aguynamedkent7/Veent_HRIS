@@ -32,6 +32,13 @@ interface CreateEmployeeInput {
 	discordId?: string | null
 	workScheduleId?: string | null
 	positionId?: string | null
+	emergencyContactName?: string
+	emergencyContactRelation?: string
+	emergencyContactPhone?: string
+	bankName?: string
+	bankAccountName?: string
+	bankAccountNumber?: string
+	gcashNumber?: string
 }
 
 interface UpdateEmployeeInput {
@@ -54,12 +61,16 @@ interface UpdateEmployeeInput {
 	pagibigNumber?: string | null
 	tinNumber?: string | null
 	bankName?: string | null
+	bankAccountName?: string | null
 	bankAccountNumber?: string | null
 	gcashNumber?: string | null
 	positionId?: string | null
 	reportsToId?: string
 	discordId?: string | null
 	workScheduleId?: string | null
+	emergencyContactName?: string
+	emergencyContactRelation?: string
+	emergencyContactPhone?: string
 }
 
 // Fields whose changes make up the employment-history timeline (FR-051):
@@ -140,6 +151,7 @@ export async function getEmployee(id: string, organizationId: string, viewerRole
 			pagibigNumber: null,
 			tinNumber: null,
 			bankName: null,
+			bankAccountName: null,
 			bankAccountNumber: null,
 			gcashNumber: null
 		}
@@ -192,6 +204,13 @@ export async function createEmployee(
 				philhealthNumber: input.philhealthNumber,
 				pagibigNumber: input.pagibigNumber,
 				tinNumber: input.tinNumber,
+				emergencyContactName: input.emergencyContactName,
+				emergencyContactRelation: input.emergencyContactRelation,
+				emergencyContactPhone: input.emergencyContactPhone,
+				bankName: input.bankName,
+				bankAccountName: input.bankAccountName,
+				bankAccountNumber: input.bankAccountNumber,
+				gcashNumber: input.gcashNumber,
 				reportsToId: input.reportsToId,
 				discordId: input.discordId,
 				// Onboarding sets the work schedule (attendance derivation depends on it) and the

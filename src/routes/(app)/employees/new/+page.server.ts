@@ -67,6 +67,13 @@ const createSchema = z.object({
 	philhealthNumber: z.string().optional(),
 	pagibigNumber: z.string().optional(),
 	tinNumber: z.string().optional(),
+	emergencyContactName: z.string().optional(),
+	emergencyContactRelation: z.string().optional(),
+	emergencyContactPhone: z.string().optional(),
+	bankName: z.string().optional(),
+	bankAccountName: z.string().optional(),
+	bankAccountNumber: z.string().optional(),
+	gcashNumber: z.string().optional(),
 	reportsToId: z
 		.string()
 		.optional()
