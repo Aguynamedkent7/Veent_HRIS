@@ -129,7 +129,10 @@ export async function listPendingRequestsForApprover(
 		where: { status: 'PENDING', employee: { user: { organizationId } } },
 		include: {
 			steps: { orderBy: { stageIndex: 'asc' } },
-			employee: { select: { id: true, firstName: true, lastName: true, reportsToId: true } }
+			employee: { select: { id: true, firstName: true, lastName: true, reportsToId: true } },
+			// Surfaced on the approval card so a reviewer sees at a glance whether
+			// supporting documents exist and still need verification.
+			documents: { select: { id: true, verifiedAt: true } }
 		},
 		orderBy: { createdAt: 'asc' }
 	})

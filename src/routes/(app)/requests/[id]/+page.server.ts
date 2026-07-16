@@ -1,8 +1,14 @@
-import { error } from '@sveltejs/kit'
+import { error, fail, isHttpError } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
 import { getRequest } from '$lib/server/services/requests'
+import {
+	saveRequestDocuments,
+	deleteRequestDocument,
+	setRequestDocumentVerified,
+	type RequestUpload
+} from '$lib/server/services/requests/documents'
 import { APPROVER_ROLES } from '$lib/server/services/approvals'
-import type { PageServerLoad } from './$types'
+import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals, params }) => {
 	const user = locals.user!
@@ -34,5 +40,108 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		}
 	}
 
-	return { request: req, isOwner, leaveTypeName }
+	return { request: req, isOwner, canReview, leaveTypeName }
+}
+
+function ctxOf(locals: App.Locals, ip: string) {
+	const user = locals.user!
+	return {
+		organizationId: user.organizationId,
+		actorId: user.id,
+		actorRole: user.role,
+		ipAddress: ip
+	}
+}
+
+async function myEmployeeId(userId: string) {
+	const me = await db.employee.findUnique({ where: { userId }, select: { id: true } })
+	return me?.id ?? null
+}
+
+export const actions: Actions = {
+	// Owner attaches more documents while the request is still PENDING/RETURNED
+	// (e.g. a request was returned with "please attach the receipt").
+	uploadDocs: async ({ request, locals, params, getClientAddress }) => {
+		const user = locals.user!
+		const employeeId = await myEmployeeId(user.id)
+		if (!employeeId) return fail(400, { error: 'No employee profile found.' })
+
+		const data = await request.formData()
+		const uploads: RequestUpload[] = []
+		for (const entry of data.getAll('documents')) {
+			if (entry instanceof File && entry.size > 0 && entry.name) {
+				uploads.push({
+					fileName: entry.name,
+					mimeType: entry.type,
+					bytes: Buffer.from(await entry.arrayBuffer())
+				})
+			}
+		}
+		if (!uploads.length) return fail(400, { error: 'Please choose a file to upload.' })
+
+		try {
+			await saveRequestDocuments(
+				params.id,
+				employeeId,
+				user.organizationId,
+				uploads,
+				ctxOf(locals, getClientAddress())
+			)
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			if (e instanceof Error) return fail(400, { error: e.message })
+			throw e
+		}
+		return { message: 'Document uploaded.' }
+	},
+
+	deleteDoc: async ({ request, locals, getClientAddress }) => {
+		const user = locals.user!
+		const employeeId = await myEmployeeId(user.id)
+		if (!employeeId) return fail(400, { error: 'No employee profile found.' })
+
+		const docId = (await request.formData()).get('docId') as string
+		if (!docId) return fail(400, { error: 'Missing document id.' })
+
+		try {
+			await deleteRequestDocument(
+				docId,
+				employeeId,
+				user.organizationId,
+				ctxOf(locals, getClientAddress())
+			)
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			if (e instanceof Error) return fail(400, { error: e.message })
+			throw e
+		}
+		return { message: 'Document removed.' }
+	},
+
+	// Approver signs off on a document (or clears the sign-off).
+	verifyDoc: async ({ request, locals, getClientAddress }) => {
+		const user = locals.user!
+		if (!APPROVER_ROLES.includes(user.role)) {
+			return fail(403, { error: 'Insufficient permissions' })
+		}
+
+		const data = await request.formData()
+		const docId = data.get('docId') as string
+		const verified = data.get('verified') === 'true'
+		if (!docId) return fail(400, { error: 'Missing document id.' })
+
+		try {
+			await setRequestDocumentVerified(
+				docId,
+				user.organizationId,
+				verified,
+				ctxOf(locals, getClientAddress())
+			)
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			if (e instanceof Error) return fail(400, { error: e.message })
+			throw e
+		}
+		return { message: verified ? 'Document marked as verified.' : 'Verification cleared.' }
+	}
 }

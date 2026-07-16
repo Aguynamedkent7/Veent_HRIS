@@ -1,11 +1,21 @@
 <script lang="ts">
 	import { page } from '$app/stores'
+	import { enhance } from '$app/forms'
 	import { afterNavigate } from '$app/navigation'
-	import { formatShortDate, formatDate } from '$lib/utils/format'
-	import type { PageData } from './$types'
+	import { formatDateRange, formatShortDate, formatDate } from '$lib/utils/format'
+	import type { PageData, ActionData } from './$types'
 
-	let { data }: { data: PageData } = $props()
+	let { data, form }: { data: PageData; form: ActionData } = $props()
 	const req = $derived(data.request)
+
+	// Owner can add/remove documents only while the request can still change.
+	const docsEditable = $derived(
+		data.isOwner && (req.status === 'PENDING' || req.status === 'RETURNED')
+	)
+	const fmtSize = (b: number) =>
+		b < 1024 * 1024
+			? `${Math.max(1, Math.round(b / 1024))} KB`
+			: `${(b / 1024 / 1024).toFixed(1)} MB`
 
 	// Return to wherever the user came from. Prefer the page actually navigated from — so a row in
 	// /requests, /leave or the approvals queue each go back to their own list — captured from the
@@ -89,10 +99,7 @@
 			{/if}
 			{#if req.dateFrom}
 				<dt class="text-muted-foreground">Dates</dt>
-				<dd class="col-span-2">
-					{formatShortDate(req.dateFrom)}{#if req.dateTo && req.dateTo !== req.dateFrom}
-						– {formatShortDate(req.dateTo)}{/if}
-				</dd>
+				<dd class="col-span-2">{formatDateRange(req.dateFrom, req.dateTo)}</dd>
 			{/if}
 			{#if req.hours}
 				<dt class="text-muted-foreground">Hours</dt>
@@ -109,6 +116,105 @@
 			<dt class="text-muted-foreground">Filed</dt>
 			<dd class="col-span-2">{formatDate(req.createdAt)}</dd>
 		</dl>
+	</div>
+
+	<div class="space-y-3">
+		<h2 class="text-lg font-semibold">Supporting documents</h2>
+
+		{#if form?.error}
+			<div class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+				{form.error}
+			</div>
+		{/if}
+		{#if form?.message}
+			<div class="rounded-md border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
+				{form.message}
+			</div>
+		{/if}
+
+		{#if req.documents.length === 0}
+			<p class="rounded-lg border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+				No documents attached.
+			</p>
+		{:else}
+			<ul class="space-y-2">
+				{#each req.documents as doc (doc.id)}
+					<li class="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+						<div class="min-w-0 flex-1">
+							<a
+								href="/api/v1/requests/{req.id}/documents/{doc.id}"
+								class="break-words text-sm font-medium text-primary hover:underline"
+								download>{doc.label}</a
+							>
+							<p class="text-xs text-muted-foreground">
+								{fmtSize(doc.size)} · uploaded {formatShortDate(doc.uploadedAt)}
+							</p>
+							{#if doc.verifiedAt}
+								<p class="text-xs text-green-700">
+									Verified{#if doc.verifiedBy}{' '}by {doc.verifiedBy.email}{/if} · {formatShortDate(
+										doc.verifiedAt
+									)}
+								</p>
+							{/if}
+						</div>
+						<div class="flex shrink-0 items-center gap-3">
+							<span
+								class="rounded-full px-2 py-0.5 text-xs font-medium {doc.verifiedAt
+									? 'bg-green-100 text-green-700'
+									: 'bg-yellow-100 text-yellow-700'}"
+							>
+								{doc.verifiedAt ? 'Verified' : 'Unverified'}
+							</span>
+							{#if data.canReview}
+								<form method="POST" action="?/verifyDoc" use:enhance>
+									<input type="hidden" name="docId" value={doc.id} />
+									<input type="hidden" name="verified" value={doc.verifiedAt ? 'false' : 'true'} />
+									<button type="submit" class="text-xs text-primary hover:underline">
+										{doc.verifiedAt ? 'Unverify' : 'Mark verified'}
+									</button>
+								</form>
+							{/if}
+							{#if docsEditable && !doc.verifiedAt}
+								<form method="POST" action="?/deleteDoc" use:enhance>
+									<input type="hidden" name="docId" value={doc.id} />
+									<button type="submit" class="text-xs text-red-600 hover:underline">Remove</button>
+								</form>
+							{/if}
+						</div>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+
+		{#if docsEditable}
+			<form
+				method="POST"
+				action="?/uploadDocs"
+				enctype="multipart/form-data"
+				use:enhance
+				class="space-y-2 rounded-lg border bg-muted/30 p-3"
+			>
+				<label for="documents" class="text-xs font-medium">Add documents</label>
+				<div class="flex flex-wrap items-center gap-2">
+					<input
+						id="documents"
+						name="documents"
+						type="file"
+						multiple
+						accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp"
+						class="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1 file:text-sm file:font-medium"
+					/>
+					<button
+						type="submit"
+						class="inline-flex h-8 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+						>Upload</button
+					>
+				</div>
+				<p class="text-xs text-muted-foreground">
+					Up to 5 files per request — PDF, PNG, JPEG or WEBP, max 10 MB each.
+				</p>
+			</form>
+		{/if}
 	</div>
 
 	<div class="space-y-3">

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import { goto } from '$app/navigation'
-	import { formatShortDate } from '$lib/utils/format'
+	import { formatDateRange, formatShortDate } from '$lib/utils/format'
 	import { formatDateISO } from '$lib/utils/dates'
 	import type { PageData, ActionData } from './$types'
 
@@ -97,6 +97,7 @@
 		<form
 			method="POST"
 			action="?/create"
+			enctype="multipart/form-data"
 			use:enhance={() =>
 				async ({ update }) => {
 					await update()
@@ -309,6 +310,23 @@
 				</div>
 			{/if}
 
+			<div class="grid gap-1.5">
+				<label for="documents" class="text-sm font-medium"
+					>Supporting documents <span class="text-muted-foreground">(optional)</span></label
+				>
+				<input
+					id="documents"
+					name="documents"
+					type="file"
+					multiple
+					accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp"
+					class="rounded-md border border-input bg-background px-3 py-1.5 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1 file:text-sm file:font-medium"
+				/>
+				<p class="text-xs text-muted-foreground">
+					Up to 5 files — PDF, PNG, JPEG or WEBP, max 10 MB each.
+				</p>
+			</div>
+
 			<button
 				type="submit"
 				class="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
@@ -352,8 +370,7 @@
 						<td class="px-4 py-3 font-medium">{typeLabel(req.type)}</td>
 						<td class="px-4 py-3 text-muted-foreground">
 							{#if req.dateFrom}
-								{formatShortDate(req.dateFrom)}{#if req.dateTo && req.dateTo !== req.dateFrom}
-									– {formatShortDate(req.dateTo)}{/if}
+								{formatDateRange(req.dateFrom, req.dateTo)}
 							{:else}
 								—
 							{/if}

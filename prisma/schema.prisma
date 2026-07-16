@@ -309,14 +309,15 @@ model User {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  organization      Organization       @relation(fields: [organizationId], references: [id])
-  sessions          Session[]
-  employee          Employee?
-  auditLogs         AuditLog[]
-  approvalSteps     ApprovalStep[]
-  uploadedDocuments EmployeeDocument[] @relation("DocumentUploader")
-  notifications     Notification[]
-  announcements     Announcement[]     @relation("AnnouncementAuthor")
+  organization             Organization       @relation(fields: [organizationId], references: [id])
+  sessions                 Session[]
+  employee                 Employee?
+  auditLogs                AuditLog[]
+  approvalSteps            ApprovalStep[]
+  uploadedDocuments        EmployeeDocument[] @relation("DocumentUploader")
+  verifiedRequestDocuments RequestDocument[]  @relation("RequestDocumentVerifier")
+  notifications            Notification[]
+  announcements            Announcement[]     @relation("AnnouncementAuthor")
 
   @@map("users")
 }
@@ -324,45 +325,45 @@ model User {
 // ─── Employee ─────────────────────────────────────────────────────────────────
 
 model Employee {
-  id                 String           @id @default(cuid())
-  userId             String           @unique
-  organizationId     String
-  employeeNumber     String
-  firstName          String
-  lastName           String
-  middleName         String?
-  dateOfBirth        DateTime?
-  gender             Gender?
-  contactPhone       String?
-  contactAddress     String?
-  departmentId       String
-  jobTitle           String
-  employmentType     EmploymentType
-  employmentStatus   EmploymentStatus @default(ACTIVE)
-  startDate          DateTime
-  endDate            DateTime?
-  reportsToId        String?
-  positionId         String?
-  workScheduleId     String?
-  discordId          String?          @unique
-  basicMonthlySalary Decimal          @db.Decimal(12, 2)
-  rateType           RateType         @default(MONTHLY)
-  sssNumber          String?
-  philhealthNumber   String?
-  pagibigNumber      String?
-  tinNumber          String?
+  id                       String           @id @default(cuid())
+  userId                   String           @unique
+  organizationId           String
+  employeeNumber           String
+  firstName                String
+  lastName                 String
+  middleName               String?
+  dateOfBirth              DateTime?
+  gender                   Gender?
+  contactPhone             String?
+  contactAddress           String?
+  departmentId             String
+  jobTitle                 String
+  employmentType           EmploymentType
+  employmentStatus         EmploymentStatus @default(ACTIVE)
+  startDate                DateTime
+  endDate                  DateTime?
+  reportsToId              String?
+  positionId               String?
+  workScheduleId           String?
+  discordId                String?          @unique
+  basicMonthlySalary       Decimal          @db.Decimal(12, 2)
+  rateType                 RateType         @default(MONTHLY)
+  sssNumber                String?
+  philhealthNumber         String?
+  pagibigNumber            String?
+  tinNumber                String?
   // Emergency contact (personal — visible to the employee's managers). Kept as quick
   // inline fields alongside the richer EmergencyContact child table (see relation below).
   emergencyContactName     String?
   emergencyContactRelation String?
   emergencyContactPhone    String?
   // Disbursement details — sensitive PII, HR-only (FR-048). Nulled for non-HR viewers.
-  bankName          String?
-  bankAccountName   String?
-  bankAccountNumber String?
-  gcashNumber       String?
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
+  bankName                 String?
+  bankAccountName          String?
+  bankAccountNumber        String?
+  gcashNumber              String?
+  createdAt                DateTime         @default(now())
+  updatedAt                DateTime         @updatedAt
 
   user               User                @relation(fields: [userId], references: [id])
   department         Department          @relation(fields: [departmentId], references: [id])
@@ -550,17 +551,26 @@ model ApprovalStep {
   @@map("approval_steps")
 }
 
-// Supporting docs for a request. Real file storage arrives with T162; until then
-// `url` holds a text/URL reference so the flow is complete end-to-end.
+// Supporting docs for a request. Bytes live on disk under UPLOAD_DIR (same store
+// as EmployeeDocument, T162) and are served only through an authenticated download
+// route. `verifiedById`/`verifiedAt` record an approver signing off on the document
+// as part of the review flow (issue #51).
 model RequestDocument {
-  id         String   @id @default(cuid())
-  requestId  String
-  label      String
-  url        String
-  uploadedAt DateTime @default(now())
+  id           String    @id @default(cuid())
+  requestId    String
+  label        String
+  fileName     String // original upload filename
+  mimeType     String
+  size         Int // bytes
+  storageKey   String // path relative to UPLOAD_DIR
+  uploadedAt   DateTime  @default(now())
+  verifiedById String?
+  verifiedAt   DateTime?
 
-  request Request @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  request    Request @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  verifiedBy User?   @relation("RequestDocumentVerifier", fields: [verifiedById], references: [id])
 
+  @@index([requestId])
   @@map("request_documents")
 }
 
@@ -620,20 +630,20 @@ enum ClearanceStatus {
 }
 
 model SeparationRecord {
-  id             String           @id @default(cuid())
-  organizationId String
-  employeeId     String
-  type           SeparationType
-  status         SeparationStatus @default(OPEN)
-  effectiveDate  DateTime
-  reason         String?
+  id                String           @id @default(cuid())
+  organizationId    String
+  employeeId        String
+  type              SeparationType
+  status            SeparationStatus @default(OPEN)
+  effectiveDate     DateTime
+  reason            String?
   // Final-pay snapshot — computed at finalize, null until then.
-  finalPayAmount    Decimal?  @db.Decimal(12, 2)
+  finalPayAmount    Decimal?         @db.Decimal(12, 2)
   finalPayBreakdown Json?
   finalizedAt       DateTime?
   finalizedById     String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
   employee       Employee        @relation(fields: [employeeId], references: [id])
   clearanceItems ClearanceItem[]

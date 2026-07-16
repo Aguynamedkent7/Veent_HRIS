@@ -1,5 +1,6 @@
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
+import { deleteStoredFile } from '$lib/server/storage'
 import { error } from '@sveltejs/kit'
 import { Prisma } from '@prisma/client'
 import {
@@ -107,7 +108,10 @@ export async function getRequest(id: string, organizationId: string) {
 				orderBy: { stageIndex: 'asc' },
 				include: { actor: { select: { id: true, email: true } } }
 			},
-			documents: true
+			documents: {
+				orderBy: { uploadedAt: 'asc' },
+				include: { verifiedBy: { select: { id: true, email: true } } }
+			}
 		}
 	})
 }
@@ -164,7 +168,13 @@ export async function cancelRequest(id: string, employeeId: string, ctx: AuditCo
 export async function deleteRequest(id: string, organizationId: string, ctx: AuditContext) {
 	const req = await db.request.findFirst({
 		where: { id, employee: { user: { organizationId } } },
-		select: { id: true, status: true, type: true, employeeId: true }
+		select: {
+			id: true,
+			status: true,
+			type: true,
+			employeeId: true,
+			documents: { select: { storageKey: true } }
+		}
 	})
 	if (!req) error(404, 'Request not found')
 
@@ -179,6 +189,8 @@ export async function deleteRequest(id: string, organizationId: string, ctx: Aud
 	if (req.status === 'APPROVED') error(409, 'Approved requests cannot be deleted')
 
 	await db.request.delete({ where: { id } })
+	// Row cascade removed the document rows; sweep their bytes off disk too.
+	for (const d of req.documents) await deleteStoredFile(d.storageKey)
 	await writeAuditLog(ctx, {
 		action: 'DELETE',
 		entityType: 'Request',

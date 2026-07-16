@@ -2,7 +2,7 @@
 	import { enhance } from '$app/forms'
 	import type { SubmitFunction } from '@sveltejs/kit'
 	import { slide } from 'svelte/transition'
-	import { formatShortDate } from '$lib/utils/format'
+	import { formatDateRange } from '$lib/utils/format'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -55,6 +55,9 @@
 	// Per-request note (keyed by request id) — each card owns its own note.
 	let notes = $state<Record<string, string>>({})
 	const noteEmpty = (id: string) => (notes[id] ?? '').trim() === ''
+
+	const unverifiedCount = (docs: { verifiedAt: Date | string | null }[]) =>
+		docs.filter((d) => !d.verifiedAt).length
 </script>
 
 <svelte:head>
@@ -155,15 +158,31 @@
 							{req.employee.lastName}, {req.employee.firstName}
 						</p>
 						<p class="text-sm">
-							{#if req.dateFrom}{formatShortDate(
-									req.dateFrom
-								)}{#if req.dateTo && req.dateTo !== req.dateFrom}
-									– {formatShortDate(req.dateTo)}{/if}{/if}
+							{#if req.dateFrom}{formatDateRange(req.dateFrom, req.dateTo)}{/if}
 							{#if req.hours}
 								· {req.hours} hrs{/if}
 						</p>
 						{#if req.reason}
 							<p class="line-clamp-3 text-xs text-muted-foreground">{req.reason}</p>
+						{/if}
+						{#if req.documents.length}
+							{@const unverified = unverifiedCount(req.documents)}
+							<p class="text-xs">
+								<span class="text-muted-foreground"
+									>📎 {req.documents.length} document{req.documents.length === 1 ? '' : 's'}</span
+								>
+								{#if unverified}
+									<span
+										class="ml-1 rounded-full bg-yellow-100 px-2 py-0.5 font-medium text-yellow-700"
+										>{unverified} unverified</span
+									>
+								{:else}
+									<span
+										class="ml-1 rounded-full bg-green-100 px-2 py-0.5 font-medium text-green-700"
+										>all verified</span
+									>
+								{/if}
+							</p>
 						{/if}
 						<a
 							href="/requests/{req.id}?from=approvals"
