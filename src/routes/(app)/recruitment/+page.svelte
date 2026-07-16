@@ -7,6 +7,7 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 	let showCreate = $state(false)
 	let creating = $state(false)
+	let publishing = $state(false)
 	let selectedIds = $state<string[]>([])
 
 	const draftIds = $derived(
@@ -42,9 +43,11 @@
 					method="POST"
 					action="?/publishMany"
 					use:enhance={() => {
+						publishing = true
 						return async ({ update }) => {
 							selectedIds = []
 							await update()
+							publishing = false
 						}
 					}}
 				>
@@ -53,9 +56,10 @@
 					{/each}
 					<button
 						type="submit"
-						class="rounded-md border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/20"
+						disabled={publishing}
+						class="rounded-md border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
 					>
-						Publish selected ({selectedDraftIds.length})
+						{publishing ? 'Publishing…' : `Publish selected (${selectedDraftIds.length})`}
 					</button>
 				</form>
 			{/if}
