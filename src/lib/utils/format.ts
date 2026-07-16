@@ -20,6 +20,16 @@ export function formatShortDate(date: Date | string): string {
 	})
 }
 
+// Short date span, collapsing same-day ranges to a single date. Comparing the
+// formatted strings (not Date identity — two Date objects are never ===) also
+// collapses ranges that differ only by time-of-day.
+export function formatDateRange(from: Date | string, to?: Date | string | null): string {
+	const start = formatShortDate(from)
+	if (!to) return start
+	const end = formatShortDate(to)
+	return end === start ? start : `${start} – ${end}`
+}
+
 export function formatFullName(
 	firstName: string,
 	lastName: string,

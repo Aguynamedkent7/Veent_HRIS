@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation'
 	import type { SubmitFunction } from '@sveltejs/kit'
 	import { slide } from 'svelte/transition'
-	import { formatShortDate } from '$lib/utils/format'
+	import { formatDateRange, formatShortDate } from '$lib/utils/format'
 	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
 	import type { PageData, ActionData } from './$types'
 
@@ -168,8 +168,7 @@
 						<td class="px-4 py-3 font-medium">{leaveName(req.payload)}</td>
 						<td class="px-4 py-3 text-muted-foreground">
 							{#if req.dateFrom}
-								{formatShortDate(req.dateFrom)}{#if req.dateTo && req.dateTo !== req.dateFrom}
-									– {formatShortDate(req.dateTo)}{/if}
+								{formatDateRange(req.dateFrom, req.dateTo)}
 							{:else}
 								—
 							{/if}
