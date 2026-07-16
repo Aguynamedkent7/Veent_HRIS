@@ -73,7 +73,9 @@
 	)
 	const canSubmit = $derived(mode === 'edit' && isOwner && ts != null && ts.status === 'DRAFT')
 	// Repopulate a draft's entries from attendance — owner (own draft) or a manager/HR.
-	const canSync = $derived(mode === 'edit' && ts != null && ts.status === 'DRAFT' && (isOwner || isManager))
+	const canSync = $derived(
+		mode === 'edit' && ts != null && ts.status === 'DRAFT' && (isOwner || isManager)
+	)
 	// HR can submit+approve an aggregated draft in place (not owner-restricted like canSubmit).
 	// Only DRAFT is eligible — SUBMITTED/REJECTED go through the normal review flow.
 	const canApproveInEdit = $derived(
@@ -560,8 +562,10 @@
 					{#if canSync}
 						<form method="POST" action="?/syncAttendance" use:enhance={closeOnSuccess}>
 							<input type="hidden" name="id" value={ts.id} />
-							<button disabled={busy} class={btnGhost} title="Replace entries with this period's attendance"
-								>Sync from attendance</button
+							<button
+								disabled={busy}
+								class={btnGhost}
+								title="Replace entries with this period's attendance">Sync from attendance</button
 							>
 						</form>
 					{/if}

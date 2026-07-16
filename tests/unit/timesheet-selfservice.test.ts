@@ -73,21 +73,27 @@ describe('deleteTimesheet — owner vs manager authorization', () => {
 	it('blocks the owner from deleting a SUBMITTED timesheet', async () => {
 		dbMock.timesheet.findFirst.mockResolvedValue(makeTs({ status: 'SUBMITTED' }))
 		dbMock.employee.findUnique.mockResolvedValue({ id: 'emp-owner' })
-		await expect(deleteTimesheet('ts1', ORG, ctx('EMPLOYEE'))).rejects.toMatchObject({ status: 400 })
+		await expect(deleteTimesheet('ts1', ORG, ctx('EMPLOYEE'))).rejects.toMatchObject({
+			status: 400
+		})
 		expect(dbMock.timesheet.delete).not.toHaveBeenCalled()
 	})
 
 	it('blocks the owner from deleting an APPROVED timesheet', async () => {
 		dbMock.timesheet.findFirst.mockResolvedValue(makeTs({ status: 'APPROVED' }))
 		dbMock.employee.findUnique.mockResolvedValue({ id: 'emp-owner' })
-		await expect(deleteTimesheet('ts1', ORG, ctx('EMPLOYEE'))).rejects.toMatchObject({ status: 400 })
+		await expect(deleteTimesheet('ts1', ORG, ctx('EMPLOYEE'))).rejects.toMatchObject({
+			status: 400
+		})
 		expect(dbMock.timesheet.delete).not.toHaveBeenCalled()
 	})
 
 	it("blocks a non-owner employee from deleting someone else's timesheet", async () => {
 		dbMock.timesheet.findFirst.mockResolvedValue(makeTs())
 		dbMock.employee.findUnique.mockResolvedValue({ id: 'emp-other' }) // not the owner
-		await expect(deleteTimesheet('ts1', ORG, ctx('EMPLOYEE'))).rejects.toMatchObject({ status: 403 })
+		await expect(deleteTimesheet('ts1', ORG, ctx('EMPLOYEE'))).rejects.toMatchObject({
+			status: 403
+		})
 		expect(dbMock.timesheet.delete).not.toHaveBeenCalled()
 	})
 
@@ -139,7 +145,11 @@ describe('attendanceEntriesForRange — mapping', () => {
 				status: 'PRESENT'
 			}
 		])
-		const entries = await attendanceEntriesForRange('emp-owner', new Date('2026-07-13'), new Date('2026-07-13'))
+		const entries = await attendanceEntriesForRange(
+			'emp-owner',
+			new Date('2026-07-13'),
+			new Date('2026-07-13')
+		)
 		expect(entries).toEqual([
 			{
 				date: new Date('2026-07-13'),
@@ -154,6 +164,8 @@ describe('attendanceEntriesForRange — mapping', () => {
 
 	it('returns [] when the range has no attendance', async () => {
 		dbMock.attendanceDay.findMany.mockResolvedValue([])
-		expect(await attendanceEntriesForRange('emp-owner', new Date('2026-07-13'), new Date('2026-07-19'))).toEqual([])
+		expect(
+			await attendanceEntriesForRange('emp-owner', new Date('2026-07-13'), new Date('2026-07-19'))
+		).toEqual([])
 	})
 })

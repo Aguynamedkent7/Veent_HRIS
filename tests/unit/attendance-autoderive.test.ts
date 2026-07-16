@@ -26,7 +26,12 @@ vi.mock('$lib/server/audit', () => ({ writeAuditLog: vi.fn().mockResolvedValue(u
 const { deriveRange, autoDeriveFromPunches } = await import('$lib/server/services/attendance')
 
 const EMP = { id: 'emp1', organizationId: 'org1', workSchedule: null }
-const CTX = { organizationId: 'org1', actorId: 'user1', actorRole: 'EMPLOYEE' as const, ipAddress: 'test' }
+const CTX = {
+	organizationId: 'org1',
+	actorId: 'user1',
+	actorRole: 'EMPLOYEE' as const,
+	ipAddress: 'test'
+}
 // Single PHT day: Mon 2026-07-13, a regular weekday under the default 09:00–18:00 shift.
 const RANGE = { from: new Date('2026-07-13'), to: new Date('2026-07-13'), employeeId: 'emp1' }
 // A full worked day: IN 09:00 PHT (01:00Z), OUT 18:00 PHT (10:00Z) → PRESENT, 8h regular.
