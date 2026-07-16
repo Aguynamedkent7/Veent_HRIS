@@ -1,8 +1,9 @@
 import { requireMinRole } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
+import { autoDeriveFromPunches } from '$lib/server/services/attendance'
 import type { PageServerLoad } from './$types'
 
-export const load: PageServerLoad = async ({ locals, url }) => {
+export const load: PageServerLoad = async ({ locals, url, getClientAddress }) => {
 	const user = locals.user!
 	requireMinRole(user.role, 'MANAGER')
 
@@ -23,6 +24,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const endParam = url.searchParams.get('end')
 	const startDate = startParam ? new Date(startParam) : weekStart
 	const endDate = endParam ? new Date(endParam) : weekEnd
+	const startISO = startDate.toISOString().slice(0, 10)
+	const endISO = endDate.toISOString().slice(0, 10)
 
 	// Get team members
 	const members = await db.employee.findMany({
@@ -33,52 +36,36 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		select: { id: true, firstName: true, lastName: true }
 	})
 
-	// Get approved timesheets with entries in range
-	const timesheets = await db.timesheet.findMany({
+	// Auto-derive from punches over the range so ABSENT/INCOMPLETE days materialise (non-destructive;
+	// fills only missing days). This is what makes the "who failed to time in" check work — otherwise
+	// a no-punch day is invisible until someone opens that employee's attendance.
+	await autoDeriveFromPunches(
+		user.organizationId,
+		{ from: startDate, to: endDate },
+		{
+			organizationId: user.organizationId,
+			actorId: user.id,
+			actorRole: user.role,
+			ipAddress: getClientAddress()
+		}
+	)
+
+	// Presence comes from the derived AttendanceDay records (same source as the single-employee
+	// attendance view), so ABSENT / INCOMPLETE / ON_LEAVE / HOLIDAY / REST_DAY each render distinctly
+	// instead of collapsing to a blank "no data" cell.
+	const days = await db.attendanceDay.findMany({
 		where: {
-			status: 'APPROVED',
-			employeeId: { in: members.map((m: { id: string }) => m.id) },
-			periodStart: { lte: endDate },
-			periodEnd: { gte: startDate }
+			employeeId: { in: members.map((m) => m.id) },
+			date: { gte: new Date(startISO), lte: new Date(endISO) }
 		},
-		include: { entries: { where: { date: { gte: startDate, lte: endDate } } } }
+		select: { employeeId: true, date: true, status: true }
 	})
 
-	// Get approved leave in range (leave is now a Request of type LEAVE)
-	const leaveReqs = await db.request.findMany({
-		where: {
-			type: 'LEAVE',
-			status: 'APPROVED',
-			employeeId: { in: members.map((m: { id: string }) => m.id) },
-			dateFrom: { lte: endDate },
-			dateTo: { gte: startDate }
-		},
-		select: { employeeId: true, dateFrom: true, dateTo: true }
-	})
-	const leaves = leaveReqs.map((l) => ({
-		employeeId: l.employeeId,
-		startDate: l.dateFrom!,
-		endDate: l.dateTo!
-	}))
-
-	// Build attendance map: { [employeeId]: { [dateISO]: 'P' | 'L' } }
+	// attendanceMap: { [employeeId]: { [dateISO]: AttendanceStatus } }
 	const attendanceMap: Record<string, Record<string, string>> = {}
-	for (const ts of timesheets) {
-		for (const entry of ts.entries) {
-			const empId = ts.employeeId
-			const dateISO = entry.date.toISOString().slice(0, 10)
-			if (!attendanceMap[empId]) attendanceMap[empId] = {}
-			if (Number(entry.hoursWorked) > 0) attendanceMap[empId][dateISO] = 'P'
-		}
-	}
-	for (const leave of leaves) {
-		const cur = new Date(leave.startDate)
-		while (cur <= leave.endDate) {
-			const dateISO = cur.toISOString().slice(0, 10)
-			if (!attendanceMap[leave.employeeId]) attendanceMap[leave.employeeId] = {}
-			attendanceMap[leave.employeeId][dateISO] = 'L'
-			cur.setDate(cur.getDate() + 1)
-		}
+	for (const d of days) {
+		const dateISO = d.date.toISOString().slice(0, 10)
+		;(attendanceMap[d.employeeId] ??= {})[dateISO] = d.status
 	}
 
 	// Build date columns array
@@ -93,7 +80,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		members,
 		dates,
 		attendanceMap,
-		startDate: startDate.toISOString().slice(0, 10),
-		endDate: endDate.toISOString().slice(0, 10)
+		startDate: startISO,
+		endDate: endISO
 	}
 }

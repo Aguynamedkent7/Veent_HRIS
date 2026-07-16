@@ -3,6 +3,20 @@
 	import type { PageData } from './$types'
 
 	let { data }: { data: PageData } = $props()
+
+	// AttendanceDay.status → cell badge (short code, colour, legend label). Order drives the legend.
+	const STATUS: Record<string, { code: string; label: string; class: string }> = {
+		PRESENT: { code: 'P', label: 'Present', class: 'bg-green-100 text-green-700' },
+		LATE: { code: 'LT', label: 'Late', class: 'bg-amber-100 text-amber-700' },
+		INCOMPLETE: { code: 'IN', label: 'Incomplete', class: 'bg-orange-100 text-orange-700' },
+		ABSENT: { code: 'A', label: 'Absent', class: 'bg-red-100 text-red-700' },
+		ON_LEAVE: { code: 'LV', label: 'On Leave', class: 'bg-blue-100 text-blue-700' },
+		HOLIDAY: { code: 'H', label: 'Holiday', class: 'bg-purple-100 text-purple-700' },
+		REST_DAY: { code: 'R', label: 'Rest Day', class: 'bg-muted text-muted-foreground' }
+	}
+	// The dash cell = no AttendanceDay record for that day (no punch / not yet derived).
+	const NO_DATA = { code: '–', label: 'No data', class: 'bg-muted text-muted-foreground' }
+	const legend = [...Object.values(STATUS), NO_DATA]
 </script>
 
 <svelte:head>
@@ -14,7 +28,8 @@
 		<div>
 			<h1 class="text-2xl font-bold tracking-tight">Team Attendance</h1>
 			<p class="text-sm text-muted-foreground">
-				Multi-day overview — who was present or on leave across a date range.
+				Multi-day overview — present, late, absent, incomplete, on leave, holiday, or rest day
+				across a date range.
 			</p>
 		</div>
 		<a
@@ -51,28 +66,16 @@
 	</form>
 
 	<!-- Legend -->
-	<div class="flex gap-4 text-xs text-muted-foreground">
-		<span class="flex items-center gap-1.5">
-			<span
-				class="inline-flex h-5 w-5 items-center justify-center rounded bg-green-100 text-green-700 font-bold"
-				>P</span
-			>
-			Present
-		</span>
-		<span class="flex items-center gap-1.5">
-			<span
-				class="inline-flex h-5 w-5 items-center justify-center rounded bg-yellow-100 text-yellow-700 font-bold"
-				>L</span
-			>
-			On Leave
-		</span>
-		<span class="flex items-center gap-1.5">
-			<span
-				class="inline-flex h-5 w-5 items-center justify-center rounded bg-muted text-muted-foreground font-bold"
-				>–</span
-			>
-			No Data
-		</span>
+	<div class="flex flex-wrap gap-4 text-xs text-muted-foreground">
+		{#each legend as item (item.code)}
+			<span class="flex items-center gap-1.5">
+				<span
+					class="inline-flex h-5 w-5 items-center justify-center rounded text-[10px] font-bold {item.class}"
+					>{item.code}</span
+				>
+				{item.label}
+			</span>
+		{/each}
 	</div>
 
 	<!-- Attendance table -->
@@ -108,27 +111,14 @@
 								</a>
 							</td>
 							{#each data.dates as date (date)}
-								{@const status = data.attendanceMap[member.id]?.[date]}
+								{@const badge = STATUS[data.attendanceMap[member.id]?.[date]] ?? NO_DATA}
 								<td class="px-2 py-3 text-center">
-									{#if status === 'P'}
-										<span
-											class="inline-flex h-6 w-6 items-center justify-center rounded bg-green-100 text-green-700 text-xs font-bold"
-										>
-											P
-										</span>
-									{:else if status === 'L'}
-										<span
-											class="inline-flex h-6 w-6 items-center justify-center rounded bg-yellow-100 text-yellow-700 text-xs font-bold"
-										>
-											L
-										</span>
-									{:else}
-										<span
-											class="inline-flex h-6 w-6 items-center justify-center rounded bg-muted text-muted-foreground text-xs"
-										>
-											–
-										</span>
-									{/if}
+									<span
+										class="inline-flex h-6 min-w-6 items-center justify-center rounded px-1 text-xs font-bold {badge.class}"
+										title={badge.label}
+									>
+										{badge.code}
+									</span>
 								</td>
 							{/each}
 						</tr>
