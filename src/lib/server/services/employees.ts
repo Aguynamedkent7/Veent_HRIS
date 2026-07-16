@@ -195,9 +195,10 @@ export async function createEmployee(
 				reportsToId: input.reportsToId,
 				discordId: input.discordId,
 				// Onboarding sets the work schedule (attendance derivation depends on it) and the
-				// position; both are optional and left null when not chosen.
-				workScheduleId: input.workScheduleId ?? null,
-				positionId: input.positionId ?? null
+				// position; both are optional. Coerce empty string → null (an empty <select> posts
+				// "", which is not a valid FK) so we don't hit a foreign-key violation.
+				workScheduleId: input.workScheduleId || null,
+				positionId: input.positionId || null
 			},
 			include: { department: true, user: { select: { email: true, role: true } } }
 		})
