@@ -70,6 +70,28 @@ async function assertManagesEmployee(ctx: AuditContext, reportsToId: string | nu
 	}
 }
 
+/**
+ * Authorize a mutation of `ts`: the owner may act on their own timesheet (callers apply the
+ * status rules — e.g. draft-only); managers/HR act per their direct-reports scope. A non-owner
+ * without a management role is rejected. Returns whether the actor owns the timesheet.
+ */
+async function assertCanModify(
+	ctx: AuditContext,
+	ts: { employeeId: string; employee: { reportsToId: string | null } }
+) {
+	const actorEmployee = await db.employee.findUnique({
+		where: { userId: ctx.actorId },
+		select: { id: true }
+	})
+	const isOwner = actorEmployee?.id === ts.employeeId
+	if (isOwner) return { isOwner: true }
+	if (['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN'].includes(ctx.actorRole)) {
+		await assertManagesEmployee(ctx, ts.employee.reportsToId)
+		return { isOwner: false }
+	}
+	error(403, 'You can only modify your own timesheet')
+}
+
 export async function createTimesheet(
 	employeeId: string,
 	periodStart: Date,
@@ -117,7 +139,10 @@ export async function updateTimesheetEntries(
 	ctx: AuditContext
 ) {
 	const ts = await getTimesheet(id, organizationId)
-	await assertManagesEmployee(ctx, ts.employee.reportsToId)
+	const { isOwner } = await assertCanModify(ctx, ts)
+	// The owner may only change their own DRAFT (e.g. sync from attendance); managers/HR may edit
+	// anything that isn't already APPROVED.
+	if (isOwner && ts.status !== 'DRAFT') error(400, 'You can only edit your own draft timesheet')
 	if (ts.status === 'APPROVED') error(400, 'Approved timesheets cannot be edited')
 
 	const totalHours = entries.reduce((sum, e) => sum + e.hoursWorked, 0)
@@ -168,12 +193,17 @@ export async function submitTimesheet(id: string, employeeId: string, ctx: Audit
 }
 
 /**
- * Delete a timesheet of any status (entries cascade). Managers are scoped to their direct
- * reports; HR/super act org-wide. Deletion is explicit (confirmed in the UI), never automatic.
+ * Delete a timesheet (entries cascade). The owner may delete their own DRAFT/REJECTED; managers
+ * are scoped to their direct reports and HR/super act org-wide (any status). Deletion is explicit
+ * (confirmed in the UI), never automatic.
  */
 export async function deleteTimesheet(id: string, organizationId: string, ctx: AuditContext) {
 	const ts = await getTimesheet(id, organizationId)
-	await assertManagesEmployee(ctx, ts.employee.reportsToId)
+	const { isOwner } = await assertCanModify(ctx, ts)
+	// The owner may delete only their own DRAFT/REJECTED timesheet — not once it's submitted (under
+	// review) or approved (locked). Managers/HR keep the broader scope handled by assertCanModify.
+	if (isOwner && ts.status !== 'DRAFT' && ts.status !== 'REJECTED')
+		error(400, 'You can only delete your own draft timesheet')
 
 	await db.timesheet.delete({ where: { id } })
 

@@ -2,6 +2,7 @@ import { fail, isHttpError } from '@sveltejs/kit'
 import { requireMinRole } from '$lib/server/rbac'
 import {
 	listTimesheets,
+	getTimesheet,
 	createTimesheet,
 	submitTimesheet,
 	updateTimesheetEntries,
@@ -12,6 +13,7 @@ import {
 	previewTimeLogAggregation,
 	aggregateTimeLogsToTimesheet
 } from '$lib/server/services/timelog'
+import { autoDeriveFromPunches, attendanceEntriesForRange } from '$lib/server/services/attendance'
 import { db } from '$lib/server/db'
 import { z } from 'zod'
 import type { Actions, PageServerLoad, RequestEvent } from './$types'
@@ -188,14 +190,52 @@ export const actions: Actions = {
 		const parsed = createSchema.safeParse(raw)
 		if (!parsed.success) return fail(400, { error: 'Invalid dates' })
 
+		const ctx = ctxOf(event)
 		try {
+			// Reflect the employee's punches for the period, then seed the timesheet from the
+			// derived attendance so a new sheet isn't empty. No attendance → an empty draft.
+			await autoDeriveFromPunches(
+				user.organizationId,
+				{ from: parsed.data.periodStart, to: parsed.data.periodEnd, employeeId: myEmployee.id },
+				ctx
+			)
+			const entries = await attendanceEntriesForRange(
+				myEmployee.id,
+				parsed.data.periodStart,
+				parsed.data.periodEnd
+			)
 			await createTimesheet(
 				myEmployee.id,
 				parsed.data.periodStart,
 				parsed.data.periodEnd,
-				[],
-				ctxOf(event)
+				entries,
+				ctx
 			)
+		} catch (e) {
+			return toFail(e)
+		}
+	},
+
+	// Repopulate a draft's entries from the period's attendance (re-derives punches first).
+	// Authorized in updateTimesheetEntries: the owner may sync their own draft; managers/HR too.
+	syncAttendance: async (event) => {
+		const org = event.locals.user!.organizationId
+		const id = (await event.request.formData()).get('id') as string
+		if (!id) return fail(400, { error: 'Missing timesheet id' })
+
+		const ctx = ctxOf(event)
+		try {
+			const ts = await getTimesheet(id, org)
+			await autoDeriveFromPunches(
+				org,
+				{ from: ts.periodStart, to: ts.periodEnd, employeeId: ts.employeeId },
+				ctx
+			)
+			const entries = await attendanceEntriesForRange(ts.employeeId, ts.periodStart, ts.periodEnd)
+			await updateTimesheetEntries(id, org, entries, ctx)
+			return {
+				saved: `Synced ${entries.length} day${entries.length === 1 ? '' : 's'} from attendance.`
+			}
 		} catch (e) {
 			return toFail(e)
 		}
@@ -239,8 +279,9 @@ export const actions: Actions = {
 		}
 	},
 
+	// Authorization is in deleteTimesheet: the owner may delete their own DRAFT/REJECTED; managers
+	// (direct reports) and HR/super act more broadly. No hard role gate here.
 	delete: async (event) => {
-		requireMinRole(event.locals.user!.role, 'MANAGER')
 		const id = (await event.request.formData()).get('id') as string
 		try {
 			await deleteTimesheet(id, event.locals.user!.organizationId, ctxOf(event))
@@ -280,9 +321,10 @@ export const actions: Actions = {
 		}
 	},
 
-	// Mass delete: delete each selected timesheet (scoped per item); report how many.
+	// Mass delete: delete each selected timesheet (authorized per item in deleteTimesheet).
+	// Items the caller can't delete — not owned, or submitted/approved on a select-all — throw
+	// and are counted as skipped rather than aborting the batch.
 	deleteMany: async (event) => {
-		requireMinRole(event.locals.user!.role, 'MANAGER')
 		const ids = String((await event.request.formData()).get('ids') ?? '')
 			.split(',')
 			.map((s) => s.trim())

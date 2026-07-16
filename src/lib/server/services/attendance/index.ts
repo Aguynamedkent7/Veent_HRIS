@@ -94,7 +94,7 @@ export async function deriveRange(
 	organizationId: string,
 	range: { from: Date; to: Date; employeeId?: string },
 	ctx: AuditContext,
-	opts: { onlyMissing?: boolean } = {}
+	opts: { skipUnpunched?: boolean } = {}
 ) {
 	const fromKey = manilaDayKey(range.from)
 	const toKey = manilaDayKey(range.to)
@@ -193,8 +193,11 @@ export async function deriveRange(
 			if (existing?.isLocked) continue
 			// Never overwrite a manual HR override, even on a full Refresh re-derive.
 			if (existing?.manuallyEdited) continue
-			// Auto-derive only fills gaps — never overwrites an existing (possibly hand-corrected) day.
-			if (opts.onlyMissing && existing) continue
+			// On the page-load derive, refresh a machine-written day only when it has punches to
+			// re-pair — so a freshly-punched "today" self-heals from a stale ABSENT row — but leave
+			// punch-less days (weekends, genuine absences) alone so we don't churn them every load.
+			// Locked/edited days already returned above, so this never clobbers a human edit.
+			if (opts.skipUnpunched && existing && !byDay.has(dayKey)) continue
 
 			const r = deriveAttendanceDay({
 				punches: byDay.get(dayKey) ?? [],
@@ -245,9 +248,11 @@ export async function deriveRange(
 }
 
 /**
- * Non-destructive auto-derive for page loads: if any punches exist in the window, derive only
- * the days that don't yet have an AttendanceDay. Cheap and idempotent after the first view, and
- * it leaves existing (corrected/locked) days untouched — a full re-derive is the Refresh button.
+ * Non-destructive auto-derive for page loads: if any punches exist in the window, derive the
+ * missing days plus any existing machine-written day that has punches (so a freshly-punched
+ * "today" self-heals from a stale ABSENT row instead of freezing). Punch-less existing days are
+ * left alone so loads stay cheap, and corrected/locked days are never touched — a full re-derive
+ * of everything is the Refresh button.
  */
 export async function autoDeriveFromPunches(
 	organizationId: string,
@@ -269,8 +274,34 @@ export async function autoDeriveFromPunches(
 	})
 	if (punchCount === 0) return { derived: 0, flagged: 0 }
 
-	const res = await deriveRange(organizationId, range, ctx, { onlyMissing: true })
+	const res = await deriveRange(organizationId, range, ctx, { skipUnpunched: true })
 	return { derived: res.derived, flagged: res.flagged.length }
+}
+
+/**
+ * Read the materialised AttendanceDay rows over [from, to] (PHT) and map each to a timesheet
+ * entry: hoursWorked = regular + overtime, otHours = overtime, notes = the day note or status.
+ * Pure read — call autoDeriveFromPunches first if you need punches reflected. Returns [] when the
+ * range has no attendance, so callers decide whether an empty result is an error.
+ */
+export async function attendanceEntriesForRange(employeeId: string, from: Date, to: Date) {
+	const fromKey = manilaDayKey(from)
+	const toKey = manilaDayKey(to)
+	const days = await db.attendanceDay.findMany({
+		where: { employeeId, date: { gte: new Date(fromKey), lte: new Date(toKey) } },
+		orderBy: { date: 'asc' }
+	})
+	return days.map((d) => {
+		const ot = Number(d.overtimeHours)
+		return {
+			date: d.date,
+			timeIn: d.timeIn,
+			timeOut: d.timeOut,
+			hoursWorked: Number(d.regularHours) + ot,
+			otHours: ot,
+			notes: d.note ?? d.status
+		}
+	})
 }
 
 /**
@@ -292,28 +323,16 @@ export async function createTimesheetFromAttendance(
 	})
 	if (!emp) error(404, 'Employee not found')
 
-	const fromKey = manilaDayKey(from)
-	const toKey = manilaDayKey(to)
-	const days = await db.attendanceDay.findMany({
-		where: { employeeId, date: { gte: new Date(fromKey), lte: new Date(toKey) } },
-		orderBy: { date: 'asc' }
-	})
-	if (days.length === 0) error(400, 'No attendance in this range to save as a timesheet.')
+	const entries = await attendanceEntriesForRange(employeeId, from, to)
+	if (entries.length === 0) error(400, 'No attendance in this range to save as a timesheet.')
 
-	const entries = days.map((d) => {
-		const ot = Number(d.overtimeHours)
-		const worked = Number(d.regularHours) + ot
-		return {
-			date: d.date,
-			timeIn: d.timeIn,
-			timeOut: d.timeOut,
-			hoursWorked: worked,
-			otHours: ot,
-			notes: d.note ?? d.status
-		}
-	})
-
-	return createTimesheet(employeeId, new Date(fromKey), new Date(toKey), entries, ctx)
+	return createTimesheet(
+		employeeId,
+		new Date(manilaDayKey(from)),
+		new Date(manilaDayKey(to)),
+		entries,
+		ctx
+	)
 }
 
 /** HR correction of a single AttendanceDay. Rejected if the day is locked. */

@@ -14,6 +14,7 @@
 
 	// ─── Bulk selection ─────────────────────────────────────────────────────────
 	let selected = $state<string[]>([])
+	let bulkReason = $state('')
 	let busy = $state(false)
 	function toggle(id: string) {
 		selected = selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]
@@ -26,7 +27,10 @@
 		return async ({ result, update }) => {
 			await update()
 			busy = false
-			if (result.type === 'success') selected = []
+			if (result.type === 'success') {
+				selected = []
+				bulkReason = ''
+			}
 		}
 	}
 
@@ -50,28 +54,45 @@
 		</div>
 	{/if}
 
+	{#if form?.saved}
+		<div
+			class="rounded-md border border-green-500/20 bg-green-500/10 px-4 py-2 text-sm text-green-600"
+		>
+			{form.saved}
+		</div>
+	{/if}
+
 	{#if data.pendingTimesheets.length === 0}
 		<div class="rounded-md border bg-muted/50 px-6 py-12 text-center text-muted-foreground text-sm">
 			No pending timesheets to review.
 		</div>
 	{:else}
 		<!-- Bulk bar: appears when cards are selected -->
-		<div class="flex items-center justify-between gap-3">
-			<label class="flex items-center gap-2 text-sm text-muted-foreground">
-				<input
-					type="checkbox"
-					checked={allSelected}
-					onchange={(e) => toggleAll(allIds, e.currentTarget.checked)}
-					class="align-middle"
-				/>
-				Select all
-			</label>
-			{#if selected.length}
-				<div
-					class="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-1.5"
-					transition:slide={{ duration: 120 }}
-				>
+		<label class="flex w-fit items-center gap-2 text-sm text-muted-foreground">
+			<input
+				type="checkbox"
+				checked={allSelected}
+				onchange={(e) => toggleAll(allIds, e.currentTarget.checked)}
+				class="align-middle"
+			/>
+			Select all
+		</label>
+
+		{#if selected.length}
+			<div
+				class="flex flex-wrap items-end justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3"
+				transition:slide={{ duration: 120 }}
+			>
+				<div class="flex-1 space-y-1">
 					<span class="text-sm font-medium">{selected.length} selected</span>
+					<textarea
+						rows="1"
+						placeholder="Rejection reason (required to reject — applied to all selected)"
+						class="w-full rounded-md border border-input bg-background px-2 py-1 text-xs"
+						bind:value={bulkReason}
+					></textarea>
+				</div>
+				<div class="flex items-center gap-2">
 					<button
 						onclick={() => (selected = [])}
 						class="text-sm text-muted-foreground hover:underline">Clear</button
@@ -80,13 +101,22 @@
 						<input type="hidden" name="ids" value={selected.join(',')} />
 						<button
 							disabled={busy}
-							class="rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+							class="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
 							>Approve selected</button
 						>
 					</form>
+					<form method="POST" action="?/rejectMany" use:enhance={clearOnSuccess}>
+						<input type="hidden" name="ids" value={selected.join(',')} />
+						<input type="hidden" name="rejectionReason" value={bulkReason} />
+						<button
+							disabled={busy || bulkReason.trim() === ''}
+							class="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+							>Reject selected</button
+						>
+					</form>
 				</div>
-			{/if}
-		</div>
+			</div>
+		{/if}
 
 		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 			{#each data.pendingTimesheets as ts (ts.id)}

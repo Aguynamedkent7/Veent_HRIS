@@ -60,27 +60,26 @@ export const load: PageServerLoad = async ({ locals, url, getClientAddress }) =>
 	}
 
 	// Auto-derive from punches so the page shows data without a manual step. Non-destructive
-	// (fills only missing days); managers only, since it writes AttendanceDay records.
-	if (canManage) {
-		const ctx = {
-			organizationId: user.organizationId,
-			actorId: user.id,
-			actorRole: user.role,
-			ipAddress: getClientAddress()
-		}
-		if (view === 'employee' && selectedEmployeeId) {
-			await autoDeriveFromPunches(
-				user.organizationId,
-				{ from: new Date(from), to: new Date(to), employeeId: selectedEmployeeId },
-				ctx
-			)
-		} else if (view === 'team') {
-			await autoDeriveFromPunches(
-				user.organizationId,
-				{ from: new Date(date), to: new Date(date) },
-				ctx
-			)
-		}
+	// (fills only missing days, leaves locked/corrected days untouched). Employees may derive
+	// their own days (selectedEmployeeId is their own id); the team-wide sweep stays manager-only.
+	const ctx = {
+		organizationId: user.organizationId,
+		actorId: user.id,
+		actorRole: user.role,
+		ipAddress: getClientAddress()
+	}
+	if (view === 'employee' && selectedEmployeeId) {
+		await autoDeriveFromPunches(
+			user.organizationId,
+			{ from: new Date(from), to: new Date(to), employeeId: selectedEmployeeId },
+			ctx
+		)
+	} else if (view === 'team' && canManage) {
+		await autoDeriveFromPunches(
+			user.organizationId,
+			{ from: new Date(date), to: new Date(date) },
+			ctx
+		)
 	}
 
 	const days =
