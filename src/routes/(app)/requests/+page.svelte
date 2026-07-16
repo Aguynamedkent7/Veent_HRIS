@@ -355,7 +355,6 @@
 						class="cursor-pointer hover:bg-muted/30"
 						role="link"
 						tabindex="0"
-<<<<<<< Updated upstream
 						onclick={(e) => {
 							// Let the row's action buttons (Resubmit/Cancel) fire without also navigating.
 							if ((e.target as HTMLElement).closest('button, a, form')) return
@@ -363,23 +362,13 @@
 						}}
 						onkeydown={(e) => {
 							if ((e.target as HTMLElement).closest('button, a, form')) return
-=======
-						onclick={() => goto(`/requests/${req.id}`)}
-						onkeydown={(e) => {
->>>>>>> Stashed changes
 							if (e.key === 'Enter' || e.key === ' ') {
 								e.preventDefault()
 								goto(`/requests/${req.id}`)
 							}
 						}}
 					>
-<<<<<<< Updated upstream
 						<td class="px-4 py-3 font-medium">{typeLabel(req.type)}</td>
-=======
-						<td class="px-4 py-3 font-medium"
-							><a href="/requests/{req.id}" class="hover:underline">{typeLabel(req.type)}</a></td
-						>
->>>>>>> Stashed changes
 						<td class="px-4 py-3 text-muted-foreground">
 							{#if req.dateFrom}
 								{formatDateRange(req.dateFrom, req.dateTo)}
@@ -398,7 +387,7 @@
 						<td class="px-4 py-3 text-right text-muted-foreground"
 							>{formatShortDate(req.createdAt)}</td
 						>
-						<td class="px-4 py-3 text-right" onclick={(e) => e.stopPropagation()}>
+						<td class="px-4 py-3 text-right">
 							<div class="flex items-center justify-end gap-2">
 								{#if req.status === 'RETURNED'}
 									<form method="POST" action="?/resubmit" use:enhance>
