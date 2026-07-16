@@ -351,7 +351,7 @@ their own `/speckit-plan` pass before task breakdown — this is a module-level 
 
 ### 11.8 Separation (FR-072)
 
-- [ ] T180 `SeparationRecord` + clearance checklist + exit docs + final-pay computation + separation report ([#32](https://github.com/Aguynamedkent7/Veent_HRIS/issues/32))
+- [x] T180 `SeparationRecord` + clearance checklist + exit docs + final-pay computation + separation report ([#32](https://github.com/Aguynamedkent7/Veent_HRIS/issues/32))
 
 ### 11.9 Dashboard & comms (FR-076)
 

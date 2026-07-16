@@ -13,6 +13,7 @@ import {
 	generateGovernmentRemittance,
 	generateBIRWithholding
 } from '$lib/server/services/reports'
+import { generateSeparationReport } from '$lib/server/services/separation'
 import { canViewPayrollReports } from '$lib/server/rbac'
 import type { PageServerLoad } from './$types'
 
@@ -26,7 +27,8 @@ const VALID_TYPES = [
 	'overtime',
 	'loan-summary',
 	'government-remittance',
-	'bir-withholding'
+	'bir-withholding',
+	'separation'
 ] as const
 // Payroll reports are visible to Payroll Officer / Finance; the rest are HR-only.
 const PAYROLL_REPORT_TYPES = [
@@ -107,6 +109,18 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 	} else if (type === 'bir-withholding') {
 		results = await generateBIRWithholding(user.organizationId, { startDate, endDate })
 		columns = ['Employee', 'TIN', 'Gross', 'TaxWithheld']
+	} else if (type === 'separation') {
+		results = await generateSeparationReport(user.organizationId, { startDate, endDate })
+		columns = [
+			'EmployeeNumber',
+			'Employee',
+			'Department',
+			'Type',
+			'EffectiveDate',
+			'Status',
+			'Clearance',
+			'FinalPay'
+		]
 	}
 
 	return {
