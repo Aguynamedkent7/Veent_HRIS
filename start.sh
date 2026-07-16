@@ -30,36 +30,47 @@ else
   fi
 
   echo "    Creating container ${CONTAINER}..."
+  # Host networking (not -p bridge publishing) so the container never depends on the
+  # docker0 bridge — a down/IP-less docker0 (kept that way to stop it shadowing wlan0)
+  # would otherwise make docker-proxy accept connections it can't relay (Prisma P1001).
+  # Postgres binds the host directly on DB_PORT via `-c port=`; :5432 is already taken.
   docker run -d --name "${CONTAINER}" \
+    --network host \
     -e POSTGRES_USER="${DB_USER}" \
     -e POSTGRES_PASSWORD="${DB_PASS}" \
     -e POSTGRES_DB="${DB_NAME}" \
-    -p "${DB_PORT}:5432" \
-    "${PG_IMAGE}"
+    "${PG_IMAGE}" \
+    -c port="${DB_PORT}"
 fi
 
 echo "==> Waiting for Postgres to accept connections..."
-until docker exec "${CONTAINER}" pg_isready -U "${DB_USER}" -d "${DB_NAME}" >/dev/null 2>&1; do
+until docker exec "${CONTAINER}" pg_isready -U "${DB_USER}" -d "${DB_NAME}" -p "${DB_PORT}" >/dev/null 2>&1; do
   sleep 1
 done
 
-# The pg_isready above only proves Postgres is up *inside* the container — it does
-# NOT prove the host can reach it. If the docker0 bridge is down (or a firewall drops
-# bridge traffic), docker-proxy still accepts on :${DB_PORT} but can't relay to the
-# container, so every DB connection hangs until Prisma times out with P1001. Probe the
-# real relay target here so that failure is loud and actionable instead of silent.
-echo "==> Verifying the host can actually reach the container..."
+# pg_isready above only proves Postgres is up *inside* the container — not that the
+# host can reach it. Probe the real target from the host so a broken path fails loudly
+# here instead of hanging until Prisma times out with P1001. In host-network mode
+# Postgres binds the host directly; in legacy bridge mode we'd reach it over docker0.
+echo "==> Verifying the host can actually reach the DB..."
 CONTAINER_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${CONTAINER}" 2>/dev/null)
-if [ -n "${CONTAINER_IP}" ] && ! timeout 5 bash -c "exec 3<>/dev/tcp/${CONTAINER_IP}/5432" 2>/dev/null; then
-  echo "    ERROR: Postgres is running, but the host cannot reach it at ${CONTAINER_IP}:5432." >&2
-  echo "           docker-proxy accepts on :${DB_PORT} but can't relay to the bridge, so DB" >&2
-  echo "           connections would hang until Prisma times out (P1001)." >&2
-  DOCKER0_STATE=$(ip -br link show docker0 2>/dev/null | awk '{print $2}')
-  if [ "${DOCKER0_STATE}" != "UP" ] && [ "${DOCKER0_STATE}" != "UNKNOWN" ]; then
-    echo "           Cause: the docker0 bridge is ${DOCKER0_STATE:-missing}. Bring it up with:" >&2
-    echo "               sudo ip link set docker0 up" >&2
+if [ -n "${CONTAINER_IP}" ]; then
+  PROBE_HOST="${CONTAINER_IP}"; PROBE_PORT="5432"; BRIDGE_MODE=1
+else
+  PROBE_HOST="127.0.0.1"; PROBE_PORT="${DB_PORT}"; BRIDGE_MODE=0
+fi
+if ! timeout 5 bash -c "exec 3<>/dev/tcp/${PROBE_HOST}/${PROBE_PORT}" 2>/dev/null; then
+  echo "    ERROR: Postgres is running, but the host cannot reach it at ${PROBE_HOST}:${PROBE_PORT}." >&2
+  if [ "${BRIDGE_MODE}" = "1" ]; then
+    echo "           This container uses the docker0 bridge; docker-proxy accepts on" >&2
+    echo "           :${DB_PORT} but can't relay, so DB connections would hang (P1001)." >&2
+    DOCKER0_STATE=$(ip -br addr show docker0 2>/dev/null)
+    echo "           docker0: ${DOCKER0_STATE:-missing}" >&2
+    echo "           Fix: recreate on host networking — 'docker rm -f ${CONTAINER} && ./start.sh'" >&2
+    echo "           (or restore the bridge: sudo ip addr add 172.17.0.1/16 dev docker0 && sudo ip link set docker0 up)" >&2
   else
-    echo "           Check host firewall / nftables FORWARD rules for the docker bridge." >&2
+    echo "           Postgres isn't listening on the host at :${PROBE_PORT}. Check the" >&2
+    echo "           container logs: docker logs ${CONTAINER}" >&2
   fi
   exit 1
 fi
@@ -68,7 +79,7 @@ echo "==> Syncing Prisma schema..."
 pnpm exec prisma db push --skip-generate
 
 echo "==> Checking if seed is needed..."
-ORG_COUNT=$(docker exec "${CONTAINER}" psql -U "${DB_USER}" -d "${DB_NAME}" -tc \
+ORG_COUNT=$(docker exec "${CONTAINER}" psql -U "${DB_USER}" -d "${DB_NAME}" -p "${DB_PORT}" -tc \
   "SELECT COUNT(*) FROM \"Organization\";" 2>/dev/null | tr -d ' ' || echo "0")
 
 if [ "${ORG_COUNT}" = "0" ] || [ -z "${ORG_COUNT}" ]; then
