@@ -104,5 +104,36 @@ export const actions: Actions = {
 		return {
 			saved: `Approved ${done} timesheet${done === 1 ? '' : 's'}${skipped ? `, ${skipped} skipped` : ''}.`
 		}
+	},
+
+	// Bulk reject each selected (submitted) timesheet with one shared reason; non-submitted ones
+	// throw and are counted as skipped rather than aborting the batch.
+	rejectMany: async (event) => {
+		const user = event.locals.user!
+		requireMinRole(user.role, 'MANAGER')
+
+		const data = await event.request.formData()
+		const ids = String(data.get('ids') ?? '')
+			.split(',')
+			.map((s) => s.trim())
+			.filter(Boolean)
+		const reason = ((data.get('rejectionReason') as string) ?? '').trim()
+		if (!ids.length) return fail(400, { error: 'No timesheets selected' })
+		if (reason === '') return fail(400, { error: 'A reason is required to reject.' })
+
+		const ctx = ctxOf(event)
+		let done = 0
+		let skipped = 0
+		for (const id of ids) {
+			try {
+				await reviewTimesheet(id, user.organizationId, false, reason, ctx)
+				done++
+			} catch {
+				skipped++
+			}
+		}
+		return {
+			saved: `Rejected ${done} timesheet${done === 1 ? '' : 's'}${skipped ? `, ${skipped} skipped` : ''}.`
+		}
 	}
 }
