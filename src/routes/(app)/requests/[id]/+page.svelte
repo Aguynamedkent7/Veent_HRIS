@@ -124,8 +124,8 @@
 						<p class="text-sm font-medium">{stageLabel(step)}</p>
 						<p class="text-xs text-muted-foreground">
 							{#if step.decision}
-								{step.decision}{#if step.actor}
-									by {step.actor.email}{/if}{#if step.decidedAt}
+								{step.decision}{#if step.actor}{' '}
+									by {step.actor.email}{/if}{#if step.decidedAt}{' '}
 									· {formatShortDate(step.decidedAt)}{/if}
 							{:else if active}
 								Pending — awaiting decision
