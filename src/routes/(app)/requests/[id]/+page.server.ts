@@ -20,5 +20,19 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	const canReview = APPROVER_ROLES.includes(user.role)
 	if (!isOwner && !canReview) error(403, 'Insufficient permissions')
 
-	return { request: req, isOwner }
+	// LEAVE requests store their leaveTypeId in the JSON payload (no relation); resolve it to a
+	// name for the details panel.
+	let leaveTypeName: string | null = null
+	if (req.type === 'LEAVE') {
+		const leaveTypeId = ((req.payload ?? {}) as Record<string, unknown>).leaveTypeId
+		if (typeof leaveTypeId === 'string') {
+			const lt = await db.leaveType.findFirst({
+				where: { id: leaveTypeId, organizationId: user.organizationId },
+				select: { name: true }
+			})
+			leaveTypeName = lt?.name ?? null
+		}
+	}
+
+	return { request: req, isOwner, leaveTypeName }
 }
