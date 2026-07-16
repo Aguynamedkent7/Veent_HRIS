@@ -3,6 +3,7 @@ import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import { Prisma } from '@prisma/client'
 import { createEmployee } from './employees'
+import { generateTempPassword } from '$lib/server/password'
 import type { AuditContext } from './types'
 import type { JobPostingStatus, ApplicantStage, InterviewMode } from '@prisma/client'
 
@@ -395,39 +396,37 @@ export async function convertApplicantToEmployee(
 ) {
 	const applicant = await db.applicant.findFirst({
 		where: { id: applicantId, jobPosting: { organizationId } },
-		include: { offer: true }
+		include: { offer: true, jobPosting: { select: { title: true, departmentId: true } } }
 	})
 	if (!applicant) error(404, 'Applicant not found')
 	if (applicant.convertedToEmployeeId) error(409, 'Applicant already converted to an employee')
 
+	// An accepted offer carries the real job title, department, salary, and start date. Without one
+	// there is no salary source (a job posting has none), so refuse rather than hire at ₱0.
 	const offer = applicant.offer?.status === 'ACCEPTED' ? applicant.offer : null
-
-	let departmentId = offer?.departmentId ?? null
-	if (!departmentId) {
-		const def = await db.department.findFirst({
-			where: { organizationId },
-			orderBy: { name: 'asc' }
-		})
-		if (!def) error(400, 'No departments found. Please create a department first.')
-		departmentId = def.id
+	if (!offer) {
+		error(
+			400,
+			'This applicant has no accepted offer. Create and accept an offer — it sets the job title, salary, and start date — before converting.'
+		)
 	}
 
-	const tempPassword =
-		Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6).toUpperCase()
+	// Offer department is optional; fall back to the posting's department (always set).
+	const departmentId = offer.departmentId ?? applicant.jobPosting.departmentId
 
 	const employee = await createEmployee(
 		organizationId,
 		{
 			email: applicant.email,
-			password: tempPassword,
+			password: generateTempPassword(),
 			role: 'EMPLOYEE',
 			firstName: applicant.firstName,
 			lastName: applicant.lastName,
 			departmentId,
-			jobTitle: offer?.jobTitle ?? 'New Employee',
+			jobTitle: offer.jobTitle,
 			employmentType: 'PROBATIONARY',
-			startDate: offer?.startDate ?? new Date(),
-			basicMonthlySalary: offer ? Number(offer.monthlySalary) : 0,
+			startDate: offer.startDate,
+			basicMonthlySalary: Number(offer.monthlySalary),
 			contactPhone: applicant.phone ?? undefined
 		},
 		ctx
