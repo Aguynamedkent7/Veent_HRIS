@@ -36,7 +36,12 @@ test('employee submits a timesheet and the manager approves it', async ({ browse
 	// The direct report's submitted timesheet is waiting here. Clicking the card opens the
 	// read-only review modal client-side, so retry the click until the page has hydrated
 	// and the dialog appears (a pre-hydration click would otherwise be dropped).
-	const card = mgrPage.locator('[role="button"]', { hasText: 'Employee, Elena' }).first()
+	// Pin the card to this spec's 8-hour current-week timesheet — the punch spec routes
+	// its own (7.00 hrs) submission through this same queue, so "Elena's first card" or
+	// an empty-queue check would race with it.
+	const card = mgrPage
+		.locator('[role="button"]', { hasText: 'Employee, Elena' })
+		.filter({ hasText: '8.0 hrs' })
 	await expect(card).toBeVisible()
 	const dialog = mgrPage.getByRole('dialog')
 	await expect(async () => {
@@ -45,8 +50,8 @@ test('employee submits a timesheet and the manager approves it', async ({ browse
 	}).toPass({ timeout: 15000 })
 	await dialog.getByRole('button', { name: 'Approve' }).click()
 
-	// Once approved it leaves the pending queue.
-	await expect(mgrPage.getByText('No pending timesheets to review.')).toBeVisible()
+	// Once approved, this timesheet leaves the pending queue.
+	await expect(card).toHaveCount(0)
 	await mgrCtx.close()
 
 	// --- Employee sees the timesheet as APPROVED ---
