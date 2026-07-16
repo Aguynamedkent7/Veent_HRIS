@@ -220,3 +220,95 @@ export async function assignPositionGrade(
 	})
 	return updated
 }
+
+// ─── Leave types ──────────────────────────────────────────────────────────────
+
+export interface LeaveTypeInput {
+	name: string
+	isPaid: boolean
+	defaultDaysPerYear: number
+	allowCarryOver: boolean
+	maxCarryOverDays: number | null
+}
+
+export async function listLeaveTypes(organizationId: string) {
+	return db.leaveType.findMany({
+		where: { organizationId },
+		orderBy: [{ isActive: 'desc' }, { name: 'asc' }]
+	})
+}
+
+/** Validate + normalise a leave-type payload. Carry-over cap only applies when carry-over is on. */
+function normalizeLeaveType(input: LeaveTypeInput) {
+	const name = input.name.trim()
+	if (!name) error(400, 'Name is required')
+	if (input.defaultDaysPerYear < 0) error(400, 'Default days per year cannot be negative')
+	const maxCarryOverDays = input.allowCarryOver ? (input.maxCarryOverDays ?? 0) : null
+	if (maxCarryOverDays != null && maxCarryOverDays < 0)
+		error(400, 'Max carry-over days cannot be negative')
+	return {
+		name,
+		isPaid: input.isPaid,
+		defaultDaysPerYear: input.defaultDaysPerYear,
+		allowCarryOver: input.allowCarryOver,
+		maxCarryOverDays
+	}
+}
+
+export async function createLeaveType(
+	organizationId: string,
+	input: LeaveTypeInput,
+	ctx: AuditContext
+) {
+	const data = normalizeLeaveType(input)
+	const exists = await db.leaveType.findFirst({ where: { organizationId, name: data.name } })
+	if (exists) error(409, `Leave type "${data.name}" already exists`)
+	const created = await db.leaveType.create({ data: { organizationId, ...data } })
+	await writeAuditLog(ctx, {
+		action: 'CREATE',
+		entityType: 'LeaveType',
+		entityId: created.id,
+		newValue: { name: data.name }
+	})
+	return created
+}
+
+export async function updateLeaveType(
+	organizationId: string,
+	id: string,
+	input: LeaveTypeInput,
+	ctx: AuditContext
+) {
+	const existing = await db.leaveType.findFirst({ where: { id, organizationId }, select: { id: true } })
+	if (!existing) error(404, 'Leave type not found')
+	const data = normalizeLeaveType(input)
+	const dupe = await db.leaveType.findFirst({
+		where: { organizationId, name: data.name, id: { not: id } }
+	})
+	if (dupe) error(409, `Leave type "${data.name}" already exists`)
+	const updated = await db.leaveType.update({ where: { id }, data })
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'LeaveType',
+		entityId: id,
+		newValue: { name: data.name }
+	})
+	return updated
+}
+
+/** Soft delete: leave types are referenced by balances/requests, so we toggle active, not delete. */
+export async function toggleLeaveType(organizationId: string, id: string, ctx: AuditContext) {
+	const lt = await db.leaveType.findFirst({
+		where: { id, organizationId },
+		select: { id: true, isActive: true }
+	})
+	if (!lt) error(404, 'Leave type not found')
+	const updated = await db.leaveType.update({ where: { id }, data: { isActive: !lt.isActive } })
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'LeaveType',
+		entityId: id,
+		newValue: { isActive: updated.isActive }
+	})
+	return updated
+}

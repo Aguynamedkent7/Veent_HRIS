@@ -36,6 +36,12 @@
 			super: false
 		},
 		{
+			href: '/settings/leave-types',
+			title: 'Leave Types',
+			desc: 'Paid/unpaid, allocation, carry-over',
+			super: false
+		},
+		{
 			href: '/payroll/config',
 			title: 'Payroll Config',
 			desc: 'Cutoffs, frequency, statutory rates',
