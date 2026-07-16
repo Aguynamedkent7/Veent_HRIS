@@ -69,12 +69,18 @@
 	</div>
 
 	{#if form?.success && form.message}
-		<div class="rounded-md border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
+		<div
+			role="status"
+			class="rounded-md border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700"
+		>
 			{form.message}
 		</div>
 	{/if}
 	{#if form?.error}
-		<div class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+		<div
+			role="alert"
+			class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700"
+		>
 			{form.error}
 		</div>
 	{/if}

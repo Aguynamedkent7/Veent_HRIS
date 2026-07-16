@@ -142,7 +142,19 @@
 					finalizing.
 				</p>
 			{/if}
-			<form method="POST" action="?/finalize" use:enhance class="mt-3">
+			<form
+				method="POST"
+				action="?/finalize"
+				use:enhance={({ cancel }) => {
+					if (
+						!confirm(
+							'Finalize this separation? This snapshots final pay, offboards the employee, and disables their login. It cannot be undone.'
+						)
+					)
+						cancel()
+				}}
+				class="mt-3"
+			>
 				<button
 					type="submit"
 					disabled={pendingCount > 0}

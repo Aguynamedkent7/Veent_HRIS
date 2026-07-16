@@ -80,12 +80,15 @@ export const actions: Actions = {
 		if (!myEmployee) return fail(400, { error: 'No employee profile found.' })
 
 		const f = await request.formData()
-		const parsed = requestSchema.safeParse(rawFromForm(f.get('type') as string, f))
+		const raw = rawFromForm(f.get('type') as string, f)
+		const parsed = requestSchema.safeParse(raw)
 		if (!parsed.success) {
 			const fieldErrors = parsed.error.flatten().fieldErrors as Record<string, string[]>
 			return fail(422, {
 				error: 'Please fix the highlighted fields.',
-				fieldErrors
+				fieldErrors,
+				// Echo the submitted strings back so a non-enhanced rerender keeps them.
+				values: raw as Record<string, string>
 			})
 		}
 

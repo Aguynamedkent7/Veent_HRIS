@@ -176,6 +176,8 @@
 				<dl class="grid grid-cols-2 gap-3 text-sm">
 					<dt class="text-muted-foreground">Bank</dt>
 					<dd>{employee.bankName ?? '—'}</dd>
+					<dt class="text-muted-foreground">Account Name</dt>
+					<dd>{employee.bankAccountName ?? '—'}</dd>
 					<dt class="text-muted-foreground">Account No.</dt>
 					<dd class="font-mono">{employee.bankAccountNumber ?? '—'}</dd>
 					<dt class="text-muted-foreground">GCash No.</dt>
@@ -196,23 +198,6 @@
 				<dd>{employee.emergencyContactPhone ?? '—'}</dd>
 			</dl>
 		</div>
-
-		<!-- Bank & GCash Card (HR-only, sensitive) -->
-		{#if canManage}
-			<div class="rounded-lg border bg-card p-6 space-y-4">
-				<h2 class="font-semibold">Bank &amp; GCash</h2>
-				<dl class="grid grid-cols-2 gap-3 text-sm">
-					<dt class="text-muted-foreground">Bank</dt>
-					<dd>{employee.bankName ?? '—'}</dd>
-					<dt class="text-muted-foreground">Account Name</dt>
-					<dd>{employee.bankAccountName ?? '—'}</dd>
-					<dt class="text-muted-foreground">Account No.</dt>
-					<dd class="font-mono">{employee.bankAccountNumber ?? '—'}</dd>
-					<dt class="text-muted-foreground">GCash No.</dt>
-					<dd class="font-mono">{employee.gcashNumber ?? '—'}</dd>
-				</dl>
-			</div>
-		{/if}
 
 		<!-- Edit Form (HR-only; the update/offboard actions require HR_ADMIN) -->
 		{#if canManage && employee.employmentStatus === 'ACTIVE'}

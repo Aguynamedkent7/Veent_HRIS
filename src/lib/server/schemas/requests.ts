@@ -4,7 +4,7 @@ import { z } from 'zod'
 // validated here and stored in `Request.payload`. `deriveRequestColumns` projects
 // the promoted top-level columns (dateFrom/dateTo/hours/reason) from each payload.
 
-const dayHours = z.coerce.number().positive().max(24)
+const dayHours = z.coerce.number().positive().max(24).multipleOf(0.25)
 
 export const leaveRequestSchema = z.object({
 	type: z.literal('LEAVE'),
