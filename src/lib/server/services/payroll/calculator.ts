@@ -1,6 +1,7 @@
 import { db } from '$lib/server/db'
 import { error } from '@sveltejs/kit'
 import { computeEarnings } from './earnings'
+import { ratesFromRule, type PayRates } from './rates'
 import { computeDeductions, type AmortItem } from './deductions'
 import { computeStatutoryDeductions } from './ph-statutory'
 import {
@@ -25,6 +26,8 @@ export interface EmployeeComputeConfig {
 	periodShare: number
 	loans: AmortItem[]
 	cashAdvances: AmortItem[]
+	/** Org premium-pay multipliers (from PayRateRule); omitted → DOLE defaults. */
+	rates?: PayRates
 }
 
 export interface ProratedStatutory {
@@ -54,7 +57,7 @@ export function computeEmployeeResult(
 	adjustments: PayAdjustments,
 	cfg: EmployeeComputeConfig
 ): EmployeeComputeResult {
-	const earnings = computeEarnings(comp, attendance, adjustments)
+	const earnings = computeEarnings(comp, attendance, adjustments, cfg.rates)
 	// Requirement: taxability from EarningType config.
 	for (const c of earnings.components) {
 		const configured = cfg.taxableByCode.get(c.code)
@@ -117,15 +120,17 @@ export async function previewPayroll(
 	})
 	if (!employee) error(404, 'Employee not found')
 
-	const [config, earningTypes, loansAll, advancesAll] = await Promise.all([
+	const [config, earningTypes, loansAll, advancesAll, payRateRule] = await Promise.all([
 		db.payrollConfig.findUnique({ where: { organizationId } }),
 		db.earningType.findMany({ where: { organizationId }, select: { code: true, taxable: true } }),
 		db.loan.findMany({ where: { employeeId, status: 'ACTIVE', balance: { gt: 0 } } }),
-		db.cashAdvance.findMany({ where: { employeeId, status: 'ACTIVE', balance: { gt: 0 } } })
+		db.cashAdvance.findMany({ where: { employeeId, status: 'ACTIVE', balance: { gt: 0 } } }),
+		db.payRateRule.findUnique({ where: { organizationId } })
 	])
 
 	const cfg: EmployeeComputeConfig = {
 		taxableByCode: new Map(earningTypes.map((e) => [e.code, e.taxable])),
+		rates: ratesFromRule(payRateRule),
 		periodShare: (config?.payFrequency ?? 'SEMI_MONTHLY') === 'MONTHLY' ? 1 : 0.5,
 		loans: loansAll.map((l) => ({
 			refId: l.id,

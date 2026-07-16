@@ -141,4 +141,50 @@
 			</button>
 		</div>
 	</form>
+
+	<!-- Premium pay multipliers (PayRateRule) -->
+	<form
+		method="POST"
+		action="?/updateRates"
+		use:enhance
+		class="rounded-md border bg-card p-6 space-y-6"
+	>
+		<div>
+			<h2 class="text-lg font-semibold">Premium Pay Multipliers</h2>
+			<p class="mt-1 text-sm text-muted-foreground">
+				Applied against the base hourly rate when payroll auto-computes OT, night differential,
+				rest-day, and holiday pay. Night differential is an additive fraction (e.g. 0.10 = +10%);
+				the others are full multipliers (e.g. 2.00 = 200%). Defaults follow DOLE rules.
+			</p>
+		</div>
+
+		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+			{#each [{ name: 'overtime', label: 'Overtime', hint: 'ordinary-day OT (×)' }, { name: 'overtimePremium', label: 'OT premium (rest/holiday)', hint: 'extra factor on premium-day OT' }, { name: 'nightDiff', label: 'Night differential', hint: '10pm–6am, additive' }, { name: 'restDay', label: 'Rest day', hint: 'rest-day work (×)' }, { name: 'regularHoliday', label: 'Regular holiday', hint: '(×)' }, { name: 'specialHoliday', label: 'Special holiday', hint: '(×)' }] as f (f.name)}
+				<div>
+					<label for="rate-{f.name}" class="text-sm font-medium">{f.label}</label>
+					<input
+						id="rate-{f.name}"
+						name={f.name}
+						type="number"
+						min="0"
+						max="10"
+						step="0.01"
+						required
+						value={data.rates[f.name as keyof typeof data.rates]}
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					/>
+					<p class="mt-1 text-xs text-muted-foreground">{f.hint}</p>
+				</div>
+			{/each}
+		</div>
+
+		<div class="flex justify-end">
+			<button
+				type="submit"
+				class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+			>
+				Save Multipliers
+			</button>
+		</div>
+	</form>
 </div>
