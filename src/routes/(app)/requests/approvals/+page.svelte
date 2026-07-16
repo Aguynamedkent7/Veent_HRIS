@@ -1,9 +1,36 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import type { SubmitFunction } from '@sveltejs/kit'
+	import { slide } from 'svelte/transition'
 	import { formatShortDate } from '$lib/utils/format'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
+
+	// ─── Bulk selection ───────────────────────────────────────────────────────
+	// Reject many pending requests at once with one shared note (reject requires a note).
+	let selected = $state<string[]>([])
+	let bulkNote = $state('')
+	let busy = $state(false)
+	const allIds = $derived(data.pendingRequests.map((r) => r.id))
+	const allSelected = $derived(allIds.length > 0 && allIds.every((id) => selected.includes(id)))
+	function toggle(id: string) {
+		selected = selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]
+	}
+	function toggleAll(on: boolean) {
+		selected = on ? allIds : []
+	}
+	const clearOnSuccess: SubmitFunction = () => {
+		busy = true
+		return async ({ result, update }) => {
+			await update()
+			busy = false
+			if (result.type === 'success') {
+				selected = []
+				bulkNote = ''
+			}
+		}
+	}
 
 	const typeLabels: Record<string, string> = {
 		LEAVE: 'Leave',
@@ -46,6 +73,58 @@
 		</div>
 	{/if}
 
+	{#if form?.saved}
+		<div
+			class="rounded-md border border-green-500/20 bg-green-500/10 px-4 py-2 text-sm text-green-600"
+		>
+			{form.saved}
+		</div>
+	{/if}
+
+	{#if data.pendingRequests.length > 0}
+		<label class="flex w-fit items-center gap-2 text-sm text-muted-foreground">
+			<input
+				type="checkbox"
+				checked={allSelected}
+				onchange={(e) => toggleAll(e.currentTarget.checked)}
+				class="align-middle"
+			/>
+			Select all
+		</label>
+	{/if}
+
+	{#if selected.length}
+		<div
+			class="flex flex-wrap items-end justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3"
+			transition:slide={{ duration: 120 }}
+		>
+			<div class="flex-1 space-y-1">
+				<span class="text-sm font-medium">{selected.length} selected</span>
+				<textarea
+					rows="1"
+					placeholder="Rejection note (required — applied to all selected)"
+					class="w-full rounded-md border border-input bg-background px-2 py-1 text-xs"
+					bind:value={bulkNote}
+				></textarea>
+			</div>
+			<div class="flex items-center gap-2">
+				<button
+					onclick={() => (selected = [])}
+					class="text-sm text-muted-foreground hover:underline">Clear</button
+				>
+				<form method="POST" action="?/rejectMany" use:enhance={clearOnSuccess}>
+					<input type="hidden" name="ids" value={selected.join(',')} />
+					<input type="hidden" name="note" value={bulkNote} />
+					<button
+						disabled={busy || bulkNote.trim() === ''}
+						class="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+						>Reject selected</button
+					>
+				</form>
+			</div>
+		</div>
+	{/if}
+
 	{#if data.pendingRequests.length === 0}
 		<div class="rounded-md border bg-muted/50 px-6 py-12 text-center text-muted-foreground text-sm">
 			No requests awaiting your decision.
@@ -58,7 +137,16 @@
 				>
 					<div class="flex flex-1 flex-col gap-2 overflow-hidden">
 						<div class="flex items-center justify-between gap-2">
-							<span class="truncate font-medium">{typeLabel(req.type)}</span>
+							<div class="flex min-w-0 items-center gap-2">
+								<input
+									type="checkbox"
+									checked={selected.includes(req.id)}
+									onchange={() => toggle(req.id)}
+									aria-label="Select request"
+									class="align-middle"
+								/>
+								<span class="truncate font-medium">{typeLabel(req.type)}</span>
+							</div>
 							<span class="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
 								>{currentStageLabel(req)}</span
 							>

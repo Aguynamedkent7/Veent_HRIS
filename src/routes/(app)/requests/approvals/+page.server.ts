@@ -67,5 +67,46 @@ export const actions: Actions = {
 			if (e instanceof Error) return fail(400, { error: e.message })
 			throw e
 		}
+	},
+
+	// Reject each selected request with one shared note. Requests the approver can't currently
+	// decide (e.g. no longer at their stage) throw and are counted as skipped, not aborting the batch.
+	rejectMany: async ({ request, locals, getClientAddress }) => {
+		const user = locals.user!
+		if (!APPROVER_ROLES.includes(user.role)) return fail(403, { error: 'Insufficient permissions' })
+
+		const data = await request.formData()
+		const ids = String(data.get('ids') ?? '')
+			.split(',')
+			.map((s) => s.trim())
+			.filter(Boolean)
+		const note = (data.get('note') as string) || ''
+		if (!ids.length) return fail(400, { error: 'No requests selected' })
+		if (note.trim() === '') return fail(400, { error: 'A note is required to reject requests.' })
+
+		const myEmployee = await db.employee.findUnique({
+			where: { userId: user.id },
+			select: { id: true }
+		})
+		const ctx = {
+			organizationId: user.organizationId,
+			actorId: user.id,
+			actorRole: user.role,
+			ipAddress: getClientAddress()
+		}
+
+		let done = 0
+		let skipped = 0
+		for (const id of ids) {
+			try {
+				await decide(id, 'REJECTED', note, ctx, myEmployee?.id ?? null)
+				done++
+			} catch {
+				skipped++
+			}
+		}
+		return {
+			saved: `Rejected ${done} request${done === 1 ? '' : 's'}${skipped ? `, ${skipped} skipped` : ''}.`
+		}
 	}
 }
