@@ -2,10 +2,11 @@
 	import { enhance } from '$app/forms'
 	import { goto } from '$app/navigation'
 	import { formatShortDate } from '$lib/utils/format'
-	import type { PageData } from './$types'
+	import type { PageData, ActionData } from './$types'
 
-	let { data }: { data: PageData } = $props()
+	let { data, form }: { data: PageData; form: ActionData } = $props()
 	let showCreate = $state(false)
+	let creating = $state(false)
 	let selectedIds = $state<string[]>([])
 
 	const draftIds = $derived(
@@ -67,8 +68,37 @@
 		</div>
 	</div>
 
+	{#if form?.success && form.message}
+		<div
+			role="status"
+			class="rounded-md border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700"
+		>
+			{form.message}
+		</div>
+	{/if}
+	{#if form?.error}
+		<div
+			role="alert"
+			class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700"
+		>
+			{form.error}
+		</div>
+	{/if}
+
 	{#if showCreate}
-		<form method="POST" action="?/create" use:enhance class="rounded-lg border p-4 space-y-3">
+		<form
+			method="POST"
+			action="?/create"
+			use:enhance={() => {
+				creating = true
+				return async ({ update, result }) => {
+					await update()
+					creating = false
+					if (result.type === 'success') showCreate = false
+				}
+			}}
+			class="rounded-lg border p-4 space-y-3"
+		>
 			<h2 class="font-semibold">Create Job Posting</h2>
 			<div class="grid gap-3 sm:grid-cols-2">
 				<div>
@@ -109,8 +139,9 @@
 				>
 				<button
 					type="submit"
-					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-					>Create Draft</button
+					disabled={creating}
+					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+					>{creating ? 'Creating…' : 'Create Draft'}</button
 				>
 			</div>
 		</form>

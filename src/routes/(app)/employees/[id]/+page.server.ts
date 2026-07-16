@@ -51,7 +51,10 @@ function buildOnboarding(
 	documents: { category: string }[]
 ) {
 	const hasContract = documents.some((d) => d.category === 'CONTRACT')
-	const hasDisbursement = !!((emp.bankName && emp.bankAccountNumber) || emp.gcashNumber)
+	const hasDisbursement = !!(
+		(emp.bankName && emp.bankAccountName && emp.bankAccountNumber) ||
+		emp.gcashNumber
+	)
 	const govComplete = !!(
 		emp.sssNumber &&
 		emp.philhealthNumber &&
@@ -183,6 +186,10 @@ const updateSchema = z.object({
 		.string()
 		.optional()
 		.transform((v) => (v ? v : null)),
+	// Emergency contact (personal — visible to the employee's managers).
+	emergencyContactName: z.string().optional(),
+	emergencyContactRelation: z.string().optional(),
+	emergencyContactPhone: z.string().optional(),
 	// Position from the catalog. Empty string clears the assignment.
 	positionId: z
 		.string()
@@ -211,6 +218,11 @@ const updateSchema = z.object({
 		.transform((v) => (v ? v : null)),
 	// Disbursement details (sensitive, HR-only). Empty string clears the field.
 	bankName: z
+		.string()
+		.trim()
+		.optional()
+		.transform((v) => (v ? v : null)),
+	bankAccountName: z
 		.string()
 		.trim()
 		.optional()

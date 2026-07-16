@@ -17,12 +17,26 @@
 	]
 	const typeLabel = (t: string) => TYPES.find((x) => x.value === t)?.label ?? t
 
-	let selectedType = $state('LEAVE')
-	let showForm = $state(false)
+	// Submitted values echoed back by a failed create action — re-populates the form
+	// on a non-enhanced (no-JS) rerender; with enhance the browser keeps the inputs,
+	// so capturing only the initial value of `form` here is intentional.
+	// svelte-ignore state_referenced_locally
+	const submitted = (form as { values?: Record<string, string> } | null)?.values
+
+	let selectedType = $state(submitted?.type ?? 'LEAVE')
+	let showForm = $state(Boolean(submitted))
+
+	// Per-field validation errors returned by the create action (zod fieldErrors).
+	const fieldErrors = $derived(
+		(form as { fieldErrors?: Record<string, string[]> } | null)?.fieldErrors
+	)
+	const fe = (name: string) => fieldErrors?.[name]?.[0]
+	const invalid = (name: string) => (fe(name) ? true : undefined)
+	const describedBy = (name: string) => (fe(name) ? `${name}-error` : undefined)
 
 	// Date guards: start can't be before today; end can't be before start.
 	const today = formatDateISO(new Date())
-	let startDate = $state('')
+	let startDate = $state(submitted?.startDate ?? '')
 
 	const isDayHours = (t: string) =>
 		['OVERTIME', 'UNDERTIME', 'REST_DAY_WORK', 'HOLIDAY_WORK'].includes(t)
@@ -39,6 +53,11 @@
 <svelte:head>
 	<title>My Requests — Veent HRIS</title>
 </svelte:head>
+
+{#snippet req()}<span class="text-red-500" aria-hidden="true">*</span>{/snippet}
+{#snippet fieldError(name: string)}
+	{#if fe(name)}<p id="{name}-error" class="text-xs text-red-600">{fe(name)}</p>{/if}
+{/snippet}
 
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
@@ -99,124 +118,178 @@
 
 			{#if selectedType === 'LEAVE'}
 				<div class="grid gap-1.5">
-					<label for="leaveTypeId" class="text-sm font-medium">Leave type</label>
+					<label for="leaveTypeId" class="text-sm font-medium">Leave type {@render req()}</label>
 					<select
 						id="leaveTypeId"
 						name="leaveTypeId"
+						required
+						value={submitted?.leaveTypeId ?? data.leaveTypes[0]?.id ?? ''}
+						aria-invalid={invalid('leaveTypeId')}
+						aria-describedby={describedBy('leaveTypeId')}
 						class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 					>
 						{#each data.leaveTypes as lt (lt.id)}
 							<option value={lt.id}>{lt.name}</option>
 						{/each}
 					</select>
+					{@render fieldError('leaveTypeId')}
 				</div>
 				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					<div class="grid gap-1.5">
-						<label for="startDate" class="text-sm font-medium">Start</label>
+						<label for="startDate" class="text-sm font-medium">Start {@render req()}</label>
 						<input
 							id="startDate"
 							name="startDate"
 							type="date"
+							required
 							min={today}
 							bind:value={startDate}
+							aria-invalid={invalid('startDate')}
+							aria-describedby={describedBy('startDate')}
 							class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 						/>
+						{@render fieldError('startDate')}
 					</div>
 					<div class="grid gap-1.5">
-						<label for="endDate" class="text-sm font-medium">End</label>
+						<label for="endDate" class="text-sm font-medium">End {@render req()}</label>
 						<input
 							id="endDate"
 							name="endDate"
 							type="date"
+							required
 							min={startDate || today}
+							value={submitted?.endDate ?? ''}
+							aria-invalid={invalid('endDate')}
+							aria-describedby={describedBy('endDate')}
 							class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 						/>
+						{@render fieldError('endDate')}
 					</div>
 				</div>
 			{:else if selectedType === 'OFFICIAL_BUSINESS'}
 				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					<div class="grid gap-1.5">
-						<label for="startDate" class="text-sm font-medium">Start</label>
+						<label for="startDate" class="text-sm font-medium">Start {@render req()}</label>
 						<input
 							id="startDate"
 							name="startDate"
 							type="date"
+							required
 							min={today}
 							bind:value={startDate}
+							aria-invalid={invalid('startDate')}
+							aria-describedby={describedBy('startDate')}
 							class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 						/>
+						{@render fieldError('startDate')}
 					</div>
 					<div class="grid gap-1.5">
-						<label for="endDate" class="text-sm font-medium">End</label>
+						<label for="endDate" class="text-sm font-medium">End {@render req()}</label>
 						<input
 							id="endDate"
 							name="endDate"
 							type="date"
+							required
 							min={startDate || today}
+							value={submitted?.endDate ?? ''}
+							aria-invalid={invalid('endDate')}
+							aria-describedby={describedBy('endDate')}
 							class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 						/>
+						{@render fieldError('endDate')}
 					</div>
 				</div>
 				<div class="grid gap-1.5">
-					<label for="location" class="text-sm font-medium">Location</label>
+					<label for="location" class="text-sm font-medium">Location {@render req()}</label>
 					<input
 						id="location"
 						name="location"
 						type="text"
+						required
+						value={submitted?.location ?? ''}
+						aria-invalid={invalid('location')}
+						aria-describedby={describedBy('location')}
 						class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 					/>
+					{@render fieldError('location')}
 				</div>
 				<div class="grid gap-1.5">
-					<label for="purpose" class="text-sm font-medium">Purpose</label>
+					<label for="purpose" class="text-sm font-medium">Purpose {@render req()}</label>
 					<input
 						id="purpose"
 						name="purpose"
 						type="text"
+						required
+						value={submitted?.purpose ?? ''}
+						aria-invalid={invalid('purpose')}
+						aria-describedby={describedBy('purpose')}
 						class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 					/>
+					{@render fieldError('purpose')}
 				</div>
 			{:else if isDayHours(selectedType)}
 				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					<div class="grid gap-1.5">
-						<label for="date" class="text-sm font-medium">Date</label>
+						<label for="date" class="text-sm font-medium">Date {@render req()}</label>
 						<input
 							id="date"
 							name="date"
 							type="date"
+							required
+							value={submitted?.date ?? ''}
+							aria-invalid={invalid('date')}
+							aria-describedby={describedBy('date')}
 							class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 						/>
+						{@render fieldError('date')}
 					</div>
 					<div class="grid gap-1.5">
-						<label for="hours" class="text-sm font-medium">Hours</label>
+						<label for="hours" class="text-sm font-medium">Hours {@render req()}</label>
 						<input
 							id="hours"
 							name="hours"
 							type="number"
 							step="0.25"
-							min="0"
+							min="0.25"
+							max="24"
+							required
+							value={submitted?.hours ?? ''}
+							aria-invalid={invalid('hours')}
+							aria-describedby={describedBy('hours')}
 							class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 						/>
+						{@render fieldError('hours')}
 					</div>
 				</div>
 			{:else if selectedType === 'INFO_UPDATE'}
 				<div class="grid gap-1.5">
-					<label for="field" class="text-sm font-medium">Field</label>
+					<label for="field" class="text-sm font-medium">Field {@render req()}</label>
 					<input
 						id="field"
 						name="field"
 						type="text"
+						required
 						placeholder="e.g. contactAddress"
+						value={submitted?.field ?? ''}
+						aria-invalid={invalid('field')}
+						aria-describedby={describedBy('field')}
 						class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 					/>
+					{@render fieldError('field')}
 				</div>
 				<div class="grid gap-1.5">
-					<label for="requestedValue" class="text-sm font-medium">New value</label>
+					<label for="requestedValue" class="text-sm font-medium">New value {@render req()}</label>
 					<input
 						id="requestedValue"
 						name="requestedValue"
 						type="text"
+						required
+						value={submitted?.requestedValue ?? ''}
+						aria-invalid={invalid('requestedValue')}
+						aria-describedby={describedBy('requestedValue')}
 						class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 					/>
+					{@render fieldError('requestedValue')}
 				</div>
 			{/if}
 
@@ -229,6 +302,7 @@
 						id="reason"
 						name="reason"
 						rows="2"
+						value={submitted?.reason ?? ''}
 						class="rounded-md border border-input bg-background px-3 py-2 text-sm"
 					></textarea>
 				</div>

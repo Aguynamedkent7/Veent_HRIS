@@ -345,6 +345,86 @@
 			</div>
 		</fieldset>
 
+		<!-- Emergency Contact -->
+		<fieldset class="rounded-md border p-4 space-y-4">
+			<legend class="px-1 text-sm font-semibold">Emergency Contact</legend>
+			<div class="grid gap-4 sm:grid-cols-3">
+				<div>
+					<label for="emergencyContactName" class="text-sm font-medium">Contact Name</label>
+					<input
+						id="emergencyContactName"
+						name="emergencyContactName"
+						value={form?.values?.emergencyContactName ?? ''}
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					/>
+				</div>
+				<div>
+					<label for="emergencyContactRelation" class="text-sm font-medium">Relationship</label>
+					<input
+						id="emergencyContactRelation"
+						name="emergencyContactRelation"
+						value={form?.values?.emergencyContactRelation ?? ''}
+						placeholder="e.g. Spouse, Parent"
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					/>
+				</div>
+				<div>
+					<label for="emergencyContactPhone" class="text-sm font-medium">Contact Phone</label>
+					<input
+						id="emergencyContactPhone"
+						name="emergencyContactPhone"
+						value={form?.values?.emergencyContactPhone ?? ''}
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					/>
+				</div>
+			</div>
+		</fieldset>
+
+		<!-- Bank / GCash Details -->
+		<fieldset class="rounded-md border p-4 space-y-4">
+			<legend class="px-1 text-sm font-semibold">Bank / GCash Details</legend>
+			<div class="grid gap-4 sm:grid-cols-2">
+				<div>
+					<label for="bankName" class="text-sm font-medium">Bank</label>
+					<input
+						id="bankName"
+						name="bankName"
+						value={form?.values?.bankName ?? ''}
+						placeholder="e.g. BDO, BPI"
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					/>
+				</div>
+				<div>
+					<label for="bankAccountName" class="text-sm font-medium">Account Name</label>
+					<input
+						id="bankAccountName"
+						name="bankAccountName"
+						value={form?.values?.bankAccountName ?? ''}
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					/>
+				</div>
+				<div>
+					<label for="bankAccountNumber" class="text-sm font-medium">Account Number</label>
+					<input
+						id="bankAccountNumber"
+						name="bankAccountNumber"
+						value={form?.values?.bankAccountNumber ?? ''}
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					/>
+				</div>
+				<div>
+					<label for="gcashNumber" class="text-sm font-medium">GCash Number</label>
+					<input
+						id="gcashNumber"
+						name="gcashNumber"
+						value={form?.values?.gcashNumber ?? ''}
+						placeholder="e.g. 0917xxxxxxx"
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					/>
+				</div>
+			</div>
+		</fieldset>
+
 		<div class="flex justify-end gap-3">
 			<a href="/employees" class="rounded-md border px-4 py-2 text-sm hover:bg-accent">Cancel</a>
 			<button

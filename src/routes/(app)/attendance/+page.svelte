@@ -104,6 +104,18 @@
 			: `/attendance/export?view=employee&employeeId=${data.selectedEmployeeId ?? ''}&from=${data.from}&to=${data.to}`
 	)
 
+	// "Exceptions only" — surface the rows that need HR action (failed to time in,
+	// incomplete logs, tardiness) so the morning fail-check doesn't mean scrolling the
+	// whole sheet. A missing team record counts as an exception (no punch = didn't time in).
+	let exceptionsOnly = $state(false)
+	const isException = (s: string) => s === 'ABSENT' || s === 'INCOMPLETE' || s === 'LATE'
+	const teamRows = $derived(
+		exceptionsOnly ? data.team.filter((t) => !t.day || isException(t.day.status)) : data.team
+	)
+	const dayRows = $derived(
+		exceptionsOnly ? data.days.filter((d) => isException(d.status)) : data.days
+	)
+
 	// Heroicons (outline, 24×24) — match the inline-SVG convention used in the app nav.
 	const IC = {
 		refresh:
@@ -349,6 +361,20 @@
 		</div>
 	{/if}
 
+	{#if data.canManage}
+		<!-- Exceptions filter for the daily fail-check / incomplete-log review -->
+		<div class="flex items-center justify-between gap-3">
+			<label class="inline-flex cursor-pointer items-center gap-2 text-sm">
+				<input type="checkbox" bind:checked={exceptionsOnly} class="h-4 w-4 rounded border-input" />
+				<span class="font-medium">Exceptions only</span>
+				<span class="text-xs text-muted-foreground">absent, incomplete &amp; late</span>
+			</label>
+			<span class="text-xs text-muted-foreground"
+				>{data.view === 'team' ? teamRows.length : dayRows.length} shown</span
+			>
+		</div>
+	{/if}
+
 	{#if data.view === 'team'}
 		<!-- Team-for-a-day table -->
 		<div class="overflow-x-auto rounded-lg border">
@@ -366,7 +392,7 @@
 					</tr>
 				</thead>
 				<tbody class="divide-y">
-					{#each data.team as t (t.id)}
+					{#each teamRows as t (t.id)}
 						{@const d = t.day}
 						{@const editable = data.canManage && d && !d.isLocked}
 						<tr
@@ -474,7 +500,9 @@
 					{:else}
 						<tr
 							><td colspan="8" class="px-3 py-8 text-center text-muted-foreground"
-								>No active employees.</td
+								>{exceptionsOnly
+									? 'No exceptions — everyone is accounted for.'
+									: 'No active employees.'}</td
 							></tr
 						>
 					{/each}
@@ -499,7 +527,7 @@
 					</tr>
 				</thead>
 				<tbody class="divide-y">
-					{#each data.days as d (d.id)}
+					{#each dayRows as d (d.id)}
 						{@const editable = data.canManage && !d.isLocked}
 						<tr
 							class="hover:bg-muted/30 {d.status === 'ABSENT' || d.status === 'INCOMPLETE'
@@ -620,8 +648,8 @@
 							><td
 								colspan={data.canManage ? 9 : 8}
 								class="px-3 py-8 text-center text-muted-foreground"
-								>No attendance for this range{#if data.canManage}
-									— no punches yet, or use Refresh{/if}.</td
+								>{#if exceptionsOnly}No exceptions in this range.{:else}No attendance for this range{#if data.canManage}
+										— no punches yet, or use Refresh{/if}.{/if}</td
 							></tr
 						>
 					{/each}

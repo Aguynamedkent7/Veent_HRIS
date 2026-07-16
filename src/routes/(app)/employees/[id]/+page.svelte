@@ -176,6 +176,8 @@
 				<dl class="grid grid-cols-2 gap-3 text-sm">
 					<dt class="text-muted-foreground">Bank</dt>
 					<dd>{employee.bankName ?? '—'}</dd>
+					<dt class="text-muted-foreground">Account Name</dt>
+					<dd>{employee.bankAccountName ?? '—'}</dd>
 					<dt class="text-muted-foreground">Account No.</dt>
 					<dd class="font-mono">{employee.bankAccountNumber ?? '—'}</dd>
 					<dt class="text-muted-foreground">GCash No.</dt>
@@ -183,6 +185,19 @@
 				</dl>
 			</div>
 		{/if}
+
+		<!-- Emergency Contact Card (visible to managers) -->
+		<div class="rounded-lg border bg-card p-6 space-y-4">
+			<h2 class="font-semibold">Emergency Contact</h2>
+			<dl class="grid grid-cols-2 gap-3 text-sm">
+				<dt class="text-muted-foreground">Name</dt>
+				<dd>{employee.emergencyContactName ?? '—'}</dd>
+				<dt class="text-muted-foreground">Relationship</dt>
+				<dd>{employee.emergencyContactRelation ?? '—'}</dd>
+				<dt class="text-muted-foreground">Phone</dt>
+				<dd>{employee.emergencyContactPhone ?? '—'}</dd>
+			</dl>
+		</div>
 
 		<!-- Edit Form (HR-only; the update/offboard actions require HR_ADMIN) -->
 		{#if canManage && employee.employmentStatus === 'ACTIVE'}
@@ -315,6 +330,34 @@
 						/>
 					</div>
 					<div class="sm:col-span-3 border-t pt-3">
+						<h3 class="text-sm font-semibold text-muted-foreground">Emergency Contact</h3>
+					</div>
+					<div>
+						<label class="text-sm font-medium">Contact Name</label>
+						<input
+							name="emergencyContactName"
+							value={employee.emergencyContactName ?? ''}
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+					</div>
+					<div>
+						<label class="text-sm font-medium">Relationship</label>
+						<input
+							name="emergencyContactRelation"
+							value={employee.emergencyContactRelation ?? ''}
+							placeholder="e.g. Spouse, Parent"
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+					</div>
+					<div>
+						<label class="text-sm font-medium">Contact Phone</label>
+						<input
+							name="emergencyContactPhone"
+							value={employee.emergencyContactPhone ?? ''}
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+					</div>
+					<div class="sm:col-span-3 border-t pt-3">
 						<h3 class="text-sm font-semibold text-muted-foreground">
 							Disbursement <span class="font-normal">(bank / GCash — sensitive)</span>
 						</h3>
@@ -325,6 +368,14 @@
 							name="bankName"
 							value={employee.bankName ?? ''}
 							placeholder="e.g. BDO"
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+					</div>
+					<div>
+						<label class="text-sm font-medium">Account Name</label>
+						<input
+							name="bankAccountName"
+							value={employee.bankAccountName ?? ''}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
 					</div>
