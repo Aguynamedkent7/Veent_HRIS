@@ -45,6 +45,7 @@ export const actions: Actions = {
 			actorRole: user.role,
 			ipAddress: getClientAddress()
 		})
+		return { success: true, message: `Job posting “${parsed.data.title}” created as a draft.` }
 	},
 
 	publish: async ({ request, locals, getClientAddress }) => {
@@ -60,6 +61,7 @@ export const actions: Actions = {
 			actorRole: user.role,
 			ipAddress: getClientAddress()
 		})
+		return { success: true, message: 'Job posting published.' }
 	},
 
 	// Bulk-publish selected draft postings (mass posting).
