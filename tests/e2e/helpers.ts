@@ -19,7 +19,8 @@ export async function login(page: Page, user: { email: string; password: string 
 	await page.getByLabel('Email').fill(user.email)
 	await page.getByLabel('Password').fill(user.password)
 	await page.getByRole('button', { name: 'Sign In' }).click()
-	await page.waitForURL('**/dashboard')
+	// domcontentloaded here too — waitForURL's default 'load' hangs the same way.
+	await page.waitForURL('**/dashboard', { waitUntil: 'domcontentloaded' })
 	await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
 }
 
