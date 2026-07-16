@@ -1,7 +1,8 @@
+import { fail } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
 import { getLeaveBalances } from '$lib/server/services/leave'
-import { listRequests } from '$lib/server/services/requests'
-import type { PageServerLoad } from './$types'
+import { listRequests, deleteRequest } from '$lib/server/services/requests'
+import type { Actions, PageServerLoad, RequestEvent } from './$types'
 
 // Read-only leave view. Leave filing/approval now flows through the unified
 // Requests/Approvals page; this page lists leave (Request type=LEAVE) + balances.
@@ -33,4 +34,43 @@ export const load: PageServerLoad = async ({ locals }) => {
 	])
 
 	return { requests, leaveTypes, balances, myEmployeeId: myEmployee?.id, isManager }
+}
+
+function ctxOf(event: RequestEvent) {
+	const u = event.locals.user!
+	return {
+		organizationId: u.organizationId,
+		actorId: u.id,
+		actorRole: u.role,
+		ipAddress: event.getClientAddress()
+	}
+}
+
+export const actions: Actions = {
+	// Bulk delete: remove each selected leave request. Authorization is per item in deleteRequest —
+	// approved requests, and (for non-HR) ones the caller doesn't own, throw and are counted as
+	// skipped rather than aborting the batch.
+	deleteMany: async (event) => {
+		const ids = String((await event.request.formData()).get('ids') ?? '')
+			.split(',')
+			.map((s) => s.trim())
+			.filter(Boolean)
+		if (!ids.length) return fail(400, { error: 'No leave requests selected' })
+
+		const org = event.locals.user!.organizationId
+		const ctx = ctxOf(event)
+		let deleted = 0
+		let skipped = 0
+		for (const id of ids) {
+			try {
+				await deleteRequest(id, org, ctx)
+				deleted++
+			} catch {
+				skipped++
+			}
+		}
+		return {
+			saved: `Deleted ${deleted} leave request${deleted === 1 ? '' : 's'}${skipped ? `, ${skipped} skipped` : ''}.`
+		}
+	}
 }
