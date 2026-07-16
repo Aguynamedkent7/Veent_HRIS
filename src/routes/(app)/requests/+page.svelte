@@ -98,8 +98,9 @@
 			method="POST"
 			action="?/create"
 			use:enhance={() =>
-				async ({ update }) => {
+				async ({ update, result }) => {
 					await update()
+					if (result.type === 'success') showForm = false
 				}}
 			class="space-y-4 rounded-lg border bg-card p-4"
 		>
@@ -336,6 +337,7 @@
 						class="cursor-pointer hover:bg-muted/30"
 						role="link"
 						tabindex="0"
+<<<<<<< Updated upstream
 						onclick={(e) => {
 							// Let the row's action buttons (Resubmit/Cancel) fire without also navigating.
 							if ((e.target as HTMLElement).closest('button, a, form')) return
@@ -343,13 +345,23 @@
 						}}
 						onkeydown={(e) => {
 							if ((e.target as HTMLElement).closest('button, a, form')) return
+=======
+						onclick={() => goto(`/requests/${req.id}`)}
+						onkeydown={(e) => {
+>>>>>>> Stashed changes
 							if (e.key === 'Enter' || e.key === ' ') {
 								e.preventDefault()
 								goto(`/requests/${req.id}`)
 							}
 						}}
 					>
+<<<<<<< Updated upstream
 						<td class="px-4 py-3 font-medium">{typeLabel(req.type)}</td>
+=======
+						<td class="px-4 py-3 font-medium"
+							><a href="/requests/{req.id}" class="hover:underline">{typeLabel(req.type)}</a></td
+						>
+>>>>>>> Stashed changes
 						<td class="px-4 py-3 text-muted-foreground">
 							{#if req.dateFrom}
 								{formatShortDate(req.dateFrom)}{#if req.dateTo && req.dateTo !== req.dateFrom}
@@ -369,12 +381,14 @@
 						<td class="px-4 py-3 text-right text-muted-foreground"
 							>{formatShortDate(req.createdAt)}</td
 						>
-						<td class="px-4 py-3 text-right">
-							<div class="flex items-center justify-end gap-3">
+						<td class="px-4 py-3 text-right" onclick={(e) => e.stopPropagation()}>
+							<div class="flex items-center justify-end gap-2">
 								{#if req.status === 'RETURNED'}
 									<form method="POST" action="?/resubmit" use:enhance>
 										<input type="hidden" name="id" value={req.id} />
-										<button type="submit" class="text-xs text-primary hover:underline"
+										<button
+											type="submit"
+											class="rounded-md border border-primary/40 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/10"
 											>Resubmit</button
 										>
 									</form>
@@ -382,7 +396,9 @@
 								{#if req.status === 'PENDING' || req.status === 'RETURNED'}
 									<form method="POST" action="?/cancel" use:enhance>
 										<input type="hidden" name="id" value={req.id} />
-										<button type="submit" class="text-xs text-red-600 hover:underline"
+										<button
+											type="submit"
+											class="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
 											>Cancel</button
 										>
 									</form>
