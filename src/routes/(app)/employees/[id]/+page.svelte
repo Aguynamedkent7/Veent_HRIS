@@ -667,6 +667,83 @@
 
 		{#if canManage}
 			<section class="rounded-lg border bg-card p-6 space-y-4 lg:col-span-2">
+				<h2 class="font-semibold">Recurring Allowances &amp; Incentives</h2>
+				<p class="text-xs text-muted-foreground">
+					Monthly amounts, prorated to each payroll period and added to the payslip's Allowances /
+					Incentives lines. Ended items stop from the next payroll run.
+				</p>
+				{#if data.recurringEarnings.length}
+					<table class="w-full text-sm">
+						<tbody class="divide-y">
+							{#each data.recurringEarnings as e (e.id)}
+								<tr>
+									<td class="py-1.5">{e.label}</td>
+									<td class="py-1.5 text-muted-foreground"
+										>{e.kind === 'ALLOWANCE' ? 'Allowance' : 'Incentive'}</td
+									>
+									<td class="py-1.5 text-right font-mono"
+										>{formatCurrency(Number(e.monthlyAmount))}<span
+											class="ml-1 text-xs text-muted-foreground">/mo</span
+										></td
+									>
+									<td class="py-1.5 text-right">
+										{#if e.isActive}
+											<form method="POST" action="?/endEarning" use:enhance>
+												<input type="hidden" name="id" value={e.id} />
+												<button
+													type="submit"
+													class="rounded-md border border-red-200 px-2 py-0.5 text-xs font-medium text-red-600 hover:bg-red-50"
+													>End</button
+												>
+											</form>
+										{:else}
+											<span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"
+												>ENDED</span
+											>
+										{/if}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				{:else}
+					<p class="text-xs text-muted-foreground">No recurring allowances or incentives.</p>
+				{/if}
+				<form
+					method="POST"
+					action="?/addEarning"
+					use:enhance
+					class="flex flex-wrap items-end gap-2"
+				>
+					<select name="kind" class="h-8 rounded-md border border-input bg-background px-2 text-xs">
+						<option value="ALLOWANCE">Allowance</option>
+						<option value="INCENTIVE">Incentive</option>
+					</select>
+					<input
+						name="label"
+						placeholder="Label (e.g. Meal allowance)"
+						required
+						class="h-8 w-40 rounded-md border border-input bg-background px-2 text-xs"
+					/>
+					<input
+						name="monthlyAmount"
+						type="number"
+						min="0.01"
+						step="0.01"
+						placeholder="Monthly amount"
+						required
+						class="h-8 w-28 rounded-md border border-input bg-background px-2 text-xs"
+					/>
+					<button
+						class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+						>Add</button
+					>
+				</form>
+			</section>
+		{/if}
+
+		{#if canManage}
+			<section class="rounded-lg border bg-card p-6 space-y-4 lg:col-span-2">
 				<h2 class="font-semibold">
 					Documents <span class="text-xs font-normal text-muted-foreground"
 						>(201 file — contracts, IDs, exit docs)</span

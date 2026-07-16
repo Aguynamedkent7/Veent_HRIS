@@ -384,6 +384,7 @@ model Employee {
   goals              Goal[]
   loans              Loan[]
   cashAdvances       CashAdvance[]
+  recurringEarnings  EmployeeEarning[]
   workSchedule       WorkSchedule?       @relation(fields: [workScheduleId], references: [id])
   attendanceDays     AttendanceDay[]
   separations        SeparationRecord[]
@@ -1220,6 +1221,31 @@ model CashAdvance {
 
   @@index([employeeId])
   @@map("cash_advances")
+}
+
+// Recurring monthly earning HR assigns to an employee (allowance or incentive).
+// computePayroll prorates the monthly amount to the period (like statutory
+// contributions) and feeds the engine's ALLOWANCE / INCENTIVE buckets (#65).
+// Deactivate (isActive=false) instead of deleting so past payslips keep context.
+enum EmployeeEarningKind {
+  ALLOWANCE
+  INCENTIVE
+}
+
+model EmployeeEarning {
+  id            String              @id @default(cuid())
+  employeeId    String
+  kind          EmployeeEarningKind
+  label         String
+  monthlyAmount Decimal             @db.Decimal(12, 2)
+  isActive      Boolean             @default(true)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@map("employee_earnings")
 }
 
 // ─── Attendance (Phase 11.3 — FR-052–FR-055) ──────────────────────────────────
