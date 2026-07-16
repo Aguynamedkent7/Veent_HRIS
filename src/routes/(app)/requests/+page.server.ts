@@ -82,7 +82,11 @@ export const actions: Actions = {
 		const f = await request.formData()
 		const parsed = requestSchema.safeParse(rawFromForm(f.get('type') as string, f))
 		if (!parsed.success) {
-			return fail(422, { error: parsed.error.errors[0]?.message ?? 'Invalid input.' })
+			const fieldErrors = parsed.error.flatten().fieldErrors as Record<string, string[]>
+			return fail(422, {
+				error: 'Please fix the highlighted fields.',
+				fieldErrors
+			})
 		}
 
 		try {
