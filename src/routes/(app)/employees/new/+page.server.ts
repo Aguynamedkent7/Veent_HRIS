@@ -39,8 +39,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 		}),
 		db.workSchedule.findMany({
 			where: { organizationId: orgId },
-			select: { id: true, name: true },
-			orderBy: { name: 'asc' }
+			select: { id: true, name: true, isDefault: true },
+			orderBy: [{ isDefault: 'desc' }, { name: 'asc' }]
 		})
 	])
 

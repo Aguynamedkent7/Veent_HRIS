@@ -20,6 +20,33 @@ async function main() {
 		create: { organizationId: org.id, name: 'Human Resources' }
 	})
 
+	// Default work schedule: Mon–Fri 8:00 AM – 5:00 PM PHT with a 1-hour unpaid lunch (8 paid
+	// hours). Onboarding assigns this so a new hire has an explicit schedule that attendance
+	// derivation reads (480 = 08:00, 1020 = 17:00, in PHT minutes-from-midnight).
+	const defaultSchedule = await db.workSchedule.upsert({
+		where: { id: 'ws_default_seed' },
+		update: { name: 'Default (8 AM – 5 PM)', isDefault: true },
+		create: {
+			id: 'ws_default_seed',
+			organizationId: org.id,
+			name: 'Default (8 AM – 5 PM)',
+			isDefault: true
+		}
+	})
+	for (const weekday of [1, 2, 3, 4, 5]) {
+		await db.workScheduleDay.upsert({
+			where: { scheduleId_weekday: { scheduleId: defaultSchedule.id, weekday } },
+			update: { startMinutes: 480, endMinutes: 1020, breakMinutes: 60 },
+			create: {
+				scheduleId: defaultSchedule.id,
+				weekday,
+				startMinutes: 480,
+				endMinutes: 1020,
+				breakMinutes: 60
+			}
+		})
+	}
+
 	const hash = await bcrypt.hash('Admin@1234', 12)
 
 	const superAdmin = await db.user.upsert({

@@ -286,8 +286,11 @@
 					>
 						<option value="">None</option>
 						{#each data.workSchedules as ws (ws.id)}
-							<option value={ws.id} selected={form?.values?.workScheduleId === ws.id}
-								>{ws.name}</option
+							<option
+								value={ws.id}
+								selected={form?.values?.workScheduleId
+									? form.values.workScheduleId === ws.id
+									: ws.isDefault}>{ws.name}</option
 							>
 						{/each}
 					</select>
