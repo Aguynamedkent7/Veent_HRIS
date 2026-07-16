@@ -5,6 +5,18 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 
+	// Selecting an employee prefills the ₱ inputs from their recurring
+	// allowance/incentive assignments (already prorated server-side); the values
+	// stay editable — this is still a what-if tool.
+	// svelte-ignore state_referenced_locally
+	let selectedEmployee = $state(form?.employeeId ?? '')
+	let vals = $state<Record<string, string>>({})
+	function prefillRecurring() {
+		const d = data.recurringDefaults[selectedEmployee]
+		vals.allowances = d?.allowances ? String(d.allowances) : ''
+		vals.incentives = d?.incentives ? String(d.incentives) : ''
+	}
+
 	const fields = [
 		{ name: 'regularHours', label: 'Regular hours' },
 		{ name: 'overtimeHours', label: 'Overtime hours' },
@@ -45,15 +57,19 @@
 				<select
 					name="employeeId"
 					required
+					bind:value={selectedEmployee}
+					onchange={prefillRecurring}
 					class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 				>
 					<option value="">Select employee…</option>
 					{#each data.employees as e (e.id)}
-						<option value={e.id} selected={form?.employeeId === e.id}
-							>{e.lastName}, {e.firstName} ({e.employeeNumber})</option
-						>
+						<option value={e.id}>{e.lastName}, {e.firstName} ({e.employeeNumber})</option>
 					{/each}
 				</select>
+				<p class="mt-1 text-xs text-muted-foreground">
+					Allowances &amp; incentives prefill from the employee's recurring assignments (prorated
+					per period) — edit freely.
+				</p>
 			</div>
 			<div class="grid gap-3 sm:grid-cols-2">
 				{#each fields as f (f.name)}
@@ -65,6 +81,7 @@
 							min="0"
 							step="0.01"
 							placeholder="0"
+							bind:value={vals[f.name]}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
 					</div>
