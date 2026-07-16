@@ -18,22 +18,33 @@ function generateTempPassword(): string {
 export const load: PageServerLoad = async ({ locals }) => {
 	requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
 
-	const [departments, employees] = await Promise.all([
+	const orgId = locals.user!.organizationId
+	const [departments, employees, positions, workSchedules] = await Promise.all([
 		db.department.findMany({
-			where: { organizationId: locals.user!.organizationId },
+			where: { organizationId: orgId },
 			orderBy: { name: 'asc' }
 		}),
 		db.employee.findMany({
 			where: {
-				user: { organizationId: locals.user!.organizationId },
+				user: { organizationId: orgId },
 				employmentStatus: 'ACTIVE'
 			},
 			select: { id: true, firstName: true, lastName: true, employeeNumber: true },
 			orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }]
+		}),
+		db.position.findMany({
+			where: { organizationId: orgId, isActive: true },
+			select: { id: true, title: true, departmentId: true },
+			orderBy: { title: 'asc' }
+		}),
+		db.workSchedule.findMany({
+			where: { organizationId: orgId },
+			select: { id: true, name: true },
+			orderBy: { name: 'asc' }
 		})
 	])
 
-	return { departments, employees }
+	return { departments, employees, positions, workSchedules }
 }
 
 const createSchema = z.object({
@@ -57,6 +68,15 @@ const createSchema = z.object({
 	pagibigNumber: z.string().optional(),
 	tinNumber: z.string().optional(),
 	reportsToId: z
+		.string()
+		.optional()
+		.or(z.literal('').transform(() => undefined)),
+	// Work schedule + position are optional at onboarding; empty select → unset (null).
+	workScheduleId: z
+		.string()
+		.optional()
+		.or(z.literal('').transform(() => undefined)),
+	positionId: z
 		.string()
 		.optional()
 		.or(z.literal('').transform(() => undefined)),

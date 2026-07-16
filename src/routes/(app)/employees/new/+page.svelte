@@ -262,6 +262,40 @@
 						{/each}
 					</select>
 				</div>
+				<div>
+					<label for="positionId" class="text-sm font-medium">Position</label>
+					<select
+						id="positionId"
+						name="positionId"
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					>
+						<option value="">None</option>
+						{#each data.positions as pos (pos.id)}
+							<option value={pos.id} selected={form?.values?.positionId === pos.id}
+								>{pos.title}</option
+							>
+						{/each}
+					</select>
+				</div>
+				<div>
+					<label for="workScheduleId" class="text-sm font-medium">Work Schedule</label>
+					<select
+						id="workScheduleId"
+						name="workScheduleId"
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					>
+						<option value="">None</option>
+						{#each data.workSchedules as ws (ws.id)}
+							<option value={ws.id} selected={form?.values?.workScheduleId === ws.id}
+								>{ws.name}</option
+							>
+						{/each}
+					</select>
+					<p class="mt-1 text-xs text-muted-foreground">
+						Attendance derivation uses this schedule — set it now or the new hire's days won't
+						compute until it's assigned.
+					</p>
+				</div>
 			</div>
 		</fieldset>
 
