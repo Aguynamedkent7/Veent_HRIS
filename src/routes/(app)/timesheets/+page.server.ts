@@ -4,7 +4,6 @@ import {
 	countTimesheets,
 	listTimesheets,
 	getTimesheet,
-	createTimesheet,
 	submitTimesheet,
 	updateTimesheetEntries,
 	deleteTimesheet,
@@ -88,11 +87,6 @@ function toFail(e: unknown) {
 		return fail(e.status, { error: e.body.message })
 	throw e
 }
-
-const createSchema = z.object({
-	periodStart: z.coerce.date(),
-	periodEnd: z.coerce.date()
-})
 
 const aggregateSchema = z.object({
 	employeeId: z.string().min(1),
@@ -198,41 +192,6 @@ export const actions: Actions = {
 		try {
 			await submitDraftByHr(id, event.locals.user!.organizationId, ctxOf(event))
 			return { saved: 'Timesheet submitted for review.' }
-		} catch (e) {
-			return toFail(e)
-		}
-	},
-
-	create: async (event) => {
-		const user = event.locals.user!
-		const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
-		if (!myEmployee) return fail(400, { error: 'No employee profile found' })
-
-		const raw = Object.fromEntries(await event.request.formData())
-		const parsed = createSchema.safeParse(raw)
-		if (!parsed.success) return fail(400, { error: 'Invalid dates' })
-
-		const ctx = ctxOf(event)
-		try {
-			// Reflect the employee's punches for the period, then seed the timesheet from the
-			// derived attendance so a new sheet isn't empty. No attendance → an empty draft.
-			await autoDeriveFromPunches(
-				user.organizationId,
-				{ from: parsed.data.periodStart, to: parsed.data.periodEnd, employeeId: myEmployee.id },
-				ctx
-			)
-			const entries = await attendanceEntriesForRange(
-				myEmployee.id,
-				parsed.data.periodStart,
-				parsed.data.periodEnd
-			)
-			await createTimesheet(
-				myEmployee.id,
-				parsed.data.periodStart,
-				parsed.data.periodEnd,
-				entries,
-				ctx
-			)
 		} catch (e) {
 			return toFail(e)
 		}

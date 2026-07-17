@@ -1,7 +1,8 @@
-import { fail, redirect } from '@sveltejs/kit'
+import { fail, isHttpError, redirect } from '@sveltejs/kit'
 import { z } from 'zod'
 import { db } from '$lib/server/db'
-import { createTimesheet, submitTimesheet } from '$lib/server/services/timesheets'
+import { createTimesheet } from '$lib/server/services/timesheets'
+import { autoDeriveFromPunches, attendanceEntriesForRange } from '$lib/server/services/attendance'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -11,78 +12,51 @@ export const load: PageServerLoad = async ({ locals }) => {
 	return {}
 }
 
-const entrySchema = z.object({
-	date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format'),
-	hoursWorked: z.number().min(0).max(24),
-	notes: z.string().optional()
-})
-
 const createSchema = z.object({
-	periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-	periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-	entries: z.array(entrySchema).min(1)
+	periodStart: z.coerce.date(),
+	periodEnd: z.coerce.date()
 })
 
 export const actions: Actions = {
-	create: async ({ request, locals }) => {
+	// Period-range create: reflect the employee's punches for the period and seed a
+	// DRAFT timesheet from the derived attendance (no punches → an empty draft). The
+	// draft is submitted separately from /timesheets — creation never sends for review.
+	create: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
+		const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
+		if (!myEmployee) return fail(400, { error: 'No employee profile found' })
 
-		const employee = await db.employee.findUnique({ where: { userId: user.id } })
-		if (!employee) {
-			return fail(400, { error: 'No employee profile found for this user.' })
-		}
-
-		const formData = await request.formData()
-		const periodStart = formData.get('periodStart') as string
-		const periodEnd = formData.get('periodEnd') as string
-		const entriesRaw = formData.get('entries') as string
-
-		let parsedEntries: unknown
-		try {
-			parsedEntries = JSON.parse(entriesRaw)
-		} catch {
-			return fail(400, { error: 'Invalid entries format.' })
-		}
-
-		const result = createSchema.safeParse({
-			periodStart,
-			periodEnd,
-			entries: parsedEntries
-		})
-
-		if (!result.success) {
-			const firstError = result.error.errors[0]
-			return fail(400, { error: firstError?.message ?? 'Validation error.' })
-		}
-
-		const { entries } = result.data
+		const parsed = createSchema.safeParse(Object.fromEntries(await request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Invalid dates' })
 
 		const ctx = {
 			organizationId: user.organizationId,
 			actorId: user.id,
-			actorRole: user.role
+			actorRole: user.role,
+			ipAddress: getClientAddress()
 		}
-
 		try {
-			const ts = await createTimesheet(
-				employee.id,
-				new Date(result.data.periodStart),
-				new Date(result.data.periodEnd),
-				entries.map((e) => ({
-					date: new Date(e.date),
-					hoursWorked: e.hoursWorked,
-					notes: e.notes
-				})),
+			await autoDeriveFromPunches(
+				user.organizationId,
+				{ from: parsed.data.periodStart, to: parsed.data.periodEnd, employeeId: myEmployee.id },
 				ctx
 			)
-
-			await submitTimesheet(ts.id, employee.id, ctx)
-		} catch (err: unknown) {
-			const e = err as { status?: number; body?: { message?: string }; message?: string }
-			if (e?.status === 409) {
-				return fail(409, { error: 'A timesheet for this period already exists.' })
-			}
-			return fail(400, { error: e?.body?.message ?? e?.message ?? 'Failed to create timesheet.' })
+			const entries = await attendanceEntriesForRange(
+				myEmployee.id,
+				parsed.data.periodStart,
+				parsed.data.periodEnd
+			)
+			await createTimesheet(
+				myEmployee.id,
+				parsed.data.periodStart,
+				parsed.data.periodEnd,
+				entries,
+				ctx
+			)
+		} catch (e) {
+			if (isHttpError(e) && [400, 403, 404, 409].includes(e.status))
+				return fail(e.status, { error: e.body.message })
+			throw e
 		}
 
 		redirect(303, '/timesheets')
