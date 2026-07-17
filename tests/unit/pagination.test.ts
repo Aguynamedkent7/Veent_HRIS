@@ -4,17 +4,17 @@ import { paginate } from '$lib/server/pagination'
 const url = (qs = '') => new URL(`http://localhost/list${qs}`)
 
 describe('paginate', () => {
-	it('defaults to page 1 with pageSize 20', () => {
+	it('defaults to page 1 with pageSize 10', () => {
 		const p = paginate(url(), 137)
-		expect(p).toMatchObject({ page: 1, pageSize: 20, skip: 0, take: 20, totalPages: 7 })
-		expect(p.label).toBe('1–20 of 137')
+		expect(p).toMatchObject({ page: 1, pageSize: 10, skip: 0, take: 10, totalPages: 14 })
+		expect(p.label).toBe('1–10 of 137')
 	})
 
 	it('computes skip/take and the range label for a middle page', () => {
 		const p = paginate(url('?page=2'), 137)
-		expect(p.skip).toBe(20)
-		expect(p.take).toBe(20)
-		expect(p.label).toBe('21–40 of 137')
+		expect(p.skip).toBe(10)
+		expect(p.take).toBe(10)
+		expect(p.label).toBe('11–20 of 137')
 	})
 
 	it('clamps page < 1 and non-numeric input to 1', () => {
@@ -26,16 +26,16 @@ describe('paginate', () => {
 
 	it('clamps beyond the last page so the last page is served', () => {
 		const p = paginate(url('?page=99'), 137)
-		expect(p.page).toBe(7)
-		expect(p.skip).toBe(120)
-		expect(p.label).toBe('121–137 of 137')
+		expect(p.page).toBe(14)
+		expect(p.skip).toBe(130)
+		expect(p.label).toBe('131–137 of 137')
 	})
 
 	it('reads a custom param name and ignores the default one', () => {
 		const p = paginate(url('?myPage=3&page=9'), 100, { param: 'myPage' })
 		expect(p.page).toBe(3)
 		expect(p.param).toBe('myPage')
-		expect(p.skip).toBe(40)
+		expect(p.skip).toBe(20)
 	})
 
 	it('honours a custom page size', () => {

@@ -9,6 +9,7 @@
 	import TimesheetModal from '$lib/components/timesheets/TimesheetModal.svelte'
 	import AggregatePanel from '$lib/components/timesheets/AggregatePanel.svelte'
 	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
+	import { addToast } from '$lib/stores/toast.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -216,7 +217,23 @@
 	{/if}
 
 	{#if showCreate}
-		<form method="POST" action="?/create" use:enhance class="rounded-lg border p-4 space-y-3">
+		<!-- The page renders no inline error, so a rejected create (most often a duplicate
+		     period — the action 409s) would otherwise fail silently. Surface it as a toast and
+		     keep the entered dates so they can be corrected. -->
+		<form
+			method="POST"
+			action="?/create"
+			use:enhance={() =>
+				async ({ result, update }) => {
+					if (result.type === 'failure') {
+						addToast(String(result.data?.error ?? 'Could not create this timesheet.'), {
+							kind: 'error'
+						})
+					}
+					await update({ reset: false })
+				}}
+			class="rounded-lg border p-4 space-y-3"
+		>
 			<h2 class="font-semibold">Create Timesheet</h2>
 			<!-- svelte-ignore a11y_label_has_associated_control -->
 			<div class="flex items-end gap-4">
