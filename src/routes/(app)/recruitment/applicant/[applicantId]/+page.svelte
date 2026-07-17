@@ -9,6 +9,16 @@
 	const applicant = $derived(data.applicant)
 	const offer = $derived(data.applicant.offer)
 
+	// Stage-gated entry forms (#76): existing interviews/offers always render; only
+	// the forms that *create* new ones depend on the applicant's stage. Interviews
+	// are scheduled from SCREENING (scheduleInterview then advances to INTERVIEW);
+	// offers can be issued from INTERVIEW onward.
+	const STAGE_ORDER = ['APPLIED', 'SCREENING', 'INTERVIEW', 'OFFER', 'HIRED']
+	const canScheduleInterview = $derived(applicant.currentStage === 'SCREENING')
+	const canIssueOffer = $derived(
+		STAGE_ORDER.indexOf(applicant.currentStage) >= STAGE_ORDER.indexOf('INTERVIEW')
+	)
+
 	// Arriving from the Kanban's "Schedule interview" / "Give offer" links opens
 	// the matching form: scroll it into view and focus its first field.
 	$effect(() => {
@@ -155,83 +165,79 @@
 			<p class="text-xs text-muted-foreground">No interviews scheduled yet.</p>
 		{/if}
 
-		<!-- Schedule form -->
-		<form
-			id="schedule"
-			method="POST"
-			action="?/scheduleInterview"
-			use:enhance
-			class="grid scroll-mt-20 gap-2 border-t pt-3 sm:grid-cols-2"
-		>
-			<div class="grid gap-1">
-				<label for="iv-date" class="text-xs font-medium text-muted-foreground">Date</label>
-				<input
-					id="iv-date"
-					name="scheduledDate"
-					type="date"
-					required
-					onkeydown={(e) => {
-						if (e.key !== 'Tab') e.preventDefault()
-					}}
-					class="h-9 rounded-md border border-input bg-background px-2 text-sm"
-				/>
-			</div>
-			<div class="grid gap-1">
-				<label for="iv-time" class="text-xs font-medium text-muted-foreground">Time</label>
-				<input
-					id="iv-time"
-					name="scheduledTime"
-					type="time"
-					required
-					onkeydown={(e) => {
-						if (e.key !== 'Tab') e.preventDefault()
-					}}
-					class="h-9 rounded-md border border-input bg-background px-2 text-sm"
-				/>
-			</div>
-			<div class="grid gap-1">
-				<label for="iv-mode" class="text-xs font-medium text-muted-foreground">Mode</label>
-				<select
-					id="iv-mode"
-					name="mode"
-					class="h-9 rounded-md border border-input bg-background px-2 text-sm"
-				>
-					<option value="ONSITE">On-site</option>
-					<option value="VIDEO">Video</option>
-					<option value="PHONE">Phone</option>
-				</select>
-			</div>
-			<div class="grid gap-1">
-				<label for="iv-who" class="text-xs font-medium text-muted-foreground">Interviewer</label>
-				<input
-					id="iv-who"
-					name="interviewer"
-					type="text"
-					required
-					placeholder="e.g. Jane Cruz"
-					class="h-9 rounded-md border border-input bg-background px-2 text-sm"
-				/>
-			</div>
-			<div class="grid gap-1">
-				<label for="iv-loc" class="text-xs font-medium text-muted-foreground"
-					>Location / link <span class="text-muted-foreground/70">(optional)</span></label
-				>
-				<input
-					id="iv-loc"
-					name="location"
-					type="text"
-					placeholder="Room 4 or meet.google.com/…"
-					class="h-9 rounded-md border border-input bg-background px-2 text-sm"
-				/>
-			</div>
-			<div class="sm:col-span-2">
-				<button
-					type="submit"
-					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-					>Schedule interview</button
-				>
-			</div>
-		</form>
+		<!-- Schedule form — only while the applicant is in Screening (#76). -->
+		{#if canScheduleInterview}
+			<form
+				id="schedule"
+				method="POST"
+				action="?/scheduleInterview"
+				use:enhance
+				class="grid scroll-mt-20 gap-2 border-t pt-3 sm:grid-cols-2"
+			>
+				<div class="grid gap-1">
+					<label for="iv-date" class="text-xs font-medium text-muted-foreground">Date</label>
+					<input
+						id="iv-date"
+						name="scheduledDate"
+						type="date"
+						required
+						class="h-9 rounded-md border border-input bg-background px-2 text-sm"
+					/>
+				</div>
+				<div class="grid gap-1">
+					<label for="iv-time" class="text-xs font-medium text-muted-foreground">Time</label>
+					<input
+						id="iv-time"
+						name="scheduledTime"
+						type="time"
+						required
+						class="h-9 rounded-md border border-input bg-background px-2 text-sm"
+					/>
+				</div>
+				<div class="grid gap-1">
+					<label for="iv-mode" class="text-xs font-medium text-muted-foreground">Mode</label>
+					<select
+						id="iv-mode"
+						name="mode"
+						class="h-9 rounded-md border border-input bg-background px-2 text-sm"
+					>
+						<option value="ONSITE">On-site</option>
+						<option value="VIDEO">Video</option>
+						<option value="PHONE">Phone</option>
+					</select>
+				</div>
+				<div class="grid gap-1">
+					<label for="iv-who" class="text-xs font-medium text-muted-foreground">Interviewer</label>
+					<input
+						id="iv-who"
+						name="interviewer"
+						type="text"
+						required
+						placeholder="e.g. Jane Cruz"
+						class="h-9 rounded-md border border-input bg-background px-2 text-sm"
+					/>
+				</div>
+				<div class="grid gap-1">
+					<label for="iv-loc" class="text-xs font-medium text-muted-foreground"
+						>Location / link <span class="text-muted-foreground/70">(optional)</span></label
+					>
+					<input
+						id="iv-loc"
+						name="location"
+						type="text"
+						placeholder="Room 4 or meet.google.com/…"
+						class="h-9 rounded-md border border-input bg-background px-2 text-sm"
+					/>
+				</div>
+				<div class="sm:col-span-2">
+					<button
+						type="submit"
+						class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+						>Schedule interview</button
+					>
+				</div>
+			</form>
+		{/if}
 	</section>
 
 	<!-- Offer -->
@@ -313,8 +319,8 @@
 			{/if}
 		{:else if applicant.convertedEmployee}
 			<p class="text-xs text-muted-foreground">Already converted to an employee.</p>
-		{:else}
-			<!-- Issue offer form -->
+		{:else if canIssueOffer}
+			<!-- Issue offer form — only from the Interview stage onward (#76). -->
 			<form method="POST" action="?/issueOffer" use:enhance class="grid gap-2 sm:grid-cols-2">
 				<div class="grid gap-1">
 					<label for="of-title" class="text-xs font-medium text-muted-foreground">Job title</label>
@@ -385,6 +391,10 @@
 					>
 				</div>
 			</form>
+		{:else}
+			<p class="text-xs text-muted-foreground">
+				An offer can be issued once the applicant reaches the Interview stage.
+			</p>
 		{/if}
 	</section>
 
