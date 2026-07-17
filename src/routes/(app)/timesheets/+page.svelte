@@ -229,8 +229,11 @@
 						addToast(String(result.data?.error ?? 'Could not create this timesheet.'), {
 							kind: 'error'
 						})
+						// Keep what was typed so the period can be corrected, not retyped.
+						await update({ reset: false })
+						return
 					}
-					await update({ reset: false })
+					await update()
 				}}
 			class="rounded-lg border p-4 space-y-3"
 		>
