@@ -90,7 +90,7 @@
 				name="minSalary"
 				type="number"
 				min="0"
-				step="0.01"
+				step="1000"
 				placeholder="Min"
 				required
 				class="h-8 w-24 rounded-md border border-input bg-background px-2 text-xs"
@@ -99,7 +99,7 @@
 				name="midSalary"
 				type="number"
 				min="0"
-				step="0.01"
+				step="1000"
 				placeholder="Mid"
 				required
 				class="h-8 w-24 rounded-md border border-input bg-background px-2 text-xs"
@@ -108,7 +108,7 @@
 				name="maxSalary"
 				type="number"
 				min="0"
-				step="0.01"
+				step="1000"
 				placeholder="Max"
 				required
 				class="h-8 w-24 rounded-md border border-input bg-background px-2 text-xs"

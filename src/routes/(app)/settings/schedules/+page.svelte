@@ -88,6 +88,7 @@
 						id="breakMinutes"
 						name="breakMinutes"
 						type="number"
+						step="5"
 						min="0"
 						value="60"
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"

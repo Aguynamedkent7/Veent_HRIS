@@ -28,7 +28,9 @@
 	</div>
 
 	{#if form?.success}
-		<div class="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+		<div
+			class="rounded-md border border-green-500/20 bg-green-500/10 px-4 py-3 text-sm text-green-600 dark:text-green-400"
+		>
 			Payroll configuration saved successfully.
 		</div>
 	{/if}
@@ -67,7 +69,7 @@
 						type="number"
 						min="0"
 						max="100"
-						step="0.01"
+						step="0.05"
 						bind:value={philhealthRate}
 						class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pr-8"
 					/>
@@ -88,7 +90,7 @@
 						type="number"
 						min="0"
 						max="100"
-						step="0.01"
+						step="0.05"
 						bind:value={pagibigRate}
 						class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pr-8"
 					/>

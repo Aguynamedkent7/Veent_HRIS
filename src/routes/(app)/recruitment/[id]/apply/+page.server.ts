@@ -54,7 +54,7 @@ export const actions: Actions = {
 
 		if (existing) {
 			return fail(409, {
-				error: 'You have already applied for this position.',
+				error: 'An applicant with this email has already been added to this posting.',
 				values: raw as Record<string, string>
 			})
 		}
@@ -67,6 +67,8 @@ export const actions: Actions = {
 			coverLetter: parsed.data.coverLetter
 		})
 
-		return { success: true }
+		// HR-only "add applicant" flow — land back on the posting's board so the
+		// new card is visible, rather than an applicant-facing thank-you panel.
+		return redirect(303, `/recruitment/${params.id}`)
 	}
 }

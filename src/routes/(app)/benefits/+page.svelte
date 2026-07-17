@@ -79,7 +79,7 @@
 						name="employeeCost"
 						type="number"
 						min="0"
-						step="0.01"
+						step="100"
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					/>
 				</div>
@@ -90,7 +90,7 @@
 						name="employerCost"
 						type="number"
 						min="0"
-						step="0.01"
+						step="100"
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					/>
 				</div>

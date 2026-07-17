@@ -19,15 +19,11 @@
 		<h1 class="text-2xl font-bold">
 			{formatShortDate(run.periodStart)} – {formatShortDate(run.periodEnd)}
 		</h1>
-		<span
-			class="rounded-full px-2.5 py-1 text-xs font-medium {run.status === 'APPROVED'
-				? 'bg-green-100 text-green-700'
-				: 'bg-blue-100 text-blue-700'}"
-		>
+		<span class={run.status === 'APPROVED' ? 'badge-green' : 'badge-blue'}>
 			{run.status}
 		</span>
 		{#if run.hasOverride}
-			<span class="text-xs text-yellow-600 font-medium">Has overrides</span>
+			<span class="text-xs text-yellow-600 font-medium dark:text-yellow-500">Has overrides</span>
 		{/if}
 		{#if run.status === 'COMPUTED'}
 			<!-- Recompute rebuilds all entries from current data (e.g. after assigning
@@ -61,7 +57,7 @@
 		</div>
 		<div class="rounded-lg border bg-card p-4">
 			<p class="text-sm text-muted-foreground">Total Net Pay</p>
-			<p class="text-xl font-bold font-mono text-green-700">
+			<p class="text-xl font-bold font-mono text-green-700 dark:text-green-400">
 				{formatCurrency(Number(run.totalNet))}
 			</p>
 		</div>
@@ -83,14 +79,14 @@
 			</thead>
 			<tbody class="divide-y">
 				{#each run.entries as entry (entry.id)}
-					<tr class="hover:bg-muted/30 {entry.isFlagged ? 'bg-yellow-50' : ''}">
+					<tr class="hover:bg-muted/30 {entry.isFlagged ? 'bg-yellow-500/10' : ''}">
 						<td class="px-4 py-3">
 							<div class="font-medium">{entry.employee.lastName}, {entry.employee.firstName}</div>
 							<div class="text-xs text-muted-foreground">
 								{entry.employee.employeeNumber} · {entry.employee.department.name}
 							</div>
 							{#if entry.isFlagged}
-								<div class="text-xs text-yellow-600">⚠ {entry.flagReason}</div>
+								<div class="text-xs text-yellow-600 dark:text-yellow-500">⚠ {entry.flagReason}</div>
 							{/if}
 						</td>
 						<td class="px-4 py-3 text-right font-mono">{formatCurrency(Number(entry.grossPay))}</td>
@@ -110,16 +106,14 @@
 							>{formatCurrency(Number(entry.netPay))}</td
 						>
 						<td class="px-4 py-3">
-							<div class="flex items-center justify-end gap-3">
+							<div class="flex items-center justify-end gap-2">
 								<button
 									onclick={() => (expandedEntryId = expandedEntryId === entry.id ? null : entry.id)}
-									class="text-xs text-primary hover:underline"
-									>{expandedEntryId === entry.id ? 'Hide' : 'Breakdown'}</button
+									class="btn-row">{expandedEntryId === entry.id ? 'Hide' : 'Breakdown'}</button
 								>
 								{#if run.status !== 'APPROVED'}
-									<button
-										onclick={() => (overrideEntryId = entry.id)}
-										class="text-xs text-primary hover:underline">Override</button
+									<button onclick={() => (overrideEntryId = entry.id)} class="btn-row"
+										>Override</button
 									>
 								{/if}
 							</div>
@@ -184,7 +178,7 @@
 											id={'netPay-' + entry.id}
 											name="netPay"
 											type="number"
-											step="0.01"
+											step="any"
 											value={Number(entry.netPay)}
 											class="mt-1 flex h-8 w-36 rounded border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
 										/>
