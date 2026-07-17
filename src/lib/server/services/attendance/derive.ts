@@ -182,9 +182,15 @@ export function deriveAttendanceDay(input: DeriveInput): AttendanceDayResult {
 		return emptyResult('ABSENT')
 	}
 
-	const punchedBreakMs = breakSegs.reduce((s, [a, b]) => s + (b - a), 0)
 	const netIntervals = subtractIntervals(workSegs, breakSegs)
+	const grossWorkedMs = workSegs.reduce((s, [a, b]) => s + (b - a), 0)
 	const punchedNetMs = netIntervals.reduce((s, [a, b]) => s + (b - a), 0)
+
+	// Measure what `subtractIntervals` actually removed rather than summing the raw break
+	// segments: only the part of a break overlapping a work segment ever comes off the
+	// clock. Old rows can carry a break punched outside the IN/OUT window, and counting
+	// that in full would make it look like a long meal and suppress the deduction below.
+	const punchedBreakMs = grossWorkedMs - punchedNetMs
 
 	// The scheduled meal break is unpaid whether or not it gets punched, and in practice
 	// employees only punch IN and OUT. Deducting it here is what keeps an 8–5 day at 8h
