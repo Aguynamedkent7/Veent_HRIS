@@ -14,6 +14,9 @@
 	let error = $state('')
 	let submitting = $state(false)
 	let startEl = $state<HTMLInputElement>()
+	// Constrain the end date to be on/after the start date (advanceTo also keeps
+	// them in sync when the start changes).
+	let startVal = $state('')
 
 	const inputClass =
 		'flex h-11 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -113,6 +116,7 @@
 						<label for="ts-start" class="text-sm font-medium">Period Start</label>
 						<input
 							bind:this={startEl}
+							bind:value={startVal}
 							id="ts-start"
 							name="periodStart"
 							type="date"
@@ -123,7 +127,14 @@
 					</div>
 					<div class="space-y-1.5">
 						<label for="ts-end" class="text-sm font-medium">Period End</label>
-						<input id="ts-end" name="periodEnd" type="date" required class={inputClass} />
+						<input
+							id="ts-end"
+							name="periodEnd"
+							type="date"
+							required
+							min={startVal || undefined}
+							class={inputClass}
+						/>
 					</div>
 				</div>
 				<div class="flex gap-3">
