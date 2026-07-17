@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
-	import { advanceTo } from '$lib/actions/dateRange'
 	import type { SubmitFunction } from '@sveltejs/kit'
 	import { slide } from 'svelte/transition'
 	import { formatShortDate } from '$lib/utils/format'
@@ -12,7 +11,6 @@
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
-	let showCreate = $state(false)
 
 	// ─── Review modal ─────────────────────────────────────────────────────────
 	// /timesheets is read/modify only — the modal runs in "edit" mode (no approve/reject).
@@ -60,8 +58,6 @@
 		SUBMITTED: 'bg-blue-100 text-blue-700',
 		DRAFT: 'bg-gray-100 text-gray-600'
 	}
-	const inputClass =
-		'h-8 w-full rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 	const btnPrimary =
 		'rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50'
 </script>
@@ -194,12 +190,12 @@
 	<div class="flex items-center justify-between">
 		<h1 class="text-2xl font-bold tracking-tight">Timesheets</h1>
 		{#if data.myEmployeeId}
-			<button
-				onclick={() => (showCreate = !showCreate)}
+			<a
+				href="/timesheets/new"
 				class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
 			>
 				New Timesheet
-			</button>
+			</a>
 		{/if}
 	</div>
 
@@ -213,39 +209,6 @@
 
 	{#if data.isHrAdmin}
 		<AggregatePanel employees={data.employees} />
-	{/if}
-
-	{#if showCreate}
-		<form method="POST" action="?/create" use:enhance class="rounded-lg border p-4 space-y-3">
-			<h2 class="font-semibold">Create Timesheet</h2>
-			<!-- svelte-ignore a11y_label_has_associated_control -->
-			<div class="flex items-end gap-4">
-				<div>
-					<label class="text-sm font-medium">Period Start</label>
-					<input
-						name="periodStart"
-						type="date"
-						required
-						use:advanceTo={'periodEnd'}
-						class="mt-1 {inputClass} h-9"
-					/>
-				</div>
-				<div>
-					<label class="text-sm font-medium">Period End</label>
-					<input name="periodEnd" type="date" required class="mt-1 {inputClass} h-9" />
-				</div>
-				<button
-					type="submit"
-					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-					>Create</button
-				>
-				<button
-					type="button"
-					onclick={() => (showCreate = false)}
-					class="rounded-md border px-4 py-2 text-sm hover:bg-accent">Cancel</button
-				>
-			</div>
-		</form>
 	{/if}
 
 	{#if data.myEmployeeId}
