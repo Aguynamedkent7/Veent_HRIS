@@ -213,8 +213,9 @@
 				<input type="hidden" name="stage" value={target.to} />
 				<div>
 					<label for="stage-move-notes" class="text-sm font-medium">
-						Note <span class="font-normal text-muted-foreground">(optional — shown in the
-							applicant's stage history)</span>
+						Note <span class="font-normal text-muted-foreground"
+							>(optional — shown in the applicant's stage history)</span
+						>
 					</label>
 					<textarea
 						id="stage-move-notes"
