@@ -54,11 +54,11 @@ live inside US4 and block only its rollout tasks.
 **Goal**: optional note on every stage move; applicant page shows who/when/why history.
 **Independent test**: drag applicant to a new stage, enter a note, see it on the applicant's timeline.
 
-- [ ] POL-011 [US3] **Test-first** unit in `tests/unit/recruitment-stage-notes.test.ts`: `advanceApplicant` persists `notes` to `ApplicantStageHistory` and writes the audit entry (extend existing recruitment test setup/mocks). MUST fail only if coverage is missing — if it passes immediately, keep it as regression cover and note it.
-- [ ] POL-012 [US3] `advanceStage` action in `src/routes/(app)/recruitment/[id]/+page.server.ts`: read `notes` from formData and pass to `advanceApplicant` (service already accepts it).
-- [ ] POL-013 [US3] Note dialog in `src/lib/components/recruitment/ApplicantKanban.svelte`: stage move opens a small dialog (target stage summary, optional `<textarea name="notes">`, Confirm/Cancel) that submits the existing `?/advanceStage` form; Svelte 5 `$state`, mind hydration-retry for e2e.
-- [ ] POL-014 [US3] Timeline: include `stageHistory` (ordered `changedAt desc`) in `getApplicant` (`src/lib/server/services/recruitment.ts`), resolve `changedById` → user email via a batched `db.user.findMany` in the load (no schema change); render a "Stage history" card (stage badge, actor, date, note) in `src/routes/(app)/recruitment/applicant/[applicantId]/+page.svelte`.
-- [ ] POL-015 [US3] e2e `tests/e2e/recruitment.spec.ts`: admin moves an applicant with a note → applicant detail timeline shows the stage, actor, and note.
+- [X] POL-011 [US3] **Test-first** unit in `tests/unit/recruitment-stage-notes.test.ts`: `advanceApplicant` persists `notes` to `ApplicantStageHistory` and writes the audit entry (extend existing recruitment test setup/mocks). MUST fail only if coverage is missing — if it passes immediately, keep it as regression cover and note it.
+- [X] POL-012 [US3] `advanceStage` action in `src/routes/(app)/recruitment/[id]/+page.server.ts`: read `notes` from formData and pass to `advanceApplicant` (service already accepts it).
+- [X] POL-013 [US3] Note dialog in `src/lib/components/recruitment/ApplicantKanban.svelte`: stage move opens a small dialog (target stage summary, optional `<textarea name="notes">`, Confirm/Cancel) that submits the existing `?/advanceStage` form; Svelte 5 `$state`, mind hydration-retry for e2e.
+- [X] POL-014 [US3] Timeline: include `stageHistory` (ordered `changedAt desc`) in `getApplicant` (`src/lib/server/services/recruitment.ts`), resolve `changedById` → user email via a batched `db.user.findMany` in the load (no schema change); render a "Stage history" card (stage badge, actor, date, note) in `src/routes/(app)/recruitment/applicant/[applicantId]/+page.svelte`.
+- [X] POL-015 [US3] e2e `tests/e2e/recruitment.spec.ts`: admin moves an applicant with a note → applicant detail timeline shows the stage, actor, and note.
 
 **Checkpoint**: PR B (`feat/kanban-stage-notes`) — suite green; PR closes #52.
 
@@ -69,29 +69,29 @@ live inside US4 and block only its rollout tasks.
 
 ### Mechanism (blocks the rollout tasks)
 
-- [ ] POL-016 [P] [US4] **Test-first** unit `tests/unit/pagination.test.ts`: page clamping (`<1`, `NaN`, beyond last page), skip/take math, custom param name (`myPage`), default pageSize 20, range labels ("21–40 of 137"). MUST fail.
-- [ ] POL-017 [US4] Implement `src/lib/server/pagination.ts`: `paginate(url, { param = 'page', pageSize = 20 })` → `{ skip, take, page, pageSize }` + meta builder from `total` → POL-016 green.
-- [ ] POL-018 [US4] `src/lib/components/Pagination.svelte`: prev/next links + "X–Y of N" built from the current `$page.url` searchParams (mutating only its own param, preserving filters); hidden when `total <= pageSize`.
+- [X] POL-016 [P] [US4] **Test-first** unit `tests/unit/pagination.test.ts`: page clamping (`<1`, `NaN`, beyond last page), skip/take math, custom param name (`myPage`), default pageSize 20, range labels ("21–40 of 137"). MUST fail.
+- [X] POL-017 [US4] Implement `src/lib/server/pagination.ts`: `paginate(url, { param = 'page', pageSize = 20 })` → `{ skip, take, page, pageSize }` + meta builder from `total` → POL-016 green.
+- [X] POL-018 [US4] `src/lib/components/Pagination.svelte`: prev/next links + "X–Y of N" built from the current `$page.url` searchParams (mutating only its own param, preserving filters); hidden when `total <= pageSize`.
 
 ### Rollout (all [P] after POL-017/018 — different files)
 
-- [ ] POL-019 [P] [US4] `/timesheets` (`src/routes/(app)/timesheets/+page.{server.ts,svelte}`): paginate mine + team — independent params (`myPage`/`teamPage`) if the tables are separate queries, else split the single query first; **select-all/bulk-delete = current page only**.
-- [ ] POL-020 [P] [US4] `/leave` (`src/routes/(app)/leave/+page.{server.ts,svelte}`): paginate the requests table; balances/types untouched; select-all = current page.
-- [ ] POL-021 [P] [US4] `/attendance` (`src/routes/(app)/attendance/+page.{server.ts,svelte}`): paginate the day-rows table; summary header intact.
-- [ ] POL-022 [P] [US4] `/payslips` (`src/routes/(app)/payslips/+page.{server.ts,svelte}`): skip/take + count on the `payrollEntry` query.
-- [ ] POL-023 [P] [US4] `/requests` (`src/routes/(app)/requests/+page.{server.ts,svelte}`): paginate `listRequests` (add skip/take/count to the service or paginate at the route).
-- [ ] POL-024 [P] [US4] `/requests/approvals` (`src/routes/(app)/requests/approvals/+page.{server.ts,svelte}`): paginate; status filter preserved in page links.
-- [ ] POL-025 [P] [US4] `/reports/audit-log` (`src/routes/(app)/reports/audit-log/+page.{server.ts,svelte}`): refactor hand-rolled pagination onto the shared helper + component (may keep 50/page).
-- [ ] POL-026 [P] [US4] `/employees` (`src/routes/(app)/employees/+page.{server.ts,svelte}`): paginate; existing search/filter params preserved.
-- [ ] POL-027 [P] [US4] `/recruitment` (`src/routes/(app)/recruitment/+page.{server.ts,svelte}`): paginate the postings list; the Kanban board is not paginated.
-- [ ] POL-028 [US4] e2e `tests/e2e/pagination.spec.ts`: seed 25+ rows on one covered page (distinctive label; clean up per verify skill), assert ≤20 rendered, navigate to page 2 ("21–…" visible, URL has `page=2`), apply a filter + change page (both in URL), browser back restores page 1.
+- [X] POL-019 [P] [US4] `/timesheets` (`src/routes/(app)/timesheets/+page.{server.ts,svelte}`): paginate mine + team — independent params (`myPage`/`teamPage`) if the tables are separate queries, else split the single query first; **select-all/bulk-delete = current page only**.
+- [X] POL-020 [P] [US4] `/leave` (`src/routes/(app)/leave/+page.{server.ts,svelte}`): paginate the requests table; balances/types untouched; select-all = current page.
+- [X] POL-021 [P] [US4] `/attendance` (`src/routes/(app)/attendance/+page.{server.ts,svelte}`): paginate the day-rows table; summary header intact.
+- [X] POL-022 [P] [US4] `/payslips` (`src/routes/(app)/payslips/+page.{server.ts,svelte}`): skip/take + count on the `payrollEntry` query.
+- [X] POL-023 [P] [US4] `/requests` (`src/routes/(app)/requests/+page.{server.ts,svelte}`): paginate `listRequests` (add skip/take/count to the service or paginate at the route).
+- [X] POL-024 [P] [US4] `/requests/approvals` (`src/routes/(app)/requests/approvals/+page.{server.ts,svelte}`): paginate; status filter preserved in page links.
+- [X] POL-025 [P] [US4] `/reports/audit-log` (`src/routes/(app)/reports/audit-log/+page.{server.ts,svelte}`): refactor hand-rolled pagination onto the shared helper + component (may keep 50/page).
+- [X] POL-026 [P] [US4] `/employees` (`src/routes/(app)/employees/+page.{server.ts,svelte}`): paginate; existing search/filter params preserved.
+- [X] POL-027 [P] [US4] `/recruitment` (`src/routes/(app)/recruitment/+page.{server.ts,svelte}`): paginate the postings list; the Kanban board is not paginated.
+- [X] POL-028 [US4] e2e `tests/e2e/pagination.spec.ts`: seed 25+ rows on one covered page (distinctive label; clean up per verify skill), assert ≤20 rendered, navigate to page 2 ("21–…" visible, URL has `page=2`), apply a filter + change page (both in URL), browser back restores page 1.
 
 **Checkpoint**: PR C (`feat/list-pagination`) — suite green; PR closes #64. Acceptance: one count + one page query per load, no full-table fetches remain on covered pages.
 
 ## Phase 5 — Polish & cross-cutting
 
-- [ ] POL-029 Per-PR validation gate: `pnpm check && pnpm test && pnpm test:e2e` on each of the three branches before requesting review.
-- [ ] POL-030 PR descriptions: reference the plan (`specs/001-hris-platform/plan-polish.md`) and close their issues (`Closes #53`, `Closes #54` / `Closes #52` / `Closes #64`).
+- [X] POL-029 Per-PR validation gate: `pnpm check && pnpm test && pnpm test:e2e` on each of the three branches before requesting review.
+- [X] POL-030 PR descriptions: reference the plan (`specs/001-hris-platform/plan-polish.md`) and close their issues (`Closes #53`, `Closes #54` / `Closes #52` / `Closes #64`).
 
 ---
 
