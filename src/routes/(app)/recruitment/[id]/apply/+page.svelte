@@ -18,9 +18,11 @@
 	</div>
 
 	{#if form?.success}
-		<div class="rounded-md border border-green-300 bg-green-50 px-4 py-6 text-center space-y-2">
-			<p class="text-lg font-semibold text-green-800">Application Submitted!</p>
-			<p class="text-sm text-green-700">
+		<div
+			class="rounded-md border border-green-500/30 bg-green-500/10 px-4 py-6 text-center space-y-2"
+		>
+			<p class="text-lg font-semibold text-green-600 dark:text-green-400">Application Submitted!</p>
+			<p class="text-sm text-muted-foreground">
 				Thank you for applying. We will be in touch with you shortly.
 			</p>
 			<a
