@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import { formatShortDate } from '$lib/utils/format'
 	import type { PageData, ActionData } from './$types'
 
@@ -24,7 +25,7 @@
 
 <div class="mx-auto max-w-3xl space-y-6">
 	<div>
-		<a href="/separations" class="text-sm text-muted-foreground hover:underline">← Separations</a>
+		<BackButton fallback="/separations" label="Separations" />
 	</div>
 
 	{#if form?.error}

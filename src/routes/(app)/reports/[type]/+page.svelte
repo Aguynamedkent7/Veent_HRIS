@@ -3,6 +3,7 @@
 	import { advanceTo } from '$lib/actions/dateRange'
 	import { navigating } from '$app/stores'
 	import TableSkeleton from '$lib/components/ui/TableSkeleton.svelte'
+	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import type { PageData } from './$types'
 
 	let { data }: { data: PageData } = $props()
@@ -82,6 +83,8 @@
 </svelte:head>
 
 <div class="space-y-6">
+	<BackButton fallback="/reports" label="Reports" />
+
 	<!-- Header -->
 	<div class="flex flex-wrap items-center justify-between gap-3">
 		<h1 class="text-2xl font-bold tracking-tight">{title}</h1>

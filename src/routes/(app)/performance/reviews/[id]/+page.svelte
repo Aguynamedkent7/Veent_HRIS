@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import { formatShortDate } from '$lib/utils/format'
 	import type { PageData, ActionData } from './$types'
 
@@ -19,7 +20,7 @@
 </svelte:head>
 
 <div class="mx-auto max-w-2xl space-y-6">
-	<a href="/performance" class="text-sm text-muted-foreground hover:underline">← Performance</a>
+	<BackButton fallback="/performance" label="Performance" />
 
 	<div class="flex items-center justify-between">
 		<div>
