@@ -1,9 +1,10 @@
-import { fail, isHttpError } from '@sveltejs/kit'
+import { fail, isHttpError, redirect } from '@sveltejs/kit'
 import { requireMinRole } from '$lib/server/rbac'
 import {
 	countTimesheets,
 	listTimesheets,
 	getTimesheet,
+	createTimesheet,
 	submitTimesheet,
 	updateTimesheetEntries,
 	deleteTimesheet,
@@ -87,6 +88,11 @@ function toFail(e: unknown) {
 		return fail(e.status, { error: e.body.message })
 	throw e
 }
+
+const createSchema = z.object({
+	periodStart: z.coerce.date(),
+	periodEnd: z.coerce.date()
+})
 
 const aggregateSchema = z.object({
 	employeeId: z.string().min(1),
@@ -195,6 +201,42 @@ export const actions: Actions = {
 		} catch (e) {
 			return toFail(e)
 		}
+	},
+
+	// Period-range create (shared NewTimesheetDialog): reflect the employee's punches for
+	// the period, seed a DRAFT from the derived attendance (no punches → empty draft), then
+	// redirect to /timesheets so the new row is visible. Submission happens separately.
+	create: async (event) => {
+		const user = event.locals.user!
+		const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
+		if (!myEmployee) return fail(400, { error: 'No employee profile found' })
+
+		const parsed = createSchema.safeParse(Object.fromEntries(await event.request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Invalid dates' })
+
+		const ctx = ctxOf(event)
+		try {
+			await autoDeriveFromPunches(
+				user.organizationId,
+				{ from: parsed.data.periodStart, to: parsed.data.periodEnd, employeeId: myEmployee.id },
+				ctx
+			)
+			const entries = await attendanceEntriesForRange(
+				myEmployee.id,
+				parsed.data.periodStart,
+				parsed.data.periodEnd
+			)
+			await createTimesheet(
+				myEmployee.id,
+				parsed.data.periodStart,
+				parsed.data.periodEnd,
+				entries,
+				ctx
+			)
+		} catch (e) {
+			return toFail(e)
+		}
+		redirect(303, '/timesheets')
 	},
 
 	// Repopulate a draft's entries from the period's attendance (re-derives punches first).
