@@ -256,11 +256,12 @@
 		}
 	}
 
+	// Theme-aware status pills (dark-mode safe) — see the .badge-* classes in app.css.
 	const statusClass: Record<string, string> = {
-		APPROVED: 'bg-green-100 text-green-700',
-		REJECTED: 'bg-red-100 text-red-700',
-		SUBMITTED: 'bg-blue-100 text-blue-700',
-		DRAFT: 'bg-gray-100 text-gray-600'
+		APPROVED: 'badge-green',
+		REJECTED: 'badge-red',
+		SUBMITTED: 'badge-blue',
+		DRAFT: 'badge-gray'
 	}
 	const inputClass =
 		'h-8 w-full rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -295,10 +296,7 @@
 						<h2 class="truncate text-lg font-bold tracking-tight">
 							{ts.employee.lastName}, {ts.employee.firstName}
 						</h2>
-						<span
-							class="rounded-full px-2.5 py-0.5 text-xs font-semibold {statusClass[ts.status] ??
-								'bg-gray-100 text-gray-600'}">{ts.status}</span
-						>
+						<span class={statusClass[ts.status] ?? 'badge-gray'}>{ts.status}</span>
 					</div>
 					<p class="mt-0.5 text-sm text-muted-foreground">
 						{formatShortDate(ts.periodStart)} – {formatShortDate(ts.periodEnd)}
