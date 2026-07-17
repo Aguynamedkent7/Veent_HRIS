@@ -130,6 +130,55 @@ describe('deriveAttendanceDay — unpaid meal break when breaks are not punched'
 		expect(r.breakMinutes).toBe(120)
 	})
 
+	// Historical rows can still carry BREAK punches (the /break command is gone, but old
+	// data keeps them), and a stray one can sit outside the IN/OUT window. Only the part
+	// that overlaps a work segment ever comes off the clock, so only that part may count
+	// against the scheduled meal break.
+	it('ignores a punched break that falls entirely outside the shift', () => {
+		const r = derive(
+			[
+				p('IN', T('08:00')),
+				p('OUT', T('17:00')),
+				p('BREAK_START', T('18:00')),
+				p('BREAK_END', T('20:00'))
+			],
+			{ schedule: SCHED_8_5 }
+		)
+		expect(r.workedHours).toBeCloseTo(8, 2) // the meal deduction still applies
+		expect(r.breakMinutes).toBe(60) // the 2h outside the shift is not a meal break
+	})
+
+	it('tops a partially-overlapping punched break up to the scheduled meal break', () => {
+		// 16:30–17:30 overlaps the shift by only 30 minutes.
+		const r = derive(
+			[
+				p('IN', T('08:00')),
+				p('BREAK_START', T('16:30')),
+				p('BREAK_END', T('17:30')),
+				p('OUT', T('17:00'))
+			],
+			{ schedule: SCHED_8_5 }
+		)
+		expect(r.workedHours).toBeCloseTo(8, 2)
+		expect(r.breakMinutes).toBe(60)
+	})
+
+	it('counts only the overlap when no scheduled meal break applies', () => {
+		// Rest day → no schedule, so nothing tops the punched break up and the reported
+		// break is exactly the 30 minutes subtractIntervals actually removed.
+		const r = derive(
+			[
+				p('IN', T('08:00')),
+				p('BREAK_START', T('16:30')),
+				p('BREAK_END', T('17:30')),
+				p('OUT', T('17:00'))
+			],
+			{ schedule: null, dayType: 'REST_DAY' }
+		)
+		expect(r.workedHours).toBeCloseTo(8.5, 2)
+		expect(r.breakMinutes).toBe(30)
+	})
+
 	it('leaves rest days and holidays alone (no schedule → no break to deduct)', () => {
 		const r = derive([p('IN', T('08:00')), p('OUT', T('17:00'))], {
 			schedule: null,

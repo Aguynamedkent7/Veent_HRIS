@@ -12,7 +12,7 @@ so everyone sees who's in and out. The invoker gets a private (ephemeral) acknow
 - Each command takes an **optional `time`** (e.g. `/in 9:00`, `/out 5:30pm`) to backfill a forgotten
   punch; omit it and the current time is used. Times are interpreted in Philippine Standard Time.
 
-```
+```text
 /in [time]  /out [time]
         │
         ▼
