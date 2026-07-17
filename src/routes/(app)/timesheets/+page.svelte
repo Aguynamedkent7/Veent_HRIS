@@ -125,10 +125,13 @@
 		{/if}
 
 		<div class="overflow-x-auto rounded-lg border">
-			<table class="w-full text-sm">
+			<!-- table-fixed with shared column widths so the right-anchored Total Hours
+			     and Status columns line up between the My/Team tables even though only
+			     the Team table has an Employee column. -->
+			<table class="w-full min-w-[44rem] table-fixed text-sm">
 				<thead class="border-b bg-muted/50">
 					<tr>
-						<th class="w-[1%] px-4 py-3">
+						<th class="w-12 px-4 py-3">
 							<input
 								type="checkbox"
 								checked={allSelected}
@@ -138,11 +141,13 @@
 							/>
 						</th>
 						{#if showEmployee}
-							<th class="px-4 py-3 text-left font-medium text-muted-foreground">Employee</th>
+							<th class="w-56 px-4 py-3 text-left font-medium text-muted-foreground">Employee</th>
 						{/if}
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Period</th>
-						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Total Hours</th>
-						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
+						<th class="w-40 px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap"
+							>Total Hours</th
+						>
+						<th class="w-32 px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
 					</tr>
 				</thead>
 				<tbody class="divide-y">
@@ -163,7 +168,7 @@
 								/>
 							</td>
 							{#if showEmployee}
-								<td class="px-4 py-3">{ts.employee.lastName}, {ts.employee.firstName}</td>
+								<td class="truncate px-4 py-3">{ts.employee.lastName}, {ts.employee.firstName}</td>
 							{/if}
 							<td class="px-4 py-3 whitespace-nowrap"
 								>{formatShortDate(ts.periodStart)} – {formatShortDate(ts.periodEnd)}</td
