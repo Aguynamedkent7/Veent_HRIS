@@ -22,7 +22,7 @@ server-side pagination across the list pages (#64).
   `div.card`s; only the Attendance summary links out.
 - **#54**: `src/routes/(app)/employees/[id]/+page.svelte` renders `bankAccountNumber` and
   `gcashNumber` in full (display card ~line 182 and edit-form prefills). `AuditAction` has no
-  view/access value — the constitution requires data *access* logging for a reveal.
+  view/access value — the constitution requires data _access_ logging for a reveal.
 - **#64**: only `/reports/audit-log` paginates (`?page=` + skip/take + count). No shared
   component or helper; `/timesheets` and `/leave` have select-all + bulk actions over the full
   rendered list.
@@ -44,13 +44,13 @@ server-side pagination across the list pages (#64).
 
 ## Constitution check
 
-| Gate | Status |
-|---|---|
+| Gate            | Status                                                                                                                                                       |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | P1 Data privacy | ✅ Strengthened: #54 masks PII server-side (masked strings leave the server; full values only via the audited reveal action). No new PII surfaces elsewhere. |
-| P2 RBAC | ✅ Reveal is role-checked **server-side** (`HR_ADMIN`/`SUPER_ADMIN`); all other slices reuse existing route/action guards. |
-| P3 Spec-driven | ✅ This plan + `/speckit-tasks` before implementation; spec FRs unchanged (gap-closing work). |
-| P4 Audit trail | ✅ New `VIEW` value on `AuditAction` records reveals; stage moves already write stage history + audit log. |
-| P5 Test-first | ✅ Unit tests for mask + pagination helpers; e2e for reveal gating, note dialog, page navigation (see per-slice verification). |
+| P2 RBAC         | ✅ Reveal is role-checked **server-side** (`HR_ADMIN`/`SUPER_ADMIN`); all other slices reuse existing route/action guards.                                   |
+| P3 Spec-driven  | ✅ This plan + `/speckit-tasks` before implementation; spec FRs unchanged (gap-closing work).                                                                |
+| P4 Audit trail  | ✅ New `VIEW` value on `AuditAction` records reveals; stage moves already write stage history + audit log.                                                   |
+| P5 Test-first   | ✅ Unit tests for mask + pagination helpers; e2e for reveal gating, note dialog, page navigation (see per-slice verification).                               |
 
 No deviations — Complexity Tracking table not needed.
 
@@ -61,12 +61,12 @@ No deviations — Complexity Tracking table not needed.
 `src/routes/(app)/dashboard/+page.svelte`: wrap each metric card in an anchor (keep `.card`
 styling; add hover/focus affordance so it reads as clickable).
 
-| Card | Target |
-|---|---|
-| Employee headcount | `/employees` |
-| On Leave Today | `/leave` |
-| Pending Approvals | `/approvals` (unified inbox; card already counts requests + timesheets) |
-| Last Payroll | `/payroll` |
+| Card               | Target                                                                  |
+| ------------------ | ----------------------------------------------------------------------- |
+| Employee headcount | `/employees`                                                            |
+| On Leave Today     | `/leave`                                                                |
+| Pending Approvals  | `/approvals` (unified inbox; card already counts requests + timesheets) |
+| Last Payroll       | `/payroll`                                                              |
 
 No server changes. Verification: e2e — click each card, assert URL.
 
@@ -120,16 +120,16 @@ Verification: unit (advanceApplicant persists notes — likely already covered; 
 
 **Rollout** (one page = one task; each independently shippable):
 
-| Page | Notes |
-|---|---|
-| `/timesheets` | Mine + team tables → independent params (`myPage`, `teamPage`) or paginate the single combined query if the split is client-side — resolve at task time. **Select-all/bulk-delete scope = current page** (ids rendered on the page). |
-| `/leave` | Requests table; keep balances/types unpaginated. Same select-all scoping. |
-| `/attendance` | Paginate the day-rows table; keep the summary header intact. |
-| `/payslips` | Straightforward `findMany` → skip/take + count. |
-| `/requests`, `/requests/approvals` | Preserve status filters in links. |
-| `/reports/audit-log` | Refactor existing hand-rolled pagination onto the shared helper/component. |
-| `/employees` | Include existing search/filter params in page links. |
-| `/recruitment` | Paginate the postings list; the Kanban board itself is not paginated. |
+| Page                               | Notes                                                                                                                                                                                                                                |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/timesheets`                      | Mine + team tables → independent params (`myPage`, `teamPage`) or paginate the single combined query if the split is client-side — resolve at task time. **Select-all/bulk-delete scope = current page** (ids rendered on the page). |
+| `/leave`                           | Requests table; keep balances/types unpaginated. Same select-all scoping.                                                                                                                                                            |
+| `/attendance`                      | Paginate the day-rows table; keep the summary header intact.                                                                                                                                                                         |
+| `/payslips`                        | Straightforward `findMany` → skip/take + count.                                                                                                                                                                                      |
+| `/requests`, `/requests/approvals` | Preserve status filters in links.                                                                                                                                                                                                    |
+| `/reports/audit-log`               | Refactor existing hand-rolled pagination onto the shared helper/component.                                                                                                                                                           |
+| `/employees`                       | Include existing search/filter params in page links.                                                                                                                                                                                 |
+| `/recruitment`                     | Paginate the postings list; the Kanban board itself is not paginated.                                                                                                                                                                |
 
 Acceptance (from issue): ≤ pageSize rows rendered; page + filters in URL, survive refresh/back;
 visible "21–40 of 137"; exactly one count + one page query per load.
