@@ -534,7 +534,7 @@
 							action="?/delete"
 							title="Delete timesheet?"
 							message="This permanently deletes the timesheet and all its entries."
-							triggerClass="text-sm font-medium text-destructive hover:underline"
+							triggerClass="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
 							disabled={busy}
 							submit={closeOnSuccess}
 						>

@@ -154,7 +154,10 @@
 								<form method="POST" action="?/verifyDoc" use:enhance>
 									<input type="hidden" name="docId" value={doc.id} />
 									<input type="hidden" name="verified" value={doc.verifiedAt ? 'false' : 'true'} />
-									<button type="submit" class="text-xs text-primary hover:underline">
+									<button
+										type="submit"
+										class="rounded-md border border-primary/40 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/10"
+									>
 										{doc.verifiedAt ? 'Unverify' : 'Mark verified'}
 									</button>
 								</form>
@@ -162,7 +165,11 @@
 							{#if docsEditable && !doc.verifiedAt}
 								<form method="POST" action="?/deleteDoc" use:enhance>
 									<input type="hidden" name="docId" value={doc.id} />
-									<button type="submit" class="text-xs text-red-600 hover:underline">Remove</button>
+									<button
+										type="submit"
+										class="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+										>Remove</button
+									>
 								</form>
 							{/if}
 						</div>

@@ -253,13 +253,17 @@
 														type="hidden"
 														name="status"
 														value="ACTIVE"
-													/><button class="text-xs text-blue-600 hover:underline">Activate</button>
+													/><button
+														class="rounded-md border border-green-200 px-3 py-1 text-xs font-medium text-green-600 hover:bg-green-50"
+														>Activate</button
+													>
 												</form>
 											{/if}
 											{#if c.status === 'ACTIVE'}
 												<form method="POST" action="?/openReviews" use:enhance>
 													<input type="hidden" name="id" value={c.id} /><button
-														class="text-xs text-primary hover:underline">Open reviews</button
+														class="rounded-md border border-primary/40 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/10"
+														>Open reviews</button
 													>
 												</form>
 												<form method="POST" action="?/setCycleStatus" use:enhance>
@@ -267,7 +271,10 @@
 														type="hidden"
 														name="status"
 														value="CLOSED"
-													/><button class="text-xs text-red-600 hover:underline">Close</button>
+													/><button
+														class="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+														>Close</button
+													>
 												</form>
 											{/if}
 										</div>
