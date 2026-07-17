@@ -93,6 +93,13 @@
 		-webkit-font-smoothing: antialiased;
 	}
 
+	/* Textareas: vertical resize only, capped so dragging can't blow up the
+	   card/row layout — long text scrolls inside the box instead (#70). */
+	textarea {
+		@apply resize-y overflow-y-auto;
+		max-height: 16rem;
+	}
+
 	/* Scrollbar styling */
 	::-webkit-scrollbar {
 		width: 6px;

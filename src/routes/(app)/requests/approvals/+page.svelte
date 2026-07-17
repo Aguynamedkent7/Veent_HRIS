@@ -134,12 +134,15 @@
 			No requests awaiting your decision.
 		</div>
 	{:else}
-		<div class="flex flex-wrap gap-4">
+		<!-- items-start + natural card height (#70): cards hug their content instead of
+		     stretching to a fixed 38vh, and a resized textarea grows the card downward
+		     rather than eating the content area above it. -->
+		<div class="flex flex-wrap items-start gap-4">
 			{#each data.pendingRequests as req (req.id)}
 				<div
-					class="flex h-[38vh] min-h-[18rem] w-full min-w-[18rem] flex-col rounded-lg border bg-card p-4 sm:w-[22vw]"
+					class="flex w-full min-w-[18rem] flex-col rounded-lg border bg-card p-4 sm:w-[22rem]"
 				>
-					<div class="flex flex-1 flex-col gap-2 overflow-hidden">
+					<div class="flex flex-col gap-2">
 						<div class="flex items-center justify-between gap-2">
 							<div class="flex min-w-0 items-center gap-2">
 								<input
@@ -187,14 +190,14 @@
 						{/if}
 						<a
 							href="/requests/{req.id}?from=approvals"
-							class="mt-auto text-xs text-primary hover:underline">View detail →</a
+							class="text-xs text-primary hover:underline">View detail →</a
 						>
 					</div>
 					<form
 						method="POST"
 						action="?/decideRequest"
 						use:enhance
-						class="mt-2 shrink-0 space-y-2 border-t pt-2"
+						class="mt-3 space-y-2 border-t pt-2"
 					>
 						<input type="hidden" name="id" value={req.id} />
 						<textarea
