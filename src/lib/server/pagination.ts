@@ -2,7 +2,7 @@
 //
 // Usage in a load function — exactly one count query + one page query:
 //   const total = await db.thing.count({ where })
-//   const p = paginate(url, total, { param: 'page', pageSize: 20 })
+//   const p = paginate(url, total, { param: 'page', pageSize: 10 })
 //   const rows = await db.thing.findMany({ where, skip: p.skip, take: p.take })
 //   return { rows, pagination: p }
 //
@@ -36,7 +36,7 @@ export interface PaginateOptions {
 export function paginate(
 	url: URL,
 	total: number,
-	{ param = 'page', pageSize = 20 }: PaginateOptions = {}
+	{ param = 'page', pageSize = 10 }: PaginateOptions = {}
 ): Pagination {
 	const totalPages = Math.max(1, Math.ceil(total / pageSize))
 
