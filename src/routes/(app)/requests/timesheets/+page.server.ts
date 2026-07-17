@@ -20,10 +20,12 @@ export const load: PageServerLoad = async ({ locals }) => {
 	// is nothing to scope by, so show nothing rather than falling through to org-wide.
 	if (!isAdmin && !myEmployee) return { pendingTimesheets: [] }
 
-	// MANAGER sees direct reports; admins see all.
+	// MANAGER sees direct reports; admins see all — but never one's own timesheet
+	// (separation of duties, #75).
 	const pendingTimesheets = await db.timesheet.findMany({
 		where: {
 			status: 'SUBMITTED',
+			...(myEmployee ? { employeeId: { not: myEmployee.id } } : {}),
 			employee: {
 				user: { organizationId: user.organizationId },
 				...(!isAdmin ? { reportsToId: myEmployee!.id } : {})

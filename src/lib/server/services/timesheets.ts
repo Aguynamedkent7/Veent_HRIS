@@ -284,6 +284,15 @@ export async function reviewTimesheet(
 	ctx: AuditContext
 ) {
 	const ts = await getTimesheet(id, organizationId)
+	// #75: separation of duties — HR/SUPER act org-wide, so guard against approving
+	// or rejecting one's own timesheet before the manager-scope check.
+	const actorEmployee = await db.employee.findUnique({
+		where: { userId: ctx.actorId },
+		select: { id: true }
+	})
+	if (actorEmployee && actorEmployee.id === ts.employeeId) {
+		error(403, 'You cannot review your own timesheet')
+	}
 	await assertManagesEmployee(ctx, ts.employee.reportsToId)
 	if (ts.status !== 'SUBMITTED') error(400, 'Only submitted timesheets can be reviewed')
 
