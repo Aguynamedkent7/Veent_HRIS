@@ -17,8 +17,8 @@ import type { RequestHandler } from './$types'
 
 const punchSchema = z.object({
 	discordId: z.string().min(1),
-	// IN / OUT, or BREAK (toggles break start/end server-side).
-	punchType: z.enum(['IN', 'OUT', 'BREAK']),
+	// Breaks are not punched — the shift's unpaid meal break is deducted during derivation.
+	punchType: z.enum(['IN', 'OUT']),
 	timestamp: z.string().datetime().optional(),
 	messageId: z.string().optional()
 })

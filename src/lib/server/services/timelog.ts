@@ -26,8 +26,7 @@ function round2(n: number): number {
 export async function recordPunch(
 	input: {
 		discordId: string
-		/** `BREAK` is a toggle resolved to BREAK_START/BREAK_END from the last punch. */
-		punchType: 'IN' | 'OUT' | 'BREAK'
+		punchType: 'IN' | 'OUT'
 		timestamp: Date
 		discordMessageId?: string
 		source?: PunchSource
@@ -43,20 +42,14 @@ export async function recordPunch(
 		error(404, 'No active employee is linked to this Discord account')
 	}
 
-	// The most recent punch — used to tell the user their new state and to resolve /break.
+	// The most recent punch — reported back so the caller can tell the user their new state.
 	const previous = await db.timeLog.findFirst({
 		where: { employeeId: employee.id },
 		orderBy: { timestamp: 'desc' },
 		select: { punchType: true }
 	})
 
-	// /break toggles: end a break if one is open, otherwise start one.
-	const resolvedType: PunchType =
-		input.punchType === 'BREAK'
-			? previous?.punchType === 'BREAK_START'
-				? 'BREAK_END'
-				: 'BREAK_START'
-			: input.punchType
+	const resolvedType: PunchType = input.punchType
 
 	const timeLog = await db.timeLog.create({
 		data: {

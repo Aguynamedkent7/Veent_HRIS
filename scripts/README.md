@@ -1,18 +1,19 @@
 # Veent HRIS — Discord Time-Tracking Bot
 
 A standalone Discord bot that replaces manual `#in-and-out` messages with **slash commands**
-`/in`, `/out`, and `/break`. The command is not a chat message; the bot sends an **HMAC-signed**
+`/in` and `/out`. The command is not a chat message; the bot sends an **HMAC-signed**
 request to the HRIS `POST /api/v1/timesheets/log` endpoint (recording a `TimeLog` punch against the
 employee linked by `discordId`), then posts a **public announcement** ("🟢 Elena clocked in at 9:00 AM")
-so everyone sees who's in/out/on break. The invoker gets a private (ephemeral) acknowledgement.
+so everyone sees who's in and out. The invoker gets a private (ephemeral) acknowledgement.
 
-- **`/break`** toggles — starts a break if none is open, otherwise ends it (the HRIS resolves
-  `BREAK_START`/`BREAK_END` from the member's last punch).
+- **Breaks are not punched.** Members clock in once in the morning and out once in the afternoon;
+  the shift's unpaid meal break is deducted automatically when the day is derived
+  (`src/lib/server/services/attendance/derive.ts`).
 - Each command takes an **optional `time`** (e.g. `/in 9:00`, `/out 5:30pm`) to backfill a forgotten
   punch; omit it and the current time is used. Times are interpreted in Philippine Standard Time.
 
 ```
-/in [time]  /out [time]  /break [time]
+/in [time]  /out [time]
         │
         ▼
 scripts/discord-bot.ts ──HMAC-signed POST──▶ /api/v1/timesheets/log
@@ -52,7 +53,7 @@ environment — it is the shared key used to sign and verify every punch.
 pnpm bot
 ```
 
-On startup the bot registers `/in`, `/out`, `/break` to every server it has joined. Members type
+On startup the bot registers `/in` and `/out` to every server it has joined. Members type
 `/in` (optionally `/in 9:00` to backfill), get a private confirmation, and the bot posts the public
 announcement. `pnpm bot` is fine for local development, but for production run it under a process
 manager so it restarts on crash and on server reboot — see **Production deployment** below.
@@ -143,8 +144,9 @@ Notes:
 
 ### Health & recovery
 
-- On boot the bot re-registers `/in`, `/out`, `/break` in every guild — restarting is always safe and
-  idempotent, no manual re-registration needed.
+- On boot the bot re-registers `/in` and `/out` in every guild — restarting is always safe and
+  idempotent, no manual re-registration needed. Discord drops any command the bot no longer
+  registers, so a retired command (e.g. the old `/break`) disappears on the next restart.
 - A wrong or revoked `DISCORD_BOT_TOKEN` makes login fail immediately; the process exits and the
   supervisor keeps retrying. Check the logs — do **not** raise `max_restarts` to mask a bad token.
 - The bot is stateless: every punch is derived from the member's last `TimeLog` by the HRIS, so a
@@ -161,8 +163,8 @@ If the bot is unavailable (deploy in progress, token issue, Discord outage), rec
   `/in 9:00`, `/out 5:30pm`. The optional `time` argument writes the punch at the intended PHT time
   rather than "now", so a bot outage during the day can be reconciled without HR intervention.
 
-Because `/break` and the `IN`/`OUT` resolution are computed from the member's last punch on the HRIS
-side, these fallback edits and later slash commands stay consistent with each other automatically.
+Because a member's state is read from their last punch on the HRIS side, these fallback edits and
+later slash commands stay consistent with each other automatically.
 
 ## Security model
 

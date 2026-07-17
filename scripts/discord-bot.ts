@@ -1,14 +1,14 @@
 /**
  * Veent HRIS — Discord time-tracking bot (standalone, run with `pnpm bot`).
  *
- * Registers slash commands /in, /out and /break. A member types the command (which is not a
- * regular chat message); the bot sends an HMAC-signed POST to the HRIS /api/v1/timesheets/log
+ * Registers slash commands /in and /out. A member types the command (which is not a regular
+ * chat message); the bot sends an HMAC-signed POST to the HRIS /api/v1/timesheets/log
  * endpoint, then posts a PUBLIC announcement in the channel ("✅ Elena clocked in") so everyone
- * can see who is in/out/on break. The invoker gets a private (ephemeral) acknowledgement, and any
+ * can see who is in and out. The invoker gets a private (ephemeral) acknowledgement, and any
  * error (e.g. an unlinked Discord account) is shown only to them.
  *
- * `/break` toggles: it starts a break if none is open, otherwise ends the current break — the HRIS
- * resolves BREAK_START vs BREAK_END from the member's last punch.
+ * Breaks are not punched: the shift's unpaid meal break is deducted from the derived day
+ * automatically (see services/attendance/derive.ts), so there is no /break command.
  *
  * Required env (see scripts/README.md and .env.example):
  *   DISCORD_BOT_TOKEN   – bot token from the Discord developer portal
@@ -42,7 +42,7 @@ for (const [key, value] of Object.entries({
 	}
 }
 
-type PunchCommand = 'in' | 'out' | 'break'
+type PunchCommand = 'in' | 'out'
 
 const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000
 
@@ -75,7 +75,7 @@ function formatPhtTime(iso: string): string {
 }
 
 async function sendPunch(discordId: string, command: PunchCommand, timestampIso?: string) {
-	const punchType = command === 'in' ? 'IN' : command === 'out' ? 'OUT' : 'BREAK'
+	const punchType = command === 'in' ? 'IN' : 'OUT'
 	const payload: Record<string, string> = { discordId, punchType }
 	if (timestampIso) payload.timestamp = timestampIso
 	const rawBody = JSON.stringify(payload)
@@ -104,17 +104,13 @@ async function sendPunch(discordId: string, command: PunchCommand, timestampIso?
 	}>
 }
 
-/** Public announcement text from the RESOLVED punch type, with the effective time. */
+/** Public announcement text from the recorded punch type, with the effective time. */
 function announce(name: string, mention: string, resolved: string, at: string): string {
 	switch (resolved) {
 		case 'IN':
 			return `🟢 **${name}** (${mention}) clocked **in** at ${at}`
 		case 'OUT':
 			return `🔴 **${name}** (${mention}) clocked **out** at ${at}`
-		case 'BREAK_START':
-			return `☕ **${name}** (${mention}) started a **break** at ${at}`
-		case 'BREAK_END':
-			return `🔙 **${name}** (${mention}) is **back** from break at ${at}`
 		default:
 			return `**${name}** (${mention}) recorded a punch at ${at}`
 	}
@@ -132,10 +128,7 @@ const timeOption = (b: SlashCommandBuilder) =>
 
 const COMMANDS = [
 	timeOption(new SlashCommandBuilder().setName('in').setDescription('Clock in')).toJSON(),
-	timeOption(new SlashCommandBuilder().setName('out').setDescription('Clock out')).toJSON(),
-	timeOption(
-		new SlashCommandBuilder().setName('break').setDescription('Start or end your break')
-	).toJSON()
+	timeOption(new SlashCommandBuilder().setName('out').setDescription('Clock out')).toJSON()
 ]
 
 client.once(Events.ClientReady, async (c) => {
@@ -143,13 +136,13 @@ client.once(Events.ClientReady, async (c) => {
 	for (const guild of c.guilds.cache.values()) {
 		await guild.commands.set(COMMANDS)
 	}
-	console.log(`[bot] Registered /in, /out, /break in ${c.guilds.cache.size} guild(s)`)
+	console.log(`[bot] Registered /in, /out in ${c.guilds.cache.size} guild(s)`)
 })
 
 client.on(Events.InteractionCreate, async (interaction: Interaction) => {
 	if (!interaction.isChatInputCommand()) return
 	const command = interaction.commandName as PunchCommand
-	if (!['in', 'out', 'break'].includes(command)) return
+	if (!['in', 'out'].includes(command)) return
 
 	await interaction.deferReply({ flags: MessageFlags.Ephemeral })
 
