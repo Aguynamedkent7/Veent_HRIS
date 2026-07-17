@@ -19,6 +19,19 @@
 		editName = ''
 	}
 
+	// Members panel (#71): expand one department at a time to see current members
+	// and transfer other employees in (routed through the employee-update path so
+	// the move lands in employment history).
+	let membersId = $state<string | null>(null)
+	let assignId = $state('')
+	const deptName = $derived(new Map(data.departments.map((d) => [d.id, d.name])))
+	const membersOf = (id: string) => data.employees.filter((e) => e.departmentId === id)
+	const assignableTo = (id: string) => data.employees.filter((e) => e.departmentId !== id)
+	function toggleMembers(id: string) {
+		membersId = membersId === id ? null : id
+		assignId = ''
+	}
+
 	function formatDate(date: Date | string) {
 		return new Date(date).toLocaleDateString('en-PH', {
 			year: 'numeric',
@@ -158,15 +171,83 @@
 						</td>
 						<td class="px-4 py-3 text-right">
 							{#if editingId !== dept.id}
-								<button
-									onclick={() => startEdit(dept.id, dept.name)}
-									class="rounded-md border px-3 py-1 text-xs hover:bg-accent"
-								>
-									Edit
-								</button>
+								<div class="flex justify-end gap-2">
+									<button
+										onclick={() => toggleMembers(dept.id)}
+										class="rounded-md border px-3 py-1 text-xs hover:bg-accent"
+									>
+										{membersId === dept.id ? 'Hide Members' : 'Members'}
+									</button>
+									<button
+										onclick={() => startEdit(dept.id, dept.name)}
+										class="rounded-md border px-3 py-1 text-xs hover:bg-accent"
+									>
+										Edit
+									</button>
+								</div>
 							{/if}
 						</td>
 					</tr>
+					{#if membersId === dept.id}
+						<tr class="bg-muted/20">
+							<td colspan="4" class="px-4 py-4">
+								<div class="space-y-3">
+									{#if membersOf(dept.id).length}
+										<ul class="flex flex-wrap gap-2">
+											{#each membersOf(dept.id) as emp (emp.id)}
+												<li>
+													<a
+														href="/employees/{emp.id}"
+														class="rounded-full border bg-card px-3 py-1 text-xs hover:border-primary/40"
+														>{emp.lastName}, {emp.firstName}
+														<span class="text-muted-foreground">· {emp.employeeNumber}</span></a
+													>
+												</li>
+											{/each}
+										</ul>
+									{:else}
+										<p class="text-xs text-muted-foreground">No active employees in this department.</p>
+									{/if}
+									<form
+										method="POST"
+										action="?/assignEmployee"
+										use:enhance={() => {
+											return async ({ update }) => {
+												await update()
+												assignId = ''
+											}
+										}}
+										class="flex flex-wrap items-center gap-2"
+									>
+										<input type="hidden" name="departmentId" value={dept.id} />
+										<select
+											name="employeeId"
+											bind:value={assignId}
+											required
+											class="h-8 max-w-xs rounded-md border border-input bg-background px-2 text-xs"
+										>
+											<option value="" disabled>Assign an employee…</option>
+											{#each assignableTo(dept.id) as emp (emp.id)}
+												<option value={emp.id}
+													>{emp.lastName}, {emp.firstName} ({deptName.get(emp.departmentId) ??
+														'—'})</option
+												>
+											{/each}
+										</select>
+										<button
+											type="submit"
+											disabled={!assignId}
+											class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+											>Assign here</button
+										>
+										<span class="text-xs text-muted-foreground"
+											>Transfers are recorded in the employee's employment history.</span
+										>
+									</form>
+								</div>
+							</td>
+						</tr>
+					{/if}
 				{:else}
 					<tr>
 						<td colspan="4" class="px-4 py-8 text-center text-muted-foreground">

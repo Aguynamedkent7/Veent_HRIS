@@ -6,11 +6,30 @@ import {
 	createDepartment,
 	updateDepartment
 } from '$lib/server/services/departments'
+import { updateEmployee } from '$lib/server/services/employees'
+import { db } from '$lib/server/db'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
-	const departments = await listDepartments(locals.user!.organizationId)
-	return { departments }
+	// Same gate as the actions (the nav already hides this page from non-admins);
+	// the load now returns the org's employee roster for the Members panel.
+	requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+	const [departments, employees] = await Promise.all([
+		listDepartments(locals.user!.organizationId),
+		// For the per-department Members panel (#71): current members + assignable others.
+		db.employee.findMany({
+			where: { user: { organizationId: locals.user!.organizationId }, employmentStatus: 'ACTIVE' },
+			select: {
+				id: true,
+				firstName: true,
+				lastName: true,
+				employeeNumber: true,
+				departmentId: true
+			},
+			orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }]
+		})
+	])
+	return { departments, employees }
 }
 
 const nameSchema = z.object({
@@ -20,6 +39,11 @@ const nameSchema = z.object({
 const updateSchema = z.object({
 	id: z.string().min(1),
 	name: z.string().min(1, 'Name is required')
+})
+
+const assignSchema = z.object({
+	employeeId: z.string().min(1),
+	departmentId: z.string().min(1)
 })
 
 export const actions: Actions = {
@@ -59,5 +83,33 @@ export const actions: Actions = {
 			actorRole: user.role,
 			ipAddress: getClientAddress()
 		})
+	},
+
+	// Transfer an existing employee into a department (#71). Goes through
+	// updateEmployee so the change lands in the employment-history audit trail.
+	assignEmployee: async ({ request, locals, getClientAddress }) => {
+		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		const user = locals.user!
+
+		const parsed = assignSchema.safeParse(Object.fromEntries(await request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Select an employee to assign' })
+
+		const department = await db.department.findFirst({
+			where: { id: parsed.data.departmentId, organizationId: user.organizationId },
+			select: { id: true }
+		})
+		if (!department) return fail(404, { error: 'Department not found' })
+
+		await updateEmployee(
+			parsed.data.employeeId,
+			user.organizationId,
+			{ departmentId: department.id },
+			{
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			}
+		)
 	}
 }
