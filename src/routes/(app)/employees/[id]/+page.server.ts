@@ -25,6 +25,8 @@ import {
 	deleteEmployeeDocument
 } from '$lib/server/services/documents'
 import { addEmergencyContact, deleteEmergencyContact } from '$lib/server/services/emergencyContacts'
+import { writeAuditLog } from '$lib/server/audit'
+import { maskAccountNumber } from '$lib/utils/format'
 import { db } from '$lib/server/db'
 import { z } from 'zod'
 import type { Actions, PageServerLoad } from './$types'
@@ -155,8 +157,17 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	const schedules = canManage ? await listSchedules(locals.user!.organizationId) : []
 	const onboarding = canManage ? buildOnboarding(employee, documents) : null
 
+	// #54: disbursement numbers leave the server masked — full values are only
+	// obtainable through the audited ?/revealDisbursement action below.
+	const canRevealDisbursement = ['HR_ADMIN', 'SUPER_ADMIN'].includes(locals.user!.role)
+
 	return {
-		employee,
+		employee: {
+			...employee,
+			bankAccountNumber: maskAccountNumber(employee.bankAccountNumber),
+			gcashNumber: maskAccountNumber(employee.gcashNumber)
+		},
+		canRevealDisbursement,
 		departments,
 		canManage,
 		loans,
@@ -269,8 +280,18 @@ export const actions: Actions = {
 		const parsed = updateSchema.safeParse(raw)
 		if (!parsed.success) return fail(400, { error: 'Invalid input' })
 
+		// #54: the form never prefills the stored disbursement numbers (they render as
+		// placeholders), so an empty submission means "leave unchanged", not "clear".
+		// Explicit clearing is deferred until a dedicated clear affordance exists.
+		const { bankAccountNumber, gcashNumber, ...rest } = parsed.data
+		const input = {
+			...rest,
+			...(bankAccountNumber !== null && { bankAccountNumber }),
+			...(gcashNumber !== null && { gcashNumber })
+		}
+
 		try {
-			await updateEmployee(params.id, user.organizationId, parsed.data, {
+			await updateEmployee(params.id, user.organizationId, input, {
 				organizationId: user.organizationId,
 				actorId: user.id,
 				actorRole: user.role,
@@ -285,6 +306,34 @@ export const actions: Actions = {
 		}
 
 		return { success: true }
+	},
+
+	// #54: audited reveal of the masked disbursement numbers. The role check runs
+	// server-side — the UI button is cosmetic gating only (Constitution P2).
+	revealDisbursement: async ({ locals, params, getClientAddress }) => {
+		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		const user = locals.user!
+
+		const employee = await db.employee.findFirst({
+			where: { id: params.id, user: { organizationId: user.organizationId } },
+			select: { id: true, bankAccountNumber: true, gcashNumber: true }
+		})
+		if (!employee) error(404, 'Employee not found')
+
+		// Constitution P1/P4: accessing PII is itself an auditable event.
+		await writeAuditLog(ctxOf(locals, getClientAddress()), {
+			action: 'VIEW',
+			entityType: 'Employee',
+			entityId: employee.id,
+			newValue: { fields: ['bankAccountNumber', 'gcashNumber'] }
+		})
+
+		return {
+			revealed: {
+				bankAccountNumber: employee.bankAccountNumber,
+				gcashNumber: employee.gcashNumber
+			}
+		}
 	},
 
 	offboard: async ({ request, locals, params, getClientAddress }) => {
