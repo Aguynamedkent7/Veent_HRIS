@@ -25,7 +25,9 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 			'Content-Type': doc.mimeType,
 			'Content-Length': String(doc.size),
 			'Content-Disposition': `attachment; filename="${encodeURIComponent(doc.fileName)}"`,
-			'Cache-Control': 'private, no-store'
+			'Cache-Control': 'private, no-store',
+			// #74: never let the browser second-guess the stored content type.
+			'X-Content-Type-Options': 'nosniff'
 		}
 	})
 }

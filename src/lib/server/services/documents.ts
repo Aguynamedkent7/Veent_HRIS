@@ -1,7 +1,13 @@
 import { db } from '$lib/server/db'
 import { error } from '@sveltejs/kit'
 import { writeAuditLog } from '$lib/server/audit'
-import { saveFile, deleteStoredFile, isAllowedType, MAX_UPLOAD_BYTES } from '$lib/server/storage'
+import {
+	saveFile,
+	deleteStoredFile,
+	isAllowedType,
+	contentMatchesType,
+	MAX_UPLOAD_BYTES
+} from '$lib/server/storage'
 import type { EmployeeDocumentCategory } from '@prisma/client'
 import type { AuditContext } from './types'
 
@@ -49,6 +55,10 @@ export async function saveEmployeeDocument(
 	if (input.bytes.byteLength > MAX_UPLOAD_BYTES) error(413, 'File exceeds the 10 MB limit')
 	if (!isAllowedType(input.mimeType))
 		error(415, 'Unsupported file type. Allowed: PDF, PNG, JPEG, WEBP')
+	// #74: the declared MIME is browser-supplied — verify the bytes really are that
+	// format so a renamed file can't be stored under a trusted content type.
+	if (!contentMatchesType(input.bytes, input.mimeType))
+		error(415, 'File contents do not match its type. Allowed: PDF, PNG, JPEG, WEBP')
 
 	const saved = await saveFile(input.bytes, input.mimeType, `employees/${employeeId}`)
 

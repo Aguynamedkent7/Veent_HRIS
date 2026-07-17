@@ -1,7 +1,13 @@
 import { db } from '$lib/server/db'
 import { error } from '@sveltejs/kit'
 import { writeAuditLog } from '$lib/server/audit'
-import { saveFile, deleteStoredFile, isAllowedType, MAX_UPLOAD_BYTES } from '$lib/server/storage'
+import {
+	saveFile,
+	deleteStoredFile,
+	isAllowedType,
+	contentMatchesType,
+	MAX_UPLOAD_BYTES
+} from '$lib/server/storage'
 import type { RequestDocument } from '@prisma/client'
 import type { AuditContext } from '../types'
 
@@ -84,6 +90,12 @@ export async function saveRequestDocuments(
 		error(400, 'Documents can only be added while a request is pending or returned')
 	}
 	assertValidRequestUploads(files, req._count.documents)
+	// #74: verify each file's magic bytes match its declared (allowlisted) type before
+	// touching disk, so a renamed file can't be stored under a trusted content type.
+	for (const f of files) {
+		if (!contentMatchesType(f.bytes, f.mimeType))
+			error(415, `"${f.fileName}" contents do not match its type. Allowed: PDF, PNG, JPEG, WEBP`)
+	}
 
 	const docs: RequestDocument[] = []
 	const savedKeys: string[] = []
