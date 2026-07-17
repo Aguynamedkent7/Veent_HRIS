@@ -58,7 +58,10 @@
 	function onDrag(e: PointerEvent) {
 		if (!dragging) return
 		const w = panel?.offsetWidth ?? 448
-		x = Math.min(Math.max(e.clientX - offsetX, MARGIN), Math.max(MARGIN, window.innerWidth - w - MARGIN))
+		x = Math.min(
+			Math.max(e.clientX - offsetX, MARGIN),
+			Math.max(MARGIN, window.innerWidth - w - MARGIN)
+		)
 		y = Math.min(Math.max(e.clientY - offsetY, MARGIN), window.innerHeight - 48)
 	}
 	function endDrag() {

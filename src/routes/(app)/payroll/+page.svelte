@@ -35,7 +35,9 @@
 	</div>
 
 	{#if form?.error && !showCreate}
-		<div class="rounded-md border border-destructive/20 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+		<div
+			class="rounded-md border border-destructive/20 bg-destructive/10 px-4 py-2 text-sm text-destructive"
+		>
 			{form.error}
 		</div>
 	{/if}

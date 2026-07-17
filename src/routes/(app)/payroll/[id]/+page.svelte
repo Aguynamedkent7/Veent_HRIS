@@ -35,14 +35,17 @@
 			<form method="POST" action="?/compute" use:enhance class="ml-auto">
 				<button
 					type="submit"
-					class="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent">Recompute</button
+					class="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent"
+					>Recompute</button
 				>
 			</form>
 		{/if}
 	</div>
 
 	{#if form?.error}
-		<div class="rounded-md border border-destructive/20 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+		<div
+			class="rounded-md border border-destructive/20 bg-destructive/10 px-4 py-2 text-sm text-destructive"
+		>
 			{form.error}
 		</div>
 	{/if}

@@ -148,12 +148,7 @@
 					onclick={() => (selected = [])}
 					class="text-sm text-muted-foreground hover:underline">Clear</button
 				>
-				<form
-					bind:this={bulkForm}
-					method="POST"
-					action="?/rejectMany"
-					use:enhance={clearOnSuccess}
-				>
+				<form bind:this={bulkForm} method="POST" action="?/rejectMany" use:enhance={clearOnSuccess}>
 					<input type="hidden" name="ids" value={selected.join(',')} />
 					<input type="hidden" name="note" value={bulkNote} />
 					<button

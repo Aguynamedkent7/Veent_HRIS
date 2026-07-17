@@ -166,7 +166,11 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		// Assignable codes for the recurring-deduction form — statutory are computed automatically.
 		canManage
 			? db.deductionType.findMany({
-					where: { organizationId: locals.user!.organizationId, isActive: true, isStatutory: false },
+					where: {
+						organizationId: locals.user!.organizationId,
+						isActive: true,
+						isStatutory: false
+					},
 					select: { id: true, code: true, label: true },
 					orderBy: { code: 'asc' }
 				})

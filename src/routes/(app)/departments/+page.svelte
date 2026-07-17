@@ -206,7 +206,9 @@
 											{/each}
 										</ul>
 									{:else}
-										<p class="text-xs text-muted-foreground">No active employees in this department.</p>
+										<p class="text-xs text-muted-foreground">
+											No active employees in this department.
+										</p>
 									{/if}
 									<form
 										method="POST"

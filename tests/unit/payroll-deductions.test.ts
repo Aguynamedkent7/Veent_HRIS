@@ -94,7 +94,9 @@ describe('computeDeductions — composition + ordering', () => {
 			lateMinutes: 0,
 			undertimeMinutes: 0,
 			statutory,
-			recurring: [{ code: 'UNIFORM', label: 'Uniform fee', amount: 250, taxable: false, refId: 'D1' }],
+			recurring: [
+				{ code: 'UNIFORM', label: 'Uniform fee', amount: 250, taxable: false, refId: 'D1' }
+			],
 			loans: [{ refId: 'L1', label: 'Loan', installment: 1000, balance: 3000 }]
 		})
 		expect(r.components.map((c) => c.code)).toEqual([
