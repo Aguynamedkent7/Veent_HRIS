@@ -33,6 +33,12 @@
 		</div>
 	</div>
 
+	{#if form?.error && !showCreate}
+		<div class="rounded-md border border-destructive/20 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+			{form.error}
+		</div>
+	{/if}
+
 	{#if showCreate}
 		<form method="POST" action="?/create" use:enhance class="rounded-lg border p-4 space-y-3">
 			<h2 class="font-semibold">Create Payroll Run</h2>
@@ -128,6 +134,12 @@
 									</form>
 								{/if}
 								{#if run.status === 'COMPUTED'}
+									<form method="POST" action="?/compute" use:enhance>
+										<input type="hidden" name="id" value={run.id} />
+										<button type="submit" class="text-primary text-xs hover:underline"
+											>Recompute</button
+										>
+									</form>
 									<form method="POST" action="?/approve" use:enhance>
 										<input type="hidden" name="id" value={run.id} />
 										<button type="submit" class="text-green-600 text-xs hover:underline"

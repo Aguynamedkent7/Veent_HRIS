@@ -61,7 +61,10 @@ export async function createPayrollRun(
 export async function computePayroll(runId: string, organizationId: string, ctx: AuditContext) {
 	const run = await db.payrollRun.findFirst({ where: { id: runId, organizationId } })
 	if (!run) error(404, 'Payroll run not found')
-	if (run.status !== 'DRAFT') error(400, 'Only draft payroll runs can be computed')
+	// Recomputing a COMPUTED run is safe — entries are wiped and rebuilt in one
+	// transaction below. Only approval locks the numbers.
+	if (run.status !== 'DRAFT' && run.status !== 'COMPUTED')
+		error(400, 'Only draft or computed payroll runs can be computed')
 
 	const [
 		employees,

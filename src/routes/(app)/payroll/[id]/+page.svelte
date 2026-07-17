@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
-	import type { PageData } from './$types'
+	import type { PageData, ActionData } from './$types'
 
-	let { data }: { data: PageData } = $props()
+	let { data, form }: { data: PageData; form: ActionData } = $props()
 	const run = $derived(data.run)
 	let overrideEntryId = $state<string | null>(null)
 	let expandedEntryId = $state<string | null>(null)
@@ -29,7 +29,23 @@
 		{#if run.hasOverride}
 			<span class="text-xs text-yellow-600 font-medium">Has overrides</span>
 		{/if}
+		{#if run.status === 'COMPUTED'}
+			<!-- Recompute rebuilds all entries from current data (e.g. after assigning
+			     recurring earnings/deductions). Disabled once approved. -->
+			<form method="POST" action="?/compute" use:enhance class="ml-auto">
+				<button
+					type="submit"
+					class="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent">Recompute</button
+				>
+			</form>
+		{/if}
 	</div>
+
+	{#if form?.error}
+		<div class="rounded-md border border-destructive/20 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+			{form.error}
+		</div>
+	{/if}
 
 	<div class="grid gap-4 sm:grid-cols-3">
 		<div class="rounded-lg border bg-card p-4">
