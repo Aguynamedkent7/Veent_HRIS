@@ -1,4 +1,4 @@
-import { fail } from '@sveltejs/kit'
+import { fail, isHttpError } from '@sveltejs/kit'
 import { requireMinRole, requirePayrollManage } from '$lib/server/rbac'
 import {
 	listPayrollRuns,
@@ -30,6 +30,8 @@ export const actions: Actions = {
 		const parsed = createSchema.safeParse(raw)
 		if (!parsed.success) return fail(400, { error: 'Invalid dates' })
 
+		// Service errors (e.g. "run for this period already exists") come back as
+		// HttpErrors — surface them inline instead of blowing up to an error page.
 		try {
 			await createPayrollRun(user.organizationId, parsed.data.periodStart, parsed.data.periodEnd, {
 				organizationId: user.organizationId,
@@ -38,8 +40,7 @@ export const actions: Actions = {
 				ipAddress: getClientAddress()
 			})
 		} catch (e: unknown) {
-			if (e instanceof Error && e.message.includes('already exists'))
-				return fail(409, { error: e.message })
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
 			throw e
 		}
 	},
@@ -51,12 +52,17 @@ export const actions: Actions = {
 		const data = await request.formData()
 		const id = data.get('id') as string
 
-		await computePayroll(id, user.organizationId, {
-			organizationId: user.organizationId,
-			actorId: user.id,
-			actorRole: user.role,
-			ipAddress: getClientAddress()
-		})
+		try {
+			await computePayroll(id, user.organizationId, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
+		}
 	},
 
 	approve: async ({ request, locals, getClientAddress }) => {
@@ -66,11 +72,16 @@ export const actions: Actions = {
 		const data = await request.formData()
 		const id = data.get('id') as string
 
-		await approvePayroll(id, user.organizationId, {
-			organizationId: user.organizationId,
-			actorId: user.id,
-			actorRole: user.role,
-			ipAddress: getClientAddress()
-		})
+		try {
+			await approvePayroll(id, user.organizationId, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
+		}
 	}
 }

@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client'
 import { computeEmployeeResult } from './calculator'
 import { ratesFromRule } from './rates'
 import { type AmortItem } from './deductions'
+import { recurringDeductionComponents } from './employee-deductions'
 import { emptyAttendance, round2, type EmployeeComp } from './types'
 import { buildAttendanceInput } from '../attendance/input'
 import { computeWorkingDays } from '$lib/utils/dates'
@@ -60,7 +61,10 @@ export async function createPayrollRun(
 export async function computePayroll(runId: string, organizationId: string, ctx: AuditContext) {
 	const run = await db.payrollRun.findFirst({ where: { id: runId, organizationId } })
 	if (!run) error(404, 'Payroll run not found')
-	if (run.status !== 'DRAFT') error(400, 'Only draft payroll runs can be computed')
+	// Recomputing a COMPUTED run is safe — entries are wiped and rebuilt in one
+	// transaction below. Only approval locks the numbers.
+	if (run.status !== 'DRAFT' && run.status !== 'COMPUTED')
+		error(400, 'Only draft or computed payroll runs can be computed')
 
 	const [
 		employees,
@@ -70,7 +74,8 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		advancesAll,
 		enrollmentsAll,
 		payRateRule,
-		recurringAll
+		recurringAll,
+		recurringDeductionsAll
 	] = await Promise.all([
 		db.employee.findMany({ where: { user: { organizationId }, employmentStatus: 'ACTIVE' } }),
 		db.payrollConfig.findUnique({ where: { organizationId } }),
@@ -90,6 +95,11 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		// Recurring allowance/incentive assignments feed the adjustment buckets (#65).
 		db.employeeEarning.findMany({
 			where: { employee: { organizationId }, isActive: true }
+		}),
+		// Recurring custom-deduction assignments from Settings → Pay Codes (#66).
+		db.employeeDeduction.findMany({
+			where: { employee: { organizationId }, isActive: true, deductionType: { isActive: true } },
+			include: { deductionType: { select: { code: true, label: true } } }
 		})
 	])
 
@@ -103,6 +113,7 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	const advancesByEmp = groupByEmployee(advancesAll)
 	const enrollmentsByEmp = groupByEmployee(enrollmentsAll)
 	const recurringByEmp = groupByEmployee(recurringAll)
+	const recurringDeductionsByEmp = groupByEmployee(recurringDeductionsAll)
 	const workingDays = computeWorkingDays(run.periodStart, run.periodEnd, [])
 
 	const perEmployee: Array<{
@@ -167,7 +178,11 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			rates,
 			periodShare,
 			loans,
-			cashAdvances
+			cashAdvances,
+			recurringDeductions: recurringDeductionComponents(
+				recurringDeductionsByEmp.get(emp.id) ?? [],
+				periodShare
+			)
 		})
 		const paidHours =
 			attendance.regularHours +

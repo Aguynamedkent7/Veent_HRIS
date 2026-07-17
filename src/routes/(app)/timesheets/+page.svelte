@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import { advanceTo } from '$lib/actions/dateRange'
 	import type { SubmitFunction } from '@sveltejs/kit'
 	import { slide } from 'svelte/transition'
 	import { formatShortDate } from '$lib/utils/format'
@@ -221,7 +222,13 @@
 			<div class="flex items-end gap-4">
 				<div>
 					<label class="text-sm font-medium">Period Start</label>
-					<input name="periodStart" type="date" required class="mt-1 {inputClass} h-9" />
+					<input
+						name="periodStart"
+						type="date"
+						required
+						use:advanceTo={'periodEnd'}
+						class="mt-1 {inputClass} h-9"
+					/>
 				</div>
 				<div>
 					<label class="text-sm font-medium">Period End</label>

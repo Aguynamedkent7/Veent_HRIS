@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import type { SubmitFunction } from '@sveltejs/kit'
+	import { tick } from 'svelte'
 	import { slide } from 'svelte/transition'
 	import { formatDateRange } from '$lib/utils/format'
 	import Pagination from '$lib/components/Pagination.svelte'
+	import ReasonDialog from '$lib/components/ui/ReasonDialog.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -53,9 +55,47 @@
 		return step.stageKind === 'SUPERVISOR' ? 'Supervisor' : (step.role ?? 'Approver')
 	}
 
-	// Per-request note (keyed by request id) — each card owns its own note.
-	let notes = $state<Record<string, string>>({})
-	const noteEmpty = (id: string) => (notes[id] ?? '').trim() === ''
+	// Decision notes are collected in a popup (#70 follow-up) instead of inline
+	// textareas, so cards keep a fixed, tidy layout. Confirming the popup fills
+	// the hidden decide/bulk form and submits it.
+	let noteDialogOpen = $state(false)
+	let noteTarget = $state<
+		{ kind: 'decide'; id: string; decision: 'RETURNED' | 'REJECTED' } | { kind: 'bulk' } | null
+	>(null)
+	let decideForm = $state<HTMLFormElement>()
+	let bulkForm = $state<HTMLFormElement>()
+	let decideId = $state('')
+	let decideDecision = $state('')
+	let decideNote = $state('')
+
+	function askNote(target: NonNullable<typeof noteTarget>) {
+		noteTarget = target
+		noteDialogOpen = true
+	}
+	// Write values straight onto the inputs too — belt and braces against a
+	// reactive-flush race leaving a hidden field empty at submit time.
+	function forceInput(form: HTMLFormElement | undefined, name: string, value: string) {
+		const el = form?.elements.namedItem(name)
+		if (el instanceof HTMLInputElement) el.value = value
+	}
+	async function submitWithNote(reason: string) {
+		if (!noteTarget) return
+		if (noteTarget.kind === 'decide') {
+			decideId = noteTarget.id
+			decideDecision = noteTarget.decision
+			decideNote = reason
+			await tick()
+			forceInput(decideForm, 'id', noteTarget.id)
+			forceInput(decideForm, 'decision', noteTarget.decision)
+			forceInput(decideForm, 'note', reason)
+			decideForm?.requestSubmit()
+		} else {
+			bulkNote = reason
+			await tick()
+			forceInput(bulkForm, 'note', reason)
+			bulkForm?.requestSubmit()
+		}
+	}
 
 	const unverifiedCount = (docs: { verifiedAt: Date | string | null }[]) =>
 		docs.filter((d) => !d.verifiedAt).length
@@ -102,27 +142,21 @@
 			class="flex flex-wrap items-end justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3"
 			transition:slide={{ duration: 120 }}
 		>
-			<div class="flex-1 space-y-1">
-				<span class="text-sm font-medium">{selected.length} selected</span>
-				<textarea
-					rows="1"
-					placeholder="Rejection note (required — applied to all selected)"
-					class="w-full rounded-md border border-input bg-background px-2 py-1 text-xs"
-					bind:value={bulkNote}
-				></textarea>
-			</div>
+			<span class="text-sm font-medium">{selected.length} selected</span>
 			<div class="flex items-center gap-2">
 				<button
 					onclick={() => (selected = [])}
 					class="text-sm text-muted-foreground hover:underline">Clear</button
 				>
-				<form method="POST" action="?/rejectMany" use:enhance={clearOnSuccess}>
+				<form bind:this={bulkForm} method="POST" action="?/rejectMany" use:enhance={clearOnSuccess}>
 					<input type="hidden" name="ids" value={selected.join(',')} />
 					<input type="hidden" name="note" value={bulkNote} />
 					<button
-						disabled={busy || bulkNote.trim() === ''}
+						type="button"
+						disabled={busy}
+						onclick={() => askNote({ kind: 'bulk' })}
 						class="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-						>Reject selected</button
+						>Reject selected…</button
 					>
 				</form>
 			</div>
@@ -134,12 +168,15 @@
 			No requests awaiting your decision.
 		</div>
 	{:else}
-		<div class="flex flex-wrap gap-4">
+		<!-- Uniform fixed-height cards: details clip inside (reason is clamped, full
+		     text lives on the detail page) and the decision buttons pin to the bottom.
+		     Safe now that notes are collected in a popup instead of an inline textarea. -->
+		<div class="flex flex-wrap items-start gap-4">
 			{#each data.pendingRequests as req (req.id)}
 				<div
-					class="flex h-[38vh] min-h-[18rem] w-full min-w-[18rem] flex-col rounded-lg border bg-card p-4 sm:w-[22vw]"
+					class="flex h-72 w-full min-w-[18rem] flex-col rounded-lg border bg-card p-4 sm:w-[22rem]"
 				>
-					<div class="flex flex-1 flex-col gap-2 overflow-hidden">
+					<div class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
 						<div class="flex items-center justify-between gap-2">
 							<div class="flex min-w-0 items-center gap-2">
 								<input
@@ -190,43 +227,34 @@
 							class="mt-auto text-xs text-primary hover:underline">View detail →</a
 						>
 					</div>
+					<!-- Approve posts directly; Return/Reject collect their required note in
+					     a popup (ReasonDialog) and submit through the hidden decide form. -->
 					<form
 						method="POST"
 						action="?/decideRequest"
 						use:enhance
-						class="mt-2 shrink-0 space-y-2 border-t pt-2"
+						class="mt-3 flex shrink-0 gap-2 border-t pt-2"
 					>
 						<input type="hidden" name="id" value={req.id} />
-						<textarea
-							name="note"
-							rows="1"
-							placeholder="Note (required to reject/return)"
-							class="w-full rounded-md border border-input bg-background px-2 py-1 text-xs"
-							bind:value={notes[req.id]}
-						></textarea>
-						<div class="flex gap-2">
-							<button
-								type="submit"
-								name="decision"
-								value="APPROVED"
-								class="flex-1 rounded-md bg-green-600 px-2 py-1 text-xs font-medium text-white hover:bg-green-700"
-								>Approve</button
-							>
-							<button
-								type="submit"
-								name="decision"
-								value="RETURNED"
-								class="flex-1 rounded-md bg-orange-500 px-2 py-1 text-xs font-medium text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
-								disabled={noteEmpty(req.id)}>Return</button
-							>
-							<button
-								type="submit"
-								name="decision"
-								value="REJECTED"
-								class="flex-1 rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-								disabled={noteEmpty(req.id)}>Reject</button
-							>
-						</div>
+						<button
+							type="submit"
+							name="decision"
+							value="APPROVED"
+							class="flex-1 rounded-md bg-green-600 px-2 py-1 text-xs font-medium text-white hover:bg-green-700"
+							>Approve</button
+						>
+						<button
+							type="button"
+							onclick={() => askNote({ kind: 'decide', id: req.id, decision: 'RETURNED' })}
+							class="flex-1 rounded-md bg-orange-500 px-2 py-1 text-xs font-medium text-white hover:bg-orange-600"
+							>Return…</button
+						>
+						<button
+							type="button"
+							onclick={() => askNote({ kind: 'decide', id: req.id, decision: 'REJECTED' })}
+							class="flex-1 rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700"
+							>Reject…</button
+						>
 					</form>
 				</div>
 			{/each}
@@ -235,3 +263,32 @@
 		<Pagination meta={data.pagination} />
 	{/if}
 </div>
+
+<!-- Submission target for popup-collected Return/Reject notes. -->
+<form bind:this={decideForm} method="POST" action="?/decideRequest" use:enhance class="hidden">
+	<input type="hidden" name="id" value={decideId} />
+	<input type="hidden" name="decision" value={decideDecision} />
+	<input type="hidden" name="note" value={decideNote} />
+</form>
+
+<ReasonDialog
+	bind:open={noteDialogOpen}
+	title={noteTarget?.kind === 'bulk'
+		? `Reject ${selected.length} selected request${selected.length === 1 ? '' : 's'}`
+		: noteTarget?.decision === 'RETURNED'
+			? 'Return request'
+			: 'Reject request'}
+	message={noteTarget?.kind === 'bulk'
+		? 'The note below is applied to every selected request.'
+		: noteTarget?.decision === 'RETURNED'
+			? 'Tell the employee what to fix before resubmitting.'
+			: 'Tell the employee why this request is rejected.'}
+	placeholder="Write the note…"
+	confirmText={noteTarget?.kind !== 'bulk' && noteTarget?.decision === 'RETURNED'
+		? 'Return'
+		: 'Reject'}
+	confirmClass={noteTarget?.kind !== 'bulk' && noteTarget?.decision === 'RETURNED'
+		? 'bg-orange-500 text-white hover:bg-orange-600'
+		: 'bg-red-600 text-white hover:bg-red-700'}
+	onconfirm={submitWithNote}
+/>

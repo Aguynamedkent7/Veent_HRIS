@@ -87,6 +87,45 @@ describe('computeDeductions — composition + ordering', () => {
 		expect(r.net).toBeCloseTo(15000 - (1350 + 750 + 100 + 1290 + 1000), 2)
 	})
 
+	it('applies recurring custom deductions as fixed lines before amortization (#66)', () => {
+		const r = computeDeductions({
+			gross: 15000,
+			hourlyRate: 170.45,
+			lateMinutes: 0,
+			undertimeMinutes: 0,
+			statutory,
+			recurring: [
+				{ code: 'UNIFORM', label: 'Uniform fee', amount: 250, taxable: false, refId: 'D1' }
+			],
+			loans: [{ refId: 'L1', label: 'Loan', installment: 1000, balance: 3000 }]
+		})
+		expect(r.components.map((c) => c.code)).toEqual([
+			'SSS_EE',
+			'PHILHEALTH_EE',
+			'PAGIBIG_EE',
+			'TAX',
+			'UNIFORM',
+			'LOAN'
+		])
+		expect(r.total).toBeCloseTo(1350 + 750 + 100 + 1290 + 250 + 1000, 2)
+		expect(r.net).toBeCloseTo(15000 - r.total, 2)
+	})
+
+	it('recurring deductions reduce the net available to loans', () => {
+		// Statutory (3490) + recurring 1000 leaves 510 of a 5000 gross — loan (1000) must skip.
+		const r = computeDeductions({
+			gross: 5000,
+			hourlyRate: 170.45,
+			lateMinutes: 0,
+			undertimeMinutes: 0,
+			statutory,
+			recurring: [{ code: 'HMO_EXTRA', label: 'HMO dependent', amount: 1000, taxable: false }],
+			loans: [{ refId: 'L1', label: 'Loan', installment: 1000, balance: 3000 }]
+		})
+		expect(r.components.some((c) => c.code === 'LOAN')).toBe(false)
+		expect(r.loanBalances.L1).toBe(3000)
+	})
+
 	it('skips a loan when net after statutory is too small', () => {
 		const r = computeDeductions({
 			gross: 3500, // statutory (3490) leaves only 10

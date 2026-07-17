@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import type { SubmitFunction } from '@sveltejs/kit'
+	import { tick } from 'svelte'
 	import { slide } from 'svelte/transition'
 	import { formatShortDate } from '$lib/utils/format'
 	import TimesheetModal from '$lib/components/timesheets/TimesheetModal.svelte'
+	import ReasonDialog from '$lib/components/ui/ReasonDialog.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -36,6 +38,19 @@
 
 	const allIds = $derived(data.pendingTimesheets.map((t) => t.id))
 	const allSelected = $derived(allIds.length > 0 && allIds.every((id) => selected.includes(id)))
+
+	// The bulk rejection reason is collected in a popup (#70 follow-up) — no
+	// inline textarea in the bar. Confirming fills the hidden input and submits.
+	let rejectDialogOpen = $state(false)
+	let rejectForm = $state<HTMLFormElement>()
+	async function submitBulkReject(reason: string) {
+		bulkReason = reason
+		await tick()
+		// Belt and braces against a reactive-flush race at submit time.
+		const el = rejectForm?.elements.namedItem('rejectionReason')
+		if (el instanceof HTMLInputElement) el.value = reason
+		rejectForm?.requestSubmit()
+	}
 </script>
 
 <svelte:head>
@@ -83,15 +98,7 @@
 				class="flex flex-wrap items-end justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-3"
 				transition:slide={{ duration: 120 }}
 			>
-				<div class="flex-1 space-y-1">
-					<span class="text-sm font-medium">{selected.length} selected</span>
-					<textarea
-						rows="1"
-						placeholder="Rejection reason (required to reject — applied to all selected)"
-						class="w-full rounded-md border border-input bg-background px-2 py-1 text-xs"
-						bind:value={bulkReason}
-					></textarea>
-				</div>
+				<span class="text-sm font-medium">{selected.length} selected</span>
 				<div class="flex items-center gap-2">
 					<button
 						onclick={() => (selected = [])}
@@ -105,13 +112,20 @@
 							>Approve selected</button
 						>
 					</form>
-					<form method="POST" action="?/rejectMany" use:enhance={clearOnSuccess}>
+					<form
+						bind:this={rejectForm}
+						method="POST"
+						action="?/rejectMany"
+						use:enhance={clearOnSuccess}
+					>
 						<input type="hidden" name="ids" value={selected.join(',')} />
 						<input type="hidden" name="rejectionReason" value={bulkReason} />
 						<button
-							disabled={busy || bulkReason.trim() === ''}
+							type="button"
+							disabled={busy}
+							onclick={() => (rejectDialogOpen = true)}
 							class="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-							>Reject selected</button
+							>Reject selected…</button
 						>
 					</form>
 				</div>
@@ -160,3 +174,12 @@
 </div>
 
 <TimesheetModal bind:ts={openTs} mode="review" isManager={true} {form} />
+
+<ReasonDialog
+	bind:open={rejectDialogOpen}
+	title={`Reject ${selected.length} selected timesheet${selected.length === 1 ? '' : 's'}`}
+	message="The reason below is applied to every selected timesheet."
+	placeholder="Explain what needs to change…"
+	confirmText="Reject"
+	onconfirm={submitBulkReject}
+/>

@@ -84,7 +84,8 @@ export interface DeductionsResult {
 
 /**
  * Compose all deductions for one payroll entry and return the itemized list + net pay.
- * Order: statutory EE (SSS/PhilHealth/Pag-IBIG) → withholding tax → tardiness → loans → cash advances.
+ * Order: statutory EE (SSS/PhilHealth/Pag-IBIG) → withholding tax → tardiness → recurring custom
+ * deductions → loans → cash advances.
  * Loans/cash advances only apply against what net remains after the mandatory deductions.
  */
 export function computeDeductions(params: {
@@ -95,6 +96,8 @@ export function computeDeductions(params: {
 	statutory: StatutoryEe
 	loans?: AmortItem[]
 	cashAdvances?: AmortItem[]
+	/** Recurring custom deductions (#66) — fixed lines, applied before amortization. */
+	recurring?: PayComponent[]
 }): DeductionsResult {
 	const { gross, hourlyRate, lateMinutes, undertimeMinutes, statutory } = params
 
@@ -118,7 +121,8 @@ export function computeDeductions(params: {
 			label: 'Tardiness/undertime',
 			amount: computeTardiness(hourlyRate, lateMinutes, undertimeMinutes),
 			taxable: false
-		}
+		},
+		...(params.recurring ?? [])
 	].filter((c) => c.amount !== 0)
 
 	const fixedTotal = round2(fixed.reduce((s, c) => s + c.amount, 0))

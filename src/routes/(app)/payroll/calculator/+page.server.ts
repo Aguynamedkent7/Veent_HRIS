@@ -1,41 +1,12 @@
 import { fail } from '@sveltejs/kit'
 import { z } from 'zod'
-import { db } from '$lib/server/db'
 import { requirePayrollManage } from '$lib/server/rbac'
 import { previewPayroll } from '$lib/server/services/payroll/calculator'
-import { emptyAttendance, round2 } from '$lib/server/services/payroll/types'
-import type { Actions, PageServerLoad } from './$types'
+import { emptyAttendance } from '$lib/server/services/payroll/types'
+import type { Actions } from './$types'
 
-export const load: PageServerLoad = async ({ locals }) => {
-	requirePayrollManage(locals.user!.role)
-	const organizationId = locals.user!.organizationId
-	const [employees, config, recurring] = await Promise.all([
-		db.employee.findMany({
-			where: { user: { organizationId }, employmentStatus: 'ACTIVE' },
-			select: { id: true, firstName: true, lastName: true, employeeNumber: true },
-			orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }]
-		}),
-		db.payrollConfig.findUnique({ where: { organizationId }, select: { payFrequency: true } }),
-		db.employeeEarning.groupBy({
-			by: ['employeeId', 'kind'],
-			where: { employee: { organizationId }, isActive: true },
-			_sum: { monthlyAmount: true }
-		})
-	])
-
-	// Per-employee recurring allowance/incentive defaults, prorated exactly like
-	// computePayroll does — selecting an employee prefills the two ₱ inputs (#65 QoL).
-	const periodShare = (config?.payFrequency ?? 'SEMI_MONTHLY') === 'MONTHLY' ? 1 : 0.5
-	const recurringDefaults: Record<string, { allowances: number; incentives: number }> = {}
-	for (const g of recurring) {
-		const rec = (recurringDefaults[g.employeeId] ??= { allowances: 0, incentives: 0 })
-		const amount = round2(Number(g._sum.monthlyAmount ?? 0) * periodShare)
-		if (g.kind === 'ALLOWANCE') rec.allowances = amount
-		else rec.incentives = amount
-	}
-
-	return { employees, recurringDefaults }
-}
+// Roster + recurring prefills come from the payroll layout load (shared with the
+// floating panel, #72) — this route only hosts the preview action.
 
 const num = z.coerce.number().min(0).optional()
 const schema = z.object({

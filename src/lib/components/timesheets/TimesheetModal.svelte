@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import type { SubmitFunction } from '@sveltejs/kit'
-	import { fade, scale, slide } from 'svelte/transition'
+	import { tick } from 'svelte'
+	import { fade, scale } from 'svelte/transition'
 	import { formatShortDate } from '$lib/utils/format'
 	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
+	import ReasonDialog from '$lib/components/ui/ReasonDialog.svelte'
 
 	// Fields the modal reads. Both the /timesheets list rows and the /requests/timesheets
 	// approvals-load rows satisfy this shape. Decimal columns are typed loosely (they arrive
@@ -56,9 +58,23 @@
 		notes: string
 	}
 	let entries = $state<Row[]>([])
+	// Reject reason is collected in a ReasonDialog popup; confirming fills the
+	// hidden review form and submits it.
 	let rejecting = $state(false)
+	let rejectReason = $state('')
+	let rejectFormEl = $state<HTMLFormElement>()
 	let busy = $state(false)
 	let dialogEl = $state<HTMLElement>()
+
+	async function confirmReject(reason: string) {
+		rejectReason = reason
+		await tick()
+		// Write the value straight onto the input too — belt and braces against a
+		// reactive-flush race leaving the hidden field empty at submit time.
+		const el = rejectFormEl?.elements.namedItem('rejectionReason')
+		if (el instanceof HTMLInputElement) el.value = reason
+		rejectFormEl?.requestSubmit()
+	}
 
 	// Capabilities are gated by mode: edit surface can modify/delete/submit but never
 	// approve; review surface can only approve/reject and is read-only.
@@ -486,35 +502,28 @@
 				{/if}
 			</div>
 
-			<!-- Reject reason panel -->
-			{#if canReview && rejecting}
-				<div class="border-t bg-red-500/5 px-6 py-3" transition:slide={{ duration: 150 }}>
-					<form method="POST" action="?/review" use:enhance={closeOnSuccess}>
-						<input type="hidden" name="id" value={ts.id} />
-						<input type="hidden" name="approved" value="false" />
-						<label for="reject-reason" class="text-sm font-medium">Reason for rejection</label>
-						<textarea
-							id="reject-reason"
-							name="rejectionReason"
-							required
-							rows="2"
-							placeholder="Explain what needs to change…"
-							class="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-						></textarea>
-						<div class="mt-2 flex gap-2">
-							<button
-								disabled={busy}
-								class="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-								>Confirm reject</button
-							>
-							<button
-								type="button"
-								onclick={() => (rejecting = false)}
-								class="rounded-md border px-4 py-2 text-sm hover:bg-accent">Cancel</button
-							>
-						</div>
-					</form>
-				</div>
+			<!-- Reject reason is collected in a ReasonDialog popup; this hidden form
+			     is its submission target. -->
+			{#if canReview}
+				<form
+					bind:this={rejectFormEl}
+					method="POST"
+					action="?/review"
+					use:enhance={closeOnSuccess}
+					class="hidden"
+				>
+					<input type="hidden" name="id" value={ts.id} />
+					<input type="hidden" name="approved" value="false" />
+					<input type="hidden" name="rejectionReason" value={rejectReason} />
+				</form>
+				<ReasonDialog
+					bind:open={rejecting}
+					title="Reject timesheet"
+					message="Tell the employee what needs to change before resubmitting."
+					placeholder="Explain what needs to change…"
+					confirmText="Reject"
+					onconfirm={confirmReject}
+				/>
 			{/if}
 
 			<!-- Footer -->
@@ -542,12 +551,13 @@
 							<button disabled={busy} class={btnGhost}>Save entries</button>
 						</form>
 					{/if}
-					{#if canReview && !rejecting}
+					{#if canReview}
 						<button
 							type="button"
+							disabled={busy}
 							onclick={() => (rejecting = true)}
-							class="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
-							>Reject</button
+							class="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+							>Reject…</button
 						>
 						<form method="POST" action="?/review" use:enhance={closeOnSuccess}>
 							<input type="hidden" name="id" value={ts.id} />

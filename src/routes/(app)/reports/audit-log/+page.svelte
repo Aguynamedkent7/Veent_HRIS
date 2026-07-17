@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Pagination from '$lib/components/Pagination.svelte'
+	import { advanceTo } from '$lib/actions/dateRange'
 	import type { PageData } from './$types'
 
 	let { data }: { data: PageData } = $props()
@@ -77,6 +78,7 @@
 				id="start"
 				name="start"
 				type="date"
+				use:advanceTo={'end'}
 				class="h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 			/>
 		</div>

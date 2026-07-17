@@ -18,6 +18,11 @@ import {
 	createEmployeeEarning,
 	endEmployeeEarning
 } from '$lib/server/services/payroll/employee-earnings'
+import {
+	listEmployeeDeductions,
+	createEmployeeDeduction,
+	endEmployeeDeduction
+} from '$lib/server/services/payroll/employee-deductions'
 import { listSchedules } from '$lib/server/services/attendance/schedules'
 import {
 	listEmployeeDocuments,
@@ -139,21 +144,41 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		}
 	}
 
-	const [departments, loans, cashAdvances, recurringEarnings, documents, positions, history] =
-		await Promise.all([
-			db.department.findMany({
-				where: { organizationId: locals.user!.organizationId },
-				orderBy: { name: 'asc' }
-			}),
-			canManage ? listLoans(params.id) : Promise.resolve([]),
-			canManage ? listCashAdvances(params.id) : Promise.resolve([]),
-			canManage ? listEmployeeEarnings(params.id) : Promise.resolve([]),
-			canManage
-				? listEmployeeDocuments(params.id, locals.user!.organizationId)
-				: Promise.resolve([]),
-			canManage ? listPositions(locals.user!.organizationId) : Promise.resolve([]),
-			canManage ? getEmploymentHistory(params.id, locals.user!.organizationId) : Promise.resolve([])
-		])
+	const [
+		departments,
+		loans,
+		cashAdvances,
+		recurringEarnings,
+		recurringDeductions,
+		deductionTypes,
+		documents,
+		positions,
+		history
+	] = await Promise.all([
+		db.department.findMany({
+			where: { organizationId: locals.user!.organizationId },
+			orderBy: { name: 'asc' }
+		}),
+		canManage ? listLoans(params.id) : Promise.resolve([]),
+		canManage ? listCashAdvances(params.id) : Promise.resolve([]),
+		canManage ? listEmployeeEarnings(params.id) : Promise.resolve([]),
+		canManage ? listEmployeeDeductions(params.id) : Promise.resolve([]),
+		// Assignable codes for the recurring-deduction form — statutory are computed automatically.
+		canManage
+			? db.deductionType.findMany({
+					where: {
+						organizationId: locals.user!.organizationId,
+						isActive: true,
+						isStatutory: false
+					},
+					select: { id: true, code: true, label: true },
+					orderBy: { code: 'asc' }
+				})
+			: Promise.resolve([]),
+		canManage ? listEmployeeDocuments(params.id, locals.user!.organizationId) : Promise.resolve([]),
+		canManage ? listPositions(locals.user!.organizationId) : Promise.resolve([]),
+		canManage ? getEmploymentHistory(params.id, locals.user!.organizationId) : Promise.resolve([])
+	])
 	const schedules = canManage ? await listSchedules(locals.user!.organizationId) : []
 	const onboarding = canManage ? buildOnboarding(employee, documents) : null
 
@@ -173,6 +198,8 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		loans,
 		cashAdvances,
 		recurringEarnings,
+		recurringDeductions,
+		deductionTypes,
 		schedules,
 		documents,
 		positions,
@@ -193,6 +220,11 @@ const cashAdvanceSchema = z.object({
 const earningSchema = z.object({
 	kind: z.enum(['ALLOWANCE', 'INCENTIVE']),
 	label: z.string().min(1).max(100),
+	monthlyAmount: z.coerce.number().positive()
+})
+const deductionSchema = z.object({
+	deductionTypeId: z.string().min(1),
+	label: z.string().max(100).optional(),
 	monthlyAmount: z.coerce.number().positive()
 })
 
@@ -400,6 +432,44 @@ export const actions: Actions = {
 		if (!id) return fail(400, { error: 'Missing earning id' })
 		try {
 			await endEmployeeEarning(id, user.organizationId, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
+		}
+		return { success: true }
+	},
+
+	addDeduction: async ({ request, locals, params, getClientAddress }) => {
+		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		const user = locals.user!
+		const parsed = deductionSchema.safeParse(Object.fromEntries(await request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Invalid recurring deduction details' })
+		try {
+			await createEmployeeDeduction(params.id, user.organizationId, parsed.data, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
+		}
+		return { success: true }
+	},
+
+	endDeduction: async ({ request, locals, getClientAddress }) => {
+		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		const user = locals.user!
+		const id = (await request.formData()).get('id') as string
+		if (!id) return fail(400, { error: 'Missing deduction id' })
+		try {
+			await endEmployeeDeduction(id, user.organizationId, {
 				organizationId: user.organizationId,
 				actorId: user.id,
 				actorRole: user.role,

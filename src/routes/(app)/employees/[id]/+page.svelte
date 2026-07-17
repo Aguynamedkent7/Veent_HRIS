@@ -784,6 +784,93 @@
 
 		{#if canManage}
 			<section class="rounded-lg border bg-card p-6 space-y-4 lg:col-span-2">
+				<h2 class="font-semibold">Recurring Deductions</h2>
+				<p class="text-xs text-muted-foreground">
+					Monthly amounts against a deduction code from Settings &rarr; Pay Codes, prorated to each
+					payroll period and taken before loan/cash-advance installments. Ended items stop from the
+					next payroll run.
+				</p>
+				{#if data.recurringDeductions.length}
+					<table class="w-full text-sm">
+						<tbody class="divide-y">
+							{#each data.recurringDeductions as d (d.id)}
+								<tr>
+									<td class="py-1.5">{d.label ?? d.deductionType.label}</td>
+									<td class="py-1.5 text-muted-foreground">{d.deductionType.code}</td>
+									<td class="py-1.5 text-right font-mono"
+										>{formatCurrency(Number(d.monthlyAmount))}<span
+											class="ml-1 text-xs text-muted-foreground">/mo</span
+										></td
+									>
+									<td class="py-1.5 text-right">
+										{#if d.isActive}
+											<form method="POST" action="?/endDeduction" use:enhance>
+												<input type="hidden" name="id" value={d.id} />
+												<button
+													type="submit"
+													class="rounded-md border border-red-200 px-2 py-0.5 text-xs font-medium text-red-600 hover:bg-red-50"
+													>End</button
+												>
+											</form>
+										{:else}
+											<span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"
+												>ENDED</span
+											>
+										{/if}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				{:else}
+					<p class="text-xs text-muted-foreground">No recurring deductions.</p>
+				{/if}
+				{#if data.deductionTypes.length}
+					<form
+						method="POST"
+						action="?/addDeduction"
+						use:enhance
+						class="flex flex-wrap items-end gap-2"
+					>
+						<select
+							name="deductionTypeId"
+							required
+							class="h-8 rounded-md border border-input bg-background px-2 text-xs"
+						>
+							{#each data.deductionTypes as t (t.id)}
+								<option value={t.id}>{t.code} — {t.label}</option>
+							{/each}
+						</select>
+						<input
+							name="label"
+							placeholder="Label override (optional)"
+							class="h-8 w-40 rounded-md border border-input bg-background px-2 text-xs"
+						/>
+						<input
+							name="monthlyAmount"
+							type="number"
+							min="0.01"
+							step="0.01"
+							placeholder="Monthly amount"
+							required
+							class="h-8 w-28 rounded-md border border-input bg-background px-2 text-xs"
+						/>
+						<button
+							class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+							>Add</button
+						>
+					</form>
+				{:else}
+					<p class="text-xs text-muted-foreground">
+						No assignable deduction codes yet — create one under
+						<a href="/settings/pay-codes" class="underline">Settings &rarr; Pay Codes</a>.
+					</p>
+				{/if}
+			</section>
+		{/if}
+
+		{#if canManage}
+			<section class="rounded-lg border bg-card p-6 space-y-4 lg:col-span-2">
 				<h2 class="font-semibold">
 					Documents <span class="text-xs font-normal text-muted-foreground"
 						>(201 file — contracts, IDs, exit docs)</span

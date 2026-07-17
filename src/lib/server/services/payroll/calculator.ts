@@ -3,6 +3,7 @@ import { error } from '@sveltejs/kit'
 import { computeEarnings } from './earnings'
 import { ratesFromRule, type PayRates } from './rates'
 import { computeDeductions, type AmortItem } from './deductions'
+import { recurringDeductionComponents } from './employee-deductions'
 import { computeStatutoryDeductions } from './ph-statutory'
 import {
 	hourlyRateOf,
@@ -26,6 +27,8 @@ export interface EmployeeComputeConfig {
 	periodShare: number
 	loans: AmortItem[]
 	cashAdvances: AmortItem[]
+	/** Recurring custom deductions (#66), already prorated to the period. */
+	recurringDeductions?: PayComponent[]
 	/** Org premium-pay multipliers (from PayRateRule); omitted → DOLE defaults. */
 	rates?: PayRates
 }
@@ -90,7 +93,8 @@ export function computeEmployeeResult(
 			withholdingTax: statutory.withholdingTax
 		},
 		loans: cfg.loans,
-		cashAdvances: cfg.cashAdvances
+		cashAdvances: cfg.cashAdvances,
+		recurring: cfg.recurringDeductions
 	})
 
 	return {
@@ -103,6 +107,37 @@ export function computeEmployeeResult(
 		netPay: ded.net,
 		statutory
 	}
+}
+
+/**
+ * Roster + recurring-earning defaults for the calculator UI (full page and the floating
+ * panel on payroll pages, #72). Prefill amounts are prorated exactly like computePayroll.
+ */
+export async function loadCalculatorData(organizationId: string) {
+	const [employees, config, recurring] = await Promise.all([
+		db.employee.findMany({
+			where: { user: { organizationId }, employmentStatus: 'ACTIVE' },
+			select: { id: true, firstName: true, lastName: true, employeeNumber: true },
+			orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }]
+		}),
+		db.payrollConfig.findUnique({ where: { organizationId }, select: { payFrequency: true } }),
+		db.employeeEarning.groupBy({
+			by: ['employeeId', 'kind'],
+			where: { employee: { organizationId }, isActive: true },
+			_sum: { monthlyAmount: true }
+		})
+	])
+
+	const periodShare = (config?.payFrequency ?? 'SEMI_MONTHLY') === 'MONTHLY' ? 1 : 0.5
+	const recurringDefaults: Record<string, { allowances: number; incentives: number }> = {}
+	for (const g of recurring) {
+		const rec = (recurringDefaults[g.employeeId] ??= { allowances: 0, incentives: 0 })
+		const amount = round2(Number(g._sum.monthlyAmount ?? 0) * periodShare)
+		if (g.kind === 'ALLOWANCE') rec.allowances = amount
+		else rec.incentives = amount
+	}
+
+	return { employees, recurringDefaults }
 }
 
 /**
@@ -120,18 +155,26 @@ export async function previewPayroll(
 	})
 	if (!employee) error(404, 'Employee not found')
 
-	const [config, earningTypes, loansAll, advancesAll, payRateRule] = await Promise.all([
-		db.payrollConfig.findUnique({ where: { organizationId } }),
-		db.earningType.findMany({ where: { organizationId }, select: { code: true, taxable: true } }),
-		db.loan.findMany({ where: { employeeId, status: 'ACTIVE', balance: { gt: 0 } } }),
-		db.cashAdvance.findMany({ where: { employeeId, status: 'ACTIVE', balance: { gt: 0 } } }),
-		db.payRateRule.findUnique({ where: { organizationId } })
-	])
+	const [config, earningTypes, loansAll, advancesAll, payRateRule, recurringDeductions] =
+		await Promise.all([
+			db.payrollConfig.findUnique({ where: { organizationId } }),
+			db.earningType.findMany({ where: { organizationId }, select: { code: true, taxable: true } }),
+			db.loan.findMany({ where: { employeeId, status: 'ACTIVE', balance: { gt: 0 } } }),
+			db.cashAdvance.findMany({ where: { employeeId, status: 'ACTIVE', balance: { gt: 0 } } }),
+			db.payRateRule.findUnique({ where: { organizationId } }),
+			// Recurring custom deductions apply in the preview too (#66) — same as a real run.
+			db.employeeDeduction.findMany({
+				where: { employeeId, isActive: true, deductionType: { isActive: true } },
+				include: { deductionType: { select: { code: true, label: true } } }
+			})
+		])
 
+	const periodShare = (config?.payFrequency ?? 'SEMI_MONTHLY') === 'MONTHLY' ? 1 : 0.5
 	const cfg: EmployeeComputeConfig = {
 		taxableByCode: new Map(earningTypes.map((e) => [e.code, e.taxable])),
 		rates: ratesFromRule(payRateRule),
-		periodShare: (config?.payFrequency ?? 'SEMI_MONTHLY') === 'MONTHLY' ? 1 : 0.5,
+		periodShare,
+		recurringDeductions: recurringDeductionComponents(recurringDeductions, periodShare),
 		loans: loansAll.map((l) => ({
 			refId: l.id,
 			label: l.type ?? 'Loan',

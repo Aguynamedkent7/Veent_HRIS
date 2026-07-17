@@ -82,47 +82,37 @@
 	<title>Reports — Veent HRIS</title>
 </svelte:head>
 
-<div class="space-y-8">
-	<div class="flex items-center justify-between">
-		<h1 class="text-2xl font-bold tracking-tight">Reports</h1>
-		<form id="year-form" method="GET" class="flex items-center gap-2">
-			<label for="year" class="text-sm font-medium">Year</label>
-			<select
-				id="year"
-				name="year"
-				onchange={() => {
-					if (typeof document !== 'undefined')
-						(document.getElementById('year-form') as HTMLFormElement)?.submit()
-				}}
-				class="h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-			>
-				{#each [currentYear, currentYear - 1, currentYear - 2] as y (y)}
-					<option value={y} selected={y === data.year}>{y}</option>
-				{/each}
-			</select>
-		</form>
-	</div>
-
-	<!-- Detailed reports (filterable + CSV export) -->
-	<section class="space-y-3">
-		<h2 class="text-lg font-semibold">Detailed Reports</h2>
-		<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-			{#each reportCards as r (r.href)}
-				<a
-					href={r.href}
-					class="rounded-lg border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-card/80"
-				>
-					<p class="font-medium">{r.label}</p>
-					<p class="mt-0.5 text-xs text-muted-foreground">{r.desc}</p>
-				</a>
+{#snippet yearForm()}
+	<!-- Drives the year-scoped summaries below (#73). Detailed report tabs have
+	     their own date filters, so this lives next to what it actually filters. -->
+	<form id="year-form" method="GET" class="flex items-center gap-2">
+		<label for="year-select" class="text-sm font-medium">Year</label>
+		<select
+			id="year-select"
+			name="year"
+			onchange={() => {
+				if (typeof document !== 'undefined')
+					(document.getElementById('year-form') as HTMLFormElement)?.submit()
+			}}
+			class="h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+		>
+			{#each [currentYear, currentYear - 1, currentYear - 2] as y (y)}
+				<option value={y} selected={y === data.year}>{y}</option>
 			{/each}
-		</div>
-	</section>
+		</select>
+	</form>
+{/snippet}
+
+<div class="space-y-8">
+	<h1 class="text-2xl font-bold tracking-tight">Reports</h1>
 
 	{#if data.canViewHrReports}
 		<!-- Attrition summary -->
 		<section class="space-y-3">
-			<h2 class="text-lg font-semibold">Workforce — {data.year}</h2>
+			<div class="flex items-center justify-between">
+				<h2 class="text-lg font-semibold">Workforce — {data.year}</h2>
+				{@render yearForm()}
+			</div>
 			<div class="grid gap-4 sm:grid-cols-3">
 				<div class="rounded-lg border bg-card p-4">
 					<p class="text-sm text-muted-foreground">Total Active</p>
@@ -143,42 +133,35 @@
 				</div>
 			</div>
 		</section>
-
-		<!-- Headcount by department -->
-		<section class="space-y-3">
-			<h2 class="text-lg font-semibold">Headcount by Department</h2>
-			<div class="overflow-x-auto rounded-lg border">
-				<table class="w-full text-sm">
-					<thead class="border-b bg-muted/50">
-						<tr>
-							<th class="px-4 py-3 text-left font-medium text-muted-foreground">Department</th>
-							<th class="px-4 py-3 text-right font-medium text-muted-foreground"
-								>Active Employees</th
-							>
-						</tr>
-					</thead>
-					<tbody class="divide-y">
-						{#each data.headcountByDept as dept (dept.id)}
-							<tr class="hover:bg-muted/30">
-								<td class="px-4 py-3">{dept.name}</td>
-								<td class="px-4 py-3 text-right font-medium">{dept._count.employees}</td>
-							</tr>
-						{:else}
-							<tr
-								><td colspan="2" class="px-4 py-6 text-center text-muted-foreground">No data</td
-								></tr
-							>
-						{/each}
-					</tbody>
-				</table>
-			</div>
-		</section>
 	{/if}
+
+	<!-- Detailed reports (filterable + CSV export) -->
+	<section class="space-y-3">
+		<h2 class="text-lg font-semibold">Detailed Reports</h2>
+		<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+			{#each reportCards as r (r.href)}
+				<a
+					href={r.href}
+					class="rounded-lg border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-card/80"
+				>
+					<p class="font-medium">{r.label}</p>
+					<p class="mt-0.5 text-xs text-muted-foreground">{r.desc}</p>
+				</a>
+			{/each}
+		</div>
+	</section>
 
 	<!-- Payroll summary -->
 	{#if data.payrollSummary.length > 0}
 		<section class="space-y-3">
-			<h2 class="text-lg font-semibold">Payroll Summary — {data.year}</h2>
+			<div class="flex items-center justify-between">
+				<h2 class="text-lg font-semibold">Payroll Summary — {data.year}</h2>
+				{#if !data.canViewHrReports}
+					<!-- Payroll-only viewers don't see the Workforce section — keep the
+					     year control next to the one year-scoped table they do see. -->
+					{@render yearForm()}
+				{/if}
+			</div>
 			<div class="rounded-lg border overflow-x-auto">
 				<table class="w-full text-sm">
 					<thead class="border-b bg-muted/50">
