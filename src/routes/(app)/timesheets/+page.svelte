@@ -6,11 +6,13 @@
 	import TableSkeleton from '$lib/components/ui/TableSkeleton.svelte'
 	import Pagination from '$lib/components/Pagination.svelte'
 	import TimesheetModal from '$lib/components/timesheets/TimesheetModal.svelte'
+	import NewTimesheetDialog from '$lib/components/timesheets/NewTimesheetDialog.svelte'
 	import AggregatePanel from '$lib/components/timesheets/AggregatePanel.svelte'
 	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
+	let showCreate = $state(false)
 
 	// ─── Review modal ─────────────────────────────────────────────────────────
 	// /timesheets is read/modify only — the modal runs in "edit" mode (no approve/reject).
@@ -190,12 +192,12 @@
 	<div class="flex items-center justify-between">
 		<h1 class="text-2xl font-bold tracking-tight">Timesheets</h1>
 		{#if data.myEmployeeId}
-			<a
-				href="/timesheets/new"
+			<button
+				onclick={() => (showCreate = true)}
 				class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
 			>
 				New Timesheet
-			</a>
+			</button>
 		{/if}
 	</div>
 
@@ -240,3 +242,5 @@
 	myEmployeeId={data.myEmployeeId}
 	{form}
 />
+
+<NewTimesheetDialog bind:open={showCreate} />
