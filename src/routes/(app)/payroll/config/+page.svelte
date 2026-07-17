@@ -28,7 +28,9 @@
 	</div>
 
 	{#if form?.success}
-		<div class="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+		<div
+			class="rounded-md border border-green-500/20 bg-green-500/10 px-4 py-3 text-sm text-green-600 dark:text-green-400"
+		>
 			Payroll configuration saved successfully.
 		</div>
 	{/if}

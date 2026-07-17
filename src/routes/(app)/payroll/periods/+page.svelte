@@ -7,13 +7,14 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 	let showOpen = $state(false)
 
+	// Theme-aware status pills (#76) — see the .badge-* classes in app.css.
 	const badge: Record<string, string> = {
-		OPEN: 'bg-gray-100 text-gray-600',
-		IMPORTED: 'bg-blue-100 text-blue-700',
-		GENERATED: 'bg-blue-100 text-blue-700',
-		LOCKED: 'bg-yellow-100 text-yellow-700',
-		RELEASED: 'bg-green-100 text-green-700',
-		VOIDED: 'bg-red-100 text-red-700'
+		OPEN: 'badge-gray',
+		IMPORTED: 'badge-blue',
+		GENERATED: 'badge-blue',
+		LOCKED: 'badge-yellow',
+		RELEASED: 'badge-green',
+		VOIDED: 'badge-red'
 	}
 </script>
 
@@ -130,23 +131,20 @@
 							>{run ? formatCurrency(Number(run.totalNet)) : '—'}</td
 						>
 						<td class="px-4 py-3">
-							<span
-								class="rounded-full px-2 py-0.5 text-xs font-medium {badge[p.status] ??
-									'bg-gray-100 text-gray-600'}">{p.status}</span
-							>
+							<span class={badge[p.status] ?? 'badge-gray'}>{p.status}</span>
 						</td>
 						<td class="px-4 py-3">
 							<div class="flex flex-wrap items-center justify-end gap-2">
 								{#if p.status === 'OPEN'}
 									<form method="POST" action="?/import" use:enhance>
 										<input type="hidden" name="id" value={p.id} />
-										<button class="text-primary text-xs hover:underline">Import Attendance</button>
+										<button class="btn-row">Import Attendance</button>
 									</form>
 								{/if}
 								{#if p.status === 'OPEN' || p.status === 'IMPORTED' || p.status === 'GENERATED'}
 									<form method="POST" action="?/generate" use:enhance>
 										<input type="hidden" name="id" value={p.id} />
-										<button class="text-primary text-xs hover:underline"
+										<button class="btn-row"
 											>{p.status === 'GENERATED' ? 'Re-generate' : 'Generate'}</button
 										>
 									</form>
@@ -159,23 +157,22 @@
 											placeholder="Override note (if flagged)"
 											class="h-7 w-44 rounded border border-input bg-background px-2 text-xs"
 										/>
-										<button class="text-yellow-600 text-xs hover:underline">Lock</button>
+										<button class="btn-row-warning">Lock</button>
 									</form>
 								{/if}
 								{#if p.status === 'LOCKED'}
 									<form method="POST" action="?/release" use:enhance>
 										<input type="hidden" name="id" value={p.id} />
-										<button class="text-green-600 text-xs hover:underline">Release</button>
+										<button class="btn-row-positive">Release</button>
 									</form>
 								{/if}
 								{#if run}
-									<a href="/payroll/{run.id}" class="text-primary text-xs hover:underline">Detail</a
-									>
+									<a href="/payroll/{run.id}" class="btn-row">Detail</a>
 								{/if}
 								{#if data.isSuperAdmin && p.status !== 'VOIDED'}
 									<form method="POST" action="?/void" use:enhance>
 										<input type="hidden" name="id" value={p.id} />
-										<button class="text-red-600 text-xs hover:underline">Void</button>
+										<button class="btn-row-danger">Void</button>
 									</form>
 								{/if}
 							</div>

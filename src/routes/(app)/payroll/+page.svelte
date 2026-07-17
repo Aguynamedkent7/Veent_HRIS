@@ -116,42 +116,36 @@
 							>
 							<td class="px-4 py-3">
 								<span
-									class="rounded-full px-2 py-0.5 text-xs font-medium {run.status === 'APPROVED'
-										? 'bg-green-100 text-green-700'
+									class={run.status === 'APPROVED'
+										? 'badge-green'
 										: run.status === 'COMPUTED'
-											? 'bg-blue-100 text-blue-700'
+											? 'badge-blue'
 											: run.status === 'VOIDED'
-												? 'bg-red-100 text-red-700'
-												: 'bg-gray-100 text-gray-600'}"
+												? 'badge-red'
+												: 'badge-gray'}
 								>
 									{run.status}
-									{#if run.hasOverride}<span class="ml-1 text-yellow-600">*</span>{/if}
+									{#if run.hasOverride}<span class="ml-1 text-yellow-500">*</span>{/if}
 								</span>
 							</td>
 							<td class="px-4 py-3 flex gap-2">
 								{#if run.status === 'DRAFT'}
 									<form method="POST" action="?/compute" use:enhance>
 										<input type="hidden" name="id" value={run.id} />
-										<button type="submit" class="text-primary text-xs hover:underline"
-											>Compute</button
-										>
+										<button type="submit" class="btn-row">Compute</button>
 									</form>
 								{/if}
 								{#if run.status === 'COMPUTED'}
 									<form method="POST" action="?/compute" use:enhance>
 										<input type="hidden" name="id" value={run.id} />
-										<button type="submit" class="text-primary text-xs hover:underline"
-											>Recompute</button
-										>
+										<button type="submit" class="btn-row">Recompute</button>
 									</form>
 									<form method="POST" action="?/approve" use:enhance>
 										<input type="hidden" name="id" value={run.id} />
-										<button type="submit" class="text-green-600 text-xs hover:underline"
-											>Approve</button
-										>
+										<button type="submit" class="btn-row-positive">Approve</button>
 									</form>
 								{/if}
-								<a href="/payroll/{run.id}" class="text-primary text-xs hover:underline">Detail</a>
+								<a href="/payroll/{run.id}" class="btn-row">Detail</a>
 							</td>
 						</tr>
 					{:else}
