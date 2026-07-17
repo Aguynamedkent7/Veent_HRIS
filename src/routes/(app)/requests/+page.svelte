@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import { advanceTo } from '$lib/actions/dateRange'
 	import { goto } from '$app/navigation'
 	import { formatDateRange, formatShortDate } from '$lib/utils/format'
 	import { formatDateISO } from '$lib/utils/dates'
@@ -148,6 +149,7 @@
 							required
 							min={today}
 							bind:value={startDate}
+							use:advanceTo={'endDate'}
 							aria-invalid={invalid('startDate')}
 							aria-describedby={describedBy('startDate')}
 							class="h-9 rounded-md border border-input bg-background px-3 text-sm"
@@ -181,6 +183,7 @@
 							required
 							min={today}
 							bind:value={startDate}
+							use:advanceTo={'endDate'}
 							aria-invalid={invalid('startDate')}
 							aria-describedby={describedBy('startDate')}
 							class="h-9 rounded-md border border-input bg-background px-3 text-sm"

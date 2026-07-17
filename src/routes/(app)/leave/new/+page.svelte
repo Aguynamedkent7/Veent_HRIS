@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import { advanceTo } from '$lib/actions/dateRange'
 	import { formatDateISO } from '$lib/utils/dates'
 	import BalanceSummary from '$lib/components/leave/BalanceSummary.svelte'
 	import type { PageData, ActionData } from './$types'
@@ -68,6 +69,7 @@
 					required
 					min={today}
 					bind:value={startDate}
+					use:advanceTo={'endDate'}
 					class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 				/>
 			</div>

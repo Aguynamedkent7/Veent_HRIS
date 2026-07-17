@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import { advanceTo } from '$lib/actions/dateRange'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
 	import TableSkeleton from '$lib/components/ui/TableSkeleton.svelte'
 	import type { PageData, ActionData } from './$types'
@@ -53,6 +54,7 @@
 						name="periodStart"
 						type="date"
 						required
+						use:advanceTo={'periodEnd'}
 						class="mt-1 flex h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					/>
 				</div>

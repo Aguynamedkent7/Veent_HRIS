@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { formatCurrency } from '$lib/utils/format'
+	import { advanceTo } from '$lib/actions/dateRange'
 	import { navigating } from '$app/stores'
 	import TableSkeleton from '$lib/components/ui/TableSkeleton.svelte'
 	import type { PageData } from './$types'
@@ -118,6 +119,7 @@
 				name="start"
 				type="date"
 				value={data.startDate}
+				use:advanceTo={'end'}
 				class="h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 			/>
 		</div>

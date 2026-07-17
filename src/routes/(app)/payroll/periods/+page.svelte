@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import { advanceTo } from '$lib/actions/dateRange'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
 	import type { PageData, ActionData } from './$types'
 
@@ -63,6 +64,7 @@
 						name="start"
 						type="date"
 						required
+						use:advanceTo={'end'}
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					/>
 				</div>
