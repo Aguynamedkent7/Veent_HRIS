@@ -110,6 +110,37 @@ export function computeEmployeeResult(
 }
 
 /**
+ * Roster + recurring-earning defaults for the calculator UI (full page and the floating
+ * panel on payroll pages, #72). Prefill amounts are prorated exactly like computePayroll.
+ */
+export async function loadCalculatorData(organizationId: string) {
+	const [employees, config, recurring] = await Promise.all([
+		db.employee.findMany({
+			where: { user: { organizationId }, employmentStatus: 'ACTIVE' },
+			select: { id: true, firstName: true, lastName: true, employeeNumber: true },
+			orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }]
+		}),
+		db.payrollConfig.findUnique({ where: { organizationId }, select: { payFrequency: true } }),
+		db.employeeEarning.groupBy({
+			by: ['employeeId', 'kind'],
+			where: { employee: { organizationId }, isActive: true },
+			_sum: { monthlyAmount: true }
+		})
+	])
+
+	const periodShare = (config?.payFrequency ?? 'SEMI_MONTHLY') === 'MONTHLY' ? 1 : 0.5
+	const recurringDefaults: Record<string, { allowances: number; incentives: number }> = {}
+	for (const g of recurring) {
+		const rec = (recurringDefaults[g.employeeId] ??= { allowances: 0, incentives: 0 })
+		const amount = round2(Number(g._sum.monthlyAmount ?? 0) * periodShare)
+		if (g.kind === 'ALLOWANCE') rec.allowances = amount
+		else rec.incentives = amount
+	}
+
+	return { employees, recurringDefaults }
+}
+
+/**
  * What-if preview for one employee (PAY-016 / PAY-017). Loads the employee's compensation and the
  * org's rate/frequency + active loans, then runs the shared engine WITHOUT persisting anything.
  */
