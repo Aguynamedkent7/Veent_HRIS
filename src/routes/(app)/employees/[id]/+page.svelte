@@ -196,7 +196,9 @@
 					<dt class="text-muted-foreground">Account Name</dt>
 					<dd>{employee.bankAccountName ?? '—'}</dd>
 					<dt class="text-muted-foreground">Account No.</dt>
-					<dd class="font-mono">{revealed?.bankAccountNumber ?? employee.bankAccountNumber ?? '—'}</dd>
+					<dd class="font-mono">
+						{revealed?.bankAccountNumber ?? employee.bankAccountNumber ?? '—'}
+					</dd>
 					<dt class="text-muted-foreground">GCash No.</dt>
 					<dd class="font-mono">{revealed?.gcashNumber ?? employee.gcashNumber ?? '—'}</dd>
 				</dl>

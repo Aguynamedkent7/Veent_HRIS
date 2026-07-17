@@ -336,20 +336,20 @@ One row per employee per PayrollRun.
 
 Append-only. No UPDATE or DELETE permitted at any layer.
 
-| Field            | Type                   | Rules                                                                                       |
-| ---------------- | ---------------------- | ------------------------------------------------------------------------------------------- |
-| `id`             | UUID PK                | auto-generated                                                                              |
-| `organizationId` | UUID FK → Organization | required                                                                                    |
-| `actorId`        | UUID FK → User         | user who triggered the action                                                               |
-| `actorRole`      | Enum                   | role at time of action                                                                      |
+| Field            | Type                   | Rules                                                                                               |
+| ---------------- | ---------------------- | --------------------------------------------------------------------------------------------------- |
+| `id`             | UUID PK                | auto-generated                                                                                      |
+| `organizationId` | UUID FK → Organization | required                                                                                            |
+| `actorId`        | UUID FK → User         | user who triggered the action                                                                       |
+| `actorRole`      | Enum                   | role at time of action                                                                              |
 | `action`         | Enum                   | `CREATE`, `UPDATE`, `DELETE`, `VIEW`, `LOGIN`, `LOGIN_FAILED`, `PAYROLL_OVERRIDE`, `LEAVE_OVERRIDE` |
-| `entityType`     | String                 | e.g., `Employee`, `Timesheet`, `PayrollRun`                                                 |
-| `entityId`       | UUID                   | PK of affected entity                                                                       |
-| `oldValue`       | Json?                  | snapshot before mutation                                                                    |
-| `newValue`       | Json?                  | snapshot after mutation                                                                     |
-| `ipAddress`      | String?                | from request header                                                                         |
-| `userAgent`      | String?                | from request header                                                                         |
-| `createdAt`      | DateTime               | auto, immutable                                                                             |
+| `entityType`     | String                 | e.g., `Employee`, `Timesheet`, `PayrollRun`                                                         |
+| `entityId`       | UUID                   | PK of affected entity                                                                               |
+| `oldValue`       | Json?                  | snapshot before mutation                                                                            |
+| `newValue`       | Json?                  | snapshot after mutation                                                                             |
+| `ipAddress`      | String?                | from request header                                                                                 |
+| `userAgent`      | String?                | from request header                                                                                 |
+| `createdAt`      | DateTime               | auto, immutable                                                                                     |
 
 **Retention**: Rows older than 3 years are archived to cold storage (not deleted);
 application enforces this via a scheduled archival job.
