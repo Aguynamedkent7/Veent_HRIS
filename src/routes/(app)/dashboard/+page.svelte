@@ -17,17 +17,23 @@
 		<h1 class="page-title">Dashboard</h1>
 	</div>
 
-	<!-- Metric cards -->
+	<!-- Metric cards — each one drills down to its module page (#53) -->
 	<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-		<div class="card flex flex-col gap-3">
+		<a
+			href="/employees"
+			class="card flex flex-col gap-3 transition-colors hover:border-primary/40 hover:bg-card/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+		>
 			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
 				Active Employees
 			</p>
 			<p class="text-4xl font-bold text-foreground">{metrics.headcount}</p>
 			<p class="text-xs text-muted-foreground">across your organisation</p>
-		</div>
+		</a>
 
-		<div class="card flex flex-col gap-3">
+		<a
+			href="/leave"
+			class="card flex flex-col gap-3 transition-colors hover:border-primary/40 hover:bg-card/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+		>
 			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
 				On Leave Today
 			</p>
@@ -39,9 +45,12 @@
 				{metrics.onLeaveToday}
 			</p>
 			<p class="text-xs text-muted-foreground">employees on approved leave</p>
-		</div>
+		</a>
 
-		<div class="card flex flex-col gap-3">
+		<a
+			href="/requests"
+			class="card flex flex-col gap-3 transition-colors hover:border-primary/40 hover:bg-card/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+		>
 			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
 				Pending Approvals
 			</p>
@@ -55,9 +64,12 @@
 			<p class="text-xs text-muted-foreground">
 				{metrics.pendingRequests} requests · {metrics.pendingTimesheets} timesheets
 			</p>
-		</div>
+		</a>
 
-		<div class="card flex flex-col gap-3">
+		<a
+			href="/payroll"
+			class="card flex flex-col gap-3 transition-colors hover:border-primary/40 hover:bg-card/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+		>
 			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
 				Last Payroll
 			</p>
@@ -75,7 +87,7 @@
 				<p class="text-2xl font-semibold text-muted-foreground/60">—</p>
 				<p class="text-xs text-muted-foreground">no payroll runs yet</p>
 			{/if}
-		</div>
+		</a>
 	</div>
 
 	<!-- Attendance summary (today) -->
