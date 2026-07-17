@@ -9,6 +9,10 @@
 	// (a plain destructure would stay stale until a full page refresh).
 	const employee = $derived(data.employee)
 	const canManage = $derived(data.canManage)
+	// #54: `employee.bankAccountNumber`/`gcashNumber` arrive masked from the load.
+	// The full values exist client-side only after the audited reveal action, and any
+	// other action result (e.g. a profile save) drops back to the masked display.
+	const revealed = $derived(form?.revealed ?? null)
 
 	const DOC_CATEGORIES = [
 		{ value: 'CONTRACT', label: 'Contract' },
@@ -167,21 +171,34 @@
 				</dl>
 			</div>
 
-			<!-- Disbursement details Card (sensitive, HR-only) -->
+			<!-- Disbursement details Card (sensitive, HR-only; numbers masked — #54) -->
 			<div class="rounded-lg border bg-card p-6 space-y-4">
-				<h2 class="font-semibold">
-					Disbursement
-					<span class="text-xs font-normal text-muted-foreground">(bank / GCash — sensitive)</span>
-				</h2>
+				<div class="flex items-center justify-between gap-3">
+					<h2 class="font-semibold">
+						Disbursement
+						<span class="text-xs font-normal text-muted-foreground">(bank / GCash — sensitive)</span
+						>
+					</h2>
+					{#if data.canRevealDisbursement && !revealed}
+						<form method="POST" action="?/revealDisbursement" use:enhance>
+							<button
+								type="submit"
+								class="text-xs text-primary hover:underline"
+								title="Revealing full numbers is recorded in the audit log"
+								>Reveal full numbers</button
+							>
+						</form>
+					{/if}
+				</div>
 				<dl class="grid grid-cols-2 gap-3 text-sm">
 					<dt class="text-muted-foreground">Bank</dt>
 					<dd>{employee.bankName ?? '—'}</dd>
 					<dt class="text-muted-foreground">Account Name</dt>
 					<dd>{employee.bankAccountName ?? '—'}</dd>
 					<dt class="text-muted-foreground">Account No.</dt>
-					<dd class="font-mono">{employee.bankAccountNumber ?? '—'}</dd>
+					<dd class="font-mono">{revealed?.bankAccountNumber ?? employee.bankAccountNumber ?? '—'}</dd>
 					<dt class="text-muted-foreground">GCash No.</dt>
-					<dd class="font-mono">{employee.gcashNumber ?? '—'}</dd>
+					<dd class="font-mono">{revealed?.gcashNumber ?? employee.gcashNumber ?? '—'}</dd>
 				</dl>
 			</div>
 		{/if}
@@ -361,6 +378,9 @@
 						<h3 class="text-sm font-semibold text-muted-foreground">
 							Disbursement <span class="font-normal">(bank / GCash — sensitive)</span>
 						</h3>
+						<p class="mt-1 text-xs text-muted-foreground">
+							Stored numbers stay masked; leave a field blank to keep the current value.
+						</p>
 					</div>
 					<div>
 						<label class="text-sm font-medium">Bank Name</label>
@@ -383,8 +403,8 @@
 						<label class="text-sm font-medium">Bank Account No.</label>
 						<input
 							name="bankAccountNumber"
-							value={employee.bankAccountNumber ?? ''}
-							placeholder="Account number"
+							value={revealed?.bankAccountNumber ?? ''}
+							placeholder={employee.bankAccountNumber ?? 'Account number'}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
 					</div>
@@ -392,8 +412,8 @@
 						<label class="text-sm font-medium">GCash No.</label>
 						<input
 							name="gcashNumber"
-							value={employee.gcashNumber ?? ''}
-							placeholder="e.g. 0917xxxxxxx"
+							value={revealed?.gcashNumber ?? ''}
+							placeholder={employee.gcashNumber ?? 'e.g. 0917xxxxxxx'}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
 					</div>

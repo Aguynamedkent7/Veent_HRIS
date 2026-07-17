@@ -7,6 +7,7 @@
 		'CREATE',
 		'UPDATE',
 		'DELETE',
+		'VIEW',
 		'LOGIN',
 		'LOGIN_FAILED',
 		'PAYROLL_OVERRIDE',

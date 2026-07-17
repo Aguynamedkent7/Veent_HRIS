@@ -342,7 +342,7 @@ Append-only. No UPDATE or DELETE permitted at any layer.
 | `organizationId` | UUID FK → Organization | required                                                                                    |
 | `actorId`        | UUID FK → User         | user who triggered the action                                                               |
 | `actorRole`      | Enum                   | role at time of action                                                                      |
-| `action`         | Enum                   | `CREATE`, `UPDATE`, `DELETE`, `LOGIN`, `LOGIN_FAILED`, `PAYROLL_OVERRIDE`, `LEAVE_OVERRIDE` |
+| `action`         | Enum                   | `CREATE`, `UPDATE`, `DELETE`, `VIEW`, `LOGIN`, `LOGIN_FAILED`, `PAYROLL_OVERRIDE`, `LEAVE_OVERRIDE` |
 | `entityType`     | String                 | e.g., `Employee`, `Timesheet`, `PayrollRun`                                                 |
 | `entityId`       | UUID                   | PK of affected entity                                                                       |
 | `oldValue`       | Json?                  | snapshot before mutation                                                                    |
