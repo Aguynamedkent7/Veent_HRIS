@@ -55,11 +55,12 @@
 		openTs = ts
 	}
 
+	// Theme-aware status pills (dark-mode safe) — see the .badge-* classes in app.css.
 	const statusClass: Record<string, string> = {
-		APPROVED: 'bg-green-100 text-green-700',
-		REJECTED: 'bg-red-100 text-red-700',
-		SUBMITTED: 'bg-blue-100 text-blue-700',
-		DRAFT: 'bg-gray-100 text-gray-600'
+		APPROVED: 'badge-green',
+		REJECTED: 'badge-red',
+		SUBMITTED: 'badge-blue',
+		DRAFT: 'badge-gray'
 	}
 	const btnPrimary =
 		'rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50'
@@ -175,10 +176,7 @@
 							>
 							<td class="px-4 py-3">{Number(ts.totalHours).toFixed(2)} hrs</td>
 							<td class="px-4 py-3"
-								><span
-									class={`rounded-full px-2 py-0.5 text-xs font-medium ${statusClass[ts.status] ?? 'bg-gray-100 text-gray-600'}`}
-									>{ts.status}</span
-								></td
+								><span class={statusClass[ts.status] ?? 'badge-gray'}>{ts.status}</span></td
 							>
 						</tr>
 					{:else}
