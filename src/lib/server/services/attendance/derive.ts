@@ -9,6 +9,10 @@
 const DAY_MS = 86_400_000
 const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000
 
+// Labor Code Art. 85 entitles an employee to the unpaid meal period only once they work
+// more than 5 hours, so a short day is never docked for a break they never took.
+const MEAL_BREAK_OWED_AFTER_MS = 5 * 60 * 60 * 1000
+
 export type AttPunchType = 'IN' | 'OUT' | 'BREAK_START' | 'BREAK_END'
 export type AttendanceStatus =
 	'PRESENT' | 'LATE' | 'ABSENT' | 'INCOMPLETE' | 'ON_LEAVE' | 'HOLIDAY' | 'REST_DAY'
@@ -178,9 +182,20 @@ export function deriveAttendanceDay(input: DeriveInput): AttendanceDayResult {
 		return emptyResult('ABSENT')
 	}
 
-	const breakMs = breakSegs.reduce((s, [a, b]) => s + (b - a), 0)
+	const punchedBreakMs = breakSegs.reduce((s, [a, b]) => s + (b - a), 0)
 	const netIntervals = subtractIntervals(workSegs, breakSegs)
-	const netWorkedMs = netIntervals.reduce((s, [a, b]) => s + (b - a), 0)
+	const punchedNetMs = netIntervals.reduce((s, [a, b]) => s + (b - a), 0)
+
+	// The scheduled meal break is unpaid whether or not it gets punched, and in practice
+	// employees only punch IN and OUT. Deducting it here is what keeps an 8–5 day at 8h
+	// instead of 9h with a phantom hour of overtime. `max` rather than a sum: a punched
+	// break *is* the meal break, so it must never be deducted twice.
+	const scheduledBreakMs =
+		dayType === 'REGULAR' && schedule && punchedNetMs > MEAL_BREAK_OWED_AFTER_MS
+			? schedule.breakMinutes * 60_000
+			: 0
+	const unpaidBreakMs = Math.max(punchedBreakMs, scheduledBreakMs)
+	const netWorkedMs = Math.max(0, punchedNetMs - (unpaidBreakMs - punchedBreakMs))
 	const workedHours = round2(netWorkedMs / 3_600_000)
 
 	// Night-differential window (may wrap midnight).
@@ -195,7 +210,12 @@ export function deriveAttendanceDay(input: DeriveInput): AttendanceDayResult {
 		(s, [a, b]) => s + dailyOverlapMs(a + MANILA_OFFSET_MS, b + MANILA_OFFSET_MS, nightRanges),
 		0
 	)
-	const nightDiffHours = round2(nightMs / 3_600_000)
+	// A schedule stores only a break *duration*, never when it falls, so an unpunched break
+	// can't be cut out of the night intervals the way a punched one is. Clamping keeps the
+	// invariant that night-differential hours are a subset of hours worked — exact whenever
+	// the shift sits wholly inside the window, which is the case that would otherwise pay
+	// night differential on an hour the employee spent at lunch.
+	const nightDiffHours = round2(Math.min(nightMs / 3_600_000, workedHours))
 
 	// Late / undertime only apply to a scheduled regular day.
 	let lateMinutes = 0
@@ -220,7 +240,7 @@ export function deriveAttendanceDay(input: DeriveInput): AttendanceDayResult {
 	)
 	result.timeOut = lastOut
 	result.workedHours = workedHours
-	result.breakMinutes = Math.round(breakMs / 60_000)
+	result.breakMinutes = Math.round(unpaidBreakMs / 60_000)
 	result.nightDiffHours = nightDiffHours
 	result.lateMinutes = lateMinutes
 	result.undertimeMinutes = undertimeMinutes
