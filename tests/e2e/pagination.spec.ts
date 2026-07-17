@@ -72,23 +72,23 @@ test.afterAll(async () => {
 test('employees list paginates with filter and page state in the URL', async ({ page }) => {
 	await login(page, USERS.admin)
 
-	// Filter applied: 25 matches → exactly one full page of 20.
+	// Filter applied: 25 matches at 10 per page → 3 pages, the first one full.
 	await page.goto(`/employees?search=${SURNAME}`, { waitUntil: 'domcontentloaded' })
-	await expect(page.getByText(`1–20 of ${COUNT}`)).toBeVisible()
-	await expect(page.locator('tbody tr')).toHaveCount(20)
+	await expect(page.getByText(`1–10 of ${COUNT}`)).toBeVisible()
+	await expect(page.locator('tbody tr')).toHaveCount(10)
 
-	// Next → page 2: URL carries BOTH the filter and the page; 5 rows remain.
+	// Next → page 2: URL carries BOTH the filter and the page.
 	await page.getByRole('link', { name: 'Next →' }).click()
 	await page.waitForURL(`**/employees?search=${SURNAME}&page=2`, {
 		waitUntil: 'domcontentloaded'
 	})
-	await expect(page.getByText(`21–25 of ${COUNT}`)).toBeVisible()
-	await expect(page.locator('tbody tr')).toHaveCount(5)
+	await expect(page.getByText(`11–20 of ${COUNT}`)).toBeVisible()
+	await expect(page.locator('tbody tr')).toHaveCount(10)
 
 	// Browser back restores page 1 with the filter intact.
 	await page.goBack({ waitUntil: 'domcontentloaded' })
 	await expect(page).toHaveURL(new RegExp(`search=${SURNAME}(?!.*page=2)`))
-	await expect(page.getByText(`1–20 of ${COUNT}`)).toBeVisible()
+	await expect(page.getByText(`1–10 of ${COUNT}`)).toBeVisible()
 
 	// Out-of-range pages clamp to the last real page instead of rendering empty.
 	await page.goto(`/employees?search=${SURNAME}&page=99`, { waitUntil: 'domcontentloaded' })
