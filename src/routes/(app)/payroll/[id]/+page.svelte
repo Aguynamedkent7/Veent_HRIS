@@ -178,7 +178,7 @@
 											id={'netPay-' + entry.id}
 											name="netPay"
 											type="number"
-											step="0.01"
+											step="any"
 											value={Number(entry.netPay)}
 											class="mt-1 flex h-8 w-36 rounded border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
 										/>

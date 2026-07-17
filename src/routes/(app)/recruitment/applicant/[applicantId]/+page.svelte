@@ -351,7 +351,7 @@
 						name="monthlySalary"
 						type="number"
 						min="0"
-						step="0.01"
+						step="1000"
 						required
 						class="h-9 rounded-md border border-input bg-background px-2 text-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 					/>

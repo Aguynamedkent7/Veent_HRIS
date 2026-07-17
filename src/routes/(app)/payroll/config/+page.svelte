@@ -69,7 +69,7 @@
 						type="number"
 						min="0"
 						max="100"
-						step="0.01"
+						step="0.05"
 						bind:value={philhealthRate}
 						class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pr-8"
 					/>
@@ -90,7 +90,7 @@
 						type="number"
 						min="0"
 						max="100"
-						step="0.01"
+						step="0.05"
 						bind:value={pagibigRate}
 						class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pr-8"
 					/>

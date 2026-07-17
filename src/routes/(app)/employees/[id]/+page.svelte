@@ -270,6 +270,7 @@
 							id="basicMonthlySalary"
 							name="basicMonthlySalary"
 							type="number"
+							step="1000"
 							value={Number(employee.basicMonthlySalary)}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
@@ -620,7 +621,7 @@
 								name="principal"
 								type="number"
 								min="0"
-								step="0.01"
+								step="500"
 								placeholder="Principal"
 								required
 								class="h-8 w-24 rounded-md border border-input bg-background px-2 text-xs"
@@ -629,7 +630,7 @@
 								name="installment"
 								type="number"
 								min="0"
-								step="0.01"
+								step="100"
 								placeholder="Per period"
 								required
 								class="h-8 w-24 rounded-md border border-input bg-background px-2 text-xs"
@@ -681,7 +682,7 @@
 								name="amount"
 								type="number"
 								min="0"
-								step="0.01"
+								step="500"
 								placeholder="Amount"
 								required
 								class="h-8 w-24 rounded-md border border-input bg-background px-2 text-xs"
@@ -690,7 +691,7 @@
 								name="installment"
 								type="number"
 								min="0"
-								step="0.01"
+								step="100"
 								placeholder="Per period"
 								required
 								class="h-8 w-24 rounded-md border border-input bg-background px-2 text-xs"
@@ -769,7 +770,7 @@
 						name="monthlyAmount"
 						type="number"
 						min="0.01"
-						step="0.01"
+						step="100"
 						placeholder="Monthly amount"
 						required
 						class="h-8 w-28 rounded-md border border-input bg-background px-2 text-xs"
@@ -850,7 +851,7 @@
 							name="monthlyAmount"
 							type="number"
 							min="0.01"
-							step="0.01"
+							step="100"
 							placeholder="Monthly amount"
 							required
 							class="h-8 w-28 rounded-md border border-input bg-background px-2 text-xs"
