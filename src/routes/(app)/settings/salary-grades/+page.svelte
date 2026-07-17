@@ -59,7 +59,9 @@
 									<input type="hidden" name="id" value={g.id} />
 									<button
 										type="submit"
-										class="text-xs {g.isActive ? 'text-red-600' : 'text-green-600'} hover:underline"
+										class="rounded-md border px-3 py-1 text-xs font-medium {g.isActive
+											? 'border-red-200 text-red-600 hover:bg-red-50'
+											: 'border-green-200 text-green-600 hover:bg-green-50'}"
 										>{g.isActive ? 'Deactivate' : 'Activate'}</button
 									>
 								</form>

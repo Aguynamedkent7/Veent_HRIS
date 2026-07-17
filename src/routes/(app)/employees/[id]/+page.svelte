@@ -502,7 +502,9 @@
 										<td class="px-3 py-2 text-right">
 											<form method="POST" action="?/deleteEmergencyContact" use:enhance>
 												<input type="hidden" name="contactId" value={c.id} />
-												<button type="submit" class="text-xs text-red-600 hover:underline"
+												<button
+													type="submit"
+													class="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
 													>Remove</button
 												>
 											</form>
@@ -910,7 +912,7 @@
 												action="?/deleteDocument"
 												title="Delete document?"
 												message="“{doc.label}” will be permanently removed."
-												triggerClass="text-xs text-red-600 hover:underline"
+												triggerClass="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
 											>
 												<input type="hidden" name="docId" value={doc.id} />
 											</ConfirmButton>

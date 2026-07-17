@@ -137,7 +137,8 @@
 				<button
 					type="button"
 					onclick={() => (showPost = !showPost)}
-					class="text-xs text-primary hover:underline">{showPost ? 'Cancel' : 'Post'}</button
+					class="rounded-md border border-primary/40 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/10"
+					>{showPost ? 'Cancel' : 'Post'}</button
 				>
 			{/if}
 		</div>

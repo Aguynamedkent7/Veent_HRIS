@@ -236,7 +236,7 @@
 								<div class="flex items-center justify-end gap-2">
 									<button
 										onclick={() => (editingId = holiday.id)}
-										class="text-xs text-primary hover:underline"
+										class="rounded-md border border-primary/40 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/10"
 									>
 										Edit
 									</button>
@@ -244,7 +244,7 @@
 										action="?/delete"
 										title="Delete holiday?"
 										message="“{holiday.name}” will be removed from the calendar."
-										triggerClass="text-xs text-destructive hover:underline"
+										triggerClass="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
 									>
 										<input type="hidden" name="id" value={holiday.id} />
 									</ConfirmButton>
