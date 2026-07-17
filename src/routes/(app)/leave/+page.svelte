@@ -4,6 +4,7 @@
 	import { slide } from 'svelte/transition'
 	import { formatDateRange, formatShortDate } from '$lib/utils/format'
 	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
+	import Pagination from '$lib/components/Pagination.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -195,4 +196,6 @@
 			</tbody>
 		</table>
 	</div>
+
+	<Pagination meta={data.pagination} />
 </div>

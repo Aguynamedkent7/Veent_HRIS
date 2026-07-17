@@ -1,6 +1,7 @@
 import { fail, isHttpError } from '@sveltejs/kit'
 import { requireMinRole } from '$lib/server/rbac'
 import {
+	countTimesheets,
 	listTimesheets,
 	getTimesheet,
 	createTimesheet,
@@ -9,6 +10,7 @@ import {
 	deleteTimesheet,
 	submitDraftByHr
 } from '$lib/server/services/timesheets'
+import { paginate } from '$lib/server/pagination'
 import {
 	previewTimeLogAggregation,
 	aggregateTimeLogsToTimesheet
@@ -27,17 +29,27 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
 
-	// A non-manager without an employee record owns no timesheets — return empty rather
-	// than passing an undefined employeeId (which would list the whole org).
-	const canList = isManager || Boolean(myEmployee)
+	// #64: "mine" and "team" are separate server queries with independent page
+	// params (myPage / teamPage), one count + one page query each. The row
+	// promises still stream so the page renders skeletons while they load.
+	const mineParams = myEmployee
+		? { organizationId: user.organizationId, employeeId: myEmployee.id, status }
+		: null
+	const mineTotal = mineParams ? await countTimesheets(mineParams) : 0
+	const minePagination = paginate(url, mineTotal, { param: 'myPage' })
+	const myTimesheets = mineParams
+		? listTimesheets(mineParams, { skip: minePagination.skip, take: minePagination.take })
+		: Promise.resolve([])
 
-	// Stream the timesheet list so the page renders a skeleton while it loads.
-	const timesheets = canList
-		? listTimesheets({
-				organizationId: user.organizationId,
-				employeeId: isManager ? undefined : myEmployee?.id,
-				status
-			})
+	// A non-manager without an employee record owns no timesheets — empty rather
+	// than an undefined employeeId (which would list the whole org).
+	const teamParams = isManager
+		? { organizationId: user.organizationId, excludeEmployeeId: myEmployee?.id, status }
+		: null
+	const teamTotal = teamParams ? await countTimesheets(teamParams) : 0
+	const teamPagination = paginate(url, teamTotal, { param: 'teamPage' })
+	const teamTimesheets = teamParams
+		? listTimesheets(teamParams, { skip: teamPagination.skip, take: teamPagination.take })
 		: Promise.resolve([])
 
 	// HR gets the "Aggregate from time logs" panel, which needs an employee picker.
@@ -49,7 +61,16 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			})
 		: []
 
-	return { timesheets, myEmployeeId: myEmployee?.id, isManager, isHrAdmin, employees }
+	return {
+		myTimesheets,
+		teamTimesheets,
+		minePagination,
+		teamPagination,
+		myEmployeeId: myEmployee?.id,
+		isManager,
+		isHrAdmin,
+		employees
+	}
 }
 
 function ctxOf(event: RequestEvent) {

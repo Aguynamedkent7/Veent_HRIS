@@ -3,6 +3,7 @@
 	import type { SubmitFunction } from '@sveltejs/kit'
 	import { slide } from 'svelte/transition'
 	import { formatDateRange } from '$lib/utils/format'
+	import Pagination from '$lib/components/Pagination.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -230,5 +231,7 @@
 				</div>
 			{/each}
 		</div>
+
+		<Pagination meta={data.pagination} />
 	{/if}
 </div>

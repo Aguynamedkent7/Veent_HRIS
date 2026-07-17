@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Pagination from '$lib/components/Pagination.svelte'
 	import type { PageData } from './$types'
 
 	let { data }: { data: PageData } = $props()
@@ -12,15 +13,6 @@
 		'PAYROLL_OVERRIDE',
 		'LEAVE_OVERRIDE'
 	]
-
-	const totalPages = $derived(Math.max(1, Math.ceil(data.totalCount / data.perPage)))
-
-	function pageUrl(p: number): string {
-		if (typeof window === 'undefined') return `?page=${p}`
-		const params = new URLSearchParams(window.location.search)
-		params.set('page', String(p))
-		return `?${params.toString()}`
-	}
 </script>
 
 <svelte:head>
@@ -107,7 +99,8 @@
 
 	<!-- Summary -->
 	<p class="text-sm text-muted-foreground">
-		{data.totalCount.toLocaleString()} total entries — page {data.page} of {totalPages}
+		{data.pagination.total.toLocaleString()} total entries — page {data.pagination.page} of {data
+			.pagination.totalPages}
 	</p>
 
 	<!-- Table -->
@@ -219,32 +212,6 @@
 			</table>
 		</div>
 
-		<!-- Pagination -->
-		<div class="flex items-center justify-between">
-			<p class="text-sm text-muted-foreground">
-				Showing {(data.page - 1) * data.perPage + 1}–{Math.min(
-					data.page * data.perPage,
-					data.totalCount
-				)} of {data.totalCount.toLocaleString()}
-			</p>
-			<div class="flex gap-2">
-				{#if data.page > 1}
-					<a
-						href={pageUrl(data.page - 1)}
-						class="inline-flex h-9 items-center rounded-md border border-input bg-background px-4 text-sm hover:bg-accent"
-					>
-						Previous
-					</a>
-				{/if}
-				{#if data.page < totalPages}
-					<a
-						href={pageUrl(data.page + 1)}
-						class="inline-flex h-9 items-center rounded-md border border-input bg-background px-4 text-sm hover:bg-accent"
-					>
-						Next
-					</a>
-				{/if}
-			</div>
-		</div>
+		<Pagination meta={data.pagination} />
 	{/if}
 </div>

@@ -1,12 +1,13 @@
 import { fail } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
+import { paginate } from '$lib/server/pagination'
 import { getLeaveBalances } from '$lib/server/services/leave'
-import { listRequests, deleteRequest } from '$lib/server/services/requests'
+import { countRequests, listRequests, deleteRequest } from '$lib/server/services/requests'
 import type { Actions, PageServerLoad, RequestEvent } from './$types'
 
 // Read-only leave view. Leave filing/approval now flows through the unified
 // Requests/Approvals page; this page lists leave (Request type=LEAVE) + balances.
-export const load: PageServerLoad = async ({ locals }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
 	const user = locals.user!
 	const isManager = ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
 
@@ -17,13 +18,18 @@ export const load: PageServerLoad = async ({ locals }) => {
 	// list rather than passing an undefined employeeId (which would leak org-wide rows).
 	const canListLeave = isManager || Boolean(myEmployee)
 
+	// #64: paginate the requests table only; balances/types stay whole.
+	const listParams = {
+		organizationId: user.organizationId,
+		employeeId: isManager ? undefined : myEmployee?.id,
+		type: 'LEAVE' as const
+	}
+	const total = canListLeave ? await countRequests(listParams) : 0
+	const pagination = paginate(url, total)
+
 	const [requests, leaveTypes, balances] = await Promise.all([
 		canListLeave
-			? listRequests({
-					organizationId: user.organizationId,
-					employeeId: isManager ? undefined : myEmployee?.id,
-					type: 'LEAVE'
-				})
+			? listRequests(listParams, { skip: pagination.skip, take: pagination.take })
 			: Promise.resolve([]),
 		db.leaveType.findMany({
 			where: { organizationId: user.organizationId, isActive: true },
@@ -33,7 +39,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		myEmployee ? getLeaveBalances(myEmployee.id, year) : []
 	])
 
-	return { requests, leaveTypes, balances, myEmployeeId: myEmployee?.id, isManager }
+	return { requests, leaveTypes, balances, myEmployeeId: myEmployee?.id, isManager, pagination }
 }
 
 function ctxOf(event: RequestEvent) {

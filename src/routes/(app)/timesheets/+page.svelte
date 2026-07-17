@@ -4,6 +4,7 @@
 	import { slide } from 'svelte/transition'
 	import { formatShortDate } from '$lib/utils/format'
 	import TableSkeleton from '$lib/components/ui/TableSkeleton.svelte'
+	import Pagination from '$lib/components/Pagination.svelte'
 	import TimesheetModal from '$lib/components/timesheets/TimesheetModal.svelte'
 	import AggregatePanel from '$lib/components/timesheets/AggregatePanel.svelte'
 	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
@@ -14,7 +15,7 @@
 
 	// ─── Review modal ─────────────────────────────────────────────────────────
 	// /timesheets is read/modify only — the modal runs in "edit" mode (no approve/reject).
-	type Timesheet = Awaited<PageData['timesheets']>[number]
+	type Timesheet = Awaited<PageData['myTimesheets']>[number]
 	let openTs = $state<Timesheet | null>(null)
 	let busy = $state(false)
 
@@ -240,25 +241,25 @@
 		</form>
 	{/if}
 
-	{#await data.timesheets}
-		<TableSkeleton rows={5} cols={data.isManager ? 4 : 3} />
-	{:then timesheets}
-		{@const mine = data.isManager
-			? timesheets.filter((t) => t.employeeId === data.myEmployeeId)
-			: timesheets}
-		{@const team = data.isManager
-			? timesheets.filter((t) => t.employeeId !== data.myEmployeeId)
-			: []}
-		{#if data.myEmployeeId}
+	{#if data.myEmployeeId}
+		{#await data.myTimesheets}
+			<TableSkeleton rows={5} cols={data.isManager ? 4 : 3} />
+		{:then mine}
 			{@render section('My Timesheets', mine, 'mine', false)}
-		{/if}
-		{#if data.isManager}
+			<Pagination meta={data.minePagination} />
+		{/await}
+	{/if}
+	{#if data.isManager}
+		{#await data.teamTimesheets}
+			<TableSkeleton rows={5} cols={4} />
+		{:then team}
 			{@render section('Team Timesheets', team, 'team', true)}
-		{/if}
-		{#if !data.myEmployeeId && !data.isManager}
-			<p class="text-sm text-muted-foreground">No employee profile found.</p>
-		{/if}
-	{/await}
+			<Pagination meta={data.teamPagination} />
+		{/await}
+	{/if}
+	{#if !data.myEmployeeId && !data.isManager}
+		<p class="text-sm text-muted-foreground">No employee profile found.</p>
+	{/if}
 </div>
 
 <TimesheetModal

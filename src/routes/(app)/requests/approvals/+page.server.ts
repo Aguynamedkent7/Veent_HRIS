@@ -1,5 +1,6 @@
 import { fail, isHttpError, redirect } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
+import { paginate } from '$lib/server/pagination'
 import {
 	decide,
 	listPendingRequestsForApprover,
@@ -9,7 +10,7 @@ import type { ApprovalDecision } from '@prisma/client'
 import type { Actions, PageServerLoad } from './$types'
 
 // Request approvals (all request types) — any approver role, incl. Payroll Officer.
-export const load: PageServerLoad = async ({ locals }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
 	const user = locals.user!
 	if (!APPROVER_ROLES.includes(user.role)) redirect(303, '/requests')
 
@@ -18,13 +19,18 @@ export const load: PageServerLoad = async ({ locals }) => {
 		select: { id: true }
 	})
 
-	const pendingRequests = await listPendingRequestsForApprover(
+	const actionable = await listPendingRequestsForApprover(
 		user.organizationId,
 		user.role,
 		myEmployee?.id ?? null
 	)
 
-	return { pendingRequests }
+	// #64: "at my stage" is decided in JS (canActOnStage), so this page paginates
+	// the filtered set in memory — the fetch itself is already bounded to PENDING.
+	const pagination = paginate(url, actionable.length)
+	const pendingRequests = actionable.slice(pagination.skip, pagination.skip + pagination.take)
+
+	return { pendingRequests, pagination }
 }
 
 export const actions: Actions = {

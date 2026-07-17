@@ -24,22 +24,39 @@ function entryData(e: TimesheetEntryInput) {
 	}
 }
 
-export async function listTimesheets(params: {
+interface TimesheetListParams {
 	organizationId: string
 	employeeId?: string
+	/** List everyone except this employee (the managers' "team" table). */
+	excludeEmployeeId?: string
 	status?: string
-}) {
+}
+
+function timesheetListWhere(params: TimesheetListParams) {
+	return {
+		employee: { user: { organizationId: params.organizationId } },
+		...(params.employeeId && { employeeId: params.employeeId }),
+		...(params.excludeEmployeeId && { employeeId: { not: params.excludeEmployeeId } }),
+		...(params.status && { status: params.status as never })
+	}
+}
+
+export async function countTimesheets(params: TimesheetListParams) {
+	return db.timesheet.count({ where: timesheetListWhere(params) })
+}
+
+export async function listTimesheets(
+	params: TimesheetListParams,
+	pageArgs?: { skip: number; take: number }
+) {
 	return db.timesheet.findMany({
-		where: {
-			employee: { user: { organizationId: params.organizationId } },
-			...(params.employeeId && { employeeId: params.employeeId }),
-			...(params.status && { status: params.status as never })
-		},
+		where: timesheetListWhere(params),
 		include: {
 			employee: { select: { id: true, firstName: true, lastName: true, employeeNumber: true } },
 			entries: { orderBy: { date: 'asc' } }
 		},
-		orderBy: { periodStart: 'desc' }
+		orderBy: { periodStart: 'desc' },
+		...(pageArgs && { skip: pageArgs.skip, take: pageArgs.take })
 	})
 }
 

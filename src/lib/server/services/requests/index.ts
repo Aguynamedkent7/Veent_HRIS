@@ -78,24 +78,38 @@ export async function createRequest(
 	return created
 }
 
-export async function listRequests(params: {
+interface RequestListParams {
 	organizationId: string
 	employeeId?: string
 	type?: RequestInput['type']
 	status?: string
-}) {
+}
+
+function requestListWhere(params: RequestListParams): Prisma.RequestWhereInput {
+	return {
+		employee: { user: { organizationId: params.organizationId } },
+		...(params.employeeId && { employeeId: params.employeeId }),
+		...(params.type && { type: params.type }),
+		...(params.status && { status: params.status as never })
+	}
+}
+
+export async function countRequests(params: RequestListParams) {
+	return db.request.count({ where: requestListWhere(params) })
+}
+
+export async function listRequests(
+	params: RequestListParams,
+	pageArgs?: { skip: number; take: number }
+) {
 	return db.request.findMany({
-		where: {
-			employee: { user: { organizationId: params.organizationId } },
-			...(params.employeeId && { employeeId: params.employeeId }),
-			...(params.type && { type: params.type }),
-			...(params.status && { status: params.status as never })
-		},
+		where: requestListWhere(params),
 		include: {
 			employee: { select: { id: true, firstName: true, lastName: true } },
 			steps: { orderBy: { stageIndex: 'asc' } }
 		},
-		orderBy: { createdAt: 'desc' }
+		orderBy: { createdAt: 'desc' },
+		...(pageArgs && { skip: pageArgs.skip, take: pageArgs.take })
 	})
 }
 

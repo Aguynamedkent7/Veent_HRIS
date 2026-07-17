@@ -7,14 +7,23 @@ import { generateTempPassword } from '$lib/server/password'
 import type { AuditContext } from './types'
 import type { JobPostingStatus, ApplicantStage, InterviewMode } from '@prisma/client'
 
-export async function listJobPostings(organizationId: string, status?: JobPostingStatus) {
+export async function countJobPostings(organizationId: string, status?: JobPostingStatus) {
+	return db.jobPosting.count({ where: { organizationId, ...(status && { status }) } })
+}
+
+export async function listJobPostings(
+	organizationId: string,
+	status?: JobPostingStatus,
+	pageArgs?: { skip: number; take: number }
+) {
 	return db.jobPosting.findMany({
 		where: { organizationId, ...(status && { status }) },
 		include: {
 			department: { select: { name: true } },
 			_count: { select: { applicants: true } }
 		},
-		orderBy: { createdAt: 'desc' }
+		orderBy: { createdAt: 'desc' },
+		...(pageArgs && { skip: pageArgs.skip, take: pageArgs.take })
 	})
 }
 

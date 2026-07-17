@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { db } from '$lib/server/db'
 import { requireMinRole, requireRole } from '$lib/server/rbac'
 import {
+	countAttendanceDays,
 	listAttendanceDays,
 	listTeamDay,
 	deriveRange,
@@ -13,6 +14,7 @@ import {
 	resetDayToDerived,
 	createTimesheetFromAttendance
 } from '$lib/server/services/attendance'
+import { paginate } from '$lib/server/pagination'
 import { manilaDayKey } from '$lib/utils/dates'
 import type { Actions, PageServerLoad, RequestEvent } from './$types'
 
@@ -82,9 +84,20 @@ export const load: PageServerLoad = async ({ locals, url, getClientAddress }) =>
 		)
 	}
 
+	// #64: paginate the employee-view day rows (one count + one page query); the
+	// team view is a single day and stays unpaginated.
+	const dayTotal =
+		view === 'employee' && selectedEmployeeId
+			? await countAttendanceDays(selectedEmployeeId, new Date(from), new Date(to))
+			: 0
+	const pagination = paginate(url, dayTotal)
+
 	const days =
 		view === 'employee' && selectedEmployeeId
-			? await listAttendanceDays(selectedEmployeeId, new Date(from), new Date(to), 'desc')
+			? await listAttendanceDays(selectedEmployeeId, new Date(from), new Date(to), 'desc', {
+					skip: pagination.skip,
+					take: pagination.take
+				})
 			: []
 
 	const team = view === 'team' ? await listTeamDay(user.organizationId, date) : []
@@ -100,6 +113,7 @@ export const load: PageServerLoad = async ({ locals, url, getClientAddress }) =>
 		date,
 		days,
 		team,
+		pagination,
 		maxRangeDays: MAX_RANGE_DAYS
 	}
 }

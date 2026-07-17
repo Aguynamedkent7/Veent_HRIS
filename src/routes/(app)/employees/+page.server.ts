@@ -1,5 +1,6 @@
 import { requireMinRole } from '$lib/server/rbac'
-import { listEmployees, offboardEmployee } from '$lib/server/services/employees'
+import { paginate } from '$lib/server/pagination'
+import { countEmployees, listEmployees, offboardEmployee } from '$lib/server/services/employees'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals, url }) => {
@@ -10,10 +11,17 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const search = url.searchParams.get('search') ?? undefined
 	const departmentId = url.searchParams.get('department') ?? undefined
 
-	// Stream the (potentially large) employee list so the page can render a skeleton immediately.
-	const employees = listEmployees(locals.user!.organizationId, { search, departmentId })
+	// #64: one count + one page query; the count is awaited (pagination meta needs
+	// it) while the page of rows still streams so the skeleton renders immediately.
+	const filters = { search, departmentId }
+	const total = await countEmployees(locals.user!.organizationId, filters)
+	const pagination = paginate(url, total)
+	const employees = listEmployees(locals.user!.organizationId, filters, {
+		skip: pagination.skip,
+		take: pagination.take
+	})
 
-	return { employees }
+	return { employees, pagination }
 }
 
 export const actions: Actions = {

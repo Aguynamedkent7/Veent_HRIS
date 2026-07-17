@@ -1,7 +1,9 @@
 import { fail, isHttpError } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
+import { paginate } from '$lib/server/pagination'
 import {
 	createRequest,
+	countRequests,
 	listRequests,
 	cancelRequest,
 	resubmitRequest,
@@ -13,16 +15,23 @@ import type { Actions, PageServerLoad } from './$types'
 
 // Self-service: the current user's own requests. Approvals live under
 // /requests/timesheets and /requests/approvals.
-export const load: PageServerLoad = async ({ locals }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
 	const user = locals.user!
 	const myEmployee = await db.employee.findUnique({
 		where: { userId: user.id },
 		select: { id: true }
 	})
 
+	// #64: one count + one page query.
+	const listParams = myEmployee
+		? { organizationId: user.organizationId, employeeId: myEmployee.id }
+		: null
+	const total = listParams ? await countRequests(listParams) : 0
+	const pagination = paginate(url, total)
+
 	const [requests, leaveTypes] = await Promise.all([
-		myEmployee
-			? listRequests({ organizationId: user.organizationId, employeeId: myEmployee.id })
+		listParams
+			? listRequests(listParams, { skip: pagination.skip, take: pagination.take })
 			: Promise.resolve([]),
 		db.leaveType.findMany({
 			where: { organizationId: user.organizationId, isActive: true },
@@ -31,7 +40,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		})
 	])
 
-	return { requests, leaveTypes, hasEmployee: Boolean(myEmployee) }
+	return { requests, leaveTypes, hasEmployee: Boolean(myEmployee), pagination }
 }
 
 // Build the type-specific raw payload from flat form fields, keyed by request type.
