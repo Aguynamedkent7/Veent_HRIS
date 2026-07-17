@@ -242,16 +242,18 @@
 				{/if}
 				<div class="grid gap-3 sm:grid-cols-3">
 					<div>
-						<label class="text-sm font-medium">Job Title</label>
+						<label for="jobTitle" class="text-sm font-medium">Job Title</label>
 						<input
+							id="jobTitle"
 							name="jobTitle"
 							value={employee.jobTitle}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
 					</div>
 					<div>
-						<label class="text-sm font-medium">Department</label>
+						<label for="departmentId" class="text-sm font-medium">Department</label>
 						<select
+							id="departmentId"
 							name="departmentId"
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						>
@@ -263,8 +265,9 @@
 						</select>
 					</div>
 					<div>
-						<label class="text-sm font-medium">Basic Monthly Salary</label>
+						<label for="basicMonthlySalary" class="text-sm font-medium">Basic Monthly Salary</label>
 						<input
+							id="basicMonthlySalary"
 							name="basicMonthlySalary"
 							type="number"
 							value={Number(employee.basicMonthlySalary)}
@@ -272,8 +275,9 @@
 						/>
 					</div>
 					<div class="sm:col-span-3">
-						<label class="text-sm font-medium">Discord ID</label>
+						<label for="discordId" class="text-sm font-medium">Discord ID</label>
 						<input
+							id="discordId"
 							name="discordId"
 							value={employee.discordId ?? ''}
 							placeholder="e.g. 123456789012345678 — for the time-tracking bot"
@@ -285,8 +289,9 @@
 						</p>
 					</div>
 					<div>
-						<label class="text-sm font-medium">Work Schedule</label>
+						<label for="workScheduleId" class="text-sm font-medium">Work Schedule</label>
 						<select
+							id="workScheduleId"
 							name="workScheduleId"
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						>
@@ -297,8 +302,9 @@
 						</select>
 					</div>
 					<div>
-						<label class="text-sm font-medium">Position</label>
+						<label for="positionId" class="text-sm font-medium">Position</label>
 						<select
+							id="positionId"
 							name="positionId"
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						>
@@ -317,32 +323,36 @@
 						</h3>
 					</div>
 					<div>
-						<label class="text-sm font-medium">SSS Number</label>
+						<label for="sssNumber" class="text-sm font-medium">SSS Number</label>
 						<input
+							id="sssNumber"
 							name="sssNumber"
 							value={employee.sssNumber ?? ''}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
 					</div>
 					<div>
-						<label class="text-sm font-medium">PhilHealth No.</label>
+						<label for="philhealthNumber" class="text-sm font-medium">PhilHealth No.</label>
 						<input
+							id="philhealthNumber"
 							name="philhealthNumber"
 							value={employee.philhealthNumber ?? ''}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
 					</div>
 					<div>
-						<label class="text-sm font-medium">Pag-IBIG No.</label>
+						<label for="pagibigNumber" class="text-sm font-medium">Pag-IBIG No.</label>
 						<input
+							id="pagibigNumber"
 							name="pagibigNumber"
 							value={employee.pagibigNumber ?? ''}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
 					</div>
 					<div>
-						<label class="text-sm font-medium">TIN</label>
+						<label for="tinNumber" class="text-sm font-medium">TIN</label>
 						<input
+							id="tinNumber"
 							name="tinNumber"
 							value={employee.tinNumber ?? ''}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -352,16 +362,18 @@
 						<h3 class="text-sm font-semibold text-muted-foreground">Emergency Contact</h3>
 					</div>
 					<div>
-						<label class="text-sm font-medium">Contact Name</label>
+						<label for="emergencyContactName" class="text-sm font-medium">Contact Name</label>
 						<input
+							id="emergencyContactName"
 							name="emergencyContactName"
 							value={employee.emergencyContactName ?? ''}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
 					</div>
 					<div>
-						<label class="text-sm font-medium">Relationship</label>
+						<label for="emergencyContactRelation" class="text-sm font-medium">Relationship</label>
 						<input
+							id="emergencyContactRelation"
 							name="emergencyContactRelation"
 							value={employee.emergencyContactRelation ?? ''}
 							placeholder="e.g. Spouse, Parent"
@@ -369,8 +381,9 @@
 						/>
 					</div>
 					<div>
-						<label class="text-sm font-medium">Contact Phone</label>
+						<label for="emergencyContactPhone" class="text-sm font-medium">Contact Phone</label>
 						<input
+							id="emergencyContactPhone"
 							name="emergencyContactPhone"
 							value={employee.emergencyContactPhone ?? ''}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -385,8 +398,9 @@
 						</p>
 					</div>
 					<div>
-						<label class="text-sm font-medium">Bank Name</label>
+						<label for="bankName" class="text-sm font-medium">Bank Name</label>
 						<input
+							id="bankName"
 							name="bankName"
 							value={employee.bankName ?? ''}
 							placeholder="e.g. BDO"
@@ -394,16 +408,18 @@
 						/>
 					</div>
 					<div>
-						<label class="text-sm font-medium">Account Name</label>
+						<label for="bankAccountName" class="text-sm font-medium">Account Name</label>
 						<input
+							id="bankAccountName"
 							name="bankAccountName"
 							value={employee.bankAccountName ?? ''}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
 					</div>
 					<div>
-						<label class="text-sm font-medium">Bank Account No.</label>
+						<label for="bankAccountNumber" class="text-sm font-medium">Bank Account No.</label>
 						<input
+							id="bankAccountNumber"
 							name="bankAccountNumber"
 							value={revealed?.bankAccountNumber ?? ''}
 							placeholder={employee.bankAccountNumber ?? 'Account number'}
@@ -411,8 +427,9 @@
 						/>
 					</div>
 					<div>
-						<label class="text-sm font-medium">GCash No.</label>
+						<label for="gcashNumber" class="text-sm font-medium">GCash No.</label>
 						<input
+							id="gcashNumber"
 							name="gcashNumber"
 							value={revealed?.gcashNumber ?? ''}
 							placeholder={employee.gcashNumber ?? 'e.g. 0917xxxxxxx'}
@@ -438,8 +455,9 @@
 				<h2 class="font-semibold text-destructive">Offboard Employee</h2>
 				<div class="flex items-end gap-4">
 					<div>
-						<label class="text-sm font-medium">Last Day</label>
+						<label for="endDate" class="text-sm font-medium">Last Day</label>
 						<input
+							id="endDate"
 							name="endDate"
 							type="date"
 							required

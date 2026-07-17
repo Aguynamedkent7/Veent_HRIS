@@ -4,11 +4,15 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 
-	let payFrequency = $state(data.config?.payFrequency ?? 'SEMI_MONTHLY')
-	let philhealthRate = $state(Number(data.config?.philhealthRate ?? 0.05) * 100)
-	let pagibigRate = $state(Number(data.config?.pagibigRate ?? 0.02) * 100)
-	let cutoffDay1 = $state(data.config?.firstCutoff ?? 15)
-	let cutoffDay2 = $state(data.config?.secondCutoff ?? 30)
+	// Editable form fields seeded once from the loaded config — an intentional
+	// snapshot so a data refresh can't clobber the user's in-progress edits.
+	// svelte-ignore state_referenced_locally
+	const cfg = data.config
+	let payFrequency = $state(cfg?.payFrequency ?? 'SEMI_MONTHLY')
+	let philhealthRate = $state(Number(cfg?.philhealthRate ?? 0.05) * 100)
+	let pagibigRate = $state(Number(cfg?.pagibigRate ?? 0.02) * 100)
+	let cutoffDay1 = $state(cfg?.firstCutoff ?? 15)
+	let cutoffDay2 = $state(cfg?.secondCutoff ?? 30)
 </script>
 
 <svelte:head>

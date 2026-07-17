@@ -107,16 +107,18 @@
 			<h2 class="font-semibold">Create Job Posting</h2>
 			<div class="grid gap-3 sm:grid-cols-2">
 				<div>
-					<label class="text-sm font-medium">Job Title</label>
+					<label for="title" class="text-sm font-medium">Job Title</label>
 					<input
+						id="title"
 						name="title"
 						required
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					/>
 				</div>
 				<div>
-					<label class="text-sm font-medium">Department</label>
+					<label for="departmentId" class="text-sm font-medium">Department</label>
 					<select
+						id="departmentId"
 						name="departmentId"
 						required
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -127,8 +129,9 @@
 					</select>
 				</div>
 				<div class="sm:col-span-2">
-					<label class="text-sm font-medium">Description</label>
+					<label for="description" class="text-sm font-medium">Description</label>
 					<textarea
+						id="description"
 						name="description"
 						required
 						rows="4"

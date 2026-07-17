@@ -51,8 +51,9 @@
 			<h2 class="font-semibold">New Work Schedule</h2>
 			<div class="grid gap-3 sm:grid-cols-4">
 				<div class="sm:col-span-2">
-					<label class="text-sm font-medium">Name</label>
+					<label for="name" class="text-sm font-medium">Name</label>
 					<input
+						id="name"
 						name="name"
 						required
 						placeholder="Regular (Mon–Fri 9–6)"
@@ -60,8 +61,9 @@
 					/>
 				</div>
 				<div>
-					<label class="text-sm font-medium">Start</label>
+					<label for="start" class="text-sm font-medium">Start</label>
 					<input
+						id="start"
 						name="start"
 						type="time"
 						value="09:00"
@@ -70,8 +72,9 @@
 					/>
 				</div>
 				<div>
-					<label class="text-sm font-medium">End</label>
+					<label for="end" class="text-sm font-medium">End</label>
 					<input
+						id="end"
 						name="end"
 						type="time"
 						value="18:00"
@@ -80,8 +83,9 @@
 					/>
 				</div>
 				<div>
-					<label class="text-sm font-medium">Break (min)</label>
+					<label for="breakMinutes" class="text-sm font-medium">Break (min)</label>
 					<input
+						id="breakMinutes"
 						name="breakMinutes"
 						type="number"
 						min="0"
