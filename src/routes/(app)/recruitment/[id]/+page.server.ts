@@ -32,7 +32,12 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 const advanceStageSchema = z.object({
 	applicantId: z.string().min(1),
 	stage: z.enum(['APPLIED', 'SCREENING', 'INTERVIEW', 'OFFER', 'HIRED', 'REJECTED']),
-	notes: z.string().optional()
+	// #52: optional note from the Kanban's stage-move dialog. Blank textarea
+	// submissions become undefined so empty strings never land in stage history.
+	notes: z
+		.string()
+		.optional()
+		.transform((v) => (v?.trim() ? v.trim() : undefined))
 })
 
 export const actions: Actions = {

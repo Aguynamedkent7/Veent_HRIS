@@ -388,7 +388,7 @@
 		{/if}
 	</section>
 
-	<!-- Stage history -->
+	<!-- Stage history (#52: who moved the applicant, when, and why) -->
 	{#if applicant.stageHistory.length}
 		<section class="rounded-lg border bg-card p-6 space-y-3">
 			<h2 class="font-semibold">Stage History</h2>
@@ -401,7 +401,12 @@
 							<span class="font-medium">{STAGE_LABELS[h.stage] ?? h.stage}</span>
 							{#if h.notes}<span class="text-muted-foreground"> — {h.notes}</span>{/if}
 						</span>
-						<span class="text-xs text-muted-foreground">{fmtDateTime(h.changedAt)}</span>
+						<span class="text-xs text-muted-foreground">
+							{#if h.changedById && data.stageActors[h.changedById]}
+								{data.stageActors[h.changedById]} ·
+							{/if}
+							{fmtDateTime(h.changedAt)}
+						</span>
 					</li>
 				{/each}
 			</ol>

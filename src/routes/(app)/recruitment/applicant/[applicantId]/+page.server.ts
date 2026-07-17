@@ -27,7 +27,22 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		})
 	])
 
-	return { applicant, departments }
+	// #52: resolve stage-history actors to emails in one batched query (no schema
+	// relation on ApplicantStageHistory.changedById, so join here).
+	const changedByIds = [
+		...new Set(applicant.stageHistory.map((h) => h.changedById).filter((id): id is string => !!id))
+	]
+	const actors = changedByIds.length
+		? await db.user.findMany({
+				where: { id: { in: changedByIds } },
+				select: { id: true, email: true }
+			})
+		: []
+	const stageActors: Record<string, string> = Object.fromEntries(
+		actors.map((a) => [a.id, a.email])
+	)
+
+	return { applicant, departments, stageActors }
 }
 
 function ctxOf(locals: App.Locals, ip: string) {
