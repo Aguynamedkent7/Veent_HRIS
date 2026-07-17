@@ -89,10 +89,15 @@ function toFail(e: unknown) {
 	throw e
 }
 
-const createSchema = z.object({
-	periodStart: z.coerce.date(),
-	periodEnd: z.coerce.date()
-})
+const createSchema = z
+	.object({
+		periodStart: z.coerce.date(),
+		periodEnd: z.coerce.date()
+	})
+	.refine((d) => d.periodEnd >= d.periodStart, {
+		message: 'End date must be on or after the start date',
+		path: ['periodEnd']
+	})
 
 const aggregateSchema = z.object({
 	employeeId: z.string().min(1),
@@ -212,7 +217,8 @@ export const actions: Actions = {
 		if (!myEmployee) return fail(400, { error: 'No employee profile found' })
 
 		const parsed = createSchema.safeParse(Object.fromEntries(await event.request.formData()))
-		if (!parsed.success) return fail(400, { error: 'Invalid dates' })
+		if (!parsed.success)
+			return fail(400, { error: parsed.error.errors[0]?.message ?? 'Invalid dates' })
 
 		const ctx = ctxOf(event)
 		try {
