@@ -46,6 +46,9 @@
 	async function submitBulkReject(reason: string) {
 		bulkReason = reason
 		await tick()
+		// Belt and braces against a reactive-flush race at submit time.
+		const el = rejectForm?.elements.namedItem('rejectionReason')
+		if (el instanceof HTMLInputElement) el.value = reason
 		rejectForm?.requestSubmit()
 	}
 </script>

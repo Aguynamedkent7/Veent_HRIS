@@ -72,6 +72,12 @@
 		noteTarget = target
 		noteDialogOpen = true
 	}
+	// Write values straight onto the inputs too — belt and braces against a
+	// reactive-flush race leaving a hidden field empty at submit time.
+	function forceInput(form: HTMLFormElement | undefined, name: string, value: string) {
+		const el = form?.elements.namedItem(name)
+		if (el instanceof HTMLInputElement) el.value = value
+	}
 	async function submitWithNote(reason: string) {
 		if (!noteTarget) return
 		if (noteTarget.kind === 'decide') {
@@ -79,10 +85,14 @@
 			decideDecision = noteTarget.decision
 			decideNote = reason
 			await tick()
+			forceInput(decideForm, 'id', noteTarget.id)
+			forceInput(decideForm, 'decision', noteTarget.decision)
+			forceInput(decideForm, 'note', reason)
 			decideForm?.requestSubmit()
 		} else {
 			bulkNote = reason
 			await tick()
+			forceInput(bulkForm, 'note', reason)
 			bulkForm?.requestSubmit()
 		}
 	}

@@ -69,6 +69,10 @@
 	async function confirmReject(reason: string) {
 		rejectReason = reason
 		await tick()
+		// Write the value straight onto the input too — belt and braces against a
+		// reactive-flush race leaving the hidden field empty at submit time.
+		const el = rejectFormEl?.elements.namedItem('rejectionReason')
+		if (el instanceof HTMLInputElement) el.value = reason
 		rejectFormEl?.requestSubmit()
 	}
 
