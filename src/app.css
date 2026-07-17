@@ -93,10 +93,12 @@
 		-webkit-font-smoothing: antialiased;
 	}
 
-	/* Textareas: vertical resize only, capped so dragging can't blow up the
-	   card/row layout — long text scrolls inside the box instead (#70). */
+	/* Textareas: vertical resize only, capped both ways so dragging can't blow
+	   up the card/row layout or collapse below one visible line — long text
+	   scrolls inside the box instead (#70). */
 	textarea {
 		@apply resize-y overflow-y-auto;
+		min-height: 2.25rem;
 		max-height: 16rem;
 	}
 
