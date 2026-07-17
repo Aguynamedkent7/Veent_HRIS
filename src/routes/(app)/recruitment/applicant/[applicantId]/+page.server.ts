@@ -38,9 +38,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 				select: { id: true, email: true }
 			})
 		: []
-	const stageActors: Record<string, string> = Object.fromEntries(
-		actors.map((a) => [a.id, a.email])
-	)
+	const stageActors: Record<string, string> = Object.fromEntries(actors.map((a) => [a.id, a.email]))
 
 	return { applicant, departments, stageActors }
 }

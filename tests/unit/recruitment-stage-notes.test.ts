@@ -78,9 +78,9 @@ describe('advanceApplicant — stage-move notes', () => {
 	it('404s for an applicant outside the organization', async () => {
 		dbMock.applicant.findFirst.mockResolvedValue(null)
 
-		await expect(advanceApplicant('ghost', 'org1', 'SCREENING', undefined, CTX)).rejects.toMatchObject(
-			{ status: 404 }
-		)
+		await expect(
+			advanceApplicant('ghost', 'org1', 'SCREENING', undefined, CTX)
+		).rejects.toMatchObject({ status: 404 })
 		expect(txMock.applicantStageHistory.create).not.toHaveBeenCalled()
 	})
 })
