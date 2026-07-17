@@ -128,24 +128,26 @@
 									{#if run.hasOverride}<span class="ml-1 text-yellow-500">*</span>{/if}
 								</span>
 							</td>
-							<td class="px-4 py-3 flex gap-2">
-								{#if run.status === 'DRAFT'}
-									<form method="POST" action="?/compute" use:enhance>
-										<input type="hidden" name="id" value={run.id} />
-										<button type="submit" class="btn-row">Compute</button>
-									</form>
-								{/if}
-								{#if run.status === 'COMPUTED'}
-									<form method="POST" action="?/compute" use:enhance>
-										<input type="hidden" name="id" value={run.id} />
-										<button type="submit" class="btn-row">Recompute</button>
-									</form>
-									<form method="POST" action="?/approve" use:enhance>
-										<input type="hidden" name="id" value={run.id} />
-										<button type="submit" class="btn-row-positive">Approve</button>
-									</form>
-								{/if}
-								<a href="/payroll/{run.id}" class="btn-row">Detail</a>
+							<td class="px-4 py-3">
+								<div class="flex items-center gap-2">
+									{#if run.status === 'DRAFT'}
+										<form method="POST" action="?/compute" use:enhance>
+											<input type="hidden" name="id" value={run.id} />
+											<button type="submit" class="btn-row">Compute</button>
+										</form>
+									{/if}
+									{#if run.status === 'COMPUTED'}
+										<form method="POST" action="?/compute" use:enhance>
+											<input type="hidden" name="id" value={run.id} />
+											<button type="submit" class="btn-row">Recompute</button>
+										</form>
+										<form method="POST" action="?/approve" use:enhance>
+											<input type="hidden" name="id" value={run.id} />
+											<button type="submit" class="btn-row-positive">Approve</button>
+										</form>
+									{/if}
+									<a href="/payroll/{run.id}" class="btn-row">Detail</a>
+								</div>
 							</td>
 						</tr>
 					{:else}
