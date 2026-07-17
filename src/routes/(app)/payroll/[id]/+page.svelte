@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
 	import type { PageData, ActionData } from './$types'
 
@@ -15,7 +16,7 @@
 
 <div class="space-y-6">
 	<div class="flex items-center gap-4">
-		<a href="/payroll" class="text-sm text-muted-foreground hover:text-foreground">← Payroll</a>
+		<BackButton fallback="/payroll" label="Payroll" />
 		<h1 class="text-2xl font-bold">
 			{formatShortDate(run.periodStart)} – {formatShortDate(run.periodEnd)}
 		</h1>

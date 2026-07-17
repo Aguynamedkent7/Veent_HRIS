@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms'
 	import { formatShortDate } from '$lib/utils/format'
 	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
+	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -25,6 +26,8 @@
 </svelte:head>
 
 <div class="space-y-6">
+	<BackButton fallback="/settings" label="Settings" />
+
 	<div class="flex items-center justify-between">
 		<div>
 			<h1 class="text-2xl font-bold tracking-tight">Public Holidays</h1>

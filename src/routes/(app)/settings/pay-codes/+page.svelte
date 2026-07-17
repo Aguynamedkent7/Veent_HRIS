@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -11,7 +12,7 @@
 
 <div class="mx-auto max-w-4xl space-y-6">
 	<div>
-		<a href="/settings" class="text-sm text-muted-foreground hover:underline">← Settings</a>
+		<BackButton fallback="/settings" label="Settings" />
 		<h1 class="mt-1 text-2xl font-bold tracking-tight">Earnings &amp; Deduction Codes</h1>
 		<p class="text-sm text-muted-foreground">
 			Codes used by the payroll engine. Deactivate instead of deleting — historical payslips

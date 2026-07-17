@@ -1,5 +1,6 @@
 <script lang="ts">
 	import CalculatorPanel from '$lib/components/payroll/CalculatorPanel.svelte'
+	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import type { PageData } from './$types'
 
 	let { data }: { data: PageData } = $props()
@@ -11,7 +12,7 @@
 
 <div class="space-y-6">
 	<div class="flex items-center gap-3">
-		<a href="/payroll" class="text-sm text-muted-foreground hover:text-foreground">← Payroll</a>
+		<BackButton fallback="/payroll" label="Payroll" />
 		<h1 class="text-2xl font-bold tracking-tight">Payroll Calculator</h1>
 		<span class="text-xs text-muted-foreground">what-if preview — nothing is saved</span>
 	</div>

@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
 	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
+	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -45,11 +46,10 @@
 
 <div class="space-y-6">
 	<div class="flex items-center gap-4">
-		<a
-			href={canManage ? '/employees' : '/team'}
-			class="text-sm text-muted-foreground hover:text-foreground"
-			>← {canManage ? 'Employees' : 'Team'}</a
-		>
+		<BackButton
+			fallback={canManage ? '/employees' : '/team'}
+			label={canManage ? 'Employees' : 'Team'}
+		/>
 		<h1 class="text-2xl font-bold">{employee.lastName}, {employee.firstName}</h1>
 		<span
 			class="rounded-full px-2.5 py-1 text-xs font-medium {employee.employmentStatus === 'ACTIVE'

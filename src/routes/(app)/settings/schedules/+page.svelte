@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -26,9 +27,7 @@
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
 		<div class="flex items-center gap-3">
-			<a href="/settings/org" class="text-sm text-muted-foreground hover:text-foreground"
-				>← Settings</a
-			>
+			<BackButton fallback="/settings" label="Settings" />
 			<h1 class="text-2xl font-bold tracking-tight">Work Schedules</h1>
 		</div>
 		<button

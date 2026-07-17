@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import { formatCurrency } from '$lib/utils/format'
 	import type { PageData, ActionData } from './$types'
 
@@ -12,7 +13,7 @@
 
 <div class="mx-auto max-w-4xl space-y-6">
 	<div>
-		<a href="/settings" class="text-sm text-muted-foreground hover:underline">← Settings</a>
+		<BackButton fallback="/settings" label="Settings" />
 		<h1 class="mt-1 text-2xl font-bold tracking-tight">Salary Grades</h1>
 		<p class="text-sm text-muted-foreground">
 			Pay bands assignable to positions. Employees inherit their band via their position; HR is

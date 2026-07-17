@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms'
 	import { advanceTo } from '$lib/actions/dateRange'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
+	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -25,7 +26,7 @@
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
 		<div class="flex items-center gap-3">
-			<a href="/payroll" class="text-sm text-muted-foreground hover:text-foreground">← Payroll</a>
+			<BackButton fallback="/payroll" label="Payroll" />
 			<h1 class="text-2xl font-bold tracking-tight">Payroll Periods</h1>
 		</div>
 		<button

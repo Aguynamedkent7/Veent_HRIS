@@ -3,6 +3,7 @@
 	import { page } from '$app/stores'
 	import { tick } from 'svelte'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
+	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -61,10 +62,10 @@
 <div class="mx-auto max-w-4xl space-y-6">
 	<!-- Header -->
 	<div class="flex flex-wrap items-center gap-3">
-		<a
-			href="/recruitment/{applicant.jobPosting.id}"
-			class="text-sm text-muted-foreground hover:text-foreground">← {applicant.jobPosting.title}</a
-		>
+		<BackButton
+			fallback={'/recruitment/' + applicant.jobPosting.id}
+			label={applicant.jobPosting.title}
+		/>
 		<h1 class="text-2xl font-bold">{applicant.firstName} {applicant.lastName}</h1>
 		<span class="rounded-full bg-muted px-2.5 py-1 text-xs font-medium">
 			{STAGE_LABELS[applicant.currentStage] ?? applicant.currentStage}

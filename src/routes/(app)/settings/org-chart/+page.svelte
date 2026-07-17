@@ -1,4 +1,5 @@
 <script lang="ts">
+	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import type { PageData } from './$types'
 
 	let { data }: { data: PageData } = $props()
@@ -91,6 +92,8 @@
 {/snippet}
 
 <div class="space-y-6">
+	<BackButton fallback="/settings" label="Settings" />
+
 	<div class="flex items-center justify-between">
 		<div>
 			<h1 class="text-2xl font-bold tracking-tight">Org Chart</h1>

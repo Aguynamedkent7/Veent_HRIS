@@ -223,7 +223,7 @@
 							</p>
 						{/if}
 						<a
-							href="/requests/{req.id}?from=approvals"
+							href="/requests/{req.id}?from=/requests/approvals"
 							class="mt-auto text-xs text-primary hover:underline">View detail →</a
 						>
 					</div>

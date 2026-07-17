@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -15,6 +16,8 @@
 </svelte:head>
 
 <div class="space-y-8">
+	<BackButton fallback="/settings" label="Settings" />
+
 	<div class="flex items-center justify-between">
 		<h1 class="text-2xl font-bold tracking-tight">Organization Structure</h1>
 		<div class="flex gap-2">
