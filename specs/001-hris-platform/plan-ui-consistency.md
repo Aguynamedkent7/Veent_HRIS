@@ -37,7 +37,7 @@ asset that stops showing a black box in light mode (#69).
   Navigation anchors with the same classes (review names, doc links, "View detail →") stay links.
 - **#68 — reference convention** (requests table `Resubmit`/`Cancel`,
   `requests/+page.svelte:397,407`): `rounded-md border border-primary/40 px-3 py-1 text-xs
-  font-medium text-primary hover:bg-primary/10` and the red analogue
+font-medium text-primary hover:bg-primary/10` and the red analogue
   (`border-red-200 … text-red-600 hover:bg-red-50`).
 - **#69**: `static/veent-logo.png` is **RGB, no alpha channel**, uniform near-black background
   (~`rgb(1,1,1)`) behind a red ticket mark with white lettering. Rendered at
@@ -73,13 +73,13 @@ Planner calls (veto at task review if disagreed):
 
 ## Constitution check
 
-| Gate | Status |
-|---|---|
-| P1 Data privacy | ✅ No PII surfaces touched; asset + styling changes only. |
-| P2 RBAC | ✅ No authorization changes. Back targets are client-side conveniences; every destination route keeps its own server-side guard. `?from` is validated as an internal path. |
-| P3 Spec-driven | ✅ This plan + `/speckit-tasks` before implementation; no FR changes (cross-cutting polish). |
-| P4 Audit trail | ✅ No data mutations introduced or altered. |
-| P5 Test-first | ✅ Unit tests for the `?from`/fallback resolution helper; e2e for origin-aware back and the wrong-origin fix; visual verification for #68/#69 (see per-slice verification). |
+| Gate            | Status                                                                                                                                                                      |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1 Data privacy | ✅ No PII surfaces touched; asset + styling changes only.                                                                                                                   |
+| P2 RBAC         | ✅ No authorization changes. Back targets are client-side conveniences; every destination route keeps its own server-side guard. `?from` is validated as an internal path.  |
+| P3 Spec-driven  | ✅ This plan + `/speckit-tasks` before implementation; no FR changes (cross-cutting polish).                                                                                |
+| P4 Audit trail  | ✅ No data mutations introduced or altered.                                                                                                                                 |
+| P5 Test-first   | ✅ Unit tests for the `?from`/fallback resolution helper; e2e for origin-aware back and the wrong-origin fix; visual verification for #68/#69 (see per-slice verification). |
 
 No deviations — Complexity Tracking table not needed.
 
@@ -92,7 +92,7 @@ No deviations — Complexity Tracking table not needed.
    - Resolution order: `afterNavigate` captured origin (pathname+search, ignoring
      same-path navigations) → valid `?from` path → `fallback`.
    - Extract the resolution into a pure helper (`resolveBackTarget(cameFrom, fromParam,
-     fallback)`) in `$lib/utils` so it's unit-testable without mounting.
+fallback)`) in `$lib/utils` so it's unit-testable without mounting.
    - Markup: `<a>` styled as a bordered ghost button — inline-Heroicons `arrow-left`
      (outline, `size-4`) + label, `text-muted-foreground hover:text-foreground` base with the
      app's `rounded-md border` button treatment.
