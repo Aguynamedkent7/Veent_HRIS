@@ -129,7 +129,7 @@
 								</span>
 							</td>
 							<td class="px-4 py-3">
-								<div class="flex items-center gap-2">
+								<div class="flex items-center justify-end gap-2">
 									{#if run.status === 'DRAFT'}
 										<form method="POST" action="?/compute" use:enhance>
 											<input type="hidden" name="id" value={run.id} />
