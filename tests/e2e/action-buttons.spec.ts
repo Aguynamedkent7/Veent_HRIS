@@ -10,7 +10,10 @@ test('pay-code toggle submits from its bordered button', async ({ page }) => {
 	await page.waitForLoadState('networkidle') // hydrate so enhance intercepts the submit
 
 	const firstRowToggle = () =>
-		page.locator('tbody tr').first().getByRole('button', { name: /Activate|Deactivate/ })
+		page
+			.locator('tbody tr')
+			.first()
+			.getByRole('button', { name: /Activate|Deactivate/ })
 
 	const before = (await firstRowToggle().textContent())!.trim()
 	const after = before === 'Activate' ? 'Deactivate' : 'Activate'
