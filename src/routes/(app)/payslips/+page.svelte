@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Pagination from '$lib/components/Pagination.svelte'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
 	import type { PageData } from './$types'
 
@@ -70,4 +71,6 @@
 			</tbody>
 		</table>
 	</div>
+
+	<Pagination meta={data.pagination} />
 </div>

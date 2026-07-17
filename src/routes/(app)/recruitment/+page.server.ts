@@ -1,6 +1,8 @@
 import { fail } from '@sveltejs/kit'
 import { requireMinRole } from '$lib/server/rbac'
+import { paginate } from '$lib/server/pagination'
 import {
+	countJobPostings,
 	listJobPostings,
 	createJobPosting,
 	publishJobPosting,
@@ -10,18 +12,25 @@ import { db } from '$lib/server/db'
 import { z } from 'zod'
 import type { Actions, PageServerLoad } from './$types'
 
-export const load: PageServerLoad = async ({ locals }) => {
+export const load: PageServerLoad = async ({ locals, url }) => {
 	requireMinRole(locals.user!.role, 'HR_ADMIN')
 
+	// #64: paginate the postings list (the per-posting Kanban board is not paginated).
+	const total = await countJobPostings(locals.user!.organizationId)
+	const pagination = paginate(url, total)
+
 	const [postings, departments] = await Promise.all([
-		listJobPostings(locals.user!.organizationId),
+		listJobPostings(locals.user!.organizationId, undefined, {
+			skip: pagination.skip,
+			take: pagination.take
+		}),
 		db.department.findMany({
 			where: { organizationId: locals.user!.organizationId },
 			orderBy: { name: 'asc' }
 		})
 	])
 
-	return { postings, departments }
+	return { postings, departments, pagination }
 }
 
 const createSchema = z.object({

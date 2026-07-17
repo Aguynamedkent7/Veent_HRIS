@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms'
 	import { goto } from '$app/navigation'
 	import { formatShortDate } from '$lib/utils/format'
+	import Pagination from '$lib/components/Pagination.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -225,4 +226,6 @@
 			</tbody>
 		</table>
 	</div>
+
+	<Pagination meta={data.pagination} />
 </div>

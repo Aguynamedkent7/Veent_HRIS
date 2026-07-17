@@ -1,5 +1,6 @@
 import { requireRole } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
+import { paginate } from '$lib/server/pagination'
 import type { PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals, url }) => {
@@ -7,8 +8,6 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	requireRole(user.role, 'HR_ADMIN', 'SUPER_ADMIN')
 	const isSuperAdmin = user.role === 'SUPER_ADMIN'
 
-	const page = Number(url.searchParams.get('page') ?? '1')
-	const perPage = 50
 	const actorId = url.searchParams.get('actor') ?? undefined
 	const entityType = url.searchParams.get('entity') ?? undefined
 	const action = url.searchParams.get('action') ?? undefined
@@ -25,15 +24,19 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		...(startDate || endDate ? { createdAt: { gte: startDate, lte: endDate } } : {})
 	}
 
-	const [logs, totalCount, actors] = await Promise.all([
+	// #64: shared helper (audit log keeps its 50-row pages); count first so an
+	// out-of-range ?page= clamps to the last page.
+	const total = await db.auditLog.count({ where })
+	const pagination = paginate(url, total, { pageSize: 50 })
+
+	const [logs, actors] = await Promise.all([
 		db.auditLog.findMany({
 			where,
 			orderBy: { createdAt: 'desc' },
-			skip: (page - 1) * perPage,
-			take: perPage,
+			skip: pagination.skip,
+			take: pagination.take,
 			include: { actor: { select: { email: true, role: true } } }
 		}),
-		db.auditLog.count({ where }),
 		db.user.findMany({
 			where: { organizationId: user.organizationId },
 			select: { id: true, email: true }
@@ -60,10 +63,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	return {
 		logs: sanitizedLogs,
-		totalCount,
 		actors,
-		page,
-		perPage,
+		pagination,
 		entityTypes: [
 			'Employee',
 			'Timesheet',

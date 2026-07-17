@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import type { SubmitFunction } from '@sveltejs/kit'
+	import Pagination from '$lib/components/Pagination.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	// Don't reset the form on success: enhance's default form.reset() clears the cross-cell
@@ -656,5 +657,7 @@
 				</tbody>
 			</table>
 		</div>
+
+		<Pagination meta={data.pagination} />
 	{/if}
 </div>

@@ -2,6 +2,7 @@
 	import { page } from '$app/stores'
 	import { goto } from '$app/navigation'
 	import { formatShortDate } from '$lib/utils/format'
+	import Pagination from '$lib/components/Pagination.svelte'
 	import TableSkeleton from '$lib/components/ui/TableSkeleton.svelte'
 	import type { PageData } from './$types'
 
@@ -97,4 +98,6 @@
 			</table>
 		</div>
 	{/await}
+
+	<Pagination meta={data.pagination} />
 </div>

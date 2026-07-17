@@ -97,32 +97,47 @@ const HISTORY_LABELS: Record<(typeof HISTORY_FIELDS)[number], string> = {
 	workScheduleId: 'Work schedule'
 }
 
+interface EmployeeListFilters {
+	status?: EmploymentStatus
+	departmentId?: string
+	search?: string
+}
+
+function employeeListWhere(
+	organizationId: string,
+	filters?: EmployeeListFilters
+): Prisma.EmployeeWhereInput {
+	return {
+		user: { organizationId },
+		...(filters?.status && { employmentStatus: filters.status }),
+		...(filters?.departmentId && { departmentId: filters.departmentId }),
+		...(filters?.search && {
+			OR: [
+				{ firstName: { contains: filters.search, mode: 'insensitive' } },
+				{ lastName: { contains: filters.search, mode: 'insensitive' } },
+				{ employeeNumber: { contains: filters.search, mode: 'insensitive' } }
+			]
+		})
+	}
+}
+
+export async function countEmployees(organizationId: string, filters?: EmployeeListFilters) {
+	return db.employee.count({ where: employeeListWhere(organizationId, filters) })
+}
+
 export async function listEmployees(
 	organizationId: string,
-	filters?: {
-		status?: EmploymentStatus
-		departmentId?: string
-		search?: string
-	}
+	filters?: EmployeeListFilters,
+	pageArgs?: { skip: number; take: number }
 ) {
 	return db.employee.findMany({
-		where: {
-			user: { organizationId },
-			...(filters?.status && { employmentStatus: filters.status }),
-			...(filters?.departmentId && { departmentId: filters.departmentId }),
-			...(filters?.search && {
-				OR: [
-					{ firstName: { contains: filters.search, mode: 'insensitive' } },
-					{ lastName: { contains: filters.search, mode: 'insensitive' } },
-					{ employeeNumber: { contains: filters.search, mode: 'insensitive' } }
-				]
-			})
-		},
+		where: employeeListWhere(organizationId, filters),
 		include: {
 			department: { select: { id: true, name: true } },
 			user: { select: { email: true, role: true, isActive: true } }
 		},
-		orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }]
+		orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+		...(pageArgs && { skip: pageArgs.skip, take: pageArgs.take })
 	})
 }
 
