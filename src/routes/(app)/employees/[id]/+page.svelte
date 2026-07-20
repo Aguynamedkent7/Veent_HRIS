@@ -11,6 +11,8 @@
 	// (a plain destructure would stay stale until a full page refresh).
 	const employee = $derived(data.employee)
 	const canManage = $derived(data.canManage)
+	// The schedule an unassigned employee actually falls back to, named from the org's data.
+	const orgDefaultSchedule = $derived(data.schedules?.find((s) => s.isDefault) ?? null)
 	// #54: `employee.bankAccountNumber`/`gcashNumber` arrive masked from the load.
 	// The full values exist client-side only after the audited reveal action, and any
 	// other action result (e.g. a profile save) drops back to the masked display.
@@ -320,7 +322,13 @@
 							name="workScheduleId"
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						>
-							<option value="">Default (Mon–Fri 9–6)</option>
+							<!-- Names the org's actual default rather than a hardcoded shift, so the label
+							     cannot drift from what the attendance engine really applies. -->
+							<option value=""
+								>{orgDefaultSchedule
+									? `Not assigned — follows ${orgDefaultSchedule.name}`
+									: 'Not assigned — no organization default set'}</option
+							>
 							{#each data.schedules as s (s.id)}
 								<option value={s.id} selected={s.id === employee.workScheduleId}>{s.name}</option>
 							{/each}

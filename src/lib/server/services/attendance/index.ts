@@ -12,10 +12,37 @@ import type { AuditContext } from '../types'
  * payroll can import them. Derivation itself is the pure `deriveAttendanceDay`.
  */
 
-const DEFAULT_WEEKDAY_SHIFT: ScheduleDay = { startMinutes: 540, endMinutes: 1080, breakMinutes: 60 } // 09:00–18:00
+/**
+ * Last-resort shift for an org that has configured NO default schedule at all — Mon–Fri
+ * 08:00–17:00 with a 1-hour unpaid break, matching the schedule onboarding seeds.
+ *
+ * This used to be 09:00–18:00, a shift that existed in no configuration row anywhere: the org's
+ * `isDefault` schedule was written, badged in settings and preselected on the create form, but
+ * never actually read here. Employees with no explicit assignment were therefore derived against
+ * a phantom shift — an 8–5 worker was charged 60 minutes of undertime every day, which feeds the
+ * TARDINESS deduction and reaches payroll. Prefer `resolveDefaultScheduleDays` over this constant;
+ * it only applies when the organization genuinely has nothing configured.
+ */
+export const FALLBACK_WEEKDAY_SHIFT: ScheduleDay = {
+	startMinutes: 480,
+	endMinutes: 1020,
+	breakMinutes: 60
+} // 08:00–17:00
 
-/** The shift for a weekday: an assigned schedule wins (absent weekday = rest); otherwise Mon–Fri default. */
-function scheduleDayFor(
+/** The org's designated default schedule days, or null when none is configured. */
+async function resolveDefaultScheduleDays(organizationId: string) {
+	const def = await db.workSchedule.findFirst({
+		where: { organizationId, isDefault: true },
+		include: { days: true }
+	})
+	return def?.days ?? null
+}
+
+/**
+ * The shift for a weekday. An employee's assigned schedule wins (a weekday absent from it is a
+ * rest day); otherwise the org's default schedule; otherwise the Mon–Fri last resort.
+ */
+export function scheduleDayFor(
 	scheduleDays:
 		{ weekday: number; startMinutes: number; endMinutes: number; breakMinutes: number }[] | null,
 	weekday: number
@@ -26,7 +53,7 @@ function scheduleDayFor(
 			? { startMinutes: d.startMinutes, endMinutes: d.endMinutes, breakMinutes: d.breakMinutes }
 			: null
 	}
-	return weekday >= 1 && weekday <= 5 ? DEFAULT_WEEKDAY_SHIFT : null
+	return weekday >= 1 && weekday <= 5 ? FALLBACK_WEEKDAY_SHIFT : null
 }
 
 /** Group punches into shifts, attributing an overnight OUT/breaks to the IN's PHT day. */
@@ -125,6 +152,10 @@ export async function deriveRange(
 	})
 	const holidayByDay = new Map(holidays.map((h) => [h.date.toISOString().slice(0, 10), h.type]))
 
+	// Fetched once per run: employees without an explicit assignment derive against the org's
+	// designated default rather than a hardcoded shift.
+	const defaultScheduleDays = await resolveDefaultScheduleDays(organizationId)
+
 	// PHT day range expressed as an absolute UTC window (PHT day D = [D 00:00+08:00, D+1 00:00+08:00)).
 	const phtStart = new Date(`${fromKey}T00:00:00+08:00`)
 	const phtEndExclusive = new Date(`${toKey}T00:00:00+08:00`)
@@ -134,7 +165,7 @@ export async function deriveRange(
 	const flagged: { employeeId: string; date: string; status: string }[] = []
 
 	for (const emp of employees) {
-		const scheduleDays = emp.workSchedule ? emp.workSchedule.days : null
+		const scheduleDays = emp.workSchedule ? emp.workSchedule.days : defaultScheduleDays
 
 		const punches = await db.timeLog.findMany({
 			where: { employeeId: emp.id, timestamp: { gte: phtStart, lt: phtEndExclusive } },
