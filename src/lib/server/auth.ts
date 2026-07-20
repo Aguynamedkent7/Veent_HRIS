@@ -18,6 +18,11 @@ export const lucia = new Lucia(adapter, {
 			organizationId: attributes.organizationId,
 			isActive: attributes.isActive
 		}
+	},
+	getSessionAttributes(attributes) {
+		return {
+			currentOrgId: attributes.currentOrgId
+		}
 	}
 })
 
@@ -29,6 +34,9 @@ declare module 'lucia' {
 			role: Role
 			organizationId: string
 			isActive: boolean
+		}
+		DatabaseSessionAttributes: {
+			currentOrgId: string | null
 		}
 	}
 }

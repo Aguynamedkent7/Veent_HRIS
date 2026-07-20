@@ -62,7 +62,7 @@ export const actions: Actions = {
 
 		recordSuccess(rateKey)
 
-		const session = await lucia.createSession(user.id, {})
+		const session = await lucia.createSession(user.id, { currentOrgId: user.organizationId })
 		const sessionCookie = lucia.createSessionCookie(session.id)
 
 		cookies.set(sessionCookie.name, sessionCookie.value, {

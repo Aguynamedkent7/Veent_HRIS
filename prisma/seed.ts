@@ -6,12 +6,26 @@ const db = new PrismaClient()
 async function main() {
 	const org = await db.organization.upsert({
 		where: { id: 'org_seed' },
-		update: {},
+		update: { name: 'Veent' },
 		create: {
 			id: 'org_seed',
-			name: 'Veent Corp',
+			name: 'Veent',
 			address: 'Makati City, Metro Manila, Philippines'
 		}
+	})
+
+	// Three-org rollout (#131). The primary tenant above keeps id `org_seed` for
+	// backwards-compat; JoJo and Sweetleaf are the two additional tenants. Managers
+	// and cross-org memberships for these are seeded in #132/#140.
+	await db.organization.upsert({
+		where: { id: 'org_jojo' },
+		update: { name: 'JoJo' },
+		create: { id: 'org_jojo', name: 'JoJo' }
+	})
+	await db.organization.upsert({
+		where: { id: 'org_sweetleaf' },
+		update: { name: 'Sweetleaf' },
+		create: { id: 'org_sweetleaf', name: 'Sweetleaf' }
 	})
 
 	const dept = await db.department.upsert({
@@ -576,6 +590,18 @@ async function main() {
 		await db.timeLog.updateMany({
 			where: { employeeId: employee.id, timestamp: { gte: cleanWeekStart, lte: cleanWeekEnd } },
 			data: { timesheetId: aggTimesheet.id }
+		})
+	}
+
+	// Backfill cross-org memberships (#131): every user gets one row mirroring their
+	// primary org, so UserOrganization is the single source of truth for the switcher.
+	// Idempotent via the (userId, organizationId) unique constraint.
+	const allUsers = await db.user.findMany({ select: { id: true, organizationId: true } })
+	for (const u of allUsers) {
+		await db.userOrganization.upsert({
+			where: { userId_organizationId: { userId: u.id, organizationId: u.organizationId } },
+			update: {},
+			create: { userId: u.id, organizationId: u.organizationId }
 		})
 	}
 

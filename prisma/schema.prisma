@@ -13,7 +13,11 @@ model Session {
   id        String   @id
   userId    String
   expiresAt DateTime
-  user      User     @relation(references: [id], fields: [userId], onDelete: Cascade)
+  // Active org for cross-org members (#131). Null → fall back to User.organizationId.
+  // Set at login to the user's primary org; changed only via the validated
+  // /api/v1/session/switch-org endpoint.
+  currentOrgId String?
+  user         User    @relation(references: [id], fields: [userId], onDelete: Cascade)
 
   @@map("sessions")
 }

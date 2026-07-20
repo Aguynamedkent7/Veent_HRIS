@@ -1,4 +1,5 @@
 import { redirect } from '@sveltejs/kit'
+import { db } from '$lib/server/db'
 import { listUnread } from '$lib/server/services/notifications'
 import { countPendingApprovals } from '$lib/server/services/approvals'
 import type { LayoutServerLoad } from './$types'
@@ -9,10 +10,18 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 	}
 
 	const user = locals.user
-	const [notifications, pendingApprovals] = await Promise.all([
+	const [notifications, pendingApprovals, memberships] = await Promise.all([
 		listUnread(user.id),
-		countPendingApprovals({ id: user.id, role: user.role, organizationId: user.organizationId })
+		countPendingApprovals({ id: user.id, role: user.role, organizationId: user.organizationId }),
+		db.userOrganization.findMany({
+			where: { userId: user.id },
+			select: { organization: { select: { id: true, name: true } } },
+			orderBy: { organization: { name: 'asc' } }
+		})
 	])
+
+	// Only cross-org members get a switcher; the layout hides it when length <= 1.
+	const memberOrgs = memberships.map((m) => m.organization)
 
 	return {
 		user: {
@@ -21,6 +30,7 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 			role: user.role,
 			organizationId: user.organizationId
 		},
+		memberOrgs,
 		notifications,
 		pendingApprovals
 	}
