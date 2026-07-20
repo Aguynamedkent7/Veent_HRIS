@@ -51,7 +51,12 @@
 		</div>
 	{/if}
 
-	<form method="POST" action="?/save" use:enhance={save.enhance} class="space-y-4 rounded-lg border bg-card p-6">
+	<form
+		method="POST"
+		action="?/save"
+		use:enhance={save.enhance}
+		class="space-y-4 rounded-lg border bg-card p-6"
+	>
 		<div class="grid gap-1.5">
 			<label for="name" class="text-sm font-medium">Company name</label>
 			<input

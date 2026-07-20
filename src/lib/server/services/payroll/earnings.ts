@@ -59,12 +59,7 @@ export function computeEarnings(
 			at(att.restDayOtHours, rates.restDay, rates.overtimePremium),
 			true
 		),
-		line(
-			'REG_HOLIDAY',
-			'Regular holiday',
-			at(att.regularHolidayHours, rates.regularHoliday),
-			true
-		),
+		line('REG_HOLIDAY', 'Regular holiday', at(att.regularHolidayHours, rates.regularHoliday), true),
 		line(
 			'REG_HOLIDAY_OT',
 			'Regular holiday OT',

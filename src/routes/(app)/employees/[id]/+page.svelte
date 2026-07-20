@@ -198,7 +198,11 @@
 						>
 					</h2>
 					{#if data.canRevealDisbursement && !revealed}
-						<form method="POST" action="?/revealDisbursement" use:enhance={revealDisbursement.enhance}>
+						<form
+							method="POST"
+							action="?/revealDisbursement"
+							use:enhance={revealDisbursement.enhance}
+						>
 							<button
 								type="submit"
 								disabled={revealDisbursement.busy}
@@ -839,7 +843,11 @@
 									>
 									<td class="py-1.5 text-right">
 										{#if d.isActive}
-											<form method="POST" action="?/endDeduction" use:enhance={endDeduction.enhance}>
+											<form
+												method="POST"
+												action="?/endDeduction"
+												use:enhance={endDeduction.enhance}
+											>
 												<input type="hidden" name="id" value={d.id} />
 												<button
 													type="submit"

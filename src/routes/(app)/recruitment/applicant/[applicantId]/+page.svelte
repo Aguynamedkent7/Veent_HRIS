@@ -71,8 +71,7 @@
 	// row — a shared one would disable every Remove button while any single one is in flight.
 	// Plain object, not `$state`: each guard owns its own reactive `busy`.
 	const deleteInterviewGuards: Record<string, ReturnType<typeof createSubmitGuard>> = {}
-	const deleteInterviewGuard = (id: string) =>
-		(deleteInterviewGuards[id] ??= createSubmitGuard())
+	const deleteInterviewGuard = (id: string) => (deleteInterviewGuards[id] ??= createSubmitGuard())
 </script>
 
 <svelte:head>
@@ -133,11 +132,7 @@
 									>{MODE_LABELS[iv.mode]}</span
 								>
 							</div>
-							<form
-								method="POST"
-								action="?/deleteInterview"
-								use:enhance={removeInterview.enhance}
-							>
+							<form method="POST" action="?/deleteInterview" use:enhance={removeInterview.enhance}>
 								<input type="hidden" name="interviewId" value={iv.id} />
 								<button
 									type="submit"

@@ -287,7 +287,13 @@
 </div>
 
 <!-- Submission target for popup-collected Return/Reject notes. -->
-<form bind:this={decideForm} method="POST" action="?/decideRequest" use:enhance={decide.enhance} class="hidden">
+<form
+	bind:this={decideForm}
+	method="POST"
+	action="?/decideRequest"
+	use:enhance={decide.enhance}
+	class="hidden"
+>
 	<input type="hidden" name="id" value={decideId} />
 	<input type="hidden" name="decision" value={decideDecision} />
 	<input type="hidden" name="note" value={decideNote} />

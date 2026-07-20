@@ -162,12 +162,7 @@
 					finalizing.
 				</p>
 			{/if}
-			<form
-				method="POST"
-				action="?/finalize"
-				use:enhance={finalize.enhance}
-				class="mt-3"
-			>
+			<form method="POST" action="?/finalize" use:enhance={finalize.enhance} class="mt-3">
 				<button
 					type="submit"
 					disabled={pendingCount > 0 || finalize.busy}

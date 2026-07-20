@@ -163,13 +163,13 @@ export async function lock(
 		for (const entry of entries) {
 			for (const d of entry.deductions) {
 				// #119: balances stay in exact decimal — no Number() round-trip. Both operands are
-					// scale-2 at rest, so decrements introduce no drift and the running balance stays
-					// reconcilable against the original principal.
-					const amount = D(d.amount)
-					if (amount.lte(0) || !d.refId) continue
-					if (d.code === 'LOAN') {
-						const loan = await tx.loan.findUnique({ where: { id: d.refId } })
-						if (!loan) continue
+				// scale-2 at rest, so decrements introduce no drift and the running balance stays
+				// reconcilable against the original principal.
+				const amount = D(d.amount)
+				if (amount.lte(0) || !d.refId) continue
+				if (d.code === 'LOAN') {
+					const loan = await tx.loan.findUnique({ where: { id: d.refId } })
+					if (!loan) continue
 
 					// `amount` was frozen into the deduction line at compute time, capped
 					// against the balance as it stood then. Re-cap against the live balance:
