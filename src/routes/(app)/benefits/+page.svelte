@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import { formatCurrency } from '$lib/utils/format'
-	import type { PageData } from './$types'
+	import type { ActionData, PageData } from './$types'
 
-	let { data }: { data: PageData } = $props()
+	let { data, form }: { data: PageData; form: ActionData } = $props()
 	let showCreate = $state(false)
 </script>
 
@@ -21,6 +21,14 @@
 			Add Plan
 		</button>
 	</div>
+
+	<!-- Top level, not inside the collapsible create form: enroll and setEnrollmentStatus
+	     are submitted from the plan list below, and their failures must surface too. -->
+	{#if form?.error}
+		<div class="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
+			{form.error}
+		</div>
+	{/if}
 
 	<!-- Create form -->
 	{#if showCreate}

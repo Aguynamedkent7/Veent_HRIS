@@ -6,7 +6,33 @@ import { E2E_DISCORD_ID } from './helpers'
  * that create a current-week timesheet / leave request are deterministic across
  * repeated runs. Relies on the seed having been applied (`pnpm db:seed`).
  */
+/**
+ * Compile the hot routes once, before any test's clock is running.
+ *
+ * The dev server compiles each route on its first request. That cost lands on whichever
+ * test happens to reach the route first, and under a cold cache or a loaded runner it
+ * blew the 30s per-test budget — `page.goto('/login')` timing out in a different spec on
+ * every run. Paying it here makes the failure mode a slow setup instead of a random
+ * red test. Best-effort: a warmup miss must never fail the suite.
+ */
+async function warmRoutes() {
+	const port = Number(process.env.E2E_PORT ?? 5173)
+	const base = `http://localhost:${port}`
+	// /login first — every test goes through it. The rest redirect to /login when
+	// unauthenticated, which still forces their server modules to compile.
+	const routes = ['/login', '/dashboard', '/timesheets', '/employees', '/performance', '/benefits']
+
+	for (const route of routes) {
+		try {
+			await fetch(`${base}${route}`, { signal: AbortSignal.timeout(60_000), redirect: 'manual' })
+		} catch {
+			// Server not up yet, or this route is slow — tests will surface it properly.
+		}
+	}
+}
+
 async function globalSetup() {
+	await warmRoutes()
 	const db = new PrismaClient()
 	try {
 		const employee = await db.employee.findFirst({
