@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms'
 	import type { SubmitFunction } from '@sveltejs/kit'
 	import Pagination from '$lib/components/Pagination.svelte'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	// Don't reset the form on success: enhance's default form.reset() clears the cross-cell
@@ -16,6 +17,28 @@
 	const confirmReset: SubmitFunction = ({ cancel }) => {
 		if (!confirm('Discard the manual edit for this day and re-derive it from punches?')) cancel()
 		return async ({ update }) => update({ reset: false })
+	}
+
+	// #108: these bulk actions rewrite whole ranges/days — a double-click re-runs the derive or
+	// re-locks mid-flight. One guard per singleton form.
+	const derive = createSubmitGuard()
+	const lock = createSubmitGuard()
+	const unlock = createSubmitGuard()
+	const saveTimesheet = createSubmitGuard()
+	const deriveTeam = createSubmitGuard()
+	const lockTeam = createSubmitGuard()
+	const unlockTeam = createSubmitGuard()
+
+	// Per-row forms live inside {#each}, so they need a guard per row — a shared one would grey out
+	// every row's button at once. Created lazily and cached by record id.
+	const rowGuards = new Map<string, ReturnType<typeof createSubmitGuard>>()
+	function rowGuard(key: string, inner?: SubmitFunction) {
+		let g = rowGuards.get(key)
+		if (!g) {
+			g = createSubmitGuard(inner)
+			rowGuards.set(key, g)
+		}
+		return g
 	}
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -273,32 +296,36 @@
 	<!-- Bulk actions -->
 	{#if data.canManage && data.view === 'employee' && data.selectedEmployeeId}
 		<div class="flex flex-wrap gap-2">
-			<form method="POST" action="?/derive" use:enhance>
+			<form method="POST" action="?/derive" use:enhance={derive.enhance}>
 				<input type="hidden" name="employeeId" value={data.selectedEmployeeId} />
 				<input type="hidden" name="from" value={data.from} />
 				<input type="hidden" name="to" value={data.to} />
 				<button
 					title="Re-pull from punches (updates unlocked days)"
-					class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
+					disabled={derive.busy}
+					class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
 					>{@render icon(IC.refresh)}Refresh</button
 				>
 			</form>
-			<form method="POST" action="?/lock" use:enhance>
+			<form method="POST" action="?/lock" use:enhance={lock.enhance}>
 				<input type="hidden" name="employeeId" value={data.selectedEmployeeId} />
 				<input type="hidden" name="from" value={data.from} />
 				<input type="hidden" name="to" value={data.to} />
-				<button class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
-					>Lock range</button
+				<button
+					disabled={lock.busy}
+					class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+					>{lock.busy ? 'Locking…' : 'Lock range'}</button
 				>
 			</form>
 			{#if data.canUnlock}
-				<form method="POST" action="?/unlock" use:enhance>
+				<form method="POST" action="?/unlock" use:enhance={unlock.enhance}>
 					<input type="hidden" name="employeeId" value={data.selectedEmployeeId} />
 					<input type="hidden" name="from" value={data.from} />
 					<input type="hidden" name="to" value={data.to} />
 					<button
 						title="Reopen locked days (super admin)"
-						class="inline-flex items-center gap-1.5 rounded-md border border-amber-300 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50"
+						disabled={unlock.busy}
+						class="inline-flex items-center gap-1.5 rounded-md border border-amber-300 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:pointer-events-none disabled:opacity-50"
 						>{@render icon(IC.lockOpen)}Unlock range</button
 					>
 				</form>
@@ -308,39 +335,44 @@
 				class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
 				>{@render icon(IC.download)}Export CSV</a
 			>
-			<form method="POST" action="?/saveTimesheet" use:enhance>
+			<form method="POST" action="?/saveTimesheet" use:enhance={saveTimesheet.enhance}>
 				<input type="hidden" name="employeeId" value={data.selectedEmployeeId} />
 				<input type="hidden" name="from" value={data.from} />
 				<input type="hidden" name="to" value={data.to} />
 				<button
 					title="Persist this range as a Timesheet record"
-					class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
+					disabled={saveTimesheet.busy}
+					class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
 					>{@render icon(IC.document)}Save as timesheet</button
 				>
 			</form>
 		</div>
 	{:else if data.canManage && data.view === 'team'}
 		<div class="flex flex-wrap gap-2">
-			<form method="POST" action="?/deriveTeam" use:enhance>
+			<form method="POST" action="?/deriveTeam" use:enhance={deriveTeam.enhance}>
 				<input type="hidden" name="date" value={data.date} />
 				<button
 					title="Re-pull from punches (updates unlocked days)"
-					class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
+					disabled={deriveTeam.busy}
+					class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
 					>{@render icon(IC.refresh)}Refresh</button
 				>
 			</form>
-			<form method="POST" action="?/lockTeam" use:enhance>
+			<form method="POST" action="?/lockTeam" use:enhance={lockTeam.enhance}>
 				<input type="hidden" name="date" value={data.date} />
-				<button class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
-					>Lock day</button
+				<button
+					disabled={lockTeam.busy}
+					class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+					>{lockTeam.busy ? 'Locking…' : 'Lock day'}</button
 				>
 			</form>
 			{#if data.canUnlock}
-				<form method="POST" action="?/unlockTeam" use:enhance>
+				<form method="POST" action="?/unlockTeam" use:enhance={unlockTeam.enhance}>
 					<input type="hidden" name="date" value={data.date} />
 					<button
 						title="Reopen locked days (super admin)"
-						class="inline-flex items-center gap-1.5 rounded-md border border-amber-300 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50"
+						disabled={unlockTeam.busy}
+						class="inline-flex items-center gap-1.5 rounded-md border border-amber-300 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:pointer-events-none disabled:opacity-50"
 						>{@render icon(IC.lockOpen)}Unlock day</button
 					>
 				</form>
@@ -470,23 +502,27 @@
 							>
 							<td class="w-[1%] whitespace-nowrap px-3 py-2">
 								{#if editable && d}
+									{@const save = rowGuard(`correct:${d.id}`, keepValues)}
+									{@const reset = rowGuard(`resetDay:${d.id}`, confirmReset)}
 									<div class="flex items-center gap-1">
-										<form id="c-{d.id}" method="POST" action="?/correct" use:enhance={keepValues}>
+										<form id="c-{d.id}" method="POST" action="?/correct" use:enhance={save.enhance}>
 											<input type="hidden" name="id" value={d.id} />
 											<input type="hidden" name="date" value={toDateKey(d.date)} />
 											<button
-												class="rounded bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-												>Save</button
+												disabled={save.busy}
+												class="rounded bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+												>{save.busy ? 'Saving…' : 'Save'}</button
 											>
 										</form>
 										{#if d.manuallyEdited}
-											<form method="POST" action="?/resetDay" use:enhance={confirmReset}>
+											<form method="POST" action="?/resetDay" use:enhance={reset.enhance}>
 												<input type="hidden" name="id" value={d.id} />
 												<button
 													type="submit"
 													title="Discard manual edit and re-derive from punches"
-													class="rounded border px-2 py-1 text-xs text-muted-foreground hover:bg-accent"
-													>Reset</button
+													disabled={reset.busy}
+													class="rounded border px-2 py-1 text-xs text-muted-foreground hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+													>{reset.busy ? 'Resetting…' : 'Reset'}</button
 												>
 											</form>
 										{/if}
@@ -619,23 +655,27 @@
 											>locked</span
 										>
 									{:else}
+										{@const save = rowGuard(`correct:${d.id}`, keepValues)}
+										{@const reset = rowGuard(`resetDay:${d.id}`, confirmReset)}
 										<div class="flex items-center gap-1">
-											<form id="c-{d.id}" method="POST" action="?/correct" use:enhance={keepValues}>
+											<form id="c-{d.id}" method="POST" action="?/correct" use:enhance={save.enhance}>
 												<input type="hidden" name="id" value={d.id} />
 												<input type="hidden" name="date" value={toDateKey(d.date)} />
 												<button
-													class="rounded bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-													>Save</button
+													disabled={save.busy}
+													class="rounded bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+													>{save.busy ? 'Saving…' : 'Save'}</button
 												>
 											</form>
 											{#if d.manuallyEdited}
-												<form method="POST" action="?/resetDay" use:enhance={confirmReset}>
+												<form method="POST" action="?/resetDay" use:enhance={reset.enhance}>
 													<input type="hidden" name="id" value={d.id} />
 													<button
 														type="submit"
 														title="Discard manual edit and re-derive from punches"
-														class="rounded border px-2 py-1 text-xs text-muted-foreground hover:bg-accent"
-														>Reset</button
+														disabled={reset.busy}
+														class="rounded border px-2 py-1 text-xs text-muted-foreground hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+														>{reset.busy ? 'Resetting…' : 'Reset'}</button
 													>
 												</form>
 											{/if}

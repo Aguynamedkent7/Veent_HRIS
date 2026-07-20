@@ -3,12 +3,28 @@
 	import { formatShortDate } from '$lib/utils/format'
 	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 
 	let showAddForm = $state(false)
 	let editingId = $state<string | null>(null)
+
+	// #108: a double-click would create a duplicate holiday / re-run the update.
+	const createHoliday = createSubmitGuard(() => async ({ result, update }) => {
+		if (result.type === 'success' || result.type === 'redirect') {
+			showAddForm = false
+		}
+		await update()
+	})
+	// Only one row is in edit mode at a time (`editingId`), so a single guard is safe here.
+	const updateHoliday = createSubmitGuard(() => async ({ result, update }) => {
+		if (result.type === 'success' || result.type === 'redirect') {
+			editingId = null
+		}
+		await update()
+	})
 
 	function typeBadgeClass(type: string) {
 		if (type === 'REGULAR') return 'bg-red-100 text-red-700'
@@ -57,14 +73,7 @@
 		<form
 			method="POST"
 			action="?/create"
-			use:enhance={() => {
-				return ({ result, update }) => {
-					if (result.type === 'success' || result.type === 'redirect') {
-						showAddForm = false
-					}
-					update()
-				}
-			}}
+			use:enhance={createHoliday.enhance}
 			class="rounded-lg border p-4 space-y-4"
 		>
 			<h2 class="font-semibold">Add New Holiday</h2>
@@ -118,9 +127,10 @@
 				</button>
 				<button
 					type="submit"
-					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+					disabled={createHoliday.busy}
+					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
 				>
-					Save Holiday
+					{createHoliday.busy ? 'Saving…' : 'Save Holiday'}
 				</button>
 			</div>
 		</form>
@@ -145,14 +155,7 @@
 								<form
 									method="POST"
 									action="?/update"
-									use:enhance={() => {
-										return ({ result, update }) => {
-											if (result.type === 'success' || result.type === 'redirect') {
-												editingId = null
-											}
-											update()
-										}
-									}}
+									use:enhance={updateHoliday.enhance}
 									class="flex flex-wrap gap-3 items-end"
 								>
 									<input type="hidden" name="id" value={holiday.id} />
@@ -204,9 +207,10 @@
 									<div class="flex gap-2">
 										<button
 											type="submit"
-											class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+											disabled={updateHoliday.busy}
+											class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
 										>
-											Save
+											{updateHoliday.busy ? 'Saving…' : 'Save'}
 										</button>
 										<button
 											type="button"

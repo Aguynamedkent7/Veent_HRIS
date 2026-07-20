@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -8,6 +9,19 @@
 	let newName = $state('')
 	let editingId = $state<string | null>(null)
 	let editName = $state('')
+
+	// #108: a double-click here would create a duplicate department / apply the rename twice.
+	// Only one create form and one edit row are mounted at a time, so one guard each is safe.
+	const create = createSubmitGuard(() => async ({ update }) => {
+		await update()
+		showCreate = false
+		newName = ''
+	})
+	const rename = createSubmitGuard(() => async ({ update }) => {
+		await update()
+		editingId = null
+		editName = ''
+	})
 
 	function startEdit(id: string, name: string) {
 		editingId = id
@@ -31,6 +45,13 @@
 		membersId = membersId === id ? null : id
 		assignId = ''
 	}
+
+	// #108: a double-click would fire two transfers and write two employment-history rows.
+	// Only one department's members panel is open at a time, so a single guard is safe here.
+	const assign = createSubmitGuard(() => async ({ update }) => {
+		await update()
+		assignId = ''
+	})
 
 	function formatDate(date: Date | string) {
 		return new Date(date).toLocaleDateString('en-PH', {
@@ -72,13 +93,7 @@
 		<form
 			method="POST"
 			action="?/create"
-			use:enhance={() => {
-				return async ({ update }) => {
-					await update()
-					showCreate = false
-					newName = ''
-				}
-			}}
+			use:enhance={create.enhance}
 			class="flex items-center gap-3 rounded-md border bg-muted/50 p-4"
 		>
 			<!-- The form only mounts on user action, so focusing it is expected. -->
@@ -93,9 +108,10 @@
 			/>
 			<button
 				type="submit"
-				class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+				disabled={create.busy}
+				class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
 			>
-				Create
+				{create.busy ? 'Creating…' : 'Create'}
 			</button>
 			<button
 				type="button"
@@ -129,13 +145,7 @@
 								<form
 									method="POST"
 									action="?/update"
-									use:enhance={() => {
-										return async ({ update }) => {
-											await update()
-											editingId = null
-											editName = ''
-										}
-									}}
+									use:enhance={rename.enhance}
 									class="flex items-center gap-2"
 								>
 									<input type="hidden" name="id" value={dept.id} />
@@ -147,9 +157,10 @@
 									/>
 									<button
 										type="submit"
-										class="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+										disabled={rename.busy}
+										class="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
 									>
-										Save
+										{rename.busy ? 'Saving…' : 'Save'}
 									</button>
 									<button
 										type="button"
@@ -213,12 +224,7 @@
 									<form
 										method="POST"
 										action="?/assignEmployee"
-										use:enhance={() => {
-											return async ({ update }) => {
-												await update()
-												assignId = ''
-											}
-										}}
+										use:enhance={assign.enhance}
 										class="flex flex-wrap items-center gap-2"
 									>
 										<input type="hidden" name="departmentId" value={dept.id} />
@@ -238,9 +244,9 @@
 										</select>
 										<button
 											type="submit"
-											disabled={!assignId}
-											class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-											>Assign here</button
+											disabled={!assignId || assign.busy}
+											class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
+											>{assign.busy ? 'Assigning…' : 'Assign here'}</button
 										>
 										<span class="text-xs text-muted-foreground"
 											>Transfers are recorded in the employee's employment history.</span

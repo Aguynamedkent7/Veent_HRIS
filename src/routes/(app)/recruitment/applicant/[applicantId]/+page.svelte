@@ -4,6 +4,7 @@
 	import { tick } from 'svelte'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -53,6 +54,25 @@
 		})
 
 	let feedbackOpen = $state<string | null>(null)
+
+	// #108: double-submit guards. Each of these actions is state-mutating and a double-click
+	// would duplicate an interview/offer, or convert the applicant to an employee twice.
+	// Only one feedback form is rendered at a time (feedbackOpen is a single id), so a single
+	// guard is safe here; the same is true for the offer forms (one offer per applicant).
+	const recordFeedback = createSubmitGuard()
+	const scheduleInterview = createSubmitGuard()
+	const acceptOffer = createSubmitGuard()
+	const declineOffer = createSubmitGuard()
+	const deleteOffer = createSubmitGuard()
+	const convertApplicant = createSubmitGuard()
+	const issueOffer = createSubmitGuard()
+
+	// `?/deleteInterview` is the exception: one form per interview row, so it needs a guard per
+	// row — a shared one would disable every Remove button while any single one is in flight.
+	// Plain object, not `$state`: each guard owns its own reactive `busy`.
+	const deleteInterviewGuards: Record<string, ReturnType<typeof createSubmitGuard>> = {}
+	const deleteInterviewGuard = (id: string) =>
+		(deleteInterviewGuards[id] ??= createSubmitGuard())
 </script>
 
 <svelte:head>
@@ -104,6 +124,7 @@
 		{#if applicant.interviews.length}
 			<div class="space-y-3">
 				{#each applicant.interviews as iv (iv.id)}
+					{@const removeInterview = deleteInterviewGuard(iv.id)}
 					<div class="rounded-md border p-3">
 						<div class="flex flex-wrap items-center justify-between gap-2">
 							<div class="text-sm">
@@ -112,12 +133,17 @@
 									>{MODE_LABELS[iv.mode]}</span
 								>
 							</div>
-							<form method="POST" action="?/deleteInterview" use:enhance>
+							<form
+								method="POST"
+								action="?/deleteInterview"
+								use:enhance={removeInterview.enhance}
+							>
 								<input type="hidden" name="interviewId" value={iv.id} />
 								<button
 									type="submit"
-									class="rounded-md border border-destructive/30 px-2.5 py-1 text-xs font-medium text-destructive hover:bg-destructive/10"
-									>Remove</button
+									disabled={removeInterview.busy}
+									class="rounded-md border border-destructive/30 px-2.5 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:pointer-events-none disabled:opacity-50"
+									>{removeInterview.busy ? 'Removing…' : 'Remove'}</button
 								>
 							</form>
 						</div>
@@ -129,7 +155,12 @@
 							<p class="mt-2 whitespace-pre-wrap rounded bg-muted/50 p-2 text-sm">{iv.feedback}</p>
 						{/if}
 						{#if feedbackOpen === iv.id}
-							<form method="POST" action="?/recordFeedback" use:enhance class="mt-2 space-y-2">
+							<form
+								method="POST"
+								action="?/recordFeedback"
+								use:enhance={recordFeedback.enhance}
+								class="mt-2 space-y-2"
+							>
 								<input type="hidden" name="interviewId" value={iv.id} />
 								<textarea
 									name="feedback"
@@ -141,8 +172,9 @@
 								<div class="flex gap-2">
 									<button
 										type="submit"
-										class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-										>Save feedback</button
+										disabled={recordFeedback.busy}
+										class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+										>{recordFeedback.busy ? 'Saving…' : 'Save feedback'}</button
 									>
 									<button
 										type="button"
@@ -172,7 +204,7 @@
 				id="schedule"
 				method="POST"
 				action="?/scheduleInterview"
-				use:enhance
+				use:enhance={scheduleInterview.enhance}
 				class="grid scroll-mt-20 gap-2 border-t pt-3 sm:grid-cols-2"
 			>
 				<div class="grid gap-1">
@@ -233,8 +265,9 @@
 				<div class="sm:col-span-2">
 					<button
 						type="submit"
-						class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-						>Schedule interview</button
+						disabled={scheduleInterview.busy}
+						class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+						>{scheduleInterview.busy ? 'Scheduling…' : 'Schedule interview'}</button
 					>
 				</div>
 			</form>
@@ -273,45 +306,54 @@
 
 				{#if offer.status === 'SENT'}
 					<div class="flex gap-2 border-t pt-3">
-						<form method="POST" action="?/respondOffer" use:enhance>
+						<form method="POST" action="?/respondOffer" use:enhance={acceptOffer.enhance}>
 							<input type="hidden" name="offerId" value={offer.id} />
 							<input type="hidden" name="accepted" value="true" />
 							<button
 								type="submit"
-								class="rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700"
-								>Mark accepted</button
+								disabled={acceptOffer.busy}
+								class="rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:pointer-events-none disabled:opacity-50"
+								>{acceptOffer.busy ? 'Saving…' : 'Mark accepted'}</button
 							>
 						</form>
-						<form method="POST" action="?/respondOffer" use:enhance>
+						<form method="POST" action="?/respondOffer" use:enhance={declineOffer.enhance}>
 							<input type="hidden" name="offerId" value={offer.id} />
 							<input type="hidden" name="accepted" value="false" />
 							<button
 								type="submit"
-								class="rounded-md border border-destructive/30 px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10"
-								>Mark declined</button
+								disabled={declineOffer.busy}
+								class="rounded-md border border-destructive/30 px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:pointer-events-none disabled:opacity-50"
+								>{declineOffer.busy ? 'Saving…' : 'Mark declined'}</button
 							>
 						</form>
 					</div>
 				{/if}
 
 				{#if !applicant.convertedEmployee}
-					<form method="POST" action="?/deleteOffer" use:enhance class="border-t pt-3">
+					<form
+						method="POST"
+						action="?/deleteOffer"
+						use:enhance={deleteOffer.enhance}
+						class="border-t pt-3"
+					>
 						<input type="hidden" name="offerId" value={offer.id} />
 						<button
 							type="submit"
-							class="rounded-md border border-destructive/30 px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10"
-							>Withdraw offer</button
+							disabled={deleteOffer.busy}
+							class="rounded-md border border-destructive/30 px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:pointer-events-none disabled:opacity-50"
+							>{deleteOffer.busy ? 'Withdrawing…' : 'Withdraw offer'}</button
 						>
 					</form>
 				{/if}
 			</div>
 
 			{#if offer.status === 'ACCEPTED' && !applicant.convertedEmployee}
-				<form method="POST" action="?/convert" use:enhance>
+				<form method="POST" action="?/convert" use:enhance={convertApplicant.enhance}>
 					<button
 						type="submit"
-						class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-						>Convert to employee → onboarding</button
+						disabled={convertApplicant.busy}
+						class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+						>{convertApplicant.busy ? 'Converting…' : 'Convert to employee → onboarding'}</button
 					>
 					<p class="mt-1 text-xs text-muted-foreground">
 						Creates the 201 file with this offer’s job title, salary, start date, and department.
@@ -322,7 +364,12 @@
 			<p class="text-xs text-muted-foreground">Already converted to an employee.</p>
 		{:else if canIssueOffer}
 			<!-- Issue offer form — only from the Interview stage onward (#76). -->
-			<form method="POST" action="?/issueOffer" use:enhance class="grid gap-2 sm:grid-cols-2">
+			<form
+				method="POST"
+				action="?/issueOffer"
+				use:enhance={issueOffer.enhance}
+				class="grid gap-2 sm:grid-cols-2"
+			>
 				<div class="grid gap-1">
 					<label for="of-title" class="text-xs font-medium text-muted-foreground">Job title</label>
 					<input
@@ -387,8 +434,9 @@
 				<div class="sm:col-span-2">
 					<button
 						type="submit"
-						class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-						>Issue offer</button
+						disabled={issueOffer.busy}
+						class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+						>{issueOffer.busy ? 'Issuing…' : 'Issue offer'}</button
 					>
 				</div>
 			</form>

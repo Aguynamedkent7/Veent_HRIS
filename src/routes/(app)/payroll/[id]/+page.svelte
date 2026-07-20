@@ -2,12 +2,25 @@
 	import { enhance } from '$app/forms'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 	const run = $derived(data.run)
 	let overrideEntryId = $state<string | null>(null)
 	let expandedEntryId = $state<string | null>(null)
+
+	// #108: a double-submitted recompute rebuilds every entry twice — expensive to unwind.
+	const compute = createSubmitGuard()
+
+	// #108: the override form is rendered inside an {#each}, so it gets a per-entry guard rather
+	// than a shared one. Memoised by entry id so the identity is stable across re-renders.
+	const overrideGuards = new Map<string, ReturnType<typeof createSubmitGuard>>()
+	function overrideGuard(entryId: string) {
+		let g = overrideGuards.get(entryId)
+		if (!g) overrideGuards.set(entryId, (g = createSubmitGuard()))
+		return g
+	}
 </script>
 
 <svelte:head>
@@ -29,11 +42,12 @@
 		{#if run.status === 'COMPUTED'}
 			<!-- Recompute rebuilds all entries from current data (e.g. after assigning
 			     recurring earnings/deductions). Disabled once approved. -->
-			<form method="POST" action="?/compute" use:enhance class="ml-auto">
+			<form method="POST" action="?/compute" use:enhance={compute.enhance} class="ml-auto">
 				<button
 					type="submit"
-					class="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent"
-					>Recompute</button
+					disabled={compute.busy}
+					class="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+					>{compute.busy ? 'Computing…' : 'Recompute'}</button
 				>
 			</form>
 		{/if}
@@ -168,9 +182,15 @@
 						</tr>
 					{/if}
 					{#if overrideEntryId === entry.id}
+						{@const overrideG = overrideGuard(entry.id)}
 						<tr>
 							<td colspan="8" class="px-4 py-3 bg-muted/30">
-								<form method="POST" action="?/override" use:enhance class="flex items-end gap-3">
+								<form
+									method="POST"
+									action="?/override"
+									use:enhance={overrideG.enhance}
+									class="flex items-end gap-3"
+								>
 									<input type="hidden" name="entryId" value={entry.id} />
 									<div>
 										<label for={'netPay-' + entry.id} class="text-xs font-medium"
@@ -198,8 +218,9 @@
 									</div>
 									<button
 										type="submit"
-										class="rounded bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-										>Save</button
+										disabled={overrideG.busy}
+										class="rounded bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+										>{overrideG.busy ? 'Saving…' : 'Save'}</button
 									>
 									<button
 										type="button"

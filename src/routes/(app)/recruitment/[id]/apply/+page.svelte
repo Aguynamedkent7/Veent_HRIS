@@ -1,8 +1,12 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
+
+	// #108: a double-click here would add the same applicant to the posting twice.
+	const apply = createSubmitGuard()
 </script>
 
 <svelte:head>
@@ -27,7 +31,7 @@
 		</div>
 	{/if}
 
-	<form method="POST" action="?/apply" use:enhance class="space-y-6">
+	<form method="POST" action="?/apply" use:enhance={apply.enhance} class="space-y-6">
 		<fieldset class="rounded-md border p-4 space-y-4">
 			<legend class="px-1 text-sm font-semibold">Personal Information</legend>
 			<div class="grid gap-4 sm:grid-cols-2">
@@ -120,9 +124,10 @@
 			</a>
 			<button
 				type="submit"
-				class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+				disabled={apply.busy}
+				class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
 			>
-				Add applicant
+				{apply.busy ? 'Adding…' : 'Add applicant'}
 			</button>
 		</div>
 	</form>

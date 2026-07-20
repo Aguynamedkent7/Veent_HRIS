@@ -1,10 +1,26 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import { formatCurrency } from '$lib/utils/format'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { ActionData, PageData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 	let showCreate = $state(false)
+
+	// #108: a double-click here would create a duplicate plan or a duplicate enrollment.
+	const createPlan = createSubmitGuard()
+	const enroll = createSubmitGuard()
+
+	// One guard per enrollment row — a shared guard would freeze every row's status select at once.
+	const statusGuards = new Map<string, ReturnType<typeof createSubmitGuard>>()
+	function statusGuard(id: string) {
+		let g = statusGuards.get(id)
+		if (!g) {
+			g = createSubmitGuard()
+			statusGuards.set(id, g)
+		}
+		return g
+	}
 </script>
 
 <svelte:head>
@@ -35,7 +51,7 @@
 		<form
 			method="POST"
 			action="?/createPlan"
-			use:enhance
+			use:enhance={createPlan.enhance}
 			class="rounded-lg border bg-card p-4 space-y-4"
 		>
 			<h2 class="font-semibold">New Benefit Plan</h2>
@@ -111,8 +127,9 @@
 				>
 				<button
 					type="submit"
-					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-					>Create</button
+					disabled={createPlan.busy}
+					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+					>{createPlan.busy ? 'Creating…' : 'Create'}</button
 				>
 			</div>
 		</form>
@@ -171,7 +188,7 @@
 		<form
 			method="POST"
 			action="?/enroll"
-			use:enhance
+			use:enhance={enroll.enhance}
 			class="flex flex-wrap items-end gap-2 rounded-lg border bg-card p-4"
 		>
 			<div class="grid gap-1">
@@ -219,8 +236,9 @@
 				/>
 			</div>
 			<button
-				class="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-				>Enroll</button
+				disabled={enroll.busy}
+				class="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+				>{enroll.busy ? 'Enrolling…' : 'Enroll'}</button
 			>
 		</form>
 
@@ -238,6 +256,7 @@
 				</thead>
 				<tbody class="divide-y">
 					{#each data.enrollments as en (en.id)}
+						{@const setEnrollmentStatus = statusGuard(en.id)}
 						<tr class="hover:bg-muted/30 {en.status === 'ACTIVE' ? '' : 'opacity-60'}">
 							<td class="px-4 py-3">{en.employee.lastName}, {en.employee.firstName}</td>
 							<td class="px-4 py-3 text-muted-foreground">{en.plan.name}</td>
@@ -261,16 +280,17 @@
 								<form
 									method="POST"
 									action="?/setEnrollmentStatus"
-									use:enhance
+									use:enhance={setEnrollmentStatus.enhance}
 									class="inline-flex items-center gap-1"
 								>
 									<input type="hidden" name="id" value={en.id} />
 									<select
 										name="status"
 										aria-label="Change enrollment status"
+										disabled={setEnrollmentStatus.busy}
 										onchange={(e) =>
 											(e.currentTarget.closest('form') as HTMLFormElement).requestSubmit()}
-										class="h-7 rounded border border-input bg-background px-1 text-xs"
+										class="h-7 rounded border border-input bg-background px-1 text-xs disabled:pointer-events-none disabled:opacity-50"
 									>
 										<option value="ACTIVE" selected={en.status === 'ACTIVE'}>Active</option>
 										<option value="WAIVED" selected={en.status === 'WAIVED'}>Waived</option>
