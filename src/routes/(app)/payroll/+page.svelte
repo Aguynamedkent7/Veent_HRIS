@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
-	import { advanceTo } from '$lib/actions/dateRange'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
+	import PeriodPicker from '$lib/components/ui/PeriodPicker.svelte'
 	import TableSkeleton from '$lib/components/ui/TableSkeleton.svelte'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
@@ -66,28 +66,10 @@
 			{#if form?.error}<div class="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">
 					{form.error}
 				</div>{/if}
-			<div class="flex items-end gap-4">
-				<div>
-					<label for="periodStart" class="text-sm font-medium">Period Start</label>
-					<input
-						id="periodStart"
-						name="periodStart"
-						type="date"
-						required
-						use:advanceTo={'periodEnd'}
-						class="mt-1 flex h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-					/>
-				</div>
-				<div>
-					<label for="periodEnd" class="text-sm font-medium">Period End</label>
-					<input
-						id="periodEnd"
-						name="periodEnd"
-						type="date"
-						required
-						class="mt-1 flex h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-					/>
-				</div>
+			<div class="max-w-md">
+				<PeriodPicker />
+			</div>
+			<div class="flex items-center gap-2">
 				<button
 					type="submit"
 					disabled={create.busy}

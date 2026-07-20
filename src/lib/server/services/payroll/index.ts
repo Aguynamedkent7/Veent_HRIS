@@ -10,6 +10,7 @@ import { D, q2n, sum, sumQ, ZERO } from './money'
 import { emptyAttendance, round2, type EmployeeComp } from './types'
 import { buildAttendanceInput } from '../attendance/input'
 import { computeWorkingDays } from '$lib/utils/dates'
+import { isValidStandardPeriod, periodShareOf } from '$lib/utils/pay-periods'
 import type { AuditContext } from '../types'
 
 function groupByEmployee<T extends { employeeId: string }>(rows: T[]): Map<string, T[]> {
@@ -26,8 +27,14 @@ export async function createPayrollRun(
 	organizationId: string,
 	periodStart: Date,
 	periodEnd: Date,
-	ctx: AuditContext
+	ctx: AuditContext,
+	// Escape hatch for seeds / legacy imports only (#129).
+	opts: { allowNonStandardPeriod?: boolean } = {}
 ) {
+	if (!opts.allowNonStandardPeriod && !isValidStandardPeriod(periodStart, periodEnd)) {
+		error(400, 'Payroll runs must cover a standard pay period (1–15, 16–EOM, or the whole month)')
+	}
+
 	const existing = await db.payrollRun.findUnique({
 		where: { organizationId_periodStart_periodEnd: { organizationId, periodStart, periodEnd } }
 	})
@@ -118,8 +125,13 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	const taxableByCode = new Map(earningTypes.map((e) => [e.code, e.taxable]))
 	// Premium-pay multipliers from PayRateRule (falls back to DOLE defaults when unset).
 	const rates = ratesFromRule(payRateRule)
-	// Requirement #5 (review): prorate monthly statutory to the period.
-	const periodShare = (config?.payFrequency ?? 'SEMI_MONTHLY') === 'MONTHLY' ? 1 : 0.5
+	// Requirement #5 (review) + #129: prorate monthly statutory to the run's ACTUAL period
+	// shape — WHOLE_MONTH carries the full month (1), either half carries 0.5. This replaces
+	// reading the org-wide payFrequency, which mis-prorated an org that mixes half-month and
+	// whole-month (e.g. benefits-only) runs. Legacy non-standard runs fall back to the old
+	// frequency-based share so their numbers don't shift.
+	const frequencyShare = (config?.payFrequency ?? 'SEMI_MONTHLY') === 'MONTHLY' ? 1 : 0.5
+	const periodShare = periodShareOf(run.periodStart, run.periodEnd, frequencyShare)
 	const loansByEmp = groupByEmployee(loansAll)
 	const advancesByEmp = groupByEmployee(advancesAll)
 	const enrollmentsByEmp = groupByEmployee(enrollmentsAll)

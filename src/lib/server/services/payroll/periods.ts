@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client'
 import { computePayroll } from './index'
 import { D, q2, sum } from './money'
 import { deriveRange, lockRange } from '../attendance'
+import { isValidStandardPeriod } from '$lib/utils/pay-periods'
 import type { AuditContext } from '../types'
 
 /**
@@ -33,9 +34,20 @@ export async function listPeriods(organizationId: string) {
 
 export async function openPeriod(
 	organizationId: string,
-	input: { name: string; startDate: Date; endDate: Date; cutoff?: number },
+	input: {
+		name: string
+		startDate: Date
+		endDate: Date
+		cutoff?: number
+		// Escape hatch for seeds / legacy imports only (#129).
+		allowNonStandardPeriod?: boolean
+	},
 	ctx: AuditContext
 ) {
+	if (!input.allowNonStandardPeriod && !isValidStandardPeriod(input.startDate, input.endDate)) {
+		error(400, 'A payroll period must be a standard pay period (1–15, 16–EOM, or the whole month)')
+	}
+
 	const existing = await db.payrollRun.findUnique({
 		where: {
 			organizationId_periodStart_periodEnd: {

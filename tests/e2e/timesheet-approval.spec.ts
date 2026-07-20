@@ -11,19 +11,33 @@ import { login, USERS, verifyAndApproveTimesheet } from './helpers'
 // disambiguates it from the punch spec's 7.00-hr row in the shared review queue.
 test.describe.configure({ mode: 'serial' })
 
-// ~30 days out: no punches exist there (the punch spec seeds last week), so the
-// derived timesheet is empty, and the period never collides with the other specs.
+const MONTHS = [
+	'January',
+	'February',
+	'March',
+	'April',
+	'May',
+	'June',
+	'July',
+	'August',
+	'September',
+	'October',
+	'November',
+	'December'
+]
+
+// The New Timesheet dialog now locks to a standard pay period (#129) via a month/year +
+// First-half/Second-half/Whole-month picker. Pick a whole month a few months out: no punches
+// exist there (the punch spec seeds last week), so the derived timesheet is empty (0.00 hrs).
 //
-// Offset by the retry index: this test mutates state (it approves the sheet), and a
-// timeout near the end used to leave an APPROVED row behind, so every retry then
-// failed looking for a DRAFT in the same period — retries could never recover. Each
-// attempt now works in its own week.
-function futurePeriod(retry: number): { start: string; end: string } {
-	const startD = new Date()
-	startD.setDate(startD.getDate() + 30 + retry * 7)
-	const endD = new Date(startD)
-	endD.setDate(endD.getDate() + 4)
-	return { start: startD.toISOString().slice(0, 10), end: endD.toISOString().slice(0, 10) }
+// Offset by the retry index: this test mutates state (it approves the sheet), and a timeout
+// near the end used to leave an APPROVED row behind, so every retry then failed looking for a
+// DRAFT in the same period — retries could never recover. Each attempt now works in its own month.
+function futurePeriod(retry: number): { monthName: string; year: number } {
+	const d = new Date()
+	d.setDate(1)
+	d.setMonth(d.getMonth() + 3 + retry)
+	return { monthName: MONTHS[d.getMonth()], year: d.getFullYear() }
 }
 
 test('employee creates a timesheet, submits it, and the manager approves it', async ({
@@ -35,7 +49,7 @@ test('employee creates a timesheet, submits it, and the manager approves it', as
 	// only; it is not covering for a hang (see the waitUntil fix in this file's history).
 	test.slow()
 
-	const { start, end } = futurePeriod(testInfo.retry)
+	const { monthName, year } = futurePeriod(testInfo.retry)
 
 	// --- Employee creates a draft from the New Timesheet popup, then submits it ---
 	const empCtx = await browser.newContext()
@@ -50,8 +64,10 @@ test('employee creates a timesheet, submits it, and the manager approves it', as
 		await expect(dialog).toBeVisible({ timeout: 1000 })
 	}).toPass({ timeout: 15000 })
 
-	await dialog.locator('input[name="periodStart"]').fill(start)
-	await dialog.locator('input[name="periodEnd"]').fill(end)
+	// Standard-period picker: choose the target month/year, then the Whole-month segment.
+	await dialog.locator('#pp-month').selectOption({ label: monthName })
+	await dialog.locator('#pp-year').selectOption({ label: String(year) })
+	await dialog.getByRole('button', { name: 'Whole month' }).click()
 	await dialog.getByRole('button', { name: 'Create timesheet' }).click()
 
 	// Redirects back to /timesheets with the new DRAFT (0.00 hrs — no punches seeded).

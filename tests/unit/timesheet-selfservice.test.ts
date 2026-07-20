@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { Role } from '@prisma/client'
+import { periodOf } from '../../src/lib/utils/pay-periods'
 
 /**
  * #58 employee self-service authorization. DB + audit are mocked so these stay in the fast unit
@@ -14,7 +15,13 @@ import type { Role } from '@prisma/client'
 
 const { dbMock } = vi.hoisted(() => ({
 	dbMock: {
-		timesheet: { findFirst: vi.fn(), delete: vi.fn(), update: vi.fn() },
+		timesheet: {
+			findFirst: vi.fn(),
+			findUnique: vi.fn(),
+			create: vi.fn(),
+			delete: vi.fn(),
+			update: vi.fn()
+		},
 		timesheetEntry: { deleteMany: vi.fn() },
 		employee: { findUnique: vi.fn() },
 		attendanceDay: { findMany: vi.fn() },
@@ -25,7 +32,8 @@ const { dbMock } = vi.hoisted(() => ({
 vi.mock('$lib/server/db', () => ({ db: dbMock }))
 vi.mock('$lib/server/audit', () => ({ writeAuditLog: vi.fn().mockResolvedValue(undefined) }))
 
-const { deleteTimesheet, updateTimesheetEntries } = await import('$lib/server/services/timesheets')
+const { deleteTimesheet, updateTimesheetEntries, createTimesheet } =
+	await import('$lib/server/services/timesheets')
 const { attendanceEntriesForRange } = await import('$lib/server/services/attendance')
 
 const ORG = 'org1'
@@ -129,6 +137,45 @@ describe('updateTimesheetEntries — owner sync path', () => {
 			status: 403
 		})
 		expect(dbMock.$transaction).not.toHaveBeenCalled()
+	})
+})
+
+describe('createTimesheet — standard pay period enforcement (#129)', () => {
+	const may = periodOf('FIRST_HALF', 2026, 4) // 2026-05-01 … 2026-05-15
+
+	it('rejects a non-standard period before touching the DB', async () => {
+		await expect(
+			createTimesheet(
+				'emp-owner',
+				new Date('2026-05-13'),
+				new Date('2026-05-21'),
+				[],
+				ctx('HR_ADMIN')
+			)
+		).rejects.toMatchObject({ status: 400 })
+		expect(dbMock.timesheet.findUnique).not.toHaveBeenCalled()
+		expect(dbMock.timesheet.create).not.toHaveBeenCalled()
+	})
+
+	it('creates a timesheet for a standard period', async () => {
+		dbMock.timesheet.findUnique.mockResolvedValue(null)
+		dbMock.timesheet.create.mockResolvedValue({ id: 'ts-new', entries: [] })
+		await createTimesheet('emp-owner', may.periodStart, may.periodEnd, [], ctx('HR_ADMIN'))
+		expect(dbMock.timesheet.create).toHaveBeenCalledTimes(1)
+	})
+
+	it('allows a non-standard period through the seed/import escape hatch', async () => {
+		dbMock.timesheet.findUnique.mockResolvedValue(null)
+		dbMock.timesheet.create.mockResolvedValue({ id: 'ts-legacy', entries: [] })
+		await createTimesheet(
+			'emp-owner',
+			new Date('2026-05-13'),
+			new Date('2026-05-21'),
+			[],
+			ctx('SUPER_ADMIN'),
+			{ allowNonStandardPeriod: true }
+		)
+		expect(dbMock.timesheet.create).toHaveBeenCalledTimes(1)
 	})
 })
 

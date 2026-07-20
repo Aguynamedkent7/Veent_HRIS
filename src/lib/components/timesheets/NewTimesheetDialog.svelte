@@ -1,36 +1,27 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import { goto } from '$app/navigation'
-	import { tick } from 'svelte'
 	import { fade, scale } from 'svelte/transition'
-	import { advanceTo } from '$lib/actions/dateRange'
+	import PeriodPicker from '$lib/components/ui/PeriodPicker.svelte'
 
 	// Shared "New Timesheet" popup opened from both the dashboard quick-action and
 	// the /timesheets header. Posts to the /timesheets create action (cross-route
 	// from the dashboard), which seeds a DRAFT from the employee's punches and
 	// redirects to /timesheets — so both entry points produce the same record.
+	// The period is locked to the standard 1-15 / 16-EOM / whole-month shapes (#129).
 	let { open = $bindable() }: { open: boolean } = $props()
 
 	let error = $state('')
 	let submitting = $state(false)
-	let startEl = $state<HTMLInputElement>()
-	// Constrain the end date to be on/after the start date (advanceTo also keeps
-	// them in sync when the start changes).
-	let startVal = $state('')
-
-	const inputClass =
-		'flex h-11 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
 	function close() {
 		open = false
 	}
-	// Fresh state on open; focus the first field so typing starts immediately and
-	// Escape (which bubbles to the dialog's handler) closes it.
+	// Fresh state on open. Escape (which bubbles to the dialog's handler) closes it.
 	$effect(() => {
 		if (open) {
 			error = ''
 			submitting = false
-			tick().then(() => startEl?.focus())
 		}
 	})
 	function onKeydown(e: KeyboardEvent) {
@@ -78,8 +69,9 @@
 				</div>
 				<h2 class="text-xl font-bold tracking-tight">New Timesheet</h2>
 				<p class="mx-auto max-w-md text-sm text-muted-foreground">
-					Hours are seeded from your recorded attendance punches — adjust them afterward from the
-					timesheet's row. The sheet is saved as a draft; submit it for review separately.
+					Pick a standard pay period. Hours are seeded from your recorded attendance punches —
+					adjust them afterward from the timesheet's row. The sheet is saved as a draft; submit it
+					for review separately.
 				</p>
 			</div>
 
@@ -111,32 +103,7 @@
 				}}
 				class="mt-6 space-y-5"
 			>
-				<div class="grid gap-4 sm:grid-cols-2">
-					<div class="space-y-1.5">
-						<label for="ts-start" class="text-sm font-medium">Period Start</label>
-						<input
-							bind:this={startEl}
-							bind:value={startVal}
-							id="ts-start"
-							name="periodStart"
-							type="date"
-							required
-							use:advanceTo={'periodEnd'}
-							class={inputClass}
-						/>
-					</div>
-					<div class="space-y-1.5">
-						<label for="ts-end" class="text-sm font-medium">Period End</label>
-						<input
-							id="ts-end"
-							name="periodEnd"
-							type="date"
-							required
-							min={startVal || undefined}
-							class={inputClass}
-						/>
-					</div>
-				</div>
+				<PeriodPicker />
 				<div class="flex gap-3">
 					<button
 						type="button"
