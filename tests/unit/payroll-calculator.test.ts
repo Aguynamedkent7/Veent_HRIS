@@ -22,11 +22,16 @@ const cfg = (over: Partial<EmployeeComputeConfig> = {}): EmployeeComputeConfig =
 	...over
 })
 
+// #121: a MONTHLY employee is on a fixed salary, so basic is `salary × periodShare` (30000 × 0.5)
+// rather than `regularHours × hourlyRate`. 88h is the fully-rendered semi-monthly schedule
+// (22 × 8 × 0.5), which keeps these baselines free of ABSENCE deductions.
+const FULL_PERIOD_HOURS = 88
+
 describe('computeEmployeeResult (shared run/calculator engine)', () => {
 	it('computes gross, prorated statutory, and net for a monthly employee', () => {
-		const r = computeEmployeeResult(comp, att({ regularHours: 80 }), {}, cfg())
-		expect(r.grossPay).toBeCloseTo(13636.36, 2)
-		expect(r.basicPay).toBeCloseTo(13636.36, 2)
+		const r = computeEmployeeResult(comp, att({ regularHours: FULL_PERIOD_HOURS }), {}, cfg())
+		expect(r.grossPay).toBeCloseTo(15000, 2)
+		expect(r.basicPay).toBeCloseTo(15000, 2)
 		// monthly statutory (SSS 900 / PH 750 / PI 100 / tax 1483.4) × 0.5 period share
 		expect(r.statutory.sssEe).toBeCloseTo(450, 2)
 		expect(r.statutory.philhealthEe).toBeCloseTo(375, 2)
@@ -50,7 +55,7 @@ describe('computeEmployeeResult (shared run/calculator engine)', () => {
 	it('deducts a loan installment on top of statutory', () => {
 		const r = computeEmployeeResult(
 			comp,
-			att({ regularHours: 80 }),
+			att({ regularHours: FULL_PERIOD_HOURS }),
 			{},
 			cfg({ loans: [{ refId: 'L1', label: 'Loan', installment: 1000, balance: 3000 }] })
 		)

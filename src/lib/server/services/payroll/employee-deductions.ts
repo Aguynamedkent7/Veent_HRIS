@@ -1,7 +1,8 @@
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
-import { round2, type PayComponent } from './types'
+import { D, q2n, type MoneyLike } from './money'
+import { type PayComponent } from './types'
 import type { AuditContext } from '../types'
 
 /**
@@ -96,7 +97,7 @@ export function recurringDeductionComponents(
 	return rows.map((r) => ({
 		code: r.deductionType.code,
 		label: r.label ?? r.deductionType.label,
-		amount: round2(Number(r.monthlyAmount) * periodShare),
+		amount: q2n(D(r.monthlyAmount as MoneyLike).times(periodShare)),
 		taxable: false,
 		refId: r.id
 	}))
