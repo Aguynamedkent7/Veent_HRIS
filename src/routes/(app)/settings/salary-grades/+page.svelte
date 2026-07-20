@@ -77,11 +77,7 @@
 										class="rounded-md border px-3 py-1 text-xs font-medium disabled:pointer-events-none disabled:opacity-50 {g.isActive
 											? 'border-red-200 text-red-600 hover:bg-red-50'
 											: 'border-green-200 text-green-600 hover:bg-green-50'}"
-										>{toggle.busy
-											? 'Saving…'
-											: g.isActive
-												? 'Deactivate'
-												: 'Activate'}</button
+										>{toggle.busy ? 'Saving…' : g.isActive ? 'Deactivate' : 'Activate'}</button
 									>
 								</form>
 							</td>

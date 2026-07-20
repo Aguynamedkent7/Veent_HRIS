@@ -17,8 +17,7 @@
 	const toggleEarningGuards: Record<string, ReturnType<typeof createSubmitGuard>> = {}
 	const toggleEarningGuard = (id: string) => (toggleEarningGuards[id] ??= createSubmitGuard())
 	const toggleDeductionGuards: Record<string, ReturnType<typeof createSubmitGuard>> = {}
-	const toggleDeductionGuard = (id: string) =>
-		(toggleDeductionGuards[id] ??= createSubmitGuard())
+	const toggleDeductionGuard = (id: string) => (toggleDeductionGuards[id] ??= createSubmitGuard())
 </script>
 
 <svelte:head>
@@ -79,11 +78,7 @@
 											class="rounded-md border px-3 py-1 text-xs font-medium disabled:pointer-events-none disabled:opacity-50 {et.isActive
 												? 'border-red-200 text-red-600 hover:bg-red-50'
 												: 'border-green-200 text-green-600 hover:bg-green-50'}"
-											>{toggle.busy
-												? 'Saving…'
-												: et.isActive
-													? 'Deactivate'
-													: 'Activate'}</button
+											>{toggle.busy ? 'Saving…' : et.isActive ? 'Deactivate' : 'Activate'}</button
 										>
 									</form>
 								</td>
@@ -162,11 +157,7 @@
 											class="rounded-md border px-3 py-1 text-xs font-medium disabled:pointer-events-none disabled:opacity-50 {dt.isActive
 												? 'border-red-200 text-red-600 hover:bg-red-50'
 												: 'border-green-200 text-green-600 hover:bg-green-50'}"
-											>{toggle.busy
-												? 'Saving…'
-												: dt.isActive
-													? 'Deactivate'
-													: 'Activate'}</button
+											>{toggle.busy ? 'Saving…' : dt.isActive ? 'Deactivate' : 'Activate'}</button
 										>
 									</form>
 								</td>

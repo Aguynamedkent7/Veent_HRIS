@@ -50,7 +50,12 @@
 	{/if}
 
 	{#if showCreate}
-		<form method="POST" action="?/create" use:enhance={createSchedule.enhance} class="rounded-lg border p-4 space-y-4">
+		<form
+			method="POST"
+			action="?/create"
+			use:enhance={createSchedule.enhance}
+			class="rounded-lg border p-4 space-y-4"
+		>
 			<h2 class="font-semibold">New Work Schedule</h2>
 			<div class="grid gap-3 sm:grid-cols-4">
 				<div class="sm:col-span-2">

@@ -68,7 +68,10 @@ function assertReconciles(r: ReturnType<typeof computeEmployeeResult>, label: st
 
 	// 4. Every published figure is a real payable amount at scale 2.
 	for (const c of [...r.earnings, ...r.deductions]) {
-		expect(D(c.amount).decimalPlaces(), `${label}: line ${c.code} must be scale-2`).toBeLessThanOrEqual(2)
+		expect(
+			D(c.amount).decimalPlaces(),
+			`${label}: line ${c.code} must be scale-2`
+		).toBeLessThanOrEqual(2)
 	}
 	for (const [name, v] of Object.entries({
 		grossPay: r.grossPay,

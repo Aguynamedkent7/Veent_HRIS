@@ -299,7 +299,11 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		action: 'UPDATE',
 		entityType: 'PayrollRun',
 		entityId: runId,
-		newValue: { status: 'COMPUTED', totalGross: totalGross.toNumber(), totalNet: totalNet.toNumber() }
+		newValue: {
+			status: 'COMPUTED',
+			totalGross: totalGross.toNumber(),
+			totalNet: totalNet.toNumber()
+		}
 	})
 
 	return db.payrollRun.findUnique({

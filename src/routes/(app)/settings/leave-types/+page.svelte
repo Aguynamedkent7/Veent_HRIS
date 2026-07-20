@@ -46,7 +46,12 @@
 	<!-- Add -->
 	<section class="space-y-3 rounded-lg border bg-card p-4">
 		<h2 class="font-semibold">Add leave type</h2>
-		<form method="POST" action="?/add" use:enhance={add.enhance} class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+		<form
+			method="POST"
+			action="?/add"
+			use:enhance={add.enhance}
+			class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+		>
 			<div class="lg:col-span-2">
 				<label for="add-name" class="text-xs font-medium text-muted-foreground">Name</label>
 				<input
@@ -202,11 +207,7 @@
 											type="submit"
 											disabled={toggle.busy}
 											class="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
-											>{toggle.busy
-												? 'Saving…'
-												: lt.isActive
-													? 'Deactivate'
-													: 'Activate'}</button
+											>{toggle.busy ? 'Saving…' : lt.isActive ? 'Deactivate' : 'Activate'}</button
 										>
 									</form>
 								</td>

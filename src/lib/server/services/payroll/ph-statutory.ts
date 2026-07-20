@@ -233,9 +233,8 @@ export const SSS_TABLE_2024: SSSBracket[] = [
 export function computeSSS(monthlySalary: MoneyLike): { ee: Money; er: Money } {
 	const salary = D(monthlySalary)
 	const bracket =
-		SSS_TABLE_2024.find(
-			(b) => salary.gte(b.salaryFloor) && salary.lte(b.salaryCeiling)
-		) ?? SSS_TABLE_2024[SSS_TABLE_2024.length - 1]
+		SSS_TABLE_2024.find((b) => salary.gte(b.salaryFloor) && salary.lte(b.salaryCeiling)) ??
+		SSS_TABLE_2024[SSS_TABLE_2024.length - 1]
 
 	// Fixed peso amounts straight off the table — exact by nature, no arithmetic involved.
 	return { ee: D(bracket.eeShare), er: D(bracket.erShare) }

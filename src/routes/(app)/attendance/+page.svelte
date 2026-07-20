@@ -658,7 +658,12 @@
 										{@const save = rowGuard(`correct:${d.id}`, keepValues)}
 										{@const reset = rowGuard(`resetDay:${d.id}`, confirmReset)}
 										<div class="flex items-center gap-1">
-											<form id="c-{d.id}" method="POST" action="?/correct" use:enhance={save.enhance}>
+											<form
+												id="c-{d.id}"
+												method="POST"
+												action="?/correct"
+												use:enhance={save.enhance}
+											>
 												<input type="hidden" name="id" value={d.id} />
 												<input type="hidden" name="date" value={toDateKey(d.date)} />
 												<button
