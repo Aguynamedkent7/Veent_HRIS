@@ -84,6 +84,50 @@ test('admin sees masked numbers, reveals full values, and the reveal is audited'
 	await expect(viewRow.getByText('Employee', { exact: true })).toBeVisible()
 })
 
+// #95: the per-record masking above is only half the boundary — the roster list
+// is reachable at MANAGER, and a bare Prisma `include` there returned every
+// scalar for the whole org. Assert on the field names, not just the values: a
+// regression would leak all employees' data, not only this driver-seeded row.
+test('manager listing employees via the API receives no compensation, gov IDs, or bank details', async ({
+	page
+}) => {
+	await login(page, USERS.manager)
+	const response = await page.request.get('/api/v1/employees')
+	expect(response.status()).toBe(200)
+
+	const body = await response.json()
+	expect(Array.isArray(body.data)).toBe(true)
+	expect(body.data.length).toBeGreaterThan(0)
+
+	for (const employee of body.data) {
+		for (const field of [
+			'basicMonthlySalary',
+			'rateType',
+			'sssNumber',
+			'philhealthNumber',
+			'pagibigNumber',
+			'tinNumber',
+			'bankName',
+			'bankAccountName',
+			'bankAccountNumber',
+			'gcashNumber'
+		]) {
+			// Absent, not null — the fix drops them from the query rather than blanking
+			// them after the fact, so `in` is the assertion that actually pins it.
+			expect(field in employee, `${field} must not be selected`).toBe(false)
+		}
+	}
+
+	// The display fields the roster genuinely needs are still there.
+	expect(body.data[0]).toHaveProperty('employeeNumber')
+	expect(body.data[0]).toHaveProperty('department')
+
+	// Belt and braces: the seeded disbursement numbers appear nowhere in the payload.
+	const raw = JSON.stringify(body)
+	expect(raw).not.toContain(FULL_BANK_NO)
+	expect(raw).not.toContain(FULL_GCASH_NO)
+})
+
 test('forged reveal POST by a manager is rejected with 403', async ({ page }) => {
 	await login(page, USERS.manager)
 	// Same-origin header so this exercises the action's RBAC check rather than
