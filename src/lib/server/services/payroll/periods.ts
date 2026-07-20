@@ -145,6 +145,20 @@ export async function lock(
 	}
 
 	await db.$transaction(async (tx: Prisma.TransactionClient) => {
+		// Claim the period atomically, BEFORE touching any balance. The status check above
+		// is a read outside this transaction, so on its own it is check-then-act: two
+		// concurrent locks (a double-click, a retried request) both passed it and both ran
+		// the decrement loop, subtracting twice. This conditional update is the real gate —
+		// exactly one caller can move GENERATED → LOCKED, and the loser aborts the whole
+		// transaction before any money moves.
+		const claimed = await tx.payrollPeriod.updateMany({
+			where: { id, status: 'GENERATED' },
+			data: { status: 'LOCKED', lockedAt: new Date() }
+		})
+		if (claimed.count === 0) {
+			error(409, 'This period is already being locked or is no longer GENERATED')
+		}
+
 		// Commit loan / cash-advance amortization from the itemized deduction lines.
 		for (const entry of entries) {
 			for (const d of entry.deductions) {
@@ -153,22 +167,58 @@ export async function lock(
 				if (d.code === 'LOAN') {
 					const loan = await tx.loan.findUnique({ where: { id: d.refId } })
 					if (!loan) continue
-					const newBalance = round2(Number(loan.balance) - amount)
-					await tx.loan.update({
-						where: { id: d.refId },
+
+					// `amount` was frozen into the deduction line at compute time, capped
+					// against the balance as it stood then. Re-cap against the live balance:
+					// if the borrower paid the loan down in between, the frozen figure would
+					// over-collect and drive the balance negative.
+					const applied = round2(Math.min(amount, Number(loan.balance)))
+					if (applied <= 0) continue
+
+					// One payment per (loan, payroll entry) — the DB unique constraint makes
+					// this the idempotency key, so a replayed lock cannot double-apply even
+					// if it somehow gets past the claim above.
+					try {
+						await tx.loanPayment.create({
+							data: { loanId: d.refId, payrollEntryId: entry.id, amount: applied }
+						})
+					} catch (e) {
+						if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') continue
+						throw e
+					}
+
+					// Conditional on the balance we just read: if a concurrent writer changed
+					// it, count is 0 and we abort rather than clobbering their write. Plain
+					// `update` here was a read-modify-write and lost updates under the default
+					// READ COMMITTED isolation.
+					const newBalance = round2(Number(loan.balance) - applied)
+					const res = await tx.loan.updateMany({
+						where: { id: d.refId, balance: loan.balance },
 						data: { balance: newBalance, status: newBalance <= 0 ? 'PAID' : loan.status }
 					})
-					await tx.loanPayment.create({
-						data: { loanId: d.refId, payrollEntryId: entry.id, amount }
-					})
+					if (res.count === 0) {
+						error(409, 'A loan balance changed while locking — nothing was committed, retry')
+					}
 				} else if (d.code === 'CASH_ADVANCE') {
 					const ca = await tx.cashAdvance.findUnique({ where: { id: d.refId } })
 					if (!ca) continue
-					const newBalance = round2(Number(ca.balance) - amount)
-					await tx.cashAdvance.update({
-						where: { id: d.refId },
+
+					// Cash advances have no payment ledger, so there is no idempotency key to
+					// lean on — the atomic period claim above is what stops a second pass, and
+					// this conditional update is what stops a concurrent one.
+					const applied = round2(Math.min(amount, Number(ca.balance)))
+					if (applied <= 0) continue
+					const newBalance = round2(Number(ca.balance) - applied)
+					const res = await tx.cashAdvance.updateMany({
+						where: { id: d.refId, balance: ca.balance },
 						data: { balance: newBalance, status: newBalance <= 0 ? 'PAID' : ca.status }
 					})
+					if (res.count === 0) {
+						error(
+							409,
+							'A cash-advance balance changed while locking — nothing was committed, retry'
+						)
+					}
 				}
 			}
 		}
@@ -183,10 +233,6 @@ export async function lock(
 				approvedAt: new Date(),
 				...(overrideNote ? { hasOverride: true, overrideNote } : {})
 			}
-		})
-		await tx.payrollPeriod.update({
-			where: { id },
-			data: { status: 'LOCKED', lockedAt: new Date() }
 		})
 	})
 
@@ -235,11 +281,23 @@ export async function voidPeriod(id: string, organizationId: string, ctx: AuditC
 					const amount = Number(d.amount)
 					if (amount <= 0 || !d.refId) continue
 					if (d.code === 'LOAN') {
+						// Reverse what was actually applied, not the frozen deduction line. Lock
+						// re-caps against the live balance, so the two can differ; the payment
+						// rows are the record of what really moved. Reversing `d.amount` blind
+						// would credit back money that was never collected.
+						const payments = await tx.loanPayment.findMany({
+							where: { loanId: d.refId, payrollEntryId: entry.id },
+							select: { amount: true }
+						})
+						const reversal = round2(payments.reduce((s, p) => s + Number(p.amount), 0))
 						const loan = await tx.loan.findUnique({ where: { id: d.refId } })
-						if (loan) {
+						if (loan && reversal > 0) {
+							const restored = round2(Number(loan.balance) + reversal)
 							await tx.loan.update({
 								where: { id: d.refId },
-								data: { balance: round2(Number(loan.balance) + amount), status: 'ACTIVE' }
+								// Only reopen a loan the reversal actually un-pays; a loan settled
+								// by some other payment stays PAID.
+								data: { balance: restored, status: restored > 0 ? 'ACTIVE' : loan.status }
 							})
 						}
 						await tx.loanPayment.deleteMany({

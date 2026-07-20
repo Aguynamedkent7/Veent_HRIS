@@ -1231,6 +1231,10 @@ model LoanPayment {
   loan Loan @relation(fields: [loanId], references: [id], onDelete: Cascade)
 
   @@index([loanId])
+  // Idempotency key for the amortization committed at period lock: one payment per
+  // (loan, payroll entry). NULL payrollEntryId stays distinct in Postgres, so manual
+  // off-payroll payments are unaffected.
+  @@unique([loanId, payrollEntryId])
   @@map("loan_payments")
 }
 
