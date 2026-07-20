@@ -4,6 +4,11 @@
 
 	let { data }: { data: PageData } = $props()
 
+	// svelte-ignore state_referenced_locally
+	let startValue = $state(data.startDate)
+	// svelte-ignore state_referenced_locally
+	let endValue = $state(data.endDate)
+
 	// AttendanceDay.status → cell badge (short code, colour, legend label). Order drives the legend.
 	const STATUS: Record<string, { code: string; label: string; class: string }> = {
 		PRESENT: { code: 'P', label: 'Present', class: 'bg-green-100 text-green-700' },
@@ -47,7 +52,8 @@
 				id="start"
 				name="start"
 				type="date"
-				value={data.startDate}
+				bind:value={startValue}
+				max={endValue || undefined}
 				onchange={(e) => e.currentTarget.form?.requestSubmit()}
 				class="flex h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 			/>
@@ -58,7 +64,8 @@
 				id="end"
 				name="end"
 				type="date"
-				value={data.endDate}
+				bind:value={endValue}
+				min={startValue || undefined}
 				onchange={(e) => e.currentTarget.form?.requestSubmit()}
 				class="flex h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 			/>

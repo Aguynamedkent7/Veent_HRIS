@@ -141,6 +141,7 @@
 						class={`cursor-pointer hover:bg-muted/30 focus:bg-muted/40 focus:outline-none ${selected.includes(req.id) ? 'bg-primary/5' : ''}`}
 						role="link"
 						tabindex="0"
+						aria-label={`Open ${leaveName(req.payload)} request`}
 						onclick={(e) => {
 							// Don't navigate when the click is on the row's selection checkbox.
 							if ((e.target as HTMLElement).closest('input, label')) return

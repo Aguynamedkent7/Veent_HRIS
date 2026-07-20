@@ -3,6 +3,8 @@
  * SSS: per EC table (January 2024 schedule), PhilHealth: 5% of MSC, Pag-IBIG: 2% capped PHP 100.
  */
 
+import { round2 } from './types'
+
 interface SSSBracket {
 	salaryFloor: number
 	salaryCeiling: number
@@ -320,8 +322,4 @@ export function computeStatutoryDeductions(grossPay: number): StatutoryResult {
 		totalDeductions: round2(totalDeductions),
 		netPay: round2(netPay)
 	}
-}
-
-function round2(n: number): number {
-	return Math.round(n * 100) / 100
 }
