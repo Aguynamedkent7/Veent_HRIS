@@ -113,6 +113,32 @@ async function main() {
 		})
 	}
 
+	// Verifier + Approver (#134): pure sign-off accounts for the maker→verifier→approver
+	// chain. No Employee record — they never file requests, they only check and approve.
+	// Membership + roles=[role] are backfilled by the loop at the end of this seed.
+	const verifierHash = await bcrypt.hash('Verifier@1234', 12)
+	await db.user.upsert({
+		where: { email: 'verifier@veent.ph' },
+		update: { role: 'VERIFIER' },
+		create: {
+			organizationId: org.id,
+			email: 'verifier@veent.ph',
+			passwordHash: verifierHash,
+			role: 'VERIFIER'
+		}
+	})
+	const approverHash = await bcrypt.hash('Approver@1234', 12)
+	await db.user.upsert({
+		where: { email: 'approver@veent.ph' },
+		update: { role: 'APPROVER' },
+		create: {
+			organizationId: org.id,
+			email: 'approver@veent.ph',
+			passwordHash: approverHash,
+			role: 'APPROVER'
+		}
+	})
+
 	// Idempotent: LeaveType has no unique constraint on (organizationId, name), so
 	// createMany would duplicate on every run. Only seed when none exist yet.
 	const existingLeaveTypes = await db.leaveType.count({ where: { organizationId: org.id } })
@@ -634,6 +660,8 @@ async function main() {
 	console.log('Seed complete. Logins:')
 	console.log('  CEO:             ceo@veent.ph / Ceo@1234  (Veent + JoJo + Sweetleaf)')
 	console.log('  Super Admin:     admin@veent.ph / Admin@1234')
+	console.log('  Verifier:        verifier@veent.ph / Verifier@1234')
+	console.log('  Approver:        approver@veent.ph / Approver@1234')
 	console.log('  Manager:         manager@veent.ph / Manager@1234')
 	console.log('  Employee:        employee@veent.ph / Employee@1234')
 	console.log('  Payroll Officer: payroll@veent.ph / Payroll@1234')

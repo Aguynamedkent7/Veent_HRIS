@@ -74,8 +74,42 @@
 	// For Official Business, `reason` mirrors `purpose` (already shown) — don't repeat it.
 	const shownPayloadValues = $derived(new Set(payloadEntries.map(([, v]) => String(v))))
 	const showReason = $derived(Boolean(req.reason) && !shownPayloadValues.has(String(req.reason)))
-	function stageLabel(step: { stageKind: string; role: string | null }) {
-		return step.stageKind === 'SUPERVISOR' ? 'Supervisor' : (step.role ?? 'Approver')
+	// Maker-checker chain (#134): each attempt is MAKE → VERIFY → APPROVE. Group the
+	// append-only steps by attempt so a refiled request shows its full history.
+	type Step = (typeof req.steps)[number]
+	const stageName: Record<string, string> = { MAKE: 'Make', VERIFY: 'Verify', APPROVE: 'Approve' }
+	const latestAttempt = $derived(Math.max(1, ...req.steps.map((s) => s.attempt)))
+	const attempts = $derived.by(() => {
+		const groups = new Map<number, Step[]>()
+		for (const s of req.steps) {
+			const list = groups.get(s.attempt) ?? []
+			list.push(s)
+			groups.set(s.attempt, list)
+		}
+		return [...groups.entries()]
+			.sort((a, b) => a[0] - b[0])
+			.map(([attempt, steps]) => ({
+				attempt,
+				steps: [...steps].sort((a, b) => a.stageIndex - b.stageIndex)
+			}))
+	})
+
+	// The verb shown for a decided step (past tense), or the pending stage's own name.
+	function stepLabel(step: Step): string {
+		if (step.decision === 'APPROVED') {
+			return step.stage === 'MAKE' ? 'Filed' : step.stage === 'VERIFY' ? 'Verified' : 'Approved'
+		}
+		if (step.decision === 'REJECTED') return 'Rejected'
+		if (step.decision === 'RETURNED') return 'Returned'
+		return stageName[step.stage] ?? 'Pending'
+	}
+
+	function isActive(step: Step): boolean {
+		return (
+			req.status === 'PENDING' &&
+			step.attempt === latestAttempt &&
+			step.stageIndex === req.currentStage
+		)
 	}
 </script>
 
@@ -235,43 +269,55 @@
 
 	<div class="space-y-3">
 		<h2 class="text-lg font-semibold">Approval chain</h2>
-		<ol class="space-y-2">
-			{#each req.steps as step, i (step.id)}
-				{@const active = req.status === 'PENDING' && i === req.currentStage}
-				<li
-					class="flex items-start gap-3 rounded-lg border p-3 {active
-						? 'border-primary/50 bg-primary/5'
-						: ''}"
-				>
-					<div
-						class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium
-						{step.decision === 'APPROVED'
-							? 'bg-green-100 text-green-700'
-							: step.decision === 'REJECTED'
-								? 'bg-red-100 text-red-700'
-								: step.decision === 'RETURNED'
-									? 'bg-orange-100 text-orange-700'
-									: 'bg-muted text-muted-foreground'}"
+		<p class="text-xs text-muted-foreground">Maker → Verifier → Approver</p>
+		{#each attempts as group (group.attempt)}
+			{#if attempts.length > 1}
+				<p class="pt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+					Attempt {group.attempt}
+				</p>
+			{/if}
+			<ol class="space-y-2">
+				{#each group.steps as step, i (step.id)}
+					{@const active = isActive(step)}
+					<li
+						class="flex items-start gap-3 rounded-lg border p-3 {active
+							? 'border-primary/50 bg-primary/5'
+							: ''}"
 					>
-						{i + 1}
-					</div>
-					<div class="min-w-0 flex-1">
-						<p class="text-sm font-medium">{stageLabel(step)}</p>
-						<p class="text-xs text-muted-foreground">
-							{#if step.decision}
-								{step.decision}{#if step.actor}{' '}
-									by {step.actor.email}{/if}{#if step.decidedAt}{' '}
-									· {formatShortDate(step.decidedAt)}{/if}
-							{:else if active}
-								Pending — awaiting decision
-							{:else}
-								Not yet reached
-							{/if}
-						</p>
-						{#if step.note}<p class="mt-1 text-xs text-muted-foreground">“{step.note}”</p>{/if}
-					</div>
-				</li>
-			{/each}
-		</ol>
+						<div
+							class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium
+							{step.decision === 'APPROVED'
+								? 'bg-green-100 text-green-700'
+								: step.decision === 'REJECTED'
+									? 'bg-red-100 text-red-700'
+									: step.decision === 'RETURNED'
+										? 'bg-orange-100 text-orange-700'
+										: 'bg-muted text-muted-foreground'}"
+						>
+							{i + 1}
+						</div>
+						<div class="min-w-0 flex-1">
+							<p class="text-sm font-medium">
+								{stepLabel(step)}
+								<span class="font-normal text-muted-foreground"
+									>· {stageName[step.stage]} stage</span
+								>
+							</p>
+							<p class="text-xs text-muted-foreground">
+								{#if step.decision}
+									{#if step.actor}by {step.actor.email}{/if}{#if step.decidedAt}{' '}
+										· {formatShortDate(step.decidedAt)}{/if}
+								{:else if active}
+									Pending — awaiting {stageName[step.stage].toLowerCase()}
+								{:else}
+									Not yet reached
+								{/if}
+							</p>
+							{#if step.note}<p class="mt-1 text-xs text-muted-foreground">“{step.note}”</p>{/if}
+						</div>
+					</li>
+				{/each}
+			</ol>
+		{/each}
 	</div>
 </div>

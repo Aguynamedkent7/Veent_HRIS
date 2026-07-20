@@ -2,7 +2,22 @@ import { can } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
+import { buildApprovalChain } from './requests/routing'
+import { canActOnStage, nextState, liveChain, rolesOf } from './approvals'
 import type { AuditContext } from './types'
+import type { Prisma } from '@prisma/client'
+
+// Create the maker-checker chain for a timesheet (#134). When a maker (MANAGE_HR)
+// submits on the employee's behalf, MAKE completes now; when the employee submits
+// their own, MAKE stays pending for branch HR. Runs inside the submit transaction.
+async function createTimesheetChain(
+	tx: Prisma.TransactionClient,
+	timesheetId: string,
+	makerUserId: string | null
+) {
+	const { steps } = buildApprovalChain({ attempt: 1, makerUserId, decidedAt: new Date() })
+	await tx.approvalStep.createMany({ data: steps.map((s) => ({ ...s, timesheetId })) })
+}
 
 interface TimesheetEntryInput {
 	date: Date
@@ -195,9 +210,14 @@ export async function submitTimesheet(id: string, employeeId: string, ctx: Audit
 	if (!ts || ts.employeeId !== employeeId) error(404, 'Timesheet not found')
 	if (ts.status !== 'DRAFT') error(400, 'Only draft timesheets can be submitted')
 
-	const updated = await db.timesheet.update({
-		where: { id },
-		data: { status: 'SUBMITTED', submittedAt: new Date() }
+	const updated = await db.$transaction(async (tx) => {
+		const ts2 = await tx.timesheet.update({
+			where: { id },
+			data: { status: 'SUBMITTED', submittedAt: new Date() }
+		})
+		// The employee submits their own, so MAKE stays pending for branch HR (#134).
+		await createTimesheetChain(tx, id, null)
+		return ts2
 	})
 
 	await writeAuditLog(ctx, {
@@ -260,6 +280,9 @@ export async function submitDraftByHr(id: string, organizationId: string, ctx: A
 			data: { status: 'SUBMITTED', submittedAt: new Date() }
 		})
 		if (res.count === 0) error(400, 'Only draft timesheets can be submitted here')
+		// HR submits on the employee's behalf, so they are the maker — MAKE completes now
+		// and the chain opens at VERIFY (#134).
+		await createTimesheetChain(tx, id, ctx.actorId)
 
 		await writeAuditLog(
 			ctx,
@@ -277,6 +300,10 @@ export async function submitDraftByHr(id: string, organizationId: string, ctx: A
 	})
 }
 
+// Act on a timesheet's current maker-checker stage (#134). `approved` advances the chain
+// (final APPROVE commits it); otherwise it returns to the maker with a required reason.
+// Legacy timesheets submitted before the chain existed have no steps and fall back to the
+// old direct manager review.
 export async function reviewTimesheet(
 	id: string,
 	organizationId: string,
@@ -284,9 +311,14 @@ export async function reviewTimesheet(
 	rejectionReason: string | undefined,
 	ctx: AuditContext
 ) {
-	const ts = await getTimesheet(id, organizationId)
-	// #75: separation of duties — HR/SUPER act org-wide, so guard against approving
-	// or rejecting one's own timesheet before the manager-scope check.
+	const ts = await db.timesheet.findFirst({
+		where: { id, employee: { user: { organizationId } } },
+		include: { employee: { select: { reportsToId: true } }, approvalSteps: true }
+	})
+	if (!ts) error(404, 'Timesheet not found')
+	if (ts.status !== 'SUBMITTED') error(400, 'Only submitted timesheets can be reviewed')
+
+	// #75: separation of duties — nobody reviews their own timesheet.
 	const actorEmployee = await db.employee.findUnique({
 		where: { userId: ctx.actorId },
 		select: { id: true }
@@ -294,24 +326,73 @@ export async function reviewTimesheet(
 	if (actorEmployee && actorEmployee.id === ts.employeeId) {
 		error(403, 'You cannot review your own timesheet')
 	}
-	await assertManagesEmployee(ctx, ts.employee.reportsToId)
-	if (ts.status !== 'SUBMITTED') error(400, 'Only submitted timesheets can be reviewed')
 
-	const updated = await db.timesheet.update({
-		where: { id },
-		data: {
-			status: approved ? 'APPROVED' : 'REJECTED',
-			reviewedAt: new Date(),
-			reviewedById: ctx.actorId,
-			rejectionReason: approved ? null : rejectionReason
-		}
+	const live = liveChain(ts.approvalSteps)
+
+	// Legacy fallback: a step-less timesheet reviews directly under manager scope.
+	if (!live || !live.currentStep) {
+		await assertManagesEmployee(ctx, ts.employee.reportsToId)
+		const updated = await db.timesheet.update({
+			where: { id },
+			data: {
+				status: approved ? 'APPROVED' : 'REJECTED',
+				reviewedAt: new Date(),
+				reviewedById: ctx.actorId,
+				rejectionReason: approved ? null : rejectionReason
+			}
+		})
+		await writeAuditLog(ctx, {
+			action: 'UPDATE',
+			entityType: 'Timesheet',
+			entityId: id,
+			newValue: { status: updated.status, rejectionReason }
+		})
+		return updated
+	}
+
+	const step = live.currentStep
+	if (!canActOnStage(step.stage, rolesOf(ctx), actorEmployee?.id ?? null, ts.employeeId)) {
+		error(403, 'You cannot act on this stage')
+	}
+	const decision = approved ? 'APPROVED' : 'RETURNED'
+	if (!approved && !rejectionReason?.trim()) {
+		error(400, 'A reason is required to return a timesheet')
+	}
+
+	const transition = nextState(live.currentStage, live.liveSteps.length, decision)
+	const tsStatus =
+		transition.status === 'APPROVED'
+			? 'APPROVED'
+			: transition.status === 'RETURNED' || transition.status === 'REJECTED'
+				? 'REJECTED'
+				: 'SUBMITTED'
+	const settled = tsStatus !== 'SUBMITTED'
+
+	const updated = await db.$transaction(async (tx) => {
+		await tx.approvalStep.update({
+			where: { id: step.id },
+			data: {
+				decision,
+				actorId: ctx.actorId,
+				note: approved ? null : (rejectionReason ?? null),
+				decidedAt: new Date()
+			}
+		})
+		return tx.timesheet.update({
+			where: { id },
+			data: {
+				status: tsStatus,
+				...(settled ? { reviewedAt: new Date(), reviewedById: ctx.actorId } : {}),
+				rejectionReason: tsStatus === 'REJECTED' ? (rejectionReason ?? null) : null
+			}
+		})
 	})
 
 	await writeAuditLog(ctx, {
 		action: 'UPDATE',
 		entityType: 'Timesheet',
 		entityId: id,
-		newValue: { status: updated.status, rejectionReason }
+		newValue: { stage: step.stage, decision, status: tsStatus }
 	})
 
 	return updated

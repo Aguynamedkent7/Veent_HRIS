@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { login, USERS } from './helpers'
+import { login, USERS, verifyAndApproveTimesheet } from './helpers'
 
 // Quickstart Scenarios 2 + 3: an employee creates a timesheet, submits it, and the
 // manager approves it. Kept in one test so the create→submit→approve lifecycle is
@@ -91,9 +91,13 @@ test('employee creates a timesheet, submits it, and the manager approves it', as
 	}).toPass({ timeout: 15000 })
 	await revDialog.getByRole('button', { name: 'Approve' }).click()
 
-	// Once approved, this timesheet leaves the pending queue.
+	// The manager holds the MAKE stage (#134); approving advances it, so the card leaves
+	// the manager's queue.
 	await expect(card).toHaveCount(0)
 	await mgrCtx.close()
+
+	// --- Verifier then Approver sign off the rest of the chain ---
+	await verifyAndApproveTimesheet(browser, '0.0 hrs')
 
 	// --- Employee sees the timesheet as APPROVED ---
 	const verifyCtx = await browser.newContext()

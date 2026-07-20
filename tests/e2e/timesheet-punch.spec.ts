@@ -1,6 +1,6 @@
 import 'dotenv/config'
 import { test, expect } from '@playwright/test'
-import { login, USERS, E2E_DISCORD_ID } from './helpers'
+import { login, USERS, E2E_DISCORD_ID, verifyAndApproveTimesheet } from './helpers'
 import { signPayload } from '../../src/lib/server/hmac'
 
 // T142 — happy path: a signed Discord punch pair is ingested over HMAC, HR rolls the
@@ -113,18 +113,9 @@ test('signed punch → aggregate → approve', async ({ browser, request }) => {
 
 	await expect(page.getByText('Timesheet submitted for review.')).toBeVisible()
 
-	// --- 4. Approval happens in the review queue ---
-	await page.goto('/requests/timesheets', { waitUntil: 'domcontentloaded' })
-	const card = page
-		.locator('[role="button"]', { hasText: 'Employee, Elena' })
-		.filter({ hasText: '7.0 hrs' })
-	await expect(card).toHaveCount(1)
-	await expect(async () => {
-		await card.click()
-		await expect(dialog).toBeVisible({ timeout: 1000 })
-	}).toPass({ timeout: 15000 })
-	await dialog.getByRole('button', { name: 'Approve' }).click()
-	await expect(dialog).toBeHidden()
+	// --- 4. HR submitting on the employee's behalf completed the MAKE stage (#134);
+	// the Verifier then the Approver sign off the rest of the chain. ---
+	await verifyAndApproveTimesheet(browser, '7.0 hrs')
 
 	// --- 5. Back on /timesheets the aggregated week is APPROVED ---
 	await page.goto('/timesheets', { waitUntil: 'domcontentloaded' })
