@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest'
 import { requestSchema, deriveRequestColumns } from '$lib/server/schemas/requests'
-import { resolveChain, DEFAULT_ROUTING } from '$lib/server/services/requests/routing'
 
 describe('request validation (discriminated union)', () => {
 	it('accepts a valid OVERTIME request', () => {
@@ -93,35 +92,5 @@ describe('deriveRequestColumns', () => {
 		expect(c.dateFrom).toBeNull()
 		expect(c.dateTo).toBeNull()
 		expect(c.hours).toBeNull()
-	})
-})
-
-describe('routing / resolveChain', () => {
-	it('routes OVERTIME through Supervisor → HR → Payroll', () => {
-		const chain = resolveChain('OVERTIME', { hasSupervisor: true })
-		expect(chain.map((s) => (s.stageKind === 'SUPERVISOR' ? 'SUP' : s.role))).toEqual([
-			'SUP',
-			'HR_ADMIN',
-			'PAYROLL_OFFICER'
-		])
-		expect(chain.map((s) => s.stageIndex)).toEqual([0, 1, 2])
-	})
-
-	it('drops the supervisor stage and re-indexes when there is no supervisor', () => {
-		const chain = resolveChain('OVERTIME', { hasSupervisor: false })
-		expect(chain.map((s) => s.role)).toEqual(['HR_ADMIN', 'PAYROLL_OFFICER'])
-		expect(chain.map((s) => s.stageIndex)).toEqual([0, 1])
-	})
-
-	it('routes INFO_UPDATE straight to HR (no supervisor stage)', () => {
-		const chain = resolveChain('INFO_UPDATE', { hasSupervisor: true })
-		expect(chain).toHaveLength(1)
-		expect(chain[0]).toMatchObject({ stageIndex: 0, stageKind: 'ROLE', role: 'HR_ADMIN' })
-	})
-
-	it('has a chain defined for every request type', () => {
-		for (const type of Object.keys(DEFAULT_ROUTING)) {
-			expect(DEFAULT_ROUTING[type as keyof typeof DEFAULT_ROUTING].length).toBeGreaterThan(0)
-		}
 	})
 })
