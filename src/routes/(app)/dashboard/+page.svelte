@@ -2,11 +2,17 @@
 	import { enhance } from '$app/forms'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
 	import NewTimesheetDialog from '$lib/components/timesheets/NewTimesheetDialog.svelte'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 	const metrics = $derived(data.metrics)
 	let showPost = $state(false)
+	// #108: a double-click posts the announcement twice to the whole organisation.
+	const postAnnouncement = createSubmitGuard(() => async ({ update }) => {
+		await update()
+		showPost = false
+	})
 	let showNewTimesheet = $state(false)
 </script>
 
@@ -157,11 +163,7 @@
 			<form
 				method="POST"
 				action="?/postAnnouncement"
-				use:enhance={() =>
-					async ({ update }) => {
-						await update()
-						showPost = false
-					}}
+				use:enhance={postAnnouncement.enhance}
 				class="space-y-2 rounded-md border p-3"
 			>
 				{#if form?.error}<p class="text-xs text-red-400">{form.error}</p>{/if}
@@ -173,7 +175,12 @@
 					required
 					class="input h-auto resize-none py-2"
 				></textarea>
-				<button type="submit" class="btn-primary text-sm">Post announcement</button>
+				<button
+					type="submit"
+					disabled={postAnnouncement.busy}
+					class="btn-primary text-sm disabled:pointer-events-none disabled:opacity-50"
+					>{postAnnouncement.busy ? 'Posting…' : 'Post announcement'}</button
+				>
 			</form>
 		{/if}
 

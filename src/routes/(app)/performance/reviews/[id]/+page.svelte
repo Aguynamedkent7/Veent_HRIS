@@ -2,10 +2,16 @@
 	import { enhance } from '$app/forms'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import { formatShortDate } from '$lib/utils/format'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 	const r = $derived(data.review)
+
+	// #108: double-submitting these re-writes the review or re-runs the acknowledge transition.
+	const saveSelf = createSubmitGuard()
+	const submitReview = createSubmitGuard()
+	const acknowledge = createSubmitGuard()
 
 	function statusClass(s: string) {
 		if (s === 'ACKNOWLEDGED') return 'bg-green-100 text-green-700'
@@ -48,7 +54,7 @@
 	<section class="space-y-2 rounded-lg border bg-card p-4">
 		<h2 class="font-semibold">Self-Assessment</h2>
 		{#if data.isSubject && (r.status === 'PENDING' || r.status === 'SELF_ASSESSMENT')}
-			<form method="POST" action="?/saveSelf" use:enhance class="space-y-2">
+			<form method="POST" action="?/saveSelf" use:enhance={saveSelf.enhance} class="space-y-2">
 				<textarea
 					name="selfAssessment"
 					rows="4"
@@ -56,8 +62,9 @@
 					>{r.selfAssessment ?? ''}</textarea
 				>
 				<button
-					class="rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-					>Save self-assessment</button
+					disabled={saveSelf.busy}
+					class="rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+					>{saveSelf.busy ? 'Saving…' : 'Save self-assessment'}</button
 				>
 			</form>
 		{:else if r.selfAssessment}
@@ -71,7 +78,12 @@
 	<section class="space-y-2 rounded-lg border bg-card p-4">
 		<h2 class="font-semibold">Manager Review</h2>
 		{#if data.isReviewer && r.status !== 'ACKNOWLEDGED'}
-			<form method="POST" action="?/submitReview" use:enhance class="space-y-2">
+			<form
+				method="POST"
+				action="?/submitReview"
+				use:enhance={submitReview.enhance}
+				class="space-y-2"
+			>
 				<textarea
 					name="managerComments"
 					rows="4"
@@ -92,8 +104,9 @@
 					/>
 				</div>
 				<button
-					class="rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-					>Submit review</button
+					disabled={submitReview.busy}
+					class="rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+					>{submitReview.busy ? 'Submitting…' : 'Submit review'}</button
 				>
 			</form>
 		{:else if r.managerComments || r.overallRating != null}
@@ -108,10 +121,11 @@
 
 	<!-- Acknowledge -->
 	{#if data.isSubject && r.status === 'COMPLETED'}
-		<form method="POST" action="?/acknowledge" use:enhance>
+		<form method="POST" action="?/acknowledge" use:enhance={acknowledge.enhance}>
 			<button
-				class="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
-				>Acknowledge review</button
+				disabled={acknowledge.busy}
+				class="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:pointer-events-none disabled:opacity-50"
+				>{acknowledge.busy ? 'Acknowledging…' : 'Acknowledge review'}</button
 			>
 		</form>
 	{:else if r.status === 'ACKNOWLEDGED'}

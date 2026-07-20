@@ -1,10 +1,14 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 	let showCreate = $state(false)
+
+	// #108: a double-click would create a duplicate work schedule.
+	const createSchedule = createSubmitGuard()
 
 	const DOW = [
 		{ v: 1, l: 'Mon' },
@@ -46,7 +50,7 @@
 	{/if}
 
 	{#if showCreate}
-		<form method="POST" action="?/create" use:enhance class="rounded-lg border p-4 space-y-4">
+		<form method="POST" action="?/create" use:enhance={createSchedule.enhance} class="rounded-lg border p-4 space-y-4">
 			<h2 class="font-semibold">New Work Schedule</h2>
 			<div class="grid gap-3 sm:grid-cols-4">
 				<div class="sm:col-span-2">
@@ -116,8 +120,9 @@
 				>
 				<button
 					type="submit"
-					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-					>Create</button
+					disabled={createSchedule.busy}
+					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+					>{createSchedule.busy ? 'Creating…' : 'Create'}</button
 				>
 			</div>
 		</form>

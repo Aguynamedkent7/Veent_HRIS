@@ -1,8 +1,12 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
+
+	// #108: a double-click here would create a duplicate employee + user + welcome email.
+	const create = createSubmitGuard()
 </script>
 
 <svelte:head>
@@ -23,7 +27,7 @@
 		</div>
 	{/if}
 
-	<form method="POST" action="?/create" use:enhance class="space-y-8">
+	<form method="POST" action="?/create" use:enhance={create.enhance} class="space-y-8">
 		<!-- Personal Information -->
 		<fieldset class="rounded-md border p-4 space-y-4">
 			<legend class="px-1 text-sm font-semibold">Personal Information</legend>
@@ -429,9 +433,10 @@
 			<a href="/employees" class="rounded-md border px-4 py-2 text-sm hover:bg-accent">Cancel</a>
 			<button
 				type="submit"
-				class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+				disabled={create.busy}
+				class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
 			>
-				Create Employee
+				{create.busy ? 'Creating…' : 'Create Employee'}
 			</button>
 		</div>
 	</form>

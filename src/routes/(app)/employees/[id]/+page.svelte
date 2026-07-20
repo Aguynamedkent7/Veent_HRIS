@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
 	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
@@ -38,6 +39,23 @@
 			max = Number(grade.maxSalary)
 		return { status: s < min ? 'below' : s > max ? 'above' : 'within', min, max, name: grade.name }
 	})
+
+	// #108: every mutating form here is a duplicate-row risk on a double-click — duplicate
+	// contacts, loans, cash advances, recurring earnings/deductions, uploaded documents, or a
+	// second offboard/reveal. One guard per form; the per-row forms share the guard for their
+	// action, which is fine because those rows submit one at a time.
+	const revealDisbursement = createSubmitGuard()
+	const update = createSubmitGuard()
+	const offboard = createSubmitGuard()
+	const deleteEmergencyContact = createSubmitGuard()
+	const addEmergencyContact = createSubmitGuard()
+	const addLoan = createSubmitGuard()
+	const addCashAdvance = createSubmitGuard()
+	const endEarning = createSubmitGuard()
+	const addEarning = createSubmitGuard()
+	const endDeduction = createSubmitGuard()
+	const addDeduction = createSubmitGuard()
+	const uploadDocument = createSubmitGuard()
 </script>
 
 <svelte:head>
@@ -180,12 +198,13 @@
 						>
 					</h2>
 					{#if data.canRevealDisbursement && !revealed}
-						<form method="POST" action="?/revealDisbursement" use:enhance>
+						<form method="POST" action="?/revealDisbursement" use:enhance={revealDisbursement.enhance}>
 							<button
 								type="submit"
-								class="text-xs text-primary hover:underline"
+								disabled={revealDisbursement.busy}
+								class="text-xs text-primary hover:underline disabled:pointer-events-none disabled:opacity-50"
 								title="Revealing full numbers is recorded in the audit log"
-								>Reveal full numbers</button
+								>{revealDisbursement.busy ? 'Revealing…' : 'Reveal full numbers'}</button
 							>
 						</form>
 					{/if}
@@ -223,7 +242,7 @@
 			<form
 				method="POST"
 				action="?/update"
-				use:enhance
+				use:enhance={update.enhance}
 				class="rounded-lg border p-6 space-y-4 lg:col-span-2"
 			>
 				<h2 class="font-semibold">Update Profile</h2>
@@ -442,8 +461,9 @@
 				<div class="flex justify-end">
 					<button
 						type="submit"
-						class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-						>Save Changes</button
+						disabled={update.busy}
+						class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+						>{update.busy ? 'Saving…' : 'Save Changes'}</button
 					>
 				</div>
 			</form>
@@ -451,7 +471,7 @@
 			<form
 				method="POST"
 				action="?/offboard"
-				use:enhance
+				use:enhance={offboard.enhance}
 				class="rounded-lg border border-destructive/50 p-6 space-y-4"
 			>
 				<h2 class="font-semibold text-destructive">Offboard Employee</h2>
@@ -468,8 +488,9 @@
 					</div>
 					<button
 						type="submit"
-						class="rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90"
-						>Offboard</button
+						disabled={offboard.busy}
+						class="rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:pointer-events-none disabled:opacity-50"
+						>{offboard.busy ? 'Offboarding…' : 'Offboard'}</button
 					>
 				</div>
 			</form>
@@ -501,12 +522,17 @@
 									<td class="px-3 py-2 font-mono">{c.phone}</td>
 									{#if canManage}
 										<td class="px-3 py-2 text-right">
-											<form method="POST" action="?/deleteEmergencyContact" use:enhance>
+											<form
+												method="POST"
+												action="?/deleteEmergencyContact"
+												use:enhance={deleteEmergencyContact.enhance}
+											>
 												<input type="hidden" name="contactId" value={c.id} />
 												<button
 													type="submit"
-													class="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
-													>Remove</button
+													disabled={deleteEmergencyContact.busy}
+													class="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:pointer-events-none disabled:opacity-50"
+													>{deleteEmergencyContact.busy ? 'Removing…' : 'Remove'}</button
 												>
 											</form>
 										</td>
@@ -524,7 +550,7 @@
 				<form
 					method="POST"
 					action="?/addEmergencyContact"
-					use:enhance
+					use:enhance={addEmergencyContact.enhance}
 					class="flex flex-wrap items-end gap-2 border-t pt-3"
 				>
 					<div class="grid gap-1">
@@ -563,8 +589,9 @@
 						/>
 					</div>
 					<button
-						class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-						>Add Contact</button
+						disabled={addEmergencyContact.busy}
+						class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+						>{addEmergencyContact.busy ? 'Adding…' : 'Add Contact'}</button
 					>
 				</form>
 			{/if}
@@ -612,7 +639,7 @@
 						<form
 							method="POST"
 							action="?/addLoan"
-							use:enhance
+							use:enhance={addLoan.enhance}
 							class="flex flex-wrap items-end gap-2"
 						>
 							<input
@@ -639,8 +666,9 @@
 								class="h-8 w-24 rounded-md border border-input bg-background px-2 text-xs"
 							/>
 							<button
-								class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-								>Add Loan</button
+								disabled={addLoan.busy}
+								class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+								>{addLoan.busy ? 'Adding…' : 'Add Loan'}</button
 							>
 						</form>
 					</div>
@@ -678,7 +706,7 @@
 						<form
 							method="POST"
 							action="?/addCashAdvance"
-							use:enhance
+							use:enhance={addCashAdvance.enhance}
 							class="flex flex-wrap items-end gap-2"
 						>
 							<input
@@ -700,8 +728,9 @@
 								class="h-8 w-24 rounded-md border border-input bg-background px-2 text-xs"
 							/>
 							<button
-								class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-								>Add Advance</button
+								disabled={addCashAdvance.busy}
+								class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+								>{addCashAdvance.busy ? 'Adding…' : 'Add Advance'}</button
 							>
 						</form>
 					</div>
@@ -732,12 +761,13 @@
 									>
 									<td class="py-1.5 text-right">
 										{#if e.isActive}
-											<form method="POST" action="?/endEarning" use:enhance>
+											<form method="POST" action="?/endEarning" use:enhance={endEarning.enhance}>
 												<input type="hidden" name="id" value={e.id} />
 												<button
 													type="submit"
-													class="rounded-md border border-red-200 px-2 py-0.5 text-xs font-medium text-red-600 hover:bg-red-50"
-													>End</button
+													disabled={endEarning.busy}
+													class="rounded-md border border-red-200 px-2 py-0.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:pointer-events-none disabled:opacity-50"
+													>{endEarning.busy ? 'Ending…' : 'End'}</button
 												>
 											</form>
 										{:else}
@@ -756,7 +786,7 @@
 				<form
 					method="POST"
 					action="?/addEarning"
-					use:enhance
+					use:enhance={addEarning.enhance}
 					class="flex flex-wrap items-end gap-2"
 				>
 					<select name="kind" class="h-8 rounded-md border border-input bg-background px-2 text-xs">
@@ -779,8 +809,9 @@
 						class="h-8 w-28 rounded-md border border-input bg-background px-2 text-xs"
 					/>
 					<button
-						class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-						>Add</button
+						disabled={addEarning.busy}
+						class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+						>{addEarning.busy ? 'Adding…' : 'Add'}</button
 					>
 				</form>
 			</section>
@@ -808,12 +839,13 @@
 									>
 									<td class="py-1.5 text-right">
 										{#if d.isActive}
-											<form method="POST" action="?/endDeduction" use:enhance>
+											<form method="POST" action="?/endDeduction" use:enhance={endDeduction.enhance}>
 												<input type="hidden" name="id" value={d.id} />
 												<button
 													type="submit"
-													class="rounded-md border border-red-200 px-2 py-0.5 text-xs font-medium text-red-600 hover:bg-red-50"
-													>End</button
+													disabled={endDeduction.busy}
+													class="rounded-md border border-red-200 px-2 py-0.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:pointer-events-none disabled:opacity-50"
+													>{endDeduction.busy ? 'Ending…' : 'End'}</button
 												>
 											</form>
 										{:else}
@@ -833,7 +865,7 @@
 					<form
 						method="POST"
 						action="?/addDeduction"
-						use:enhance
+						use:enhance={addDeduction.enhance}
 						class="flex flex-wrap items-end gap-2"
 					>
 						<select
@@ -860,8 +892,9 @@
 							class="h-8 w-28 rounded-md border border-input bg-background px-2 text-xs"
 						/>
 						<button
-							class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-							>Add</button
+							disabled={addDeduction.busy}
+							class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+							>{addDeduction.busy ? 'Adding…' : 'Add'}</button
 						>
 					</form>
 				{:else}
@@ -931,7 +964,7 @@
 					method="POST"
 					action="?/uploadDocument"
 					enctype="multipart/form-data"
-					use:enhance
+					use:enhance={uploadDocument.enhance}
 					class="flex flex-wrap items-end gap-2 border-t pt-3"
 				>
 					<div class="grid gap-1">
@@ -972,8 +1005,9 @@
 						/>
 					</div>
 					<button
-						class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-						>Upload</button
+						disabled={uploadDocument.busy}
+						class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+						>{uploadDocument.busy ? 'Uploading…' : 'Upload'}</button
 					>
 				</form>
 			</section>

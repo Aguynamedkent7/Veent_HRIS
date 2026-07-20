@@ -2,12 +2,29 @@
 	import { enhance } from '$app/forms'
 	import { advanceTo } from '$lib/actions/dateRange'
 	import { formatShortDate } from '$lib/utils/format'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 	let showGoal = $state(false)
 	let cycleStart = $state('')
 	let cycleEnd = $state('')
+
+	// #108: a double-click would create a duplicate goal / cycle, or re-run a status transition.
+	const createGoal = createSubmitGuard()
+	const createCycle = createSubmitGuard()
+
+	// Forms inside {#each} need one guard per row — a single shared guard would disable every
+	// row's button at once. Keyed lazily so each row keeps its own stable instance.
+	const rowGuards = new Map<string, ReturnType<typeof createSubmitGuard>>()
+	function rowGuard(key: string) {
+		let g = rowGuards.get(key)
+		if (!g) {
+			g = createSubmitGuard()
+			rowGuards.set(key, g)
+		}
+		return g
+	}
 
 	const goalStatusClass = (status: string) =>
 		status === 'COMPLETED'
@@ -52,7 +69,12 @@
 	{/if}
 
 	{#if showGoal}
-		<form method="POST" action="?/createGoal" use:enhance class="rounded-lg border p-4 space-y-4">
+		<form
+			method="POST"
+			action="?/createGoal"
+			use:enhance={createGoal.enhance}
+			class="rounded-lg border p-4 space-y-4"
+		>
 			<h2 class="font-semibold">Create Goal</h2>
 			<div class="grid gap-3 sm:grid-cols-2">
 				<div class="sm:col-span-2">
@@ -99,8 +121,9 @@
 				>
 				<button
 					type="submit"
-					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-					>Save Goal</button
+					disabled={createGoal.busy}
+					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+					>{createGoal.busy ? 'Saving…' : 'Save Goal'}</button
 				>
 			</div>
 		</form>
@@ -112,6 +135,7 @@
 		{#if data.myGoals.length > 0}
 			<div class="grid gap-3 sm:grid-cols-2">
 				{#each data.myGoals as goal (goal.id)}
+					{@const updateGoal = rowGuard('goal-' + goal.id)}
 					<div class="rounded-lg border bg-card p-4 space-y-3">
 						<div class="flex items-start justify-between gap-2">
 							<div>
@@ -146,7 +170,7 @@
 						<form
 							method="POST"
 							action="?/updateGoal"
-							use:enhance
+							use:enhance={updateGoal.enhance}
 							class="flex items-end gap-2 border-t pt-3"
 						>
 							<input type="hidden" name="id" value={goal.id} />
@@ -180,8 +204,9 @@
 							</div>
 							<button
 								type="submit"
-								class="h-8 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-								>Update</button
+								disabled={updateGoal.busy}
+								class="h-8 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+								>{updateGoal.busy ? 'Updating…' : 'Update'}</button
 							>
 						</form>
 					</div>
@@ -201,7 +226,7 @@
 			<form
 				method="POST"
 				action="?/createCycle"
-				use:enhance
+				use:enhance={createCycle.enhance}
 				class="flex flex-wrap items-end gap-2 rounded-lg border bg-card p-4"
 			>
 				<input
@@ -231,8 +256,9 @@
 					class="h-9 rounded-md border border-input bg-background px-2 text-sm"
 				/>
 				<button
-					class="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-					>Create cycle</button
+					disabled={createCycle.busy}
+					class="h-9 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+					>{createCycle.busy ? 'Creating…' : 'Create cycle'}</button
 				>
 			</form>
 			{#if data.cycles.length}
@@ -248,6 +274,9 @@
 						</thead>
 						<tbody class="divide-y">
 							{#each data.cycles as c (c.id)}
+								{@const activateCycle = rowGuard('activate-' + c.id)}
+								{@const openReviews = rowGuard('open-' + c.id)}
+								{@const closeCycle = rowGuard('close-' + c.id)}
 								<tr class="hover:bg-muted/30">
 									<td class="px-4 py-3 font-medium">{c.name}</td>
 									<td class="px-4 py-3 text-muted-foreground"
@@ -263,32 +292,47 @@
 									<td class="px-4 py-3">
 										<div class="flex items-center justify-end gap-2">
 											{#if c.status === 'DRAFT'}
-												<form method="POST" action="?/setCycleStatus" use:enhance>
+												<form
+													method="POST"
+													action="?/setCycleStatus"
+													use:enhance={activateCycle.enhance}
+												>
 													<input type="hidden" name="id" value={c.id} /><input
 														type="hidden"
 														name="status"
 														value="ACTIVE"
 													/><button
-														class="rounded-md border border-green-200 px-3 py-1 text-xs font-medium text-green-600 hover:bg-green-50"
-														>Activate</button
+														disabled={activateCycle.busy}
+														class="rounded-md border border-green-200 px-3 py-1 text-xs font-medium text-green-600 hover:bg-green-50 disabled:pointer-events-none disabled:opacity-50"
+														>{activateCycle.busy ? 'Activating…' : 'Activate'}</button
 													>
 												</form>
 											{/if}
 											{#if c.status === 'ACTIVE'}
-												<form method="POST" action="?/openReviews" use:enhance>
+												<form
+													method="POST"
+													action="?/openReviews"
+													use:enhance={openReviews.enhance}
+												>
 													<input type="hidden" name="id" value={c.id} /><button
-														class="rounded-md border border-primary/40 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/10"
-														>Open reviews</button
+														disabled={openReviews.busy}
+														class="rounded-md border border-primary/40 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/10 disabled:pointer-events-none disabled:opacity-50"
+														>{openReviews.busy ? 'Opening…' : 'Open reviews'}</button
 													>
 												</form>
-												<form method="POST" action="?/setCycleStatus" use:enhance>
+												<form
+													method="POST"
+													action="?/setCycleStatus"
+													use:enhance={closeCycle.enhance}
+												>
 													<input type="hidden" name="id" value={c.id} /><input
 														type="hidden"
 														name="status"
 														value="CLOSED"
 													/><button
-														class="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
-														>Close</button
+														disabled={closeCycle.busy}
+														class="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:pointer-events-none disabled:opacity-50"
+														>{closeCycle.busy ? 'Closing…' : 'Close'}</button
 													>
 												</form>
 											{/if}

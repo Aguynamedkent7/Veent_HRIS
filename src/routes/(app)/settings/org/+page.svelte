@@ -1,11 +1,29 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 	let showCreate = $state(false)
 	let editingId = $state<string | null>(null)
+
+	// #108: a double-click would create a duplicate position / re-run the update.
+	const createPosition = createSubmitGuard(() => async ({ update }) => {
+		await update()
+		showCreate = false
+	})
+	// Only one row is expanded at a time (`editingId`), so a single guard is safe here.
+	const updatePosition = createSubmitGuard(() => async ({ update }) => {
+		await update({ reset: false })
+		editingId = null
+	})
+
+	// The employee-assignment table renders one form per employee, so each row needs its own guard
+	// — a shared one would disable every other row's Save while one is in flight. Plain object,
+	// not `$state`: each guard holds its own reactive `busy`, the map only memoises identity.
+	const assignGuards: Record<string, ReturnType<typeof createSubmitGuard>> = {}
+	const assignGuard = (id: string) => (assignGuards[id] ??= createSubmitGuard())
 
 	const inputClass =
 		'mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -47,11 +65,7 @@
 		<form
 			method="POST"
 			action="?/createPosition"
-			use:enhance={() =>
-				async ({ update }) => {
-					await update()
-					showCreate = false
-				}}
+			use:enhance={createPosition.enhance}
 			class="rounded-lg border p-4 space-y-4"
 		>
 			<h2 class="font-semibold">New Position</h2>
@@ -82,8 +96,9 @@
 				>
 				<button
 					type="submit"
-					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-					>Create</button
+					disabled={createPosition.busy}
+					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+					>{createPosition.busy ? 'Creating…' : 'Create'}</button
 				>
 			</div>
 		</form>
@@ -137,11 +152,7 @@
 									<form
 										method="POST"
 										action="?/updatePosition"
-										use:enhance={() =>
-											async ({ update }) => {
-												await update({ reset: false })
-												editingId = null
-											}}
+										use:enhance={updatePosition.enhance}
 										class="grid items-end gap-3 sm:grid-cols-5"
 									>
 										<input type="hidden" name="id" value={pos.id} />
@@ -218,8 +229,9 @@
 											>
 											<button
 												type="submit"
-												class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-												>Save</button
+												disabled={updatePosition.busy}
+												class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+												>{updatePosition.busy ? 'Saving…' : 'Save'}</button
 											>
 										</div>
 									</form>
@@ -255,6 +267,7 @@
 				</thead>
 				<tbody class="divide-y">
 					{#each data.employees as emp (emp.id)}
+						{@const assign = assignGuard(emp.id)}
 						<tr class="hover:bg-muted/30">
 							<td class="px-4 py-3 font-medium">{emp.name}</td>
 							<td class="px-4 py-3 text-muted-foreground">{emp.jobTitle}</td>
@@ -263,7 +276,7 @@
 								<form
 									method="POST"
 									action="?/assignEmployee"
-									use:enhance
+									use:enhance={assign.enhance}
 									class="flex items-center gap-2"
 								>
 									<input type="hidden" name="employeeId" value={emp.id} />
@@ -279,8 +292,9 @@
 									</select>
 									<button
 										type="submit"
-										class="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-										>Save</button
+										disabled={assign.busy}
+										class="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+										>{assign.busy ? 'Saving…' : 'Save'}</button
 									>
 								</form>
 							</td>

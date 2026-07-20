@@ -3,9 +3,13 @@
 	import { advanceTo } from '$lib/actions/dateRange'
 	import { formatDateISO } from '$lib/utils/dates'
 	import BalanceSummary from '$lib/components/leave/BalanceSummary.svelte'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
+
+	// #108: a double-click here would file the same leave request twice and deduct the balance twice.
+	const create = createSubmitGuard()
 
 	let selectedLeaveTypeId = $state('')
 
@@ -36,7 +40,12 @@
 		</div>
 	{/if}
 
-	<form method="POST" action="?/create" use:enhance class="space-y-4 rounded-lg border p-5">
+	<form
+		method="POST"
+		action="?/create"
+		use:enhance={create.enhance}
+		class="space-y-4 rounded-lg border p-5"
+	>
 		<div class="space-y-1">
 			<label for="leaveTypeId" class="text-sm font-medium">Leave Type</label>
 			<select
@@ -102,9 +111,10 @@
 		<div class="flex gap-3 pt-1">
 			<button
 				type="submit"
-				class="rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+				disabled={create.busy}
+				class="rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
 			>
-				Submit Request
+				{create.busy ? 'Submitting…' : 'Submit Request'}
 			</button>
 			<a href="/leave" class="rounded-md border px-5 py-2 text-sm hover:bg-accent"> Cancel </a>
 		</div>

@@ -1,8 +1,13 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
+
+	// #108: double-submitting either config form would write the same rates twice.
+	const saveConfig = createSubmitGuard()
+	const saveRates = createSubmitGuard()
 
 	// Editable form fields seeded once from the loaded config — an intentional
 	// snapshot so a data refresh can't clobber the user's in-progress edits.
@@ -43,7 +48,12 @@
 		</div>
 	{/if}
 
-	<form method="POST" action="?/update" use:enhance class="rounded-md border bg-card p-6 space-y-6">
+	<form
+		method="POST"
+		action="?/update"
+		use:enhance={saveConfig.enhance}
+		class="rounded-md border bg-card p-6 space-y-6"
+	>
 		<!-- Pay Frequency -->
 		<div class="space-y-2">
 			<label class="text-sm font-medium" for="payFrequency">Pay Frequency</label>
@@ -141,9 +151,10 @@
 		<div class="flex justify-end pt-2">
 			<button
 				type="submit"
-				class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+				disabled={saveConfig.busy}
+				class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
 			>
-				Save Configuration
+				{saveConfig.busy ? 'Saving…' : 'Save Configuration'}
 			</button>
 		</div>
 	</form>
@@ -152,7 +163,7 @@
 	<form
 		method="POST"
 		action="?/updateRates"
-		use:enhance
+		use:enhance={saveRates.enhance}
 		class="rounded-md border bg-card p-6 space-y-6"
 	>
 		<div>
@@ -187,9 +198,10 @@
 		<div class="flex justify-end">
 			<button
 				type="submit"
-				class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+				disabled={saveRates.busy}
+				class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
 			>
-				Save Multipliers
+				{saveRates.busy ? 'Saving…' : 'Save Multipliers'}
 			</button>
 		</div>
 	</form>

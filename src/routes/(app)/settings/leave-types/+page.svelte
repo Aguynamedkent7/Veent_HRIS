@@ -1,9 +1,22 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
+
+	// #108: a double-click would create a duplicate leave type.
+	const add = createSubmitGuard()
+
+	// #108: the table rows each carry their own `?/update` and `?/toggle` forms, so each needs its
+	// own guard — a shared one would freeze the whole table while one row saves. One map per
+	// action so saving a row doesn't disable its own Deactivate button. Plain objects, not
+	// `$state`: each guard holds its own reactive `busy`, the maps only memoise identity.
+	const updateGuards: Record<string, ReturnType<typeof createSubmitGuard>> = {}
+	const updateGuard = (id: string) => (updateGuards[id] ??= createSubmitGuard())
+	const toggleGuards: Record<string, ReturnType<typeof createSubmitGuard>> = {}
+	const toggleGuard = (id: string) => (toggleGuards[id] ??= createSubmitGuard())
 
 	const inputClass =
 		'h-9 w-full rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -33,7 +46,7 @@
 	<!-- Add -->
 	<section class="space-y-3 rounded-lg border bg-card p-4">
 		<h2 class="font-semibold">Add leave type</h2>
-		<form method="POST" action="?/add" use:enhance class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+		<form method="POST" action="?/add" use:enhance={add.enhance} class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
 			<div class="lg:col-span-2">
 				<label for="add-name" class="text-xs font-medium text-muted-foreground">Name</label>
 				<input
@@ -83,8 +96,9 @@
 			<div class="sm:col-span-2 lg:col-span-4">
 				<button
 					type="submit"
-					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-					>Add leave type</button
+					disabled={add.busy}
+					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+					>{add.busy ? 'Adding…' : 'Add leave type'}</button
 				>
 			</div>
 		</form>
@@ -111,6 +125,8 @@
 					</thead>
 					<tbody class="divide-y">
 						{#each data.leaveTypes as lt (lt.id)}
+							{@const save = updateGuard(lt.id)}
+							{@const toggle = toggleGuard(lt.id)}
 							<tr class="hover:bg-muted/30 {lt.isActive ? '' : 'opacity-50'}">
 								<td class="px-3 py-2">
 									<input
@@ -164,22 +180,33 @@
 									/>
 								</td>
 								<td class="px-3 py-2 text-right">
-									<form method="POST" action="?/update" id="edit-{lt.id}" use:enhance>
+									<form
+										method="POST"
+										action="?/update"
+										id="edit-{lt.id}"
+										use:enhance={save.enhance}
+									>
 										<input type="hidden" name="id" value={lt.id} />
 										<button
 											type="submit"
-											class="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent"
-											>Save</button
+											disabled={save.busy}
+											class="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+											>{save.busy ? 'Saving…' : 'Save'}</button
 										>
 									</form>
 								</td>
 								<td class="px-3 py-2 text-right">
-									<form method="POST" action="?/toggle" use:enhance>
+									<form method="POST" action="?/toggle" use:enhance={toggle.enhance}>
 										<input type="hidden" name="id" value={lt.id} />
 										<button
 											type="submit"
-											class="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent"
-											>{lt.isActive ? 'Deactivate' : 'Activate'}</button
+											disabled={toggle.busy}
+											class="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+											>{toggle.busy
+												? 'Saving…'
+												: lt.isActive
+													? 'Deactivate'
+													: 'Activate'}</button
 										>
 									</form>
 								</td>

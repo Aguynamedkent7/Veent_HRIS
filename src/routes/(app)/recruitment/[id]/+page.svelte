@@ -2,9 +2,23 @@
 	import { enhance } from '$app/forms'
 	import ApplicantKanban from '$lib/components/recruitment/ApplicantKanban.svelte'
 	import { formatShortDate } from '$lib/utils/format'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData } from './$types'
 
 	let { data }: { data: PageData } = $props()
+
+	// #108: the three status forms are mutually exclusive branches, so only one is ever
+	// mounted — a guard each is enough to stop a double-click re-firing the same transition.
+	const closePosting = createSubmitGuard()
+	const publishPosting = createSubmitGuard()
+	const reopenPosting = createSubmitGuard()
+
+	// #108: each hired applicant row is its own `?/convert` form and a double-click here creates a
+	// duplicate employee. A shared guard would disable the whole list while any one row is in
+	// flight, so create one lazily per applicant id. Plain object, not `$state` — each guard owns
+	// its own reactive `busy`, this map only memoises identity.
+	const convertGuards: Record<string, ReturnType<typeof createSubmitGuard>> = {}
+	const convertGuard = (id: string) => (convertGuards[id] ??= createSubmitGuard())
 
 	const { posting, applicants, userRole } = $derived(data)
 
@@ -61,33 +75,36 @@
 				{/if}
 				{#if isHrAdmin}
 					{#if posting.status === 'OPEN'}
-						<form method="POST" action="?/updateStatus" use:enhance>
+						<form method="POST" action="?/updateStatus" use:enhance={closePosting.enhance}>
 							<input type="hidden" name="status" value="CLOSED" />
 							<button
 								type="submit"
-								class="rounded-md border px-4 py-2 text-sm font-medium text-destructive border-destructive/30 hover:bg-destructive/10"
+								disabled={closePosting.busy}
+								class="rounded-md border px-4 py-2 text-sm font-medium text-destructive border-destructive/30 hover:bg-destructive/10 disabled:pointer-events-none disabled:opacity-50"
 							>
-								Close Posting
+								{closePosting.busy ? 'Closing…' : 'Close Posting'}
 							</button>
 						</form>
 					{:else if posting.status === 'DRAFT'}
-						<form method="POST" action="?/updateStatus" use:enhance>
+						<form method="POST" action="?/updateStatus" use:enhance={publishPosting.enhance}>
 							<input type="hidden" name="status" value="OPEN" />
 							<button
 								type="submit"
-								class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+								disabled={publishPosting.busy}
+								class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
 							>
-								Publish
+								{publishPosting.busy ? 'Publishing…' : 'Publish'}
 							</button>
 						</form>
 					{:else if posting.status === 'CLOSED'}
-						<form method="POST" action="?/updateStatus" use:enhance>
+						<form method="POST" action="?/updateStatus" use:enhance={reopenPosting.enhance}>
 							<input type="hidden" name="status" value="OPEN" />
 							<button
 								type="submit"
-								class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
+								disabled={reopenPosting.busy}
+								class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
 							>
-								Reopen
+								{reopenPosting.busy ? 'Reopening…' : 'Reopen'}
 							</button>
 						</form>
 					{/if}
@@ -117,13 +134,15 @@
 							<p class="text-xs text-muted-foreground">{applicant.email}</p>
 						</div>
 						{#if !applicant.convertedToEmployeeId}
-							<form method="POST" action="?/convert" use:enhance>
+							{@const convert = convertGuard(applicant.id)}
+							<form method="POST" action="?/convert" use:enhance={convert.enhance}>
 								<input type="hidden" name="applicantId" value={applicant.id} />
 								<button
 									type="submit"
-									class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+									disabled={convert.busy}
+									class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
 								>
-									Convert to Employee
+									{convert.busy ? 'Converting…' : 'Convert to Employee'}
 								</button>
 							</form>
 						{:else}

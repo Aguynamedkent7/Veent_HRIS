@@ -2,10 +2,29 @@
 	import { enhance } from '$app/forms'
 	import { formatDateRange, formatShortDate, formatDate } from '$lib/utils/format'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 	const req = $derived(data.request)
+
+	// #108: double-submits here would double-upload attachments or fire duplicate verify/delete
+	// posts. The per-document forms sit in an `{#each}`, so each row gets its own guard — a shared
+	// one would disable every document's button at once.
+	const uploadDocs = createSubmitGuard()
+	function docGuards() {
+		const map = new Map<string, ReturnType<typeof createSubmitGuard>>()
+		return (id: string) => {
+			let g = map.get(id)
+			if (!g) {
+				g = createSubmitGuard()
+				map.set(id, g)
+			}
+			return g
+		}
+	}
+	const verifyGuard = docGuards()
+	const deleteGuard = docGuards()
 
 	// Owner can add/remove documents only while the request can still change.
 	const docsEditable = $derived(
@@ -151,24 +170,28 @@
 								{doc.verifiedAt ? 'Verified' : 'Unverified'}
 							</span>
 							{#if data.canReview}
-								<form method="POST" action="?/verifyDoc" use:enhance>
+								{@const verify = verifyGuard(doc.id)}
+								<form method="POST" action="?/verifyDoc" use:enhance={verify.enhance}>
 									<input type="hidden" name="docId" value={doc.id} />
 									<input type="hidden" name="verified" value={doc.verifiedAt ? 'false' : 'true'} />
 									<button
 										type="submit"
-										class="rounded-md border border-primary/40 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/10"
+										disabled={verify.busy}
+										class="rounded-md border border-primary/40 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/10 disabled:pointer-events-none disabled:opacity-50"
 									>
 										{doc.verifiedAt ? 'Unverify' : 'Mark verified'}
 									</button>
 								</form>
 							{/if}
 							{#if docsEditable && !doc.verifiedAt}
-								<form method="POST" action="?/deleteDoc" use:enhance>
+								{@const remove = deleteGuard(doc.id)}
+								<form method="POST" action="?/deleteDoc" use:enhance={remove.enhance}>
 									<input type="hidden" name="docId" value={doc.id} />
 									<button
 										type="submit"
-										class="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
-										>Remove</button
+										disabled={remove.busy}
+										class="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:pointer-events-none disabled:opacity-50"
+										>{remove.busy ? 'Removing…' : 'Remove'}</button
 									>
 								</form>
 							{/if}
@@ -183,7 +206,7 @@
 				method="POST"
 				action="?/uploadDocs"
 				enctype="multipart/form-data"
-				use:enhance
+				use:enhance={uploadDocs.enhance}
 				class="space-y-2 rounded-lg border bg-muted/30 p-3"
 			>
 				<label for="documents" class="text-xs font-medium">Add documents</label>
@@ -198,8 +221,9 @@
 					/>
 					<button
 						type="submit"
-						class="inline-flex h-8 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-						>Upload</button
+						disabled={uploadDocs.busy}
+						class="inline-flex h-8 items-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+						>{uploadDocs.busy ? 'Uploading…' : 'Upload'}</button
 					>
 				</div>
 				<p class="text-xs text-muted-foreground">
