@@ -3,10 +3,24 @@
 	import { advanceTo } from '$lib/actions/dateRange'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 	let showOpen = $state(false)
+
+	// #108: a double-submitted period open creates a duplicate payroll period.
+	const openPeriod = createSubmitGuard()
+
+	// #108: the row actions (import/generate/lock/release/void) live inside an {#each}, so each
+	// row needs its OWN guard — a single shared one would disable every row's button at once.
+	// Memoised by `${periodId}:${action}` so the identity is stable across re-renders.
+	const guards = new Map<string, ReturnType<typeof createSubmitGuard>>()
+	function guard(key: string) {
+		let g = guards.get(key)
+		if (!g) guards.set(key, (g = createSubmitGuard()))
+		return g
+	}
 
 	// Theme-aware status pills (#76) — see the .badge-* classes in app.css.
 	const badge: Record<string, string> = {
@@ -46,7 +60,12 @@
 	{/if}
 
 	{#if showOpen}
-		<form method="POST" action="?/open" use:enhance class="rounded-lg border p-4 space-y-3">
+		<form
+			method="POST"
+			action="?/open"
+			use:enhance={openPeriod.enhance}
+			class="rounded-lg border p-4 space-y-3"
+		>
 			<h2 class="font-semibold">Open a Payroll Period</h2>
 			<div class="grid gap-3 sm:grid-cols-4">
 				<div>
@@ -102,8 +121,9 @@
 				>
 				<button
 					type="submit"
-					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-					>Open</button
+					disabled={openPeriod.busy}
+					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+					>{openPeriod.busy ? 'Opening…' : 'Open'}</button
 				>
 			</div>
 		</form>
@@ -137,43 +157,75 @@
 						<td class="px-4 py-3">
 							<div class="flex flex-wrap items-center justify-end gap-2">
 								{#if p.status === 'OPEN'}
-									<form method="POST" action="?/import" use:enhance>
+									{@const importG = guard(`${p.id}:import`)}
+									<form method="POST" action="?/import" use:enhance={importG.enhance}>
 										<input type="hidden" name="id" value={p.id} />
-										<button class="btn-row">Import Attendance</button>
+										<button
+											disabled={importG.busy}
+											class="btn-row disabled:pointer-events-none disabled:opacity-50"
+											>{importG.busy ? 'Importing…' : 'Import Attendance'}</button
+										>
 									</form>
 								{/if}
 								{#if p.status === 'OPEN' || p.status === 'IMPORTED' || p.status === 'GENERATED'}
-									<form method="POST" action="?/generate" use:enhance>
+									{@const generateG = guard(`${p.id}:generate`)}
+									<form method="POST" action="?/generate" use:enhance={generateG.enhance}>
 										<input type="hidden" name="id" value={p.id} />
-										<button class="btn-row"
-											>{p.status === 'GENERATED' ? 'Re-generate' : 'Generate'}</button
+										<button
+											disabled={generateG.busy}
+											class="btn-row disabled:pointer-events-none disabled:opacity-50"
+											>{generateG.busy
+												? 'Generating…'
+												: p.status === 'GENERATED'
+													? 'Re-generate'
+													: 'Generate'}</button
 										>
 									</form>
 								{/if}
 								{#if p.status === 'GENERATED'}
-									<form method="POST" action="?/lock" use:enhance class="flex items-center gap-1">
+									{@const lockG = guard(`${p.id}:lock`)}
+									<form
+										method="POST"
+										action="?/lock"
+										use:enhance={lockG.enhance}
+										class="flex items-center gap-1"
+									>
 										<input type="hidden" name="id" value={p.id} />
 										<input
 											name="overrideNote"
 											placeholder="Override note (if flagged)"
 											class="h-7 w-44 rounded border border-input bg-background px-2 text-xs"
 										/>
-										<button class="btn-row-warning">Lock</button>
+										<button
+											disabled={lockG.busy}
+											class="btn-row-warning disabled:pointer-events-none disabled:opacity-50"
+											>{lockG.busy ? 'Locking…' : 'Lock'}</button
+										>
 									</form>
 								{/if}
 								{#if p.status === 'LOCKED'}
-									<form method="POST" action="?/release" use:enhance>
+									{@const releaseG = guard(`${p.id}:release`)}
+									<form method="POST" action="?/release" use:enhance={releaseG.enhance}>
 										<input type="hidden" name="id" value={p.id} />
-										<button class="btn-row-positive">Release</button>
+										<button
+											disabled={releaseG.busy}
+											class="btn-row-positive disabled:pointer-events-none disabled:opacity-50"
+											>{releaseG.busy ? 'Releasing…' : 'Release'}</button
+										>
 									</form>
 								{/if}
 								{#if run}
 									<a href="/payroll/{run.id}" class="btn-row">Detail</a>
 								{/if}
 								{#if data.isSuperAdmin && p.status !== 'VOIDED'}
-									<form method="POST" action="?/void" use:enhance>
+									{@const voidG = guard(`${p.id}:void`)}
+									<form method="POST" action="?/void" use:enhance={voidG.enhance}>
 										<input type="hidden" name="id" value={p.id} />
-										<button class="btn-row-danger">Void</button>
+										<button
+											disabled={voidG.busy}
+											class="btn-row-danger disabled:pointer-events-none disabled:opacity-50"
+											>{voidG.busy ? 'Voiding…' : 'Void'}</button
+										>
 									</form>
 								{/if}
 							</div>

@@ -1,9 +1,23 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
+
+	// #108: a double-click would create a duplicate pay code.
+	const addEarning = createSubmitGuard()
+	const addDeduction = createSubmitGuard()
+
+	// #108: each table row carries its own toggle form, so each needs its own guard — a shared one
+	// would freeze the whole table while one row is in flight. Separate maps per action: earnings
+	// and deductions are distinct id spaces. Plain objects, not `$state`: each guard holds its own
+	// reactive `busy`, the maps only memoise identity.
+	const toggleEarningGuards: Record<string, ReturnType<typeof createSubmitGuard>> = {}
+	const toggleEarningGuard = (id: string) => (toggleEarningGuards[id] ??= createSubmitGuard())
+	const toggleDeductionGuards: Record<string, ReturnType<typeof createSubmitGuard>> = {}
+	const toggleDeductionGuard = (id: string) => (toggleDeductionGuards[id] ??= createSubmitGuard())
 </script>
 
 <svelte:head>
@@ -43,6 +57,7 @@
 					</thead>
 					<tbody class="divide-y">
 						{#each data.earningTypes as et (et.id)}
+							{@const toggle = toggleEarningGuard(et.id)}
 							<tr class="hover:bg-muted/30 {et.isActive ? '' : 'opacity-50'}">
 								<td class="px-3 py-2 font-mono text-xs">{et.code}</td>
 								<td class="px-3 py-2">{et.label}</td>
@@ -55,14 +70,15 @@
 									>{et.multiplier ? Number(et.multiplier).toFixed(2) : '—'}</td
 								>
 								<td class="px-3 py-2 text-right">
-									<form method="POST" action="?/toggleEarning" use:enhance>
+									<form method="POST" action="?/toggleEarning" use:enhance={toggle.enhance}>
 										<input type="hidden" name="id" value={et.id} />
 										<button
 											type="submit"
-											class="rounded-md border px-3 py-1 text-xs font-medium {et.isActive
+											disabled={toggle.busy}
+											class="rounded-md border px-3 py-1 text-xs font-medium disabled:pointer-events-none disabled:opacity-50 {et.isActive
 												? 'border-red-200 text-red-600 hover:bg-red-50'
 												: 'border-green-200 text-green-600 hover:bg-green-50'}"
-											>{et.isActive ? 'Deactivate' : 'Activate'}</button
+											>{toggle.busy ? 'Saving…' : et.isActive ? 'Deactivate' : 'Activate'}</button
 										>
 									</form>
 								</td>
@@ -74,7 +90,7 @@
 			<form
 				method="POST"
 				action="?/addEarning"
-				use:enhance
+				use:enhance={addEarning.enhance}
 				class="flex flex-wrap items-end gap-2 border-t pt-3"
 			>
 				<input
@@ -101,8 +117,9 @@
 					><input name="taxable" type="checkbox" checked /> Taxable</label
 				>
 				<button
-					class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-					>Add</button
+					disabled={addEarning.busy}
+					class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+					>{addEarning.busy ? 'Adding…' : 'Add'}</button
 				>
 			</form>
 		</section>
@@ -122,6 +139,7 @@
 					</thead>
 					<tbody class="divide-y">
 						{#each data.deductionTypes as dt (dt.id)}
+							{@const toggle = toggleDeductionGuard(dt.id)}
 							<tr class="hover:bg-muted/30 {dt.isActive ? '' : 'opacity-50'}">
 								<td class="px-3 py-2 font-mono text-xs">{dt.code}</td>
 								<td class="px-3 py-2">{dt.label}</td>
@@ -131,14 +149,15 @@
 									>
 								</td>
 								<td class="px-3 py-2 text-right">
-									<form method="POST" action="?/toggleDeduction" use:enhance>
+									<form method="POST" action="?/toggleDeduction" use:enhance={toggle.enhance}>
 										<input type="hidden" name="id" value={dt.id} />
 										<button
 											type="submit"
-											class="rounded-md border px-3 py-1 text-xs font-medium {dt.isActive
+											disabled={toggle.busy}
+											class="rounded-md border px-3 py-1 text-xs font-medium disabled:pointer-events-none disabled:opacity-50 {dt.isActive
 												? 'border-red-200 text-red-600 hover:bg-red-50'
 												: 'border-green-200 text-green-600 hover:bg-green-50'}"
-											>{dt.isActive ? 'Deactivate' : 'Activate'}</button
+											>{toggle.busy ? 'Saving…' : dt.isActive ? 'Deactivate' : 'Activate'}</button
 										>
 									</form>
 								</td>
@@ -150,7 +169,7 @@
 			<form
 				method="POST"
 				action="?/addDeduction"
-				use:enhance
+				use:enhance={addDeduction.enhance}
 				class="flex flex-wrap items-end gap-2 border-t pt-3"
 			>
 				<input
@@ -169,8 +188,9 @@
 					><input name="isStatutory" type="checkbox" /> Statutory</label
 				>
 				<button
-					class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-					>Add</button
+					disabled={addDeduction.busy}
+					class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+					>{addDeduction.busy ? 'Adding…' : 'Add'}</button
 				>
 			</form>
 		</section>

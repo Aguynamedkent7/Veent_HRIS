@@ -2,9 +2,22 @@
 	import { enhance } from '$app/forms'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import { formatCurrency } from '$lib/utils/format'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
+
+	// #108: a double-click would create a duplicate salary grade.
+	const addGrade = createSubmitGuard()
+
+	// #108: both tables render one form per row, so each row needs its own guard — a shared one
+	// would freeze every other row while one is in flight. Separate maps per action: the two
+	// tables are keyed by different ids (grade vs position) and must not collide. Plain objects,
+	// not `$state`: each guard holds its own reactive `busy`, the maps only memoise identity.
+	const toggleGradeGuards: Record<string, ReturnType<typeof createSubmitGuard>> = {}
+	const toggleGradeGuard = (id: string) => (toggleGradeGuards[id] ??= createSubmitGuard())
+	const assignGradeGuards: Record<string, ReturnType<typeof createSubmitGuard>> = {}
+	const assignGradeGuard = (id: string) => (assignGradeGuards[id] ??= createSubmitGuard())
 </script>
 
 <svelte:head>
@@ -43,6 +56,7 @@
 				</thead>
 				<tbody class="divide-y">
 					{#each data.grades as g (g.id)}
+						{@const toggle = toggleGradeGuard(g.id)}
 						<tr class="hover:bg-muted/30 {g.isActive ? '' : 'opacity-50'}">
 							<td class="px-3 py-2 font-medium">{g.name}</td>
 							<td class="px-3 py-2 text-right font-mono text-xs"
@@ -55,14 +69,15 @@
 								>{formatCurrency(Number(g.maxSalary))}</td
 							>
 							<td class="px-3 py-2 text-right">
-								<form method="POST" action="?/toggleGrade" use:enhance>
+								<form method="POST" action="?/toggleGrade" use:enhance={toggle.enhance}>
 									<input type="hidden" name="id" value={g.id} />
 									<button
 										type="submit"
-										class="rounded-md border px-3 py-1 text-xs font-medium {g.isActive
+										disabled={toggle.busy}
+										class="rounded-md border px-3 py-1 text-xs font-medium disabled:pointer-events-none disabled:opacity-50 {g.isActive
 											? 'border-red-200 text-red-600 hover:bg-red-50'
 											: 'border-green-200 text-green-600 hover:bg-green-50'}"
-										>{g.isActive ? 'Deactivate' : 'Activate'}</button
+										>{toggle.busy ? 'Saving…' : g.isActive ? 'Deactivate' : 'Activate'}</button
 									>
 								</form>
 							</td>
@@ -80,7 +95,7 @@
 		<form
 			method="POST"
 			action="?/addGrade"
-			use:enhance
+			use:enhance={addGrade.enhance}
 			class="flex flex-wrap items-end gap-2 border-t pt-3"
 		>
 			<input
@@ -117,8 +132,9 @@
 				class="h-8 w-24 rounded-md border border-input bg-background px-2 text-xs"
 			/>
 			<button
-				class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-				>Add Grade</button
+				disabled={addGrade.busy}
+				class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+				>{addGrade.busy ? 'Adding…' : 'Add Grade'}</button
 			>
 		</form>
 	</section>
@@ -137,21 +153,26 @@
 					</thead>
 					<tbody class="divide-y">
 						{#each data.positions as p (p.id)}
+							{@const assign = assignGradeGuard(p.id)}
 							<tr class="hover:bg-muted/30">
 								<td class="px-3 py-2">{p.title}</td>
 								<td class="px-3 py-2">
 									<form
 										method="POST"
 										action="?/assignGrade"
-										use:enhance
+										use:enhance={assign.enhance}
 										class="flex items-center gap-2"
 									>
 										<input type="hidden" name="positionId" value={p.id} />
+										<!-- No submit button: the select auto-submits via requestSubmit(), which
+										     bypasses any button `disabled`. The guard cancels the re-entrant
+										     submit; disabling the select stops a second change mid-flight. -->
 										<select
 											name="salaryGradeId"
+											disabled={assign.busy}
 											onchange={(e) =>
 												(e.currentTarget.closest('form') as HTMLFormElement).requestSubmit()}
-											class="h-8 rounded-md border border-input bg-background px-2 text-xs"
+											class="h-8 rounded-md border border-input bg-background px-2 text-xs disabled:pointer-events-none disabled:opacity-50"
 										>
 											<option value="" selected={!p.salaryGradeId}>— none —</option>
 											{#each data.grades as g (g.id)}

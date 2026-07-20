@@ -5,9 +5,12 @@ import { ratesFromRule, type PayRates } from './rates'
 import { computeDeductions, type AmortItem } from './deductions'
 import { recurringDeductionComponents } from './employee-deductions'
 import { computeStatutoryDeductions } from './ph-statutory'
+import { D, q2n, sumQ } from './money'
 import {
+	absenceHoursOf,
+	basicPayBasis,
+	expectedHoursOf,
 	hourlyRateOf,
-	round2,
 	type AttendanceInput,
 	type EmployeeComp,
 	type PayAdjustments,
@@ -31,6 +34,12 @@ export interface EmployeeComputeConfig {
 	recurringDeductions?: PayComponent[]
 	/** Org premium-pay multipliers (from PayRateRule); omitted → DOLE defaults. */
 	rates?: PayRates
+	/**
+	 * Paid hours the period actually schedules, used to value absences for fixed-basic staff
+	 * (#121). The real run passes its holiday-aware `scheduledHours`; omitted → derived from the
+	 * employee's working days × daily hours × `periodShare`.
+	 */
+	expectedHours?: number
 }
 
 export interface ProratedStatutory {
@@ -60,32 +69,45 @@ export function computeEmployeeResult(
 	adjustments: PayAdjustments,
 	cfg: EmployeeComputeConfig
 ): EmployeeComputeResult {
-	const earnings = computeEarnings(comp, attendance, adjustments, cfg.rates)
+	const earnings = computeEarnings(comp, attendance, adjustments, cfg.rates, {
+		periodShare: cfg.periodShare
+	})
 	// Requirement: taxability from EarningType config.
 	for (const c of earnings.components) {
 		const configured = cfg.taxableByCode.get(c.code)
 		if (configured !== undefined) c.taxable = configured
 	}
-	const taxableGross = round2(
-		earnings.components.filter((c) => c.taxable).reduce((s, c) => s + c.amount, 0)
-	)
+	// Lines-authoritative: the taxable subtotal is the sum of already-quantized earning lines.
+	const taxableGross = sumQ(
+		earnings.components.filter((c) => c.taxable).map((c) => c.amount)
+	).toNumber()
 
+	// #119: the monthly statutory figures come back EXACT, are prorated in decimal, and quantize
+	// exactly once — here. Previously each was rounded, scaled by 0.5, then rounded again.
 	const m = computeStatutoryDeductions(comp.basicMonthlySalary)
+	const share = D(cfg.periodShare)
 	const statutory: ProratedStatutory = {
-		sssEe: round2(m.sssEe * cfg.periodShare),
-		sssEr: round2(m.sssEr * cfg.periodShare),
-		philhealthEe: round2(m.philhealthEe * cfg.periodShare),
-		philhealthEr: round2(m.philhealthEr * cfg.periodShare),
-		pagibigEe: round2(m.pagibigEe * cfg.periodShare),
-		pagibigEr: round2(m.pagibigEr * cfg.periodShare),
-		withholdingTax: round2(m.withholdingTax * cfg.periodShare)
+		sssEe: q2n(m.sssEe.times(share)),
+		sssEr: q2n(m.sssEr.times(share)),
+		philhealthEe: q2n(m.philhealthEe.times(share)),
+		philhealthEr: q2n(m.philhealthEr.times(share)),
+		pagibigEe: q2n(m.pagibigEe.times(share)),
+		pagibigEr: q2n(m.pagibigEr.times(share)),
+		withholdingTax: q2n(m.withholdingTax.times(share))
 	}
+
+	// #121: tardiness and absence are fixed-basic semantics. For hourly staff the unworked time is
+	// already missing from `regularHours` (and therefore from BASIC), so charging these lines too
+	// would deduct the same minutes a second time.
+	const fixedBasic = basicPayBasis(comp) === 'FIXED'
+	const expectedHours = cfg.expectedHours ?? expectedHoursOf(comp, cfg.periodShare)
 
 	const ded = computeDeductions({
 		gross: earnings.gross,
 		hourlyRate: hourlyRateOf(comp),
-		lateMinutes: attendance.lateMinutes,
-		undertimeMinutes: attendance.undertimeMinutes,
+		lateMinutes: fixedBasic ? attendance.lateMinutes : 0,
+		undertimeMinutes: fixedBasic ? attendance.undertimeMinutes : 0,
+		absenceHours: fixedBasic ? absenceHoursOf(attendance, expectedHours) : 0,
 		statutory: {
 			sssEe: statutory.sssEe,
 			philhealthEe: statutory.philhealthEe,
@@ -132,7 +154,7 @@ export async function loadCalculatorData(organizationId: string) {
 	const recurringDefaults: Record<string, { allowances: number; incentives: number }> = {}
 	for (const g of recurring) {
 		const rec = (recurringDefaults[g.employeeId] ??= { allowances: 0, incentives: 0 })
-		const amount = round2(Number(g._sum.monthlyAmount ?? 0) * periodShare)
+		const amount = q2n(D(g._sum.monthlyAmount ?? 0).times(periodShare))
 		if (g.kind === 'ALLOWANCE') rec.allowances = amount
 		else rec.incentives = amount
 	}
@@ -178,19 +200,19 @@ export async function previewPayroll(
 		loans: loansAll.map((l) => ({
 			refId: l.id,
 			label: l.type ?? 'Loan',
-			installment: Number(l.installment),
-			balance: Number(l.balance)
+			installment: l.installment,
+			balance: l.balance
 		})),
 		cashAdvances: advancesAll.map((a) => ({
 			refId: a.id,
 			label: 'Cash advance',
-			installment: Number(a.installment),
-			balance: Number(a.balance)
+			installment: a.installment,
+			balance: a.balance
 		}))
 	}
 
 	const comp: EmployeeComp = {
-		basicMonthlySalary: Number(employee.basicMonthlySalary),
+		basicMonthlySalary: employee.basicMonthlySalary,
 		rateType: employee.rateType
 	}
 	const result = computeEmployeeResult(comp, input.attendance, input.adjustments ?? {}, cfg)

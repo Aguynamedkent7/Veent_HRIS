@@ -1,9 +1,13 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import { formatDate, formatCurrency } from '$lib/utils/format'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
+
+	// #108: double-submitting the profile update fires redundant writes for the same record.
+	const update = createSubmitGuard()
 
 	const emp = $derived(data.employee)
 
@@ -124,7 +128,7 @@
 			<h2 class="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
 				Personal &amp; Contact
 			</h2>
-			<form method="POST" action="?/update" use:enhance class="space-y-4">
+			<form method="POST" action="?/update" use:enhance={update.enhance} class="space-y-4">
 				<div class="grid grid-cols-2 gap-4">
 					<div class="space-y-1.5">
 						<label for="firstName" class="text-xs font-medium text-muted-foreground"
@@ -182,7 +186,12 @@
 				</div>
 
 				<div class="pt-2">
-					<button type="submit" class="btn-primary"> Save Changes </button>
+					<button
+						type="submit"
+						disabled={update.busy}
+						class="btn-primary disabled:pointer-events-none disabled:opacity-50"
+						>{update.busy ? 'Saving…' : 'Save Changes'}</button
+					>
 				</div>
 			</form>
 		</section>

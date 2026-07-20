@@ -3,10 +3,23 @@
 	import { advanceTo } from '$lib/actions/dateRange'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
 	import TableSkeleton from '$lib/components/ui/TableSkeleton.svelte'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 	let showCreate = $state(false)
+
+	// #108: a double-submit here creates a duplicate payroll run for the same period.
+	const create = createSubmitGuard()
+
+	// #108: compute/approve live inside an {#each}, so each run needs its OWN guard — a single
+	// shared one would disable every row's button at once. Memoised by `${runId}:${action}`.
+	const guards = new Map<string, ReturnType<typeof createSubmitGuard>>()
+	function guard(key: string) {
+		let g = guards.get(key)
+		if (!g) guards.set(key, (g = createSubmitGuard()))
+		return g
+	}
 </script>
 
 <svelte:head>
@@ -43,7 +56,12 @@
 	{/if}
 
 	{#if showCreate}
-		<form method="POST" action="?/create" use:enhance class="rounded-lg border p-4 space-y-3">
+		<form
+			method="POST"
+			action="?/create"
+			use:enhance={create.enhance}
+			class="rounded-lg border p-4 space-y-3"
+		>
 			<h2 class="font-semibold">Create Payroll Run</h2>
 			{#if form?.error}<div class="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">
 					{form.error}
@@ -72,8 +90,9 @@
 				</div>
 				<button
 					type="submit"
-					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-					>Create</button
+					disabled={create.busy}
+					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+					>{create.busy ? 'Creating…' : 'Create'}</button
 				>
 				<button
 					type="button"
@@ -131,19 +150,37 @@
 							<td class="px-4 py-3">
 								<div class="flex items-center justify-end gap-2">
 									{#if run.status === 'DRAFT'}
-										<form method="POST" action="?/compute" use:enhance>
+										{@const computeG = guard(`${run.id}:compute`)}
+										<form method="POST" action="?/compute" use:enhance={computeG.enhance}>
 											<input type="hidden" name="id" value={run.id} />
-											<button type="submit" class="btn-row">Compute</button>
+											<button
+												type="submit"
+												disabled={computeG.busy}
+												class="btn-row disabled:pointer-events-none disabled:opacity-50"
+												>{computeG.busy ? 'Computing…' : 'Compute'}</button
+											>
 										</form>
 									{/if}
 									{#if run.status === 'COMPUTED'}
-										<form method="POST" action="?/compute" use:enhance>
+										{@const recomputeG = guard(`${run.id}:compute`)}
+										{@const approveG = guard(`${run.id}:approve`)}
+										<form method="POST" action="?/compute" use:enhance={recomputeG.enhance}>
 											<input type="hidden" name="id" value={run.id} />
-											<button type="submit" class="btn-row">Recompute</button>
+											<button
+												type="submit"
+												disabled={recomputeG.busy}
+												class="btn-row disabled:pointer-events-none disabled:opacity-50"
+												>{recomputeG.busy ? 'Computing…' : 'Recompute'}</button
+											>
 										</form>
-										<form method="POST" action="?/approve" use:enhance>
+										<form method="POST" action="?/approve" use:enhance={approveG.enhance}>
 											<input type="hidden" name="id" value={run.id} />
-											<button type="submit" class="btn-row-positive">Approve</button>
+											<button
+												type="submit"
+												disabled={approveG.busy}
+												class="btn-row-positive disabled:pointer-events-none disabled:opacity-50"
+												>{approveG.busy ? 'Approving…' : 'Approve'}</button
+											>
 										</form>
 									{/if}
 									<a href="/payroll/{run.id}" class="btn-row">Detail</a>

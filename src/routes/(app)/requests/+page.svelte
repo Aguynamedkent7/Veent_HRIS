@@ -5,6 +5,7 @@
 	import { formatDateRange, formatShortDate } from '$lib/utils/format'
 	import { formatDateISO } from '$lib/utils/dates'
 	import Pagination from '$lib/components/Pagination.svelte'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -43,6 +44,29 @@
 
 	const isDayHours = (t: string) =>
 		['OVERTIME', 'UNDERTIME', 'REST_DAY_WORK', 'HOLIDAY_WORK'].includes(t)
+
+	// #108: a double-click would file the same request twice (and re-upload its attachments).
+	// The existing close-on-success handler is wrapped so it still runs.
+	const create = createSubmitGuard(() => async ({ update, result }) => {
+		await update()
+		if (result.type === 'success') showForm = false
+	})
+
+	// Row actions live inside an `{#each}`, so each row needs its own guard — one shared guard
+	// would grey out every row's button while a single row is in flight.
+	function rowGuards() {
+		const map = new Map<string, ReturnType<typeof createSubmitGuard>>()
+		return (id: string) => {
+			let g = map.get(id)
+			if (!g) {
+				g = createSubmitGuard()
+				map.set(id, g)
+			}
+			return g
+		}
+	}
+	const resubmitGuard = rowGuards()
+	const cancelGuard = rowGuards()
 
 	function statusClass(s: string) {
 		if (s === 'APPROVED') return 'bg-green-100 text-green-700'
@@ -100,11 +124,7 @@
 			method="POST"
 			action="?/create"
 			enctype="multipart/form-data"
-			use:enhance={() =>
-				async ({ update, result }) => {
-					await update()
-					if (result.type === 'success') showForm = false
-				}}
+			use:enhance={create.enhance}
 			class="space-y-4 rounded-lg border bg-card p-4"
 		>
 			<div class="grid gap-1.5">
@@ -334,9 +354,10 @@
 
 			<button
 				type="submit"
-				class="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+				disabled={create.busy}
+				class="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
 			>
-				Submit request
+				{create.busy ? 'Submitting…' : 'Submit request'}
 			</button>
 		</form>
 	{/if}
@@ -394,22 +415,26 @@
 						<td class="px-4 py-3 text-right">
 							<div class="flex items-center justify-end gap-2">
 								{#if req.status === 'RETURNED'}
-									<form method="POST" action="?/resubmit" use:enhance>
+									{@const resubmit = resubmitGuard(req.id)}
+									<form method="POST" action="?/resubmit" use:enhance={resubmit.enhance}>
 										<input type="hidden" name="id" value={req.id} />
 										<button
 											type="submit"
-											class="rounded-md border border-primary/40 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/10"
-											>Resubmit</button
+											disabled={resubmit.busy}
+											class="rounded-md border border-primary/40 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/10 disabled:pointer-events-none disabled:opacity-50"
+											>{resubmit.busy ? 'Resubmitting…' : 'Resubmit'}</button
 										>
 									</form>
 								{/if}
 								{#if req.status === 'PENDING' || req.status === 'RETURNED'}
-									<form method="POST" action="?/cancel" use:enhance>
+									{@const cancel = cancelGuard(req.id)}
+									<form method="POST" action="?/cancel" use:enhance={cancel.enhance}>
 										<input type="hidden" name="id" value={req.id} />
 										<button
 											type="submit"
-											class="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
-											>Cancel</button
+											disabled={cancel.busy}
+											class="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:pointer-events-none disabled:opacity-50"
+											>{cancel.busy ? 'Cancelling…' : 'Cancel'}</button
 										>
 									</form>
 								{/if}

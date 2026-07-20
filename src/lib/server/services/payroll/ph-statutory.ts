@@ -3,7 +3,7 @@
  * SSS: per EC table (January 2024 schedule), PhilHealth: 5% of MSC, Pag-IBIG: 2% capped PHP 100.
  */
 
-import { round2 } from './types'
+import { D, ZERO, type Money, type MoneyLike } from './money'
 
 interface SSSBracket {
 	salaryFloor: number
@@ -230,35 +230,38 @@ export const SSS_TABLE_2024: SSSBracket[] = [
 	}
 ]
 
-export function computeSSS(monthlySalary: number): { ee: number; er: number } {
+export function computeSSS(monthlySalary: MoneyLike): { ee: Money; er: Money } {
+	const salary = D(monthlySalary)
 	const bracket =
-		SSS_TABLE_2024.find(
-			(b) => monthlySalary >= b.salaryFloor && monthlySalary <= b.salaryCeiling
-		) ?? SSS_TABLE_2024[SSS_TABLE_2024.length - 1]
+		SSS_TABLE_2024.find((b) => salary.gte(b.salaryFloor) && salary.lte(b.salaryCeiling)) ??
+		SSS_TABLE_2024[SSS_TABLE_2024.length - 1]
 
-	return { ee: bracket.eeShare, er: bracket.erShare }
+	// Fixed peso amounts straight off the table — exact by nature, no arithmetic involved.
+	return { ee: D(bracket.eeShare), er: D(bracket.erShare) }
 }
 
-export function computePhilhealth(monthlySalary: number): { ee: number; er: number } {
-	const RATE = 0.05
+export function computePhilhealth(monthlySalary: MoneyLike): { ee: Money; er: Money } {
+	const RATE = '0.05'
 	const FLOOR = 10000
 	const CEILING = 100000
 
-	const msc = Math.min(Math.max(monthlySalary, FLOOR), CEILING)
-	const totalContrib = msc * RATE
-	const share = totalContrib / 2
+	// Exact: a salary of ₱10,000.20 lands the EE share on exactly 250.005, a half-centavo that
+	// float arithmetic would perturb before it ever reaches the rounding step (#119).
+	const salary = D(monthlySalary)
+	const msc = salary.lt(FLOOR) ? D(FLOOR) : salary.gt(CEILING) ? D(CEILING) : salary
+	const share = msc.times(RATE).dividedBy(2)
 
 	return { ee: share, er: share }
 }
 
-export function computePagibig(monthlySalary: number): { ee: number; er: number } {
-	const RATE = 0.02
+export function computePagibig(monthlySalary: MoneyLike): { ee: Money; er: Money } {
+	const RATE = '0.02'
 	const CAP = 100
 
-	const ee = Math.min(monthlySalary * RATE, CAP)
-	const er = Math.min(monthlySalary * RATE, CAP)
+	const raw = D(monthlySalary).times(RATE)
+	const share = raw.gt(CAP) ? D(CAP) : raw
 
-	return { ee, er }
+	return { ee: share, er: share }
 }
 
 interface TaxBracket {
@@ -278,48 +281,55 @@ export const BIR_MONTHLY_TAX_TABLE: TaxBracket[] = [
 	{ floor: 666667, ceiling: Infinity, baseTax: 200833.33, rate: 0.35, excessOver: 666667 }
 ]
 
-export function computeWithholdingTax(taxableMonthlyIncome: number): number {
+export function computeWithholdingTax(taxableMonthlyIncome: MoneyLike): Money {
+	const income = D(taxableMonthlyIncome)
 	const bracket =
-		BIR_MONTHLY_TAX_TABLE.find(
-			(b) => taxableMonthlyIncome >= b.floor && taxableMonthlyIncome <= b.ceiling
-		) ?? BIR_MONTHLY_TAX_TABLE[BIR_MONTHLY_TAX_TABLE.length - 1]
+		BIR_MONTHLY_TAX_TABLE.find((b) => income.gte(b.floor) && income.lte(b.ceiling)) ??
+		BIR_MONTHLY_TAX_TABLE[BIR_MONTHLY_TAX_TABLE.length - 1]
 
-	return bracket.baseTax + (taxableMonthlyIncome - bracket.excessOver) * bracket.rate
+	// Bracket rates (0.15/0.20/0.25/0.30/0.35) are exact as decimals; as binary floats they are not.
+	return D(bracket.baseTax).plus(income.minus(bracket.excessOver).times(D(bracket.rate)))
 }
 
+/**
+ * Monthly statutory figures, EXACT and unquantized (#119). The caller prorates to the period and
+ * quantizes once — rounding here and again after scaling was the round → scale → round defect.
+ */
 export interface StatutoryResult {
-	sssEe: number
-	sssEr: number
-	philhealthEe: number
-	philhealthEr: number
-	pagibigEe: number
-	pagibigEr: number
-	withholdingTax: number
-	totalDeductions: number
-	netPay: number
+	sssEe: Money
+	sssEr: Money
+	philhealthEe: Money
+	philhealthEr: Money
+	pagibigEe: Money
+	pagibigEr: Money
+	withholdingTax: Money
+	totalDeductions: Money
+	netPay: Money
 }
 
-export function computeStatutoryDeductions(grossPay: number): StatutoryResult {
-	const sss = computeSSS(grossPay)
-	const ph = computePhilhealth(grossPay)
-	const pi = computePagibig(grossPay)
+export function computeStatutoryDeductions(grossPay: MoneyLike): StatutoryResult {
+	const gross = D(grossPay)
+	const sss = computeSSS(gross)
+	const ph = computePhilhealth(gross)
+	const pi = computePagibig(gross)
 
-	const totalEeDeductions = sss.ee + ph.ee + pi.ee
-	const taxableIncome = grossPay - totalEeDeductions
-	const tax = Math.max(0, computeWithholdingTax(taxableIncome))
+	// Tax base is gross minus the EXACT contributions, never the rounded ones.
+	const totalEeDeductions = sss.ee.plus(ph.ee).plus(pi.ee)
+	const taxableIncome = gross.minus(totalEeDeductions)
+	const rawTax = computeWithholdingTax(taxableIncome)
+	const tax = rawTax.lt(0) ? ZERO : rawTax
 
-	const totalDeductions = totalEeDeductions + tax
-	const netPay = grossPay - totalDeductions
+	const totalDeductions = totalEeDeductions.plus(tax)
 
 	return {
-		sssEe: round2(sss.ee),
-		sssEr: round2(sss.er),
-		philhealthEe: round2(ph.ee),
-		philhealthEr: round2(ph.er),
-		pagibigEe: round2(pi.ee),
-		pagibigEr: round2(pi.er),
-		withholdingTax: round2(tax),
-		totalDeductions: round2(totalDeductions),
-		netPay: round2(netPay)
+		sssEe: sss.ee,
+		sssEr: sss.er,
+		philhealthEe: ph.ee,
+		philhealthEr: ph.er,
+		pagibigEe: pi.ee,
+		pagibigEr: pi.er,
+		withholdingTax: tax,
+		totalDeductions,
+		netPay: gross.minus(totalDeductions)
 	}
 }

@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import { formatShortDate } from '$lib/utils/format'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -11,6 +12,22 @@
 	const pendingCount = $derived(s.clearanceItems.filter((i) => i.status !== 'CLEARED').length)
 
 	const peso = (n: number) => n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })
+
+	// #108: every clearance row is its own form, so each needs its own guard — a shared one would
+	// disable the whole checklist while any single row is in flight. Created lazily per item id.
+	const clearanceGuards: Record<string, ReturnType<typeof createSubmitGuard>> = {}
+	const clearanceGuard = (id: string) => (clearanceGuards[id] ??= createSubmitGuard())
+
+	// #108: finalize snapshots final pay and offboards — a second submit must never land.
+	// The guard releases `busy` when an inner handler cancels, so the confirm composes normally.
+	const finalize = createSubmitGuard((input) => {
+		if (
+			!confirm(
+				'Finalize this separation? This snapshots final pay, offboards the employee, and disables their login. It cannot be undone.'
+			)
+		)
+			input.cancel()
+	})
 
 	function statusClass(st: string) {
 		if (st === 'FINALIZED') return 'bg-gray-100 text-gray-600'
@@ -80,7 +97,8 @@
 								: 'bg-yellow-100 text-yellow-700'}">{item.status}</span
 						>
 					{:else}
-						<form method="POST" action="?/toggleClearance" use:enhance>
+						{@const toggle = clearanceGuard(item.id)}
+						<form method="POST" action="?/toggleClearance" use:enhance={toggle.enhance}>
 							<input type="hidden" name="itemId" value={item.id} />
 							<input
 								type="hidden"
@@ -89,7 +107,8 @@
 							/>
 							<button
 								type="submit"
-								class="rounded-md border px-3 py-1 text-xs font-medium hover:bg-accent {item.status ===
+								disabled={toggle.busy}
+								class="rounded-md border px-3 py-1 text-xs font-medium hover:bg-accent disabled:pointer-events-none disabled:opacity-50 {item.status ===
 								'CLEARED'
 									? 'text-green-700'
 									: 'text-muted-foreground'}"
@@ -143,24 +162,12 @@
 					finalizing.
 				</p>
 			{/if}
-			<form
-				method="POST"
-				action="?/finalize"
-				use:enhance={({ cancel }) => {
-					if (
-						!confirm(
-							'Finalize this separation? This snapshots final pay, offboards the employee, and disables their login. It cannot be undone.'
-						)
-					)
-						cancel()
-				}}
-				class="mt-3"
-			>
+			<form method="POST" action="?/finalize" use:enhance={finalize.enhance} class="mt-3">
 				<button
 					type="submit"
-					disabled={pendingCount > 0}
-					class="rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:cursor-not-allowed disabled:opacity-50"
-					>Finalize &amp; offboard</button
+					disabled={pendingCount > 0 || finalize.busy}
+					class="rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
+					>{finalize.busy ? 'Finalizing…' : 'Finalize & offboard'}</button
 				>
 			</form>
 		</div>

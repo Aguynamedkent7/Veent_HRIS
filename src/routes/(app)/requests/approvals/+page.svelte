@@ -6,6 +6,7 @@
 	import { formatDateRange } from '$lib/utils/format'
 	import Pagination from '$lib/components/Pagination.svelte'
 	import ReasonDialog from '$lib/components/ui/ReasonDialog.svelte'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -97,6 +98,23 @@
 		}
 	}
 
+	// #108: a double-click on Approve would post the same decision twice. Each card gets its own
+	// guard — a shared one would disable every row's Approve button while any single row is in
+	// flight. Guards are created lazily per request id, so a card keeps its guard across re-renders.
+	const approveGuards = new Map<string, ReturnType<typeof createSubmitGuard>>()
+	function approveGuard(id: string) {
+		let g = approveGuards.get(id)
+		if (!g) {
+			g = createSubmitGuard()
+			approveGuards.set(id, g)
+		}
+		return g
+	}
+
+	// The popup-driven Return/Reject path submits this hidden form via `requestSubmit()`, which
+	// bypasses any button `disabled` — the guard's `cancel()` is what actually stops the double post.
+	const decide = createSubmitGuard()
+
 	const unverifiedCount = (docs: { verifiedAt: Date | string | null }[]) =>
 		docs.filter((d) => !d.verifiedAt).length
 </script>
@@ -173,6 +191,7 @@
 		     Safe now that notes are collected in a popup instead of an inline textarea. -->
 		<div class="flex flex-wrap items-start gap-4">
 			{#each data.pendingRequests as req (req.id)}
+				{@const approve = approveGuard(req.id)}
 				<div
 					class="flex h-72 w-full min-w-[18rem] flex-col rounded-lg border bg-card p-4 sm:w-[22rem]"
 				>
@@ -232,7 +251,7 @@
 					<form
 						method="POST"
 						action="?/decideRequest"
-						use:enhance
+						use:enhance={approve.enhance}
 						class="mt-3 flex shrink-0 gap-2 border-t pt-2"
 					>
 						<input type="hidden" name="id" value={req.id} />
@@ -240,19 +259,22 @@
 							type="submit"
 							name="decision"
 							value="APPROVED"
-							class="flex-1 rounded-md bg-green-600 px-2 py-1 text-xs font-medium text-white hover:bg-green-700"
-							>Approve</button
+							disabled={approve.busy}
+							class="flex-1 rounded-md bg-green-600 px-2 py-1 text-xs font-medium text-white hover:bg-green-700 disabled:pointer-events-none disabled:opacity-50"
+							>{approve.busy ? 'Approving…' : 'Approve'}</button
 						>
 						<button
 							type="button"
+							disabled={decide.busy}
 							onclick={() => askNote({ kind: 'decide', id: req.id, decision: 'RETURNED' })}
-							class="flex-1 rounded-md bg-orange-500 px-2 py-1 text-xs font-medium text-white hover:bg-orange-600"
+							class="flex-1 rounded-md bg-orange-500 px-2 py-1 text-xs font-medium text-white hover:bg-orange-600 disabled:pointer-events-none disabled:opacity-50"
 							>Return…</button
 						>
 						<button
 							type="button"
+							disabled={decide.busy}
 							onclick={() => askNote({ kind: 'decide', id: req.id, decision: 'REJECTED' })}
-							class="flex-1 rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700"
+							class="flex-1 rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:pointer-events-none disabled:opacity-50"
 							>Reject…</button
 						>
 					</form>
@@ -265,7 +287,13 @@
 </div>
 
 <!-- Submission target for popup-collected Return/Reject notes. -->
-<form bind:this={decideForm} method="POST" action="?/decideRequest" use:enhance class="hidden">
+<form
+	bind:this={decideForm}
+	method="POST"
+	action="?/decideRequest"
+	use:enhance={decide.enhance}
+	class="hidden"
+>
 	<input type="hidden" name="id" value={decideId} />
 	<input type="hidden" name="decision" value={decideDecision} />
 	<input type="hidden" name="note" value={decideNote} />

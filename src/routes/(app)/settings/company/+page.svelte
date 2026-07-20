@@ -1,9 +1,13 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
+
+	// #108: a double-click would fire two redundant writes of the company row.
+	const save = createSubmitGuard()
 
 	// Bind the form to local reactive state so the inputs stay in sync with what
 	// the user is typing AND with fresh server data after a save. Using plain
@@ -47,7 +51,12 @@
 		</div>
 	{/if}
 
-	<form method="POST" action="?/save" use:enhance class="space-y-4 rounded-lg border bg-card p-6">
+	<form
+		method="POST"
+		action="?/save"
+		use:enhance={save.enhance}
+		class="space-y-4 rounded-lg border bg-card p-6"
+	>
 		<div class="grid gap-1.5">
 			<label for="name" class="text-sm font-medium">Company name</label>
 			<input
@@ -93,8 +102,9 @@
 		</div>
 		<button
 			type="submit"
-			class="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-			>Save</button
+			disabled={save.busy}
+			class="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+			>{save.busy ? 'Saving…' : 'Save'}</button
 		>
 	</form>
 </div>
