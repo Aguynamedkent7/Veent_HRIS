@@ -8,7 +8,7 @@ test.describe.configure({ mode: 'serial' })
 test.describe('Back navigation', () => {
 	test('employee opened from /team returns to /team (HR)', async ({ page }) => {
 		await login(page, USERS.admin)
-		await page.goto('/team')
+		await page.goto('/team', { waitUntil: 'domcontentloaded' })
 		await page.waitForLoadState('networkidle') // hydrate so the click stays client-side
 
 		await page.locator('a[href^="/employees/"]').first().click()
@@ -24,17 +24,17 @@ test.describe('Back navigation', () => {
 
 	test('hard-loaded employee detail falls back to /employees (HR)', async ({ page }) => {
 		await login(page, USERS.admin)
-		await page.goto('/team')
+		await page.goto('/team', { waitUntil: 'domcontentloaded' })
 		const href = await page.locator('a[href^="/employees/"]').first().getAttribute('href')
 
-		await page.goto(href!) // fresh document — no client-side origin to capture
+		await page.goto(href!, { waitUntil: 'domcontentloaded' }) // fresh document — no client-side origin to capture
 		const back = page.getByRole('link', { name: 'Back to Employees' })
 		await expect(back).toHaveAttribute('href', '/employees')
 	})
 
 	test('report tab returns to /reports', async ({ page }) => {
 		await login(page, USERS.admin)
-		await page.goto('/reports')
+		await page.goto('/reports', { waitUntil: 'domcontentloaded' })
 		await page.waitForLoadState('networkidle')
 
 		await page.locator('a[href^="/reports/headcount"]').first().click()
@@ -48,7 +48,7 @@ test.describe('Back navigation', () => {
 
 	test('employee files a leave request for the approvals flow', async ({ page }) => {
 		await login(page, USERS.employee)
-		await page.goto('/leave/new')
+		await page.goto('/leave/new', { waitUntil: 'domcontentloaded' })
 		// Wait for hydration before touching the bound <select>; otherwise Svelte's
 		// bind:value re-initialises it to empty after our selection.
 		await page.waitForLoadState('networkidle')
@@ -67,7 +67,7 @@ test.describe('Back navigation', () => {
 		page
 	}) => {
 		await login(page, USERS.manager)
-		await page.goto('/requests/approvals')
+		await page.goto('/requests/approvals', { waitUntil: 'domcontentloaded' })
 		await page.waitForLoadState('networkidle')
 
 		// The queue's "View detail →" link carries ?from=/requests/approvals.
@@ -78,7 +78,7 @@ test.describe('Back navigation', () => {
 		await expect(back).toHaveAttribute('href', '/requests/approvals')
 
 		// Hard-load the same URL: no origin, so the validated ?from hint must win.
-		await page.goto(page.url())
+		await page.goto(page.url(), { waitUntil: 'domcontentloaded' })
 		const backHard = page.getByRole('link', { name: 'Back', exact: true })
 		await expect(backHard).toHaveAttribute('href', '/requests/approvals')
 		await backHard.click()

@@ -14,7 +14,7 @@ test.describe('HR Admin', () => {
 
 	test('onboards a new employee via the onboarding form', async ({ page }) => {
 		await login(page, USERS.admin)
-		await page.goto('/employees/new')
+		await page.goto('/employees/new', { waitUntil: 'domcontentloaded' })
 		await page.waitForLoadState('networkidle') // let the form hydrate before submitting
 
 		const stamp = Date.now()
@@ -34,7 +34,9 @@ test.describe('HR Admin', () => {
 
 	test('generates a headcount report', async ({ page }) => {
 		await login(page, USERS.admin)
-		await page.goto('/reports/headcount?start=2025-01-01&end=2026-12-31')
+		await page.goto('/reports/headcount?start=2025-01-01&end=2026-12-31', {
+			waitUntil: 'domcontentloaded'
+		})
 		await expect(page.getByRole('heading', { name: /Headcount Report/i })).toBeVisible()
 		// A results table or the empty-state message must render (no error page).
 		await expect(page.getByRole('button', { name: 'Generate' })).toBeVisible()
@@ -42,7 +44,7 @@ test.describe('HR Admin', () => {
 
 	test('audit log is accessible and lists entries', async ({ page }) => {
 		await login(page, USERS.admin)
-		await page.goto('/reports/audit-log')
+		await page.goto('/reports/audit-log', { waitUntil: 'domcontentloaded' })
 		await expect(page.getByRole('heading', { name: 'Audit Log' })).toBeVisible()
 		// Login events are always recorded, so at least one row exists.
 		await expect(page.locator('tbody tr').first()).toBeVisible()
