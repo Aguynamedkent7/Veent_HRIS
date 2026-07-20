@@ -68,7 +68,12 @@ export async function approveRun(
 		include: { entries: { select: { isFlagged: true } } }
 	})
 	if (!run) error(404, 'Payroll run not found')
-	if (run.status !== 'DRAFT') error(400, 'Only draft payroll runs can be approved')
+	// COMPUTED, matching approvePayroll in ./index (the UI action's path). This required
+	// DRAFT, which meant the two entry points disagreed: the API could approve a
+	// never-computed run with zero entries, while a genuinely COMPUTED run was rejected
+	// here. The two remain separate functions because only this one carries the
+	// flagged-entry override policy, which the UI has no field to supply.
+	if (run.status !== 'COMPUTED') error(400, 'Only computed payroll runs can be approved')
 
 	const hasFlagged = run.entries.some((e) => e.isFlagged)
 	if (hasFlagged && !overrideNote) {

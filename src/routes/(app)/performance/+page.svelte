@@ -42,12 +42,18 @@
 	</div>
 
 	<!-- Create goal form -->
+	<!-- Top level: this banner used to sit inside the create-goal form, so failures from
+	     updateGoal / createCycle / setCycleStatus / openReviews — all submitted from
+	     elsewhere on the page — were only visible if that form happened to be open. -->
+	{#if form?.error}
+		<div class="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
+			{form.error}
+		</div>
+	{/if}
+
 	{#if showGoal}
 		<form method="POST" action="?/createGoal" use:enhance class="rounded-lg border p-4 space-y-4">
 			<h2 class="font-semibold">Create Goal</h2>
-			{#if form?.error}
-				<div class="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">{form.error}</div>
-			{/if}
 			<div class="grid gap-3 sm:grid-cols-2">
 				<div class="sm:col-span-2">
 					<label for="title" class="text-sm font-medium">Title</label>

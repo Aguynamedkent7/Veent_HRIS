@@ -75,7 +75,8 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		enrollmentsAll,
 		payRateRule,
 		recurringAll,
-		recurringDeductionsAll
+		recurringDeductionsAll,
+		holidays
 	] = await Promise.all([
 		db.employee.findMany({ where: { user: { organizationId }, employmentStatus: 'ACTIVE' } }),
 		db.payrollConfig.findUnique({ where: { organizationId } }),
@@ -100,6 +101,15 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		db.employeeDeduction.findMany({
 			where: { employee: { organizationId }, isActive: true, deductionType: { isActive: true } },
 			include: { deductionType: { select: { code: true, label: true } } }
+		}),
+		// Public holidays inside the period — the scheduled-hours fallback below must not
+		// bill them as ordinary working days.
+		db.publicHoliday.findMany({
+			where: {
+				organizationId,
+				date: { gte: run.periodStart, lte: run.periodEnd }
+			},
+			select: { date: true }
 		})
 	])
 
@@ -114,7 +124,15 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	const enrollmentsByEmp = groupByEmployee(enrollmentsAll)
 	const recurringByEmp = groupByEmployee(recurringAll)
 	const recurringDeductionsByEmp = groupByEmployee(recurringDeductionsAll)
-	const workingDays = computeWorkingDays(run.periodStart, run.periodEnd, [])
+	// Holidays were previously passed as [], so a period containing public holidays
+	// counted them as ordinary working days. That inflates `scheduledHours` below, and
+	// since BASIC = regularHours * hourlyRate, it inflated basic pay for every employee
+	// falling back to the schedule (i.e. with no approved timesheet hours).
+	const workingDays = computeWorkingDays(
+		run.periodStart,
+		run.periodEnd,
+		holidays.map((h) => h.date)
+	)
 
 	const perEmployee: Array<{
 		entry: Prisma.PayrollEntryUncheckedCreateWithoutEarningsInput

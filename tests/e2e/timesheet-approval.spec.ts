@@ -29,6 +29,12 @@ function futurePeriod(retry: number): { start: string; end: string } {
 test('employee creates a timesheet, submits it, and the manager approves it', async ({
 	browser
 }, testInfo) => {
+	// Three sequential logins in three browser contexts, each with a hydration retry
+	// loop — this is legitimately the longest test in the suite and has no headroom in
+	// the 30s default when the runner is busy. slow() triples the budget for this test
+	// only; it is not covering for a hang (see the waitUntil fix in this file's history).
+	test.slow()
+
 	const { start, end } = futurePeriod(testInfo.retry)
 
 	// --- Employee creates a draft from the New Timesheet popup, then submits it ---

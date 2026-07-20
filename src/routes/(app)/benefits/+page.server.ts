@@ -53,7 +53,15 @@ export const actions: Actions = {
 
 		const raw = Object.fromEntries(await request.formData())
 		const parsed = createPlanSchema.safeParse(raw)
-		if (!parsed.success) return fail(400, { error: parsed.error.flatten().fieldErrors })
+		if (!parsed.success) {
+			// A string, like every other action here: the page renders `form.error`
+			// directly, and the raw fieldErrors object stringifies to "[object Object]".
+			const fieldErrors = parsed.error.flatten().fieldErrors
+			const message = Object.entries(fieldErrors)
+				.map(([field, errs]) => `${field}: ${errs?.join(', ')}`)
+				.join('; ')
+			return fail(400, { error: message || 'Invalid plan details' })
+		}
 
 		await createBenefitPlan(user.organizationId, parsed.data, {
 			organizationId: user.organizationId,
