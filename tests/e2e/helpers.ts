@@ -3,7 +3,10 @@ import { expect, type Page } from '@playwright/test'
 export const USERS = {
 	admin: { email: 'admin@veent.ph', password: 'Admin@1234' },
 	manager: { email: 'manager@veent.ph', password: 'Manager@1234' },
-	employee: { email: 'employee@veent.ph', password: 'Employee@1234' }
+	employee: { email: 'employee@veent.ph', password: 'Employee@1234' },
+	// Maker-checker sign-off accounts (#134).
+	verifier: { email: 'verifier@veent.ph', password: 'Verifier@1234' },
+	approver: { email: 'approver@veent.ph', password: 'Approver@1234' }
 }
 
 // Deterministic Discord link for the punch → aggregate → approve E2E. `global-setup`
