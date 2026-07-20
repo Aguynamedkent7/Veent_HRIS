@@ -469,9 +469,10 @@ model Timesheet {
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 
-  employee Employee         @relation(fields: [employeeId], references: [id])
-  entries  TimesheetEntry[]
-  timeLogs TimeLog[]
+  employee      Employee         @relation(fields: [employeeId], references: [id])
+  entries       TimesheetEntry[]
+  timeLogs      TimeLog[]
+  approvalSteps ApprovalStep[]
 
   @@unique([employeeId, periodStart])
   @@map("timesheets")
@@ -578,8 +579,12 @@ model Request {
 }
 
 model ApprovalStep {
-  id         String            @id @default(cuid())
-  requestId  String
+  id String @id @default(cuid())
+  // Polymorphic subject (#134): exactly one of requestId / timesheetId / payrollRunId is
+  // set. The same maker-checker chain drives requests, timesheets, and payroll runs.
+  requestId    String?
+  timesheetId  String?
+  payrollRunId String?
   // Re-file preserves prior steps append-only (#134): each refile bumps `attempt`,
   // so the chain history groups by attempt. stageIndex is 0..2 within an attempt.
   attempt      Int               @default(1)
@@ -588,16 +593,20 @@ model ApprovalStep {
   stage        ApprovalStage     @default(APPROVE)
   role         Role? // set when stageKind = ROLE (approver group)
   requiredRole Role? // the role that may act on this stage (#134) — MAKE/VERIFY/APPROVE
-  decision   ApprovalDecision? // null = pending
-  actorId    String?
-  note       String?
-  decidedAt  DateTime?
-  createdAt  DateTime          @default(now())
+  decision     ApprovalDecision? // null = pending
+  actorId      String?
+  note         String?
+  decidedAt    DateTime?
+  createdAt    DateTime          @default(now())
 
-  request Request @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  actor   User?   @relation(fields: [actorId], references: [id])
+  request    Request?    @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  timesheet  Timesheet?  @relation(fields: [timesheetId], references: [id], onDelete: Cascade)
+  payrollRun PayrollRun? @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  actor      User?       @relation(fields: [actorId], references: [id])
 
   @@unique([requestId, attempt, stageIndex])
+  @@unique([timesheetId, attempt, stageIndex])
+  @@unique([payrollRunId, attempt, stageIndex])
   @@map("approval_steps")
 }
 
@@ -805,9 +814,10 @@ model PayrollRun {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
-  organization Organization   @relation(fields: [organizationId], references: [id])
-  period       PayrollPeriod? @relation(fields: [periodId], references: [id])
-  entries      PayrollEntry[]
+  organization  Organization   @relation(fields: [organizationId], references: [id])
+  period        PayrollPeriod? @relation(fields: [periodId], references: [id])
+  entries       PayrollEntry[]
+  approvalSteps ApprovalStep[]
 
   @@unique([organizationId, periodStart, periodEnd])
   @@map("payroll_runs")

@@ -1,43 +1,58 @@
 import { fail, isHttpError, redirect } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
-import { requireMinRole } from '$lib/server/rbac'
+import { canAny } from '$lib/server/rbac'
 import { reviewTimesheet } from '$lib/server/services/timesheets'
+import { canActOnStage, liveChain } from '$lib/server/services/approvals'
+import type { Role } from '@prisma/client'
 import type { Actions, PageServerLoad, RequestEvent } from './$types'
 
-// Timesheet approvals — MANAGER+ only (Payroll Officer/Finance don't approve timesheets).
+// A timesheet's maker-checker chain (#134) can be actioned by makers (MANAGE_HR),
+// verifiers, or approvers — whoever holds the current stage's capability.
+function canReviewTimesheets(roles: Role[]) {
+	return (
+		canAny(roles, 'MANAGE_HR') ||
+		canAny(roles, 'VERIFY_REQUESTS') ||
+		canAny(roles, 'APPROVE_SIGNOFF')
+	)
+}
+
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!
-	const isManagerLadder = ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
-	if (!isManagerLadder) redirect(303, '/requests')
+	const roles = user.roles ?? [user.role]
+	if (!canReviewTimesheets(roles)) redirect(303, '/requests')
 
-	const isAdmin = ['HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
 	const myEmployee = await db.employee.findUnique({
 		where: { userId: user.id },
 		select: { id: true }
 	})
 
-	// A non-admin manager scopes to their direct reports; without an employee record there
-	// is nothing to scope by, so show nothing rather than falling through to org-wide.
-	if (!isAdmin && !myEmployee) return { pendingTimesheets: [] }
-
-	// MANAGER sees direct reports; admins see all — but never one's own timesheet
-	// (separation of duties, #75).
-	const pendingTimesheets = await db.timesheet.findMany({
+	// All SUBMITTED timesheets in the org (never one's own — #75); filtered below to the
+	// ones whose live stage this user can act on.
+	const submitted = await db.timesheet.findMany({
 		where: {
 			status: 'SUBMITTED',
 			...(myEmployee ? { employeeId: { not: myEmployee.id } } : {}),
-			employee: {
-				user: { organizationId: user.organizationId },
-				...(!isAdmin ? { reportsToId: myEmployee!.id } : {})
-			}
+			employee: { user: { organizationId: user.organizationId } }
 		},
-		// Entries power the read-only review modal (mode="review").
 		include: {
 			employee: { select: { id: true, firstName: true, lastName: true } },
-			entries: { orderBy: { date: 'asc' } }
+			entries: { orderBy: { date: 'asc' } },
+			approvalSteps: true
 		},
 		orderBy: { submittedAt: 'asc' }
 	})
+
+	const pendingTimesheets = submitted
+		.filter((ts) => {
+			const live = liveChain(ts.approvalSteps)
+			// Legacy step-less timesheets keep the old manager-ladder direct review.
+			if (!live || !live.currentStep) return canAny(roles, 'VIEW_TEAM')
+			return canActOnStage(live.currentStep.stage, roles, myEmployee?.id ?? null, ts.employeeId)
+		})
+		.map(({ approvalSteps, ...ts }) => ({
+			...ts,
+			currentStage: liveChain(approvalSteps)?.currentStep?.stage ?? null
+		}))
 
 	return { pendingTimesheets }
 }
@@ -48,6 +63,7 @@ function ctxOf(event: RequestEvent) {
 		organizationId: u.organizationId,
 		actorId: u.id,
 		actorRole: u.role,
+		actorRoles: u.roles ?? [u.role],
 		ipAddress: event.getClientAddress()
 	}
 }
@@ -56,7 +72,8 @@ export const actions: Actions = {
 	// Single approve/reject from the review modal (matches the modal's ?/review contract).
 	review: async (event) => {
 		const user = event.locals.user!
-		requireMinRole(user.role, 'MANAGER')
+		const roles = user.roles ?? [user.role]
+		if (!canReviewTimesheets(roles)) return fail(403, { error: 'Insufficient permissions' })
 
 		const data = await event.request.formData()
 		const id = data.get('id') as string
@@ -84,7 +101,8 @@ export const actions: Actions = {
 	// Bulk approve each selected (submitted) timesheet; non-submitted ones are skipped.
 	approveMany: async (event) => {
 		const user = event.locals.user!
-		requireMinRole(user.role, 'MANAGER')
+		const roles = user.roles ?? [user.role]
+		if (!canReviewTimesheets(roles)) return fail(403, { error: 'Insufficient permissions' })
 
 		const ids = String((await event.request.formData()).get('ids') ?? '')
 			.split(',')
@@ -112,7 +130,8 @@ export const actions: Actions = {
 	// throw and are counted as skipped rather than aborting the batch.
 	rejectMany: async (event) => {
 		const user = event.locals.user!
-		requireMinRole(user.role, 'MANAGER')
+		const roles = user.roles ?? [user.role]
+		if (!canReviewTimesheets(roles)) return fail(403, { error: 'Insufficient permissions' })
 
 		const data = await event.request.formData()
 		const ids = String(data.get('ids') ?? '')

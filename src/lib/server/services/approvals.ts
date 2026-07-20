@@ -16,8 +16,32 @@ const STAGE_CAPABILITY: Record<ApprovalStage, keyof typeof CAPABILITIES> = {
 	APPROVE: 'APPROVE_SIGNOFF'
 }
 
-function rolesOf(ctx: AuditContext): Role[] {
+export function rolesOf(ctx: AuditContext): Role[] {
 	return ctx.actorRoles?.length ? ctx.actorRoles : [ctx.actorRole]
+}
+
+// Any maker-checker subject (request/timesheet/payroll run) stores append-only steps.
+// This resolves the live attempt and the step currently awaiting a decision (#134), so
+// timesheets and payroll reuse the same chain semantics as requests.
+export interface ChainStep {
+	attempt: number
+	stageIndex: number
+	stage: ApprovalStage
+	decision: ApprovalDecision | null
+}
+export function liveChain<T extends ChainStep>(steps: T[]) {
+	if (!steps.length) return null
+	const attempt = Math.max(...steps.map((s) => s.attempt))
+	const liveSteps = steps
+		.filter((s) => s.attempt === attempt)
+		.sort((a, b) => a.stageIndex - b.stageIndex)
+	const idx = liveSteps.findIndex((s) => s.decision == null)
+	return {
+		attempt,
+		liveSteps,
+		currentStage: idx === -1 ? liveSteps.length - 1 : idx,
+		currentStep: idx === -1 ? null : liveSteps[idx]
+	}
 }
 
 // Can this actor decide the given stage? Separation of duties comes first: nobody acts
@@ -191,27 +215,48 @@ export async function countPendingApprovals(user: {
 		select: { id: true }
 	})
 
-	const isManagerLadder = canAny(roles, 'VIEW_TEAM')
-	const isAdmin = canAny(roles, 'MANAGE_HR')
-	// A non-admin manager scopes to their direct reports, so without an employee record
-	// there is nothing to scope by — count 0 rather than falling through to org-wide.
-	const canCountTimesheets = isManagerLadder && (isAdmin || Boolean(myEmployee))
+	// Timesheets now run the maker-checker chain too (#134): a user can act on one whose
+	// live stage they hold (make/verify/approve). Count those awaiting them.
+	const canReviewTimesheets =
+		canAny(roles, 'MANAGE_HR') ||
+		canAny(roles, 'VERIFY_REQUESTS') ||
+		canAny(roles, 'APPROVE_SIGNOFF')
 
-	const [requests, timesheets] = await Promise.all([
+	const [requests, timesheetCount] = await Promise.all([
 		listPendingRequestsForApprover(user.organizationId, roles, myEmployee?.id ?? null),
-		canCountTimesheets
-			? db.timesheet.count({
-					where: {
-						status: 'SUBMITTED',
-						...(myEmployee ? { employeeId: { not: myEmployee.id } } : {}),
-						employee: {
-							user: { organizationId: user.organizationId },
-							...(!isAdmin ? { reportsToId: myEmployee!.id } : {})
-						}
-					}
-				})
+		canReviewTimesheets
+			? countActionableTimesheets(user.organizationId, roles, myEmployee?.id ?? null)
 			: Promise.resolve(0)
 	])
 
-	return { timesheets, requests: requests.length, total: timesheets + requests.length }
+	return {
+		timesheets: timesheetCount,
+		requests: requests.length,
+		total: timesheetCount + requests.length
+	}
+}
+
+// SUBMITTED timesheets whose live maker-checker stage this user can act on (#134).
+async function countActionableTimesheets(
+	organizationId: string,
+	roles: Role[],
+	actorEmployeeId: string | null
+): Promise<number> {
+	const submitted = await db.timesheet.findMany({
+		where: {
+			status: 'SUBMITTED',
+			...(actorEmployeeId ? { employeeId: { not: actorEmployeeId } } : {}),
+			employee: { user: { organizationId } }
+		},
+		select: {
+			employeeId: true,
+			approvalSteps: { select: { attempt: true, stageIndex: true, stage: true, decision: true } }
+		}
+	})
+	return submitted.filter((ts) => {
+		const live = liveChain(ts.approvalSteps)
+		// Legacy step-less timesheets remain manager-ladder actionable.
+		if (!live || !live.currentStep) return canAny(roles, 'VIEW_TEAM')
+		return canActOnStage(live.currentStep.stage, roles, actorEmployeeId, ts.employeeId)
+	}).length
 }
