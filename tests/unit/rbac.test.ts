@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { CAPABILITIES, can, canAny, hasMinRole, hasAnyMinRole, ROLE_HIERARCHY } from '../../src/lib/rbac'
+import {
+	CAPABILITIES,
+	can,
+	canAny,
+	hasMinRole,
+	hasAnyMinRole,
+	ROLE_HIERARCHY
+} from '../../src/lib/rbac'
 import type { Role } from '@prisma/client'
 
 const ALL_ROLES: Role[] = [
@@ -22,7 +29,15 @@ const EXPECTED: Record<string, Role[]> = {
 	VIEW_TEAM: ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN', 'CEO'],
 	ADMINISTER_SYSTEM: ['SUPER_ADMIN'],
 	MANAGE_USER_ROLES: ['CEO'],
-	APPROVE_REQUESTS: ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN', 'PAYROLL_OFFICER', 'CEO', 'VERIFIER', 'APPROVER'],
+	APPROVE_REQUESTS: [
+		'MANAGER',
+		'HR_ADMIN',
+		'SUPER_ADMIN',
+		'PAYROLL_OFFICER',
+		'CEO',
+		'VERIFIER',
+		'APPROVER'
+	],
 	VERIFY_REQUESTS: ['VERIFIER'],
 	APPROVE_SIGNOFF: ['APPROVER'],
 	MANAGE_PAYROLL: ['MANAGER', 'SUPER_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER', 'CEO'],

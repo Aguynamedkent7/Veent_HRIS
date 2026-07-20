@@ -617,7 +617,9 @@ async function main() {
 	// Backfill cross-org memberships (#131) and the multi-role set (#133): every user
 	// gets one membership mirroring their primary org, and `roles` seeded to [role] so
 	// single-role behaviour is unchanged. Both idempotent.
-	const allUsers = await db.user.findMany({ select: { id: true, organizationId: true, role: true, roles: true } })
+	const allUsers = await db.user.findMany({
+		select: { id: true, organizationId: true, role: true, roles: true }
+	})
 	for (const u of allUsers) {
 		await db.userOrganization.upsert({
 			where: { userId_organizationId: { userId: u.id, organizationId: u.organizationId } },
