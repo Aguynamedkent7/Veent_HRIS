@@ -5,6 +5,11 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 
+	// CEO manages roles; Super Admin manages account status. The page opens for either,
+	// so each control is shown only to the capability that owns it (#132).
+	const canManageRoles = $derived(data.canManageRoles)
+	const canManageActive = $derived(data.canManageActive)
+
 	const roles = [
 		'EMPLOYEE',
 		'MANAGER',
@@ -63,37 +68,43 @@
 								>
 									{u.isActive ? 'ACTIVE' : 'INACTIVE'}
 								</span>
-								<form method="POST" action="?/setActive" use:enhance>
-									<input type="hidden" name="userId" value={u.id} />
-									<input type="hidden" name="isActive" value={u.isActive ? 'false' : 'true'} />
-									<button
-										type="submit"
-										class="rounded-md border px-2 py-0.5 text-xs hover:bg-accent"
-									>
-										{u.isActive ? 'Deactivate' : 'Activate'}
-									</button>
-								</form>
+								{#if canManageActive}
+									<form method="POST" action="?/setActive" use:enhance>
+										<input type="hidden" name="userId" value={u.id} />
+										<input type="hidden" name="isActive" value={u.isActive ? 'false' : 'true'} />
+										<button
+											type="submit"
+											class="rounded-md border px-2 py-0.5 text-xs hover:bg-accent"
+										>
+											{u.isActive ? 'Deactivate' : 'Activate'}
+										</button>
+									</form>
+								{/if}
 							</div>
 						</td>
 						<td class="px-4 py-3" colspan="2">
-							<form method="POST" action="?/setRole" use:enhance class="flex items-center gap-2">
-								<input type="hidden" name="userId" value={u.id} />
-								<select
-									name="role"
-									value={u.role}
-									class="flex h-9 w-40 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-								>
-									{#each roles as r (r)}
-										<option value={r}>{r.replace('_', ' ')}</option>
-									{/each}
-								</select>
-								<button
-									type="submit"
-									class="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-								>
-									Save
-								</button>
-							</form>
+							{#if canManageRoles && u.role !== 'CEO'}
+								<form method="POST" action="?/setRole" use:enhance class="flex items-center gap-2">
+									<input type="hidden" name="userId" value={u.id} />
+									<select
+										name="role"
+										value={u.role}
+										class="flex h-9 w-40 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+									>
+										{#each roles as r (r)}
+											<option value={r}>{r.replace('_', ' ')}</option>
+										{/each}
+									</select>
+									<button
+										type="submit"
+										class="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+									>
+										Save
+									</button>
+								</form>
+							{:else}
+								<span class="text-sm text-muted-foreground">{u.role.replace('_', ' ')}</span>
+							{/if}
 						</td>
 					</tr>
 				{:else}

@@ -1,16 +1,21 @@
-import { fail, isHttpError } from '@sveltejs/kit'
+import { fail, isHttpError, error } from '@sveltejs/kit'
 import { z } from 'zod'
-import { requireCapability } from '$lib/server/rbac'
+import { can, requireCapability } from '$lib/server/rbac'
 import { listOrgUsers, setUserRole, setUserActive } from '$lib/server/services/settings/org'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!
-	requireCapability(user.role, 'ADMINISTER_SYSTEM')
+	// Role-change is CEO-only (#132); account activation stays with Super Admin. The
+	// page serves both, so it opens for either capability and the UI shows only the
+	// controls each caller may use.
+	const canManageRoles = can(user.role, 'MANAGE_USER_ROLES')
+	const canManageActive = can(user.role, 'ADMINISTER_SYSTEM')
+	if (!canManageRoles && !canManageActive) error(403, 'Insufficient permissions')
 
 	const users = await listOrgUsers(user.organizationId)
 
-	return { users }
+	return { users, canManageRoles, canManageActive }
 }
 
 const roleSchema = z.object({
@@ -26,7 +31,7 @@ const activeSchema = z.object({
 export const actions: Actions = {
 	setRole: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		requireCapability(user.role, 'ADMINISTER_SYSTEM')
+		requireCapability(user.role, 'MANAGE_USER_ROLES')
 
 		const raw = Object.fromEntries(await request.formData())
 		const parsed = roleSchema.safeParse(raw)

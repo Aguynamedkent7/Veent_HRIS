@@ -71,6 +71,9 @@
 	const isManager = $derived(can(role, 'VIEW_TEAM'))
 	const isAdmin = $derived(can(role, 'MANAGE_HR'))
 	const isSuperAdmin = $derived(can(role, 'ADMINISTER_SYSTEM'))
+	// Role assignment is CEO-only (#132); the Roles page also hosts Super Admin's
+	// account-status controls, so it shows for either capability.
+	const canManageUserRoles = $derived(can(role, 'MANAGE_USER_ROLES'))
 	// Payroll Officer manages payroll; Finance reads payroll reports only.
 	const isPayroll = $derived(can(role, 'MANAGE_PAYROLL'))
 	const canViewReports = $derived(can(role, 'VIEW_PAYROLL_REPORTS'))
@@ -186,7 +189,7 @@
 			{ href: '/settings/salary-grades', label: 'Salary Grades', show: isAdmin },
 			{ href: '/settings/org', label: 'Org Structure', show: isAdmin },
 			{ href: '/settings/schedules', label: 'Schedules', show: isAdmin },
-			{ href: '/settings/roles', label: 'Roles', show: isSuperAdmin },
+			{ href: '/settings/roles', label: 'Roles', show: isSuperAdmin || canManageUserRoles },
 			{ href: '/settings/holidays', label: 'Holidays', show: isSuperAdmin }
 		].filter((i) => i.show)
 	)
@@ -234,7 +237,8 @@
 		HR_ADMIN: 'HR Admin',
 		SUPER_ADMIN: 'Super Admin',
 		PAYROLL_OFFICER: 'Payroll Officer',
-		FINANCE: 'Finance'
+		FINANCE: 'Finance',
+		CEO: 'CEO'
 	}
 
 	// Mobile sidebar drawer. Close it whenever the route changes.

@@ -18,7 +18,11 @@ export const ROLE_HIERARCHY: Record<Role, number> = {
 	FINANCE: 0,
 	PAYROLL_OFFICER: 0,
 	MANAGER: 1,
+	// CEO mirrors HR_ADMIN on the ladder so `requireMinRole` gates give it exactly
+	// HR_ADMIN's reach (e.g. it does NOT clear the SUPER_ADMIN payroll-approval gate).
+	// CEO's distinct authority is expressed through the capability table, not rank.
 	HR_ADMIN: 2,
+	CEO: 2,
 	SUPER_ADMIN: 3
 }
 
@@ -40,17 +44,19 @@ export function hasMinRole(userRole: Role, minimumRole: Role): boolean {
  */
 export const CAPABILITIES = {
 	/** Org-wide HR administration: rosters, settings, attendance, disbursement reveal. */
-	MANAGE_HR: ['HR_ADMIN', 'SUPER_ADMIN'],
+	MANAGE_HR: ['HR_ADMIN', 'SUPER_ADMIN', 'CEO'],
 	/** The manager ladder: sees a team, approves timesheets. */
-	VIEW_TEAM: ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN'],
-	/** System administration: role assignment, payroll config, unlocking locked days. */
+	VIEW_TEAM: ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN', 'CEO'],
+	/** System administration: payroll config, unlocking locked days. Super Admin only. */
 	ADMINISTER_SYSTEM: ['SUPER_ADMIN'],
+	/** Changing a user's role — CEO exclusively (#132), across every tenant. */
+	MANAGE_USER_ROLES: ['CEO'],
 	/** Reaches the approvals surface — manager ladder plus the Payroll stage owner. */
-	APPROVE_REQUESTS: ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN', 'PAYROLL_OFFICER'],
+	APPROVE_REQUESTS: ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN', 'PAYROLL_OFFICER', 'CEO'],
 	/** Runs payroll: periods, runs, loans, cash advances, calculator. */
-	MANAGE_PAYROLL: ['SUPER_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER'],
+	MANAGE_PAYROLL: ['SUPER_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER', 'CEO'],
 	/** Reads payroll reports — adds read-only Finance. */
-	VIEW_PAYROLL_REPORTS: ['SUPER_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER', 'FINANCE']
+	VIEW_PAYROLL_REPORTS: ['SUPER_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER', 'FINANCE', 'CEO']
 } as const satisfies Record<string, readonly Role[]>
 
 export type Capability = keyof typeof CAPABILITIES

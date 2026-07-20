@@ -92,6 +92,27 @@ async function main() {
 		}
 	})
 
+	// CEO (#132): the exclusive role-changer, member of all three tenants. Executive
+	// access account — no Employee record; its authority is cross-org via memberships.
+	const ceoHash = await bcrypt.hash('Ceo@1234', 12)
+	const ceo = await db.user.upsert({
+		where: { email: 'ceo@veent.ph' },
+		update: { role: 'CEO' },
+		create: {
+			organizationId: org.id,
+			email: 'ceo@veent.ph',
+			passwordHash: ceoHash,
+			role: 'CEO'
+		}
+	})
+	for (const orgId of ['org_seed', 'org_jojo', 'org_sweetleaf']) {
+		await db.userOrganization.upsert({
+			where: { userId_organizationId: { userId: ceo.id, organizationId: orgId } },
+			update: {},
+			create: { userId: ceo.id, organizationId: orgId }
+		})
+	}
+
 	// Idempotent: LeaveType has no unique constraint on (organizationId, name), so
 	// createMany would duplicate on every run. Only seed when none exist yet.
 	const existingLeaveTypes = await db.leaveType.count({ where: { organizationId: org.id } })
@@ -606,6 +627,7 @@ async function main() {
 	}
 
 	console.log('Seed complete. Logins:')
+	console.log('  CEO:             ceo@veent.ph / Ceo@1234  (Veent + JoJo + Sweetleaf)')
 	console.log('  Super Admin:     admin@veent.ph / Admin@1234')
 	console.log('  Manager:         manager@veent.ph / Manager@1234')
 	console.log('  Employee:        employee@veent.ph / Employee@1234')
