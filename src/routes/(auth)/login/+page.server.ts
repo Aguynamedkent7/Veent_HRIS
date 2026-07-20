@@ -2,6 +2,7 @@ import { fail, redirect } from '@sveltejs/kit'
 import { lucia } from '$lib/server/auth'
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
+import { checkRateLimit, recordFailure, recordSuccess } from '$lib/server/rate-limit'
 import bcrypt from 'bcrypt'
 import { z } from 'zod'
 import type { Actions, PageServerLoad } from './$types'
@@ -26,16 +27,27 @@ export const actions: Actions = {
 
 		const { email, password } = parsed.data
 		const ip = getClientAddress()
+		const rateKey = `${ip}:${email.toLowerCase()}`
+
+		const gate = checkRateLimit(rateKey)
+		if (!gate.allowed) {
+			const minutes = Math.ceil(gate.retryAfterMs / 60000)
+			return fail(429, {
+				error: `Too many failed attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`
+			})
+		}
 
 		const user = await db.user.findUnique({ where: { email } })
 
 		if (!user || !user.isActive) {
+			recordFailure(rateKey)
 			return fail(401, { error: 'Invalid email or password' })
 		}
 
 		const validPassword = await bcrypt.compare(password, user.passwordHash)
 
 		if (!validPassword) {
+			recordFailure(rateKey)
 			await writeAuditLog(
 				{
 					organizationId: user.organizationId,
@@ -47,6 +59,8 @@ export const actions: Actions = {
 			)
 			return fail(401, { error: 'Invalid email or password' })
 		}
+
+		recordSuccess(rateKey)
 
 		const session = await lucia.createSession(user.id, {})
 		const sessionCookie = lucia.createSessionCookie(session.id)

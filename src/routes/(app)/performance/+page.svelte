@@ -6,6 +6,8 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 	let showGoal = $state(false)
+	let cycleStart = $state('')
+	let cycleEnd = $state('')
 
 	const goalStatusClass = (status: string) =>
 		status === 'COMPLETED'
@@ -198,6 +200,7 @@
 			>
 				<input
 					name="name"
+					aria-label="Cycle name"
 					placeholder="e.g. 2026 Mid-Year"
 					required
 					class="h-9 w-44 rounded-md border border-input bg-background px-2 text-sm"
@@ -205,14 +208,20 @@
 				<input
 					name="startDate"
 					type="date"
+					aria-label="Cycle start date"
 					required
+					bind:value={cycleStart}
+					max={cycleEnd || undefined}
 					use:advanceTo={'endDate'}
 					class="h-9 rounded-md border border-input bg-background px-2 text-sm"
 				/>
 				<input
 					name="endDate"
 					type="date"
+					aria-label="Cycle end date"
 					required
+					bind:value={cycleEnd}
+					min={cycleStart || undefined}
 					class="h-9 rounded-md border border-input bg-background px-2 text-sm"
 				/>
 				<button

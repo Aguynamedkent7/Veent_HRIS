@@ -259,6 +259,7 @@
 									<input type="hidden" name="id" value={en.id} />
 									<select
 										name="status"
+										aria-label="Change enrollment status"
 										onchange={(e) =>
 											(e.currentTarget.closest('form') as HTMLFormElement).requestSubmit()}
 										class="h-7 rounded border border-input bg-background px-1 text-xs"

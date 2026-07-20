@@ -8,6 +8,11 @@
 
 	let { data }: { data: PageData } = $props()
 
+	// svelte-ignore state_referenced_locally
+	let startValue = $state(data.startDate)
+	// svelte-ignore state_referenced_locally
+	let endValue = $state(data.endDate)
+
 	// True while a report is being (re)generated via the same-route GET filter form.
 	const isGenerating = $derived(
 		!!$navigating && $navigating.to?.route.id === '/(app)/reports/[type]'
@@ -121,7 +126,8 @@
 				id="start"
 				name="start"
 				type="date"
-				value={data.startDate}
+				bind:value={startValue}
+				max={endValue || undefined}
 				use:advanceTo={'end'}
 				class="h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 			/>
@@ -132,7 +138,8 @@
 				id="end"
 				name="end"
 				type="date"
-				value={data.endDate}
+				bind:value={endValue}
+				min={startValue || undefined}
 				class="h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 			/>
 		</div>

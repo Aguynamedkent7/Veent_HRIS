@@ -46,7 +46,11 @@
 							<tr class="hover:bg-muted/30 {et.isActive ? '' : 'opacity-50'}">
 								<td class="px-3 py-2 font-mono text-xs">{et.code}</td>
 								<td class="px-3 py-2">{et.label}</td>
-								<td class="px-3 py-2 text-center">{et.taxable ? '✓' : '—'}</td>
+								<td class="px-3 py-2 text-center">
+									<span aria-label={et.taxable ? 'Taxable' : 'Not taxable'}
+										>{et.taxable ? '✓' : '—'}</span
+									>
+								</td>
 								<td class="px-3 py-2 text-right font-mono text-xs"
 									>{et.multiplier ? Number(et.multiplier).toFixed(2) : '—'}</td
 								>
@@ -121,7 +125,11 @@
 							<tr class="hover:bg-muted/30 {dt.isActive ? '' : 'opacity-50'}">
 								<td class="px-3 py-2 font-mono text-xs">{dt.code}</td>
 								<td class="px-3 py-2">{dt.label}</td>
-								<td class="px-3 py-2 text-center">{dt.isStatutory ? '✓' : '—'}</td>
+								<td class="px-3 py-2 text-center">
+									<span aria-label={dt.isStatutory ? 'Statutory' : 'Not statutory'}
+										>{dt.isStatutory ? '✓' : '—'}</span
+									>
+								</td>
 								<td class="px-3 py-2 text-right">
 									<form method="POST" action="?/toggleDeduction" use:enhance>
 										<input type="hidden" name="id" value={dt.id} />
