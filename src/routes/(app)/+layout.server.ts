@@ -28,6 +28,7 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 			id: user.id,
 			email: user.email,
 			role: user.role,
+			roles: user.roles,
 			organizationId: user.organizationId
 		},
 		memberOrgs,

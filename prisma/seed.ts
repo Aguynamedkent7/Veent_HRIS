@@ -614,16 +614,19 @@ async function main() {
 		})
 	}
 
-	// Backfill cross-org memberships (#131): every user gets one row mirroring their
-	// primary org, so UserOrganization is the single source of truth for the switcher.
-	// Idempotent via the (userId, organizationId) unique constraint.
-	const allUsers = await db.user.findMany({ select: { id: true, organizationId: true } })
+	// Backfill cross-org memberships (#131) and the multi-role set (#133): every user
+	// gets one membership mirroring their primary org, and `roles` seeded to [role] so
+	// single-role behaviour is unchanged. Both idempotent.
+	const allUsers = await db.user.findMany({ select: { id: true, organizationId: true, role: true, roles: true } })
 	for (const u of allUsers) {
 		await db.userOrganization.upsert({
 			where: { userId_organizationId: { userId: u.id, organizationId: u.organizationId } },
 			update: {},
 			create: { userId: u.id, organizationId: u.organizationId }
 		})
+		if (u.roles.length === 0) {
+			await db.user.update({ where: { id: u.id }, data: { roles: [u.role] } })
+		}
 	}
 
 	console.log('Seed complete. Logins:')

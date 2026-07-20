@@ -15,6 +15,9 @@ export const lucia = new Lucia(adapter, {
 		return {
 			email: attributes.email,
 			role: attributes.role,
+			// Full multi-role set (#133). Fall back to the primary role for any pre-backfill
+			// row so `roles` is never empty for capability checks.
+			roles: attributes.roles?.length ? attributes.roles : [attributes.role],
 			organizationId: attributes.organizationId,
 			isActive: attributes.isActive
 		}
@@ -32,6 +35,7 @@ declare module 'lucia' {
 		DatabaseUserAttributes: {
 			email: string
 			role: Role
+			roles: Role[]
 			organizationId: string
 			isActive: boolean
 		}

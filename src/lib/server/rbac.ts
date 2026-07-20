@@ -1,15 +1,28 @@
 import { error } from '@sveltejs/kit'
 import type { Role } from '@prisma/client'
-import { can, hasMinRole, CAPABILITIES, type Capability } from '$lib/rbac'
+import { can, canAny, hasMinRole, CAPABILITIES, type Capability } from '$lib/rbac'
 
 // The capability table itself lives in $lib/rbac so the sidebar can ask the same
 // questions the server enforces. This module is the enforcement half: every helper
 // here throws 403 rather than returning a boolean.
-export { ROLE_HIERARCHY, CAPABILITIES, can, hasMinRole, type Capability } from '$lib/rbac'
+export {
+	ROLE_HIERARCHY,
+	CAPABILITIES,
+	can,
+	canAny,
+	hasMinRole,
+	hasAnyMinRole,
+	type Capability
+} from '$lib/rbac'
 
 /** Guard a route on a named capability — prefer this over spelling out role lists. */
 export function requireCapability(userRole: Role, capability: Capability): void {
 	if (!can(userRole, capability)) error(403, 'Insufficient permissions')
+}
+
+/** Multi-role guard (#133): passes if ANY of the user's roles holds the capability. */
+export function requireAnyCapability(userRoles: Role[], capability: Capability): void {
+	if (!canAny(userRoles, capability)) error(403, 'Insufficient permissions')
 }
 
 export function requireRole(userRole: Role, ...allowedRoles: Role[]): void {

@@ -32,6 +32,8 @@ enum Role {
   PAYROLL_OFFICER
   FINANCE
   CEO
+  VERIFIER
+  APPROVER
 }
 
 enum EmploymentType {
@@ -330,7 +332,11 @@ model User {
   organizationId String
   email          String    @unique
   passwordHash   String
+  // `role` is the primary label; `roles` is the full set for multi-role users (#133),
+  // e.g. [MANAGER, VERIFIER]. Capability checks match ANY role in the set. Backfilled
+  // to [role] for every existing user so single-role behaviour is unchanged.
   role           Role      @default(EMPLOYEE)
+  roles          Role[]    @default([])
   isActive       Boolean   @default(true)
   lastLoginAt    DateTime?
   createdAt      DateTime  @default(now())

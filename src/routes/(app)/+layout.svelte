@@ -4,7 +4,7 @@
 	import { invalidateAll } from '$app/navigation'
 	import Toaster from '$lib/components/ui/Toaster.svelte'
 	import { addToast } from '$lib/stores/toast.svelte'
-	import { can } from '$lib/rbac'
+	import { canAny } from '$lib/rbac'
 	import type { LayoutData } from './$types'
 
 	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props()
@@ -67,18 +67,20 @@
 
 	// Same capability table the server enforces with ($lib/rbac) — a nav item shown to
 	// a role the server would reject is its own bug, so both read one source of truth.
+	// Nav uses the full role set (#133) so a multi-role user sees every entry they hold.
 	const role = $derived(data.user.role)
-	const isManager = $derived(can(role, 'VIEW_TEAM'))
-	const isAdmin = $derived(can(role, 'MANAGE_HR'))
-	const isSuperAdmin = $derived(can(role, 'ADMINISTER_SYSTEM'))
+	const roles = $derived(data.user.roles ?? [data.user.role])
+	const isManager = $derived(canAny(roles, 'VIEW_TEAM'))
+	const isAdmin = $derived(canAny(roles, 'MANAGE_HR'))
+	const isSuperAdmin = $derived(canAny(roles, 'ADMINISTER_SYSTEM'))
 	// Role assignment is CEO-only (#132); the Roles page also hosts Super Admin's
 	// account-status controls, so it shows for either capability.
-	const canManageUserRoles = $derived(can(role, 'MANAGE_USER_ROLES'))
+	const canManageUserRoles = $derived(canAny(roles, 'MANAGE_USER_ROLES'))
 	// Payroll Officer manages payroll; Finance reads payroll reports only.
-	const isPayroll = $derived(can(role, 'MANAGE_PAYROLL'))
-	const canViewReports = $derived(can(role, 'VIEW_PAYROLL_REPORTS'))
-	// Approvers (manager ladder + Payroll Officer) get the Requests/Approvals dropdown.
-	const canApprove = $derived(can(role, 'APPROVE_REQUESTS'))
+	const isPayroll = $derived(canAny(roles, 'MANAGE_PAYROLL'))
+	const canViewReports = $derived(canAny(roles, 'VIEW_PAYROLL_REPORTS'))
+	// Approvers (manager ladder + Payroll Officer + sign-off roles) get the dropdown.
+	const canApprove = $derived(canAny(roles, 'APPROVE_REQUESTS'))
 
 	const navItems = $derived(
 		[
@@ -238,7 +240,9 @@
 		SUPER_ADMIN: 'Super Admin',
 		PAYROLL_OFFICER: 'Payroll Officer',
 		FINANCE: 'Finance',
-		CEO: 'CEO'
+		CEO: 'CEO',
+		VERIFIER: 'Verifier',
+		APPROVER: 'Approver'
 	}
 
 	// Mobile sidebar drawer. Close it whenever the route changes.

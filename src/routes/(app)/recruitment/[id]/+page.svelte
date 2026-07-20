@@ -2,13 +2,16 @@
 	import { enhance } from '$app/forms'
 	import ApplicantKanban from '$lib/components/recruitment/ApplicantKanban.svelte'
 	import { formatShortDate } from '$lib/utils/format'
+	import { can } from '$lib/rbac'
 	import type { PageData } from './$types'
 
 	let { data }: { data: PageData } = $props()
 
 	const { posting, applicants, userRole } = $derived(data)
 
-	const isHrAdmin = $derived(userRole === 'HR_ADMIN' || userRole === 'SUPER_ADMIN')
+	// Mirror the server guard (MANAGE_HR) so promoted Managers (#133) see the HR controls
+	// they're actually allowed to use, not just HR_ADMIN/SUPER_ADMIN.
+	const isHrAdmin = $derived(can(userRole, 'MANAGE_HR'))
 
 	const hiredApplicants = $derived(
 		applicants.filter((a: { currentStage: string }) => a.currentStage === 'HIRED')
