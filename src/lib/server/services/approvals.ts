@@ -1,3 +1,4 @@
+import { can, CAPABILITIES } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
@@ -8,15 +9,19 @@ import type { AuditContext } from './types'
 
 type StageShape = { stageKind: 'SUPERVISOR' | 'ROLE'; role: Role | null }
 
-// Can this actor decide the given stage? SUPER_ADMIN overrides everything; a
-// SUPERVISOR stage is only the employee's direct supervisor; a ROLE stage requires
-// the exact role (keeps HR / Payroll separation intentional).
+// Can this actor decide the given stage? Separation of duties comes first: nobody
+// decides their own request, not even SUPER_ADMIN. Otherwise SUPER_ADMIN overrides
+// everything; a SUPERVISOR stage is only the employee's direct supervisor; a ROLE
+// stage requires the exact role (keeps HR / Payroll separation intentional).
 export function canActOnStage(
 	step: StageShape,
 	actorRole: Role,
 	actorEmployeeId: string | null,
-	employeeReportsToId: string | null
+	employeeReportsToId: string | null,
+	ownerEmployeeId: string | null
 ): boolean {
+	// #75: an approver may never act on their own submission, regardless of role.
+	if (actorEmployeeId != null && actorEmployeeId === ownerEmployeeId) return false
 	if (actorRole === 'SUPER_ADMIN') return true
 	if (step.stageKind === 'SUPERVISOR') {
 		return actorEmployeeId != null && actorEmployeeId === employeeReportsToId
@@ -60,9 +65,16 @@ export async function decide(
 	if (req.status !== 'PENDING')
 		error(400, `Request is ${req.status.toLowerCase()}, not open for decisions`)
 
+	// #75: separation of duties — nobody decides their own request, incl. SUPER_ADMIN.
+	if (actorEmployeeId != null && actorEmployeeId === req.employeeId) {
+		error(403, 'You cannot decide your own request')
+	}
+
 	const step = req.steps.find((s) => s.stageIndex === req.currentStage)
 	if (!step) error(500, 'Approval chain is inconsistent')
-	if (!canActOnStage(step, ctx.actorRole, actorEmployeeId, req.employee.reportsToId)) {
+	if (
+		!canActOnStage(step, ctx.actorRole, actorEmployeeId, req.employee.reportsToId, req.employeeId)
+	) {
 		error(403, 'You cannot act on this stage')
 	}
 
@@ -139,13 +151,16 @@ export async function listPendingRequestsForApprover(
 
 	return pending.filter((r) => {
 		const step = r.steps.find((s) => s.stageIndex === r.currentStage)
-		return step != null && canActOnStage(step, actorRole, actorEmployeeId, r.employee.reportsToId)
+		return (
+			step != null &&
+			canActOnStage(step, actorRole, actorEmployeeId, r.employee.reportsToId, r.employeeId)
+		)
 	})
 }
 
 // Roles that can reach the approvals surface. Payroll Officer sits on the Payroll
 // stage of request chains; timesheet approval is MANAGER+ only.
-export const APPROVER_ROLES: Role[] = ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN', 'PAYROLL_OFFICER']
+export const APPROVER_ROLES: readonly Role[] = CAPABILITIES.APPROVE_REQUESTS
 
 export interface PendingApprovalCounts {
 	timesheets: number
@@ -161,15 +176,15 @@ export async function countPendingApprovals(user: {
 	role: Role
 	organizationId: string
 }): Promise<PendingApprovalCounts> {
-	if (!APPROVER_ROLES.includes(user.role)) return { timesheets: 0, requests: 0, total: 0 }
+	if (!can(user.role, 'APPROVE_REQUESTS')) return { timesheets: 0, requests: 0, total: 0 }
 
 	const myEmployee = await db.employee.findUnique({
 		where: { userId: user.id },
 		select: { id: true }
 	})
 
-	const isManagerLadder = ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
-	const isAdmin = ['HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
+	const isManagerLadder = can(user.role, 'VIEW_TEAM')
+	const isAdmin = can(user.role, 'MANAGE_HR')
 	// A non-admin manager scopes to their direct reports, so without an employee record
 	// there is nothing to scope by — count 0 rather than falling through to org-wide.
 	const canCountTimesheets = isManagerLadder && (isAdmin || Boolean(myEmployee))
@@ -180,6 +195,8 @@ export async function countPendingApprovals(user: {
 			? db.timesheet.count({
 					where: {
 						status: 'SUBMITTED',
+						// #75: never count the actor's own timesheet as awaiting their review.
+						...(myEmployee ? { employeeId: { not: myEmployee.id } } : {}),
 						employee: {
 							user: { organizationId: user.organizationId },
 							...(!isAdmin ? { reportsToId: myEmployee!.id } : {})

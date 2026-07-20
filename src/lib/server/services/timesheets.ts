@@ -1,3 +1,4 @@
+import { can } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
@@ -102,7 +103,7 @@ async function assertCanModify(
 	})
 	const isOwner = actorEmployee?.id === ts.employeeId
 	if (isOwner) return { isOwner: true }
-	if (['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN'].includes(ctx.actorRole)) {
+	if (can(ctx.actorRole, 'VIEW_TEAM')) {
 		await assertManagesEmployee(ctx, ts.employee.reportsToId)
 		return { isOwner: false }
 	}
@@ -284,6 +285,15 @@ export async function reviewTimesheet(
 	ctx: AuditContext
 ) {
 	const ts = await getTimesheet(id, organizationId)
+	// #75: separation of duties — HR/SUPER act org-wide, so guard against approving
+	// or rejecting one's own timesheet before the manager-scope check.
+	const actorEmployee = await db.employee.findUnique({
+		where: { userId: ctx.actorId },
+		select: { id: true }
+	})
+	if (actorEmployee && actorEmployee.id === ts.employeeId) {
+		error(403, 'You cannot review your own timesheet')
+	}
 	await assertManagesEmployee(ctx, ts.employee.reportsToId)
 	if (ts.status !== 'SUBMITTED') error(400, 'Only submitted timesheets can be reviewed')
 

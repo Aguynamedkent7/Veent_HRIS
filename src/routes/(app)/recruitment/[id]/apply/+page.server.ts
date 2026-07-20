@@ -4,9 +4,9 @@ import { db } from '$lib/server/db'
 import { applyToPosting } from '$lib/server/services/recruitment'
 import type { Actions, PageServerLoad } from './$types'
 
-export const load: PageServerLoad = async ({ params }) => {
-	const posting = await db.jobPosting.findUnique({
-		where: { id: params.id },
+export const load: PageServerLoad = async ({ locals, params }) => {
+	const posting = await db.jobPosting.findFirst({
+		where: { id: params.id, organizationId: locals.user!.organizationId },
 		include: { department: { select: { name: true } } }
 	})
 
@@ -31,7 +31,7 @@ const applySchema = z.object({
 })
 
 export const actions: Actions = {
-	apply: async ({ request, params }) => {
+	apply: async ({ request, locals, params }) => {
 		const raw = Object.fromEntries(await request.formData())
 
 		// Clean up empty optional fields
@@ -63,7 +63,7 @@ export const actions: Actions = {
 			})
 		}
 
-		await applyToPosting(params.id, {
+		await applyToPosting(params.id, locals.user!.organizationId, {
 			firstName: parsed.data.firstName,
 			lastName: parsed.data.lastName,
 			email: parsed.data.email,

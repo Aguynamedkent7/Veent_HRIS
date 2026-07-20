@@ -1,15 +1,14 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
-	import { advanceTo } from '$lib/actions/dateRange'
 	import type { SubmitFunction } from '@sveltejs/kit'
 	import { slide } from 'svelte/transition'
 	import { formatShortDate } from '$lib/utils/format'
 	import TableSkeleton from '$lib/components/ui/TableSkeleton.svelte'
 	import Pagination from '$lib/components/Pagination.svelte'
 	import TimesheetModal from '$lib/components/timesheets/TimesheetModal.svelte'
+	import NewTimesheetDialog from '$lib/components/timesheets/NewTimesheetDialog.svelte'
 	import AggregatePanel from '$lib/components/timesheets/AggregatePanel.svelte'
 	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
-	import { addToast } from '$lib/stores/toast.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -55,14 +54,13 @@
 		openTs = ts
 	}
 
+	// Theme-aware status pills (dark-mode safe) — see the .badge-* classes in app.css.
 	const statusClass: Record<string, string> = {
-		APPROVED: 'bg-green-100 text-green-700',
-		REJECTED: 'bg-red-100 text-red-700',
-		SUBMITTED: 'bg-blue-100 text-blue-700',
-		DRAFT: 'bg-gray-100 text-gray-600'
+		APPROVED: 'badge-green',
+		REJECTED: 'badge-red',
+		SUBMITTED: 'badge-blue',
+		DRAFT: 'badge-gray'
 	}
-	const inputClass =
-		'h-8 w-full rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 	const btnPrimary =
 		'rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50'
 </script>
@@ -127,10 +125,13 @@
 		{/if}
 
 		<div class="overflow-x-auto rounded-lg border">
-			<table class="w-full text-sm">
+			<!-- table-fixed with shared column widths so the right-anchored Total Hours
+			     and Status columns line up between the My/Team tables even though only
+			     the Team table has an Employee column. -->
+			<table class="w-full min-w-[44rem] table-fixed text-sm">
 				<thead class="border-b bg-muted/50">
 					<tr>
-						<th class="w-[1%] px-4 py-3">
+						<th class="w-12 px-4 py-3">
 							<input
 								type="checkbox"
 								checked={allSelected}
@@ -140,11 +141,13 @@
 							/>
 						</th>
 						{#if showEmployee}
-							<th class="px-4 py-3 text-left font-medium text-muted-foreground">Employee</th>
+							<th class="w-56 px-4 py-3 text-left font-medium text-muted-foreground">Employee</th>
 						{/if}
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Period</th>
-						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Total Hours</th>
-						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
+						<th class="w-40 px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap"
+							>Total Hours</th
+						>
+						<th class="w-32 px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
 					</tr>
 				</thead>
 				<tbody class="divide-y">
@@ -165,17 +168,14 @@
 								/>
 							</td>
 							{#if showEmployee}
-								<td class="px-4 py-3">{ts.employee.lastName}, {ts.employee.firstName}</td>
+								<td class="truncate px-4 py-3">{ts.employee.lastName}, {ts.employee.firstName}</td>
 							{/if}
 							<td class="px-4 py-3 whitespace-nowrap"
 								>{formatShortDate(ts.periodStart)} – {formatShortDate(ts.periodEnd)}</td
 							>
 							<td class="px-4 py-3">{Number(ts.totalHours).toFixed(2)} hrs</td>
 							<td class="px-4 py-3"
-								><span
-									class={`rounded-full px-2 py-0.5 text-xs font-medium ${statusClass[ts.status] ?? 'bg-gray-100 text-gray-600'}`}
-									>{ts.status}</span
-								></td
+								><span class={statusClass[ts.status] ?? 'badge-gray'}>{ts.status}</span></td
 							>
 						</tr>
 					{:else}
@@ -196,7 +196,7 @@
 		<h1 class="text-2xl font-bold tracking-tight">Timesheets</h1>
 		{#if data.myEmployeeId}
 			<button
-				onclick={() => (showCreate = !showCreate)}
+				onclick={() => (showCreate = true)}
 				class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
 			>
 				New Timesheet
@@ -214,58 +214,6 @@
 
 	{#if data.isHrAdmin}
 		<AggregatePanel employees={data.employees} />
-	{/if}
-
-	{#if showCreate}
-		<!-- The page renders no inline error, so a rejected create (most often a duplicate
-		     period — the action 409s) would otherwise fail silently. Surface it as a toast and
-		     keep the entered dates so they can be corrected. -->
-		<form
-			method="POST"
-			action="?/create"
-			use:enhance={() =>
-				async ({ result, update }) => {
-					if (result.type === 'failure') {
-						addToast(String(result.data?.error ?? 'Could not create this timesheet.'), {
-							kind: 'error'
-						})
-						// Keep what was typed so the period can be corrected, not retyped.
-						await update({ reset: false })
-						return
-					}
-					await update()
-				}}
-			class="rounded-lg border p-4 space-y-3"
-		>
-			<h2 class="font-semibold">Create Timesheet</h2>
-			<!-- svelte-ignore a11y_label_has_associated_control -->
-			<div class="flex items-end gap-4">
-				<div>
-					<label class="text-sm font-medium">Period Start</label>
-					<input
-						name="periodStart"
-						type="date"
-						required
-						use:advanceTo={'periodEnd'}
-						class="mt-1 {inputClass} h-9"
-					/>
-				</div>
-				<div>
-					<label class="text-sm font-medium">Period End</label>
-					<input name="periodEnd" type="date" required class="mt-1 {inputClass} h-9" />
-				</div>
-				<button
-					type="submit"
-					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-					>Create</button
-				>
-				<button
-					type="button"
-					onclick={() => (showCreate = false)}
-					class="rounded-md border px-4 py-2 text-sm hover:bg-accent">Cancel</button
-				>
-			</div>
-		</form>
 	{/if}
 
 	{#if data.myEmployeeId}
@@ -297,3 +245,5 @@
 	myEmployeeId={data.myEmployeeId}
 	{form}
 />
+
+<NewTimesheetDialog bind:open={showCreate} />

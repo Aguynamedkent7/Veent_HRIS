@@ -1,5 +1,5 @@
-import { fail, isHttpError } from '@sveltejs/kit'
-import { requireMinRole } from '$lib/server/rbac'
+import { fail, isHttpError, redirect } from '@sveltejs/kit'
+import { can, requireMinRole } from '$lib/server/rbac'
 import {
 	countTimesheets,
 	listTimesheets,
@@ -22,8 +22,8 @@ import type { Actions, PageServerLoad, RequestEvent } from './$types'
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	const user = locals.user!
-	const isManager = ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
-	const isHrAdmin = ['HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
+	const isManager = can(user.role, 'VIEW_TEAM')
+	const isHrAdmin = can(user.role, 'MANAGE_HR')
 
 	const status = url.searchParams.get('status') ?? undefined
 
@@ -89,10 +89,15 @@ function toFail(e: unknown) {
 	throw e
 }
 
-const createSchema = z.object({
-	periodStart: z.coerce.date(),
-	periodEnd: z.coerce.date()
-})
+const createSchema = z
+	.object({
+		periodStart: z.coerce.date(),
+		periodEnd: z.coerce.date()
+	})
+	.refine((d) => d.periodEnd >= d.periodStart, {
+		message: 'End date must be on or after the start date',
+		path: ['periodEnd']
+	})
 
 const aggregateSchema = z.object({
 	employeeId: z.string().min(1),
@@ -203,19 +208,20 @@ export const actions: Actions = {
 		}
 	},
 
+	// Period-range create (shared NewTimesheetDialog): reflect the employee's punches for
+	// the period, seed a DRAFT from the derived attendance (no punches → empty draft), then
+	// redirect to /timesheets so the new row is visible. Submission happens separately.
 	create: async (event) => {
 		const user = event.locals.user!
 		const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
 		if (!myEmployee) return fail(400, { error: 'No employee profile found' })
 
-		const raw = Object.fromEntries(await event.request.formData())
-		const parsed = createSchema.safeParse(raw)
-		if (!parsed.success) return fail(400, { error: 'Invalid dates' })
+		const parsed = createSchema.safeParse(Object.fromEntries(await event.request.formData()))
+		if (!parsed.success)
+			return fail(400, { error: parsed.error.errors[0]?.message ?? 'Invalid dates' })
 
 		const ctx = ctxOf(event)
 		try {
-			// Reflect the employee's punches for the period, then seed the timesheet from the
-			// derived attendance so a new sheet isn't empty. No attendance → an empty draft.
 			await autoDeriveFromPunches(
 				user.organizationId,
 				{ from: parsed.data.periodStart, to: parsed.data.periodEnd, employeeId: myEmployee.id },
@@ -236,6 +242,7 @@ export const actions: Actions = {
 		} catch (e) {
 			return toFail(e)
 		}
+		redirect(303, '/timesheets')
 	},
 
 	// Repopulate a draft's entries from the period's attendance (re-derives punches first).

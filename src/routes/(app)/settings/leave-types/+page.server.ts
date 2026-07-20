@@ -1,6 +1,6 @@
 import { fail, isHttpError } from '@sveltejs/kit'
 import { z } from 'zod'
-import { requireRole } from '$lib/server/rbac'
+import { requireCapability } from '$lib/server/rbac'
 import {
 	listLeaveTypes,
 	createLeaveType,
@@ -11,7 +11,7 @@ import {
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
-	requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+	requireCapability(locals.user!.role, 'MANAGE_HR')
 	return { leaveTypes: await listLeaveTypes(locals.user!.organizationId) }
 }
 
@@ -55,7 +55,7 @@ async function run(fn: () => Promise<unknown>) {
 
 export const actions: Actions = {
 	add: async ({ request, locals, getClientAddress }) => {
-		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(locals.user!.role, 'MANAGE_HR')
 		const parsed = leaveTypeSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(422, { error: 'Invalid leave type values' })
 		return run(() =>
@@ -68,7 +68,7 @@ export const actions: Actions = {
 	},
 
 	update: async ({ request, locals, getClientAddress }) => {
-		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(locals.user!.role, 'MANAGE_HR')
 		const data = Object.fromEntries(await request.formData())
 		const id = data.id as string
 		if (!id) return fail(400, { error: 'Missing id' })
@@ -85,7 +85,7 @@ export const actions: Actions = {
 	},
 
 	toggle: async ({ request, locals, getClientAddress }) => {
-		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(locals.user!.role, 'MANAGE_HR')
 		const id = (await request.formData()).get('id') as string
 		if (!id) return fail(400, { error: 'Missing id' })
 		return run(() =>

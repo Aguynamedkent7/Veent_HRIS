@@ -1,12 +1,12 @@
-import { requireRole } from '$lib/server/rbac'
+import { can, requireCapability } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { paginate } from '$lib/server/pagination'
 import type { PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	const user = locals.user!
-	requireRole(user.role, 'HR_ADMIN', 'SUPER_ADMIN')
-	const isSuperAdmin = user.role === 'SUPER_ADMIN'
+	requireCapability(user.role, 'MANAGE_HR')
+	const isSuperAdmin = can(user.role, 'ADMINISTER_SYSTEM')
 
 	const actorId = url.searchParams.get('actor') ?? undefined
 	const entityType = url.searchParams.get('entity') ?? undefined

@@ -1,5 +1,5 @@
 import { fail, isHttpError } from '@sveltejs/kit'
-import { ROLE_HIERARCHY, requireRole } from '$lib/server/rbac'
+import { can, ROLE_HIERARCHY, requireCapability } from '$lib/server/rbac'
 import {
 	listGoalsForEmployee,
 	listReviewsForEmployee,
@@ -21,7 +21,7 @@ const GOAL_STATUS = ['DRAFT', 'ACTIVE', 'COMPLETED', 'CANCELLED'] as const
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!
 	const isManager = ROLE_HIERARCHY[user.role] >= ROLE_HIERARCHY.MANAGER
-	const isAdmin = ['HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
+	const isAdmin = can(user.role, 'MANAGE_HR')
 
 	const cycles = isAdmin ? await listReviewCycles(user.organizationId) : []
 
@@ -121,7 +121,7 @@ export const actions: Actions = {
 	},
 
 	createCycle: async ({ request, locals, getClientAddress }) => {
-		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(locals.user!.role, 'MANAGE_HR')
 		const parsed = z
 			.object({ name: z.string().min(1), startDate: z.coerce.date(), endDate: z.coerce.date() })
 			.safeParse(Object.fromEntries(await request.formData()))
@@ -140,7 +140,7 @@ export const actions: Actions = {
 	},
 
 	setCycleStatus: async ({ request, locals, getClientAddress }) => {
-		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(locals.user!.role, 'MANAGE_HR')
 		const data = await request.formData()
 		const id = data.get('id') as string
 		const status = data.get('status') as 'DRAFT' | 'ACTIVE' | 'CLOSED'
@@ -161,7 +161,7 @@ export const actions: Actions = {
 	},
 
 	openReviews: async ({ request, locals, getClientAddress }) => {
-		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(locals.user!.role, 'MANAGE_HR')
 		const id = (await request.formData()).get('id') as string
 		if (!id) return fail(400, { error: 'Missing cycle id' })
 		try {

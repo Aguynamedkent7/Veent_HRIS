@@ -51,15 +51,38 @@ export async function recordPunch(
 
 	const resolvedType: PunchType = input.punchType
 
-	const timeLog = await db.timeLog.create({
-		data: {
-			employeeId: employee.id,
-			punchType: resolvedType,
-			source: input.source ?? 'DISCORD',
-			timestamp: input.timestamp,
-			discordMessageId: input.discordMessageId
+	// #99: the HMAC window is ±5 minutes, so a captured valid request can be
+	// replayed inside it. `discordMessageId` is the idempotency key — one Discord
+	// message may produce exactly one punch. Checked here for a clean 409, and
+	// again via the unique constraint below, which is what actually closes the
+	// race between two concurrent replays (and holds if this check is skipped).
+	if (input.discordMessageId) {
+		const duplicate = await db.timeLog.findFirst({
+			where: { employeeId: employee.id, discordMessageId: input.discordMessageId },
+			select: { id: true }
+		})
+		if (duplicate) error(409, 'This punch has already been recorded')
+	}
+
+	let timeLog
+	try {
+		timeLog = await db.timeLog.create({
+			data: {
+				employeeId: employee.id,
+				punchType: resolvedType,
+				source: input.source ?? 'DISCORD',
+				timestamp: input.timestamp,
+				discordMessageId: input.discordMessageId
+			}
+		})
+	} catch (e) {
+		// P2002 = unique violation on (discordMessageId, employeeId): a replay that
+		// raced past the check above. Same outcome, no duplicate punch written.
+		if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+			error(409, 'This punch has already been recorded')
 		}
-	})
+		throw e
+	}
 
 	await writeAuditLog(
 		{

@@ -1,12 +1,12 @@
 import { fail, isHttpError } from '@sveltejs/kit'
 import { z } from 'zod'
-import { requireRole } from '$lib/server/rbac'
+import { requireCapability } from '$lib/server/rbac'
 import { getCompanyInfo, updateCompanyInfo } from '$lib/server/services/settings/master'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!
-	requireRole(user.role, 'HR_ADMIN', 'SUPER_ADMIN')
+	requireCapability(user.role, 'MANAGE_HR')
 	const company = await getCompanyInfo(user.organizationId)
 	return { company }
 }
@@ -20,7 +20,7 @@ const schema = z.object({
 export const actions: Actions = {
 	save: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		requireRole(user.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(user.role, 'MANAGE_HR')
 
 		const parsed = schema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success)

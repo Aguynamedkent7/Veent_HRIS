@@ -1,6 +1,6 @@
 import { fail, isHttpError } from '@sveltejs/kit'
 import { z } from 'zod'
-import { requireRole } from '$lib/server/rbac'
+import { requireCapability } from '$lib/server/rbac'
 import {
 	listPayCodes,
 	createEarningType,
@@ -12,7 +12,7 @@ import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!
-	requireRole(user.role, 'HR_ADMIN', 'SUPER_ADMIN')
+	requireCapability(user.role, 'MANAGE_HR')
 	return listPayCodes(user.organizationId)
 }
 
@@ -61,7 +61,7 @@ async function run(fn: () => Promise<unknown>) {
 
 export const actions: Actions = {
 	addEarning: async ({ request, locals, getClientAddress }) => {
-		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(locals.user!.role, 'MANAGE_HR')
 		const parsed = earningSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(422, { error: 'Invalid earning code' })
 		const { code, label, taxable, multiplier } = parsed.data
@@ -75,7 +75,7 @@ export const actions: Actions = {
 	},
 
 	addDeduction: async ({ request, locals, getClientAddress }) => {
-		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(locals.user!.role, 'MANAGE_HR')
 		const parsed = deductionSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(422, { error: 'Invalid deduction code' })
 		const { code, label, isStatutory } = parsed.data
@@ -89,7 +89,7 @@ export const actions: Actions = {
 	},
 
 	toggleEarning: async ({ request, locals, getClientAddress }) => {
-		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(locals.user!.role, 'MANAGE_HR')
 		const id = (await request.formData()).get('id') as string
 		if (!id) return fail(400, { error: 'Missing id' })
 		return run(() =>
@@ -98,7 +98,7 @@ export const actions: Actions = {
 	},
 
 	toggleDeduction: async ({ request, locals, getClientAddress }) => {
-		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(locals.user!.role, 'MANAGE_HR')
 		const id = (await request.formData()).get('id') as string
 		if (!id) return fail(400, { error: 'Missing id' })
 		return run(() =>

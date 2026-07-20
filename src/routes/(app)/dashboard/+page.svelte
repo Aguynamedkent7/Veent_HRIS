@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
+	import NewTimesheetDialog from '$lib/components/timesheets/NewTimesheetDialog.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 	const metrics = $derived(data.metrics)
 	let showPost = $state(false)
+	let showNewTimesheet = $state(false)
 </script>
 
 <svelte:head>
@@ -224,9 +226,10 @@
 			</div>
 		</a>
 
-		<a
-			href="/timesheets/new"
-			class="card group flex items-center gap-4 transition-colors hover:border-primary/40 hover:bg-card/80"
+		<button
+			type="button"
+			onclick={() => (showNewTimesheet = true)}
+			class="card group flex items-center gap-4 text-left transition-colors hover:border-primary/40 hover:bg-card/80"
 		>
 			<div
 				class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-400 group-hover:bg-blue-500/20"
@@ -250,7 +253,7 @@
 				<p class="text-sm font-medium text-foreground">Log Timesheet</p>
 				<p class="text-xs text-muted-foreground">Submit this week's hours</p>
 			</div>
-		</a>
+		</button>
 
 		<a
 			href="/leave/new"
@@ -281,3 +284,5 @@
 		</a>
 	</div>
 </div>
+
+<NewTimesheetDialog bind:open={showNewTimesheet} />
