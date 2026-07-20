@@ -17,6 +17,7 @@ const updateSchema = z.object({
 	employmentType: z.enum(['FULL_TIME', 'PROBATIONARY', 'CONTRACTUAL', 'PART_TIME']).optional(),
 	employmentStatus: z.enum(['ACTIVE', 'ON_LEAVE', 'OFFBOARDED']).optional(),
 	basicMonthlySalary: z.coerce.number().positive().optional(),
+	rateType: z.enum(['MONTHLY', 'HOURLY']).optional(),
 	sssNumber: z.string().optional(),
 	philhealthNumber: z.string().optional(),
 	pagibigNumber: z.string().optional(),

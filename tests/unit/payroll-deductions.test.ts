@@ -53,9 +53,10 @@ describe('applyAmortizations', () => {
 	})
 })
 
-describe('computeDeductions — composition + ordering', () => {
-	const statutory = { sssEe: 1350, philhealthEe: 750, pagibigEe: 100, withholdingTax: 1290 }
+/** Totals 3490 — shared by the composition and net-floor suites below. */
+const statutory = { sssEe: 1350, philhealthEe: 750, pagibigEe: 100, withholdingTax: 1290 }
 
+describe('computeDeductions — composition + ordering', () => {
 	it('sums statutory + tax + tardiness and derives net', () => {
 		const r = computeDeductions({
 			gross: 15000,
@@ -138,5 +139,60 @@ describe('computeDeductions — composition + ordering', () => {
 		})
 		expect(r.components.some((c) => c.code === 'LOAN')).toBe(false)
 		expect(r.loanBalances.L1).toBe(3000)
+	})
+})
+
+describe('#103 — net never goes negative', () => {
+	// The floor is achieved by not TAKING unaffordable lines, so `net === gross − Σ lines` (the
+	// #119 lines-authoritative invariant) still holds. Clamping the total would break it.
+	const sumLines = (r: { components: { amount: number }[] }) =>
+		r.components.reduce((a, c) => a + c.amount, 0)
+
+	it('skips a recurring deduction gross cannot fund, whole rather than partially', () => {
+		const r = computeDeductions({
+			gross: 5000,
+			hourlyRate: 170.45,
+			lateMinutes: 0,
+			undertimeMinutes: 0,
+			statutory, // 3490 → 1510 left
+			recurring: [{ code: 'BIG', label: 'Big', amount: 4000, taxable: false }]
+		})
+		expect(r.components.some((c) => c.code === 'BIG')).toBe(false)
+		expect(r.net).toBeCloseTo(1510, 2)
+		expect(r.uncollected).toBeCloseTo(4000, 2)
+		expect(r.net).toBeCloseTo(5000 - sumLines(r), 2)
+	})
+
+	it('takes an affordable recurring line ahead of loans, leaving net non-negative', () => {
+		const r = computeDeductions({
+			gross: 5000,
+			hourlyRate: 170.45,
+			lateMinutes: 0,
+			undertimeMinutes: 0,
+			statutory,
+			recurring: [{ code: 'HMO', label: 'HMO', amount: 1000, taxable: false }],
+			loans: [{ refId: 'L1', label: 'Loan', installment: 1000, balance: 3000 }]
+		})
+		expect(r.components.some((c) => c.code === 'HMO')).toBe(true)
+		expect(r.components.some((c) => c.code === 'LOAN')).toBe(false) // only 510 left
+		expect(r.loanBalances.L1).toBe(3000) // not collected → not decremented
+		expect(r.net).toBeGreaterThanOrEqual(0)
+		expect(r.uncollected).toBe(0)
+	})
+
+	it('credits UNRECOVERED when statutory alone exceeds gross, landing net on exactly 0', () => {
+		const r = computeDeductions({
+			gross: 1000, // statutory is 3490
+			hourlyRate: 170.45,
+			lateMinutes: 0,
+			undertimeMinutes: 0,
+			statutory,
+			loans: [{ refId: 'L1', label: 'Loan', installment: 1000, balance: 3000 }]
+		})
+		expect(r.net).toBe(0)
+		expect(r.components.find((c) => c.code === 'UNRECOVERED')?.amount).toBeCloseTo(-2490, 2)
+		expect(r.uncollected).toBeCloseTo(2490, 2)
+		expect(r.loanBalances.L1).toBe(3000) // nothing withheld → balance carried forward
+		expect(r.net).toBeCloseTo(1000 - sumLines(r), 2)
 	})
 })

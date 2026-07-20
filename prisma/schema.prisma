@@ -49,9 +49,10 @@ enum EmploymentStatus {
   OFFBOARDED
 }
 
+// Client-confirmed (#122): employees are either on a fixed monthly salary or paid hourly.
+// There is no daily rate — DAILY was removed rather than left as an enum value the UI hides.
 enum RateType {
   MONTHLY
-  DAILY
   HOURLY
 }
 

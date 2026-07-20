@@ -39,6 +39,7 @@ export async function fetchPayslipDocument(
 					jobTitle: true,
 					employmentType: true,
 					basicMonthlySalary: true,
+					rateType: true,
 					organizationId: true,
 					userId: true
 				}
@@ -139,7 +140,8 @@ export async function fetchPayslipDocument(
 			employeeNumber: entry.employee.employeeNumber,
 			jobTitle: entry.employee.jobTitle,
 			employmentType: entry.employee.employmentType,
-			basicMonthlySalary: Number(entry.employee.basicMonthlySalary)
+			basicMonthlySalary: Number(entry.employee.basicMonthlySalary),
+			rateType: entry.employee.rateType
 		},
 		organization,
 		run: {
