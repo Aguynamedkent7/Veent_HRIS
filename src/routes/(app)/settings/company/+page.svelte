@@ -4,6 +4,25 @@
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
+
+	// Bind the form to local reactive state so the inputs stay in sync with what
+	// the user is typing AND with fresh server data after a save. Using plain
+	// `value={data.company.…}` was flaky: after `use:enhance` invalidated the
+	// page, the un-edited inputs briefly reflected an intermediate empty state.
+	// svelte-ignore state_referenced_locally
+	let nameValue = $state(data.company.name)
+	// svelte-ignore state_referenced_locally
+	let addressValue = $state(data.company.address ?? '')
+	// svelte-ignore state_referenced_locally
+	let logoUrlValue = $state(data.company.logoUrl ?? '')
+
+	// After a save the server returns the persisted row; re-sync local state so
+	// the inputs show what actually got written (in case anything was normalized).
+	$effect(() => {
+		nameValue = data.company.name
+		addressValue = data.company.address ?? ''
+		logoUrlValue = data.company.logoUrl ?? ''
+	})
 </script>
 
 <svelte:head>
@@ -35,7 +54,7 @@
 				id="name"
 				name="name"
 				type="text"
-				value={data.company.name}
+				bind:value={nameValue}
 				required
 				class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 			/>
@@ -48,9 +67,9 @@
 				id="address"
 				name="address"
 				rows="2"
+				bind:value={addressValue}
 				class="rounded-md border border-input bg-background px-3 py-2 text-sm"
-				>{data.company.address ?? ''}</textarea
-			>
+			></textarea>
 		</div>
 		<div class="grid gap-1.5">
 			<label for="logoUrl" class="text-sm font-medium"
@@ -60,13 +79,13 @@
 				id="logoUrl"
 				name="logoUrl"
 				type="url"
-				value={data.company.logoUrl ?? ''}
+				bind:value={logoUrlValue}
 				placeholder="https://…"
 				class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 			/>
-			{#if data.company.logoUrl}
+			{#if logoUrlValue}
 				<img
-					src={data.company.logoUrl}
+					src={logoUrlValue}
 					alt="Company logo preview"
 					class="mt-2 h-12 w-auto rounded border object-contain"
 				/>

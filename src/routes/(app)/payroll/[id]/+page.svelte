@@ -108,6 +108,7 @@
 						>
 						<td class="px-4 py-3">
 							<div class="flex items-center justify-end gap-2">
+								<a href={`/payslips/${entry.id}`} class="btn-row">Payslip</a>
 								<button
 									onclick={() => (expandedEntryId = expandedEntryId === entry.id ? null : entry.id)}
 									class="btn-row">{expandedEntryId === entry.id ? 'Hide' : 'Breakdown'}</button
