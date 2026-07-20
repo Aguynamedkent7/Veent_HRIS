@@ -3,6 +3,7 @@
 	import { browser } from '$app/environment'
 	import Toaster from '$lib/components/ui/Toaster.svelte'
 	import { addToast } from '$lib/stores/toast.svelte'
+	import { can } from '$lib/rbac'
 	import type { LayoutData } from './$types'
 
 	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props()
@@ -32,15 +33,17 @@
 		fetch('/api/v1/notifications/read', { method: 'POST' })
 	})
 
+	// Same capability table the server enforces with ($lib/rbac) — a nav item shown to
+	// a role the server would reject is its own bug, so both read one source of truth.
 	const role = $derived(data.user.role)
-	const isManager = $derived(['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN'].includes(role))
-	const isAdmin = $derived(['HR_ADMIN', 'SUPER_ADMIN'].includes(role))
-	const isSuperAdmin = $derived(role === 'SUPER_ADMIN')
+	const isManager = $derived(can(role, 'VIEW_TEAM'))
+	const isAdmin = $derived(can(role, 'MANAGE_HR'))
+	const isSuperAdmin = $derived(can(role, 'ADMINISTER_SYSTEM'))
 	// Payroll Officer manages payroll; Finance reads payroll reports only.
-	const isPayroll = $derived(isAdmin || role === 'PAYROLL_OFFICER')
-	const canViewReports = $derived(isAdmin || ['PAYROLL_OFFICER', 'FINANCE'].includes(role))
+	const isPayroll = $derived(can(role, 'MANAGE_PAYROLL'))
+	const canViewReports = $derived(can(role, 'VIEW_PAYROLL_REPORTS'))
 	// Approvers (manager ladder + Payroll Officer) get the Requests/Approvals dropdown.
-	const canApprove = $derived(isManager || role === 'PAYROLL_OFFICER')
+	const canApprove = $derived(can(role, 'APPROVE_REQUESTS'))
 
 	const navItems = $derived(
 		[

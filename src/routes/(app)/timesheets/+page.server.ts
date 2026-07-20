@@ -1,5 +1,5 @@
 import { fail, isHttpError, redirect } from '@sveltejs/kit'
-import { requireMinRole } from '$lib/server/rbac'
+import { can, requireMinRole } from '$lib/server/rbac'
 import {
 	countTimesheets,
 	listTimesheets,
@@ -22,8 +22,8 @@ import type { Actions, PageServerLoad, RequestEvent } from './$types'
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	const user = locals.user!
-	const isManager = ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
-	const isHrAdmin = ['HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
+	const isManager = can(user.role, 'VIEW_TEAM')
+	const isHrAdmin = can(user.role, 'MANAGE_HR')
 
 	const status = url.searchParams.get('status') ?? undefined
 

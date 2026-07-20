@@ -1,12 +1,12 @@
 import { fail, isHttpError } from '@sveltejs/kit'
 import { z } from 'zod'
-import { requireRole } from '$lib/server/rbac'
+import { requireCapability } from '$lib/server/rbac'
 import { listOrgUsers, setUserRole, setUserActive } from '$lib/server/services/settings/org'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!
-	requireRole(user.role, 'SUPER_ADMIN')
+	requireCapability(user.role, 'ADMINISTER_SYSTEM')
 
 	const users = await listOrgUsers(user.organizationId)
 
@@ -26,7 +26,7 @@ const activeSchema = z.object({
 export const actions: Actions = {
 	setRole: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		requireRole(user.role, 'SUPER_ADMIN')
+		requireCapability(user.role, 'ADMINISTER_SYSTEM')
 
 		const raw = Object.fromEntries(await request.formData())
 		const parsed = roleSchema.safeParse(raw)
@@ -61,7 +61,7 @@ export const actions: Actions = {
 
 	setActive: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		requireRole(user.role, 'SUPER_ADMIN')
+		requireCapability(user.role, 'ADMINISTER_SYSTEM')
 
 		const raw = Object.fromEntries(await request.formData())
 		const parsed = activeSchema.safeParse(raw)

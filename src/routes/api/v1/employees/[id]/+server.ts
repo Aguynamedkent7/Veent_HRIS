@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit'
-import { requireRole, requireMinRole } from '$lib/server/rbac'
+import { can, requireCapability, requireMinRole } from '$lib/server/rbac'
 import { getEmployee, updateEmployee, offboardEmployee } from '$lib/server/services/employees'
 import { apiError } from '$lib/server/api-error'
 import { db } from '$lib/server/db'
@@ -42,7 +42,9 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 
 		// Object-level access control: a MANAGER may only read their own direct
 		// reports. HR/Super-Admin are unrestricted. Mirrors the 201-file page load.
-		if (locals.user.role === 'MANAGER') {
+		// Negated capability, not role equality: anyone who clears the MANAGER floor
+		// without holding MANAGE_HR is scoped to their reports rather than unrestricted.
+		if (!can(locals.user.role, 'MANAGE_HR')) {
 			const self = await db.employee.findUnique({
 				where: { userId: locals.user.id },
 				select: { id: true }
@@ -63,7 +65,7 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	if (!locals.user) return apiError(401, 'Unauthorized')
 
 	try {
-		requireRole(locals.user.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(locals.user.role, 'MANAGE_HR')
 	} catch {
 		return apiError(403, 'Insufficient permissions')
 	}
@@ -96,7 +98,7 @@ export const POST: RequestHandler = async ({ locals, params, request, url }) => 
 
 	if (action === 'offboard') {
 		try {
-			requireRole(locals.user.role, 'HR_ADMIN', 'SUPER_ADMIN')
+			requireCapability(locals.user.role, 'MANAGE_HR')
 		} catch {
 			return apiError(403, 'Insufficient permissions')
 		}

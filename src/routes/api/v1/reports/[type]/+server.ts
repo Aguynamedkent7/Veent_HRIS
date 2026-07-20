@@ -1,5 +1,5 @@
 import { json, error } from '@sveltejs/kit'
-import { requireRole, requirePayrollReports } from '$lib/server/rbac'
+import { requireCapability, requirePayrollReports } from '$lib/server/rbac'
 import {
 	generateHeadcount,
 	generateAttendance,
@@ -51,7 +51,7 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
 	if (PAYROLL_REPORT_TYPES.includes(type as (typeof PAYROLL_REPORT_TYPES)[number])) {
 		requirePayrollReports(user.role)
 	} else {
-		requireRole(user.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(user.role, 'MANAGE_HR')
 	}
 
 	const startDate = url.searchParams.get('start')

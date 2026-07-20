@@ -1,6 +1,6 @@
 import { fail, isHttpError } from '@sveltejs/kit'
 import { z } from 'zod'
-import { requireRole } from '$lib/server/rbac'
+import { requireCapability } from '$lib/server/rbac'
 import {
 	listSalaryGrades,
 	listPositionsWithGrades,
@@ -12,7 +12,7 @@ import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!
-	requireRole(user.role, 'HR_ADMIN', 'SUPER_ADMIN')
+	requireCapability(user.role, 'MANAGE_HR')
 	const [grades, positions] = await Promise.all([
 		listSalaryGrades(user.organizationId),
 		listPositionsWithGrades(user.organizationId)
@@ -48,7 +48,7 @@ async function run(fn: () => Promise<unknown>) {
 
 export const actions: Actions = {
 	addGrade: async ({ request, locals, getClientAddress }) => {
-		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(locals.user!.role, 'MANAGE_HR')
 		const parsed = gradeSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(422, { error: 'Invalid grade values' })
 		return run(() =>
@@ -57,7 +57,7 @@ export const actions: Actions = {
 	},
 
 	toggleGrade: async ({ request, locals, getClientAddress }) => {
-		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(locals.user!.role, 'MANAGE_HR')
 		const id = (await request.formData()).get('id') as string
 		if (!id) return fail(400, { error: 'Missing id' })
 		return run(() =>
@@ -66,7 +66,7 @@ export const actions: Actions = {
 	},
 
 	assignGrade: async ({ request, locals, getClientAddress }) => {
-		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(locals.user!.role, 'MANAGE_HR')
 		const data = await request.formData()
 		const positionId = data.get('positionId') as string
 		const gradeId = (data.get('salaryGradeId') as string) || null

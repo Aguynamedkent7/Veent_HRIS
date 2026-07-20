@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit'
-import { requireRole } from '$lib/server/rbac'
+import { requireCapability } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import {
 	generateHeadcount,
@@ -49,7 +49,7 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 	if (PAYROLL_REPORT_TYPES.includes(type)) {
 		if (!canViewPayrollReports(user.role)) error(403, 'Insufficient permissions')
 	} else {
-		requireRole(user.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(user.role, 'MANAGE_HR')
 	}
 
 	// Parse filter params

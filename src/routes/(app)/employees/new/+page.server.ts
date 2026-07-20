@@ -1,7 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit'
 import { z } from 'zod'
 import { db } from '$lib/server/db'
-import { requireRole } from '$lib/server/rbac'
+import { requireCapability } from '$lib/server/rbac'
 import { createEmployee } from '$lib/server/services/employees'
 import { sendWelcomeEmail } from '$lib/server/notifications'
 import type { Actions, PageServerLoad } from './$types'
@@ -16,7 +16,7 @@ function generateTempPassword(): string {
 }
 
 export const load: PageServerLoad = async ({ locals }) => {
-	requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+	requireCapability(locals.user!.role, 'MANAGE_HR')
 
 	const orgId = locals.user!.organizationId
 	const [departments, employees, positions, workSchedules] = await Promise.all([
@@ -97,7 +97,7 @@ const createSchema = z.object({
 
 export const actions: Actions = {
 	create: async ({ request, locals, getClientAddress }) => {
-		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(locals.user!.role, 'MANAGE_HR')
 		const user = locals.user!
 
 		const raw = Object.fromEntries(await request.formData())

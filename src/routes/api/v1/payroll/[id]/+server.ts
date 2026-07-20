@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit'
-import { requireRole, requirePayrollManage } from '$lib/server/rbac'
+import { requireCapability, requirePayrollManage } from '$lib/server/rbac'
 import { getRunWithEntries, approveRun, voidRun } from '$lib/server/services/payroll/runs'
 import { apiError } from '$lib/server/api-error'
 import type { RequestHandler } from './$types'
@@ -47,7 +47,7 @@ export const POST: RequestHandler = async ({ locals, params, url, request }) => 
 
 	if (action === 'void') {
 		try {
-			requireRole(user.role, 'SUPER_ADMIN')
+			requireCapability(user.role, 'ADMINISTER_SYSTEM')
 		} catch {
 			return apiError(403, 'Insufficient permissions')
 		}

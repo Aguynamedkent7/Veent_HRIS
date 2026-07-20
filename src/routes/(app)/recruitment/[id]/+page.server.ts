@@ -1,6 +1,6 @@
 import { fail, isHttpError, redirect } from '@sveltejs/kit'
 import { z } from 'zod'
-import { requireRole } from '$lib/server/rbac'
+import { requireCapability } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { advanceApplicant, convertApplicantToEmployee } from '$lib/server/services/recruitment'
 import type { Actions, PageServerLoad } from './$types'
@@ -43,7 +43,7 @@ const advanceStageSchema = z.object({
 export const actions: Actions = {
 	advanceStage: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		requireRole(user.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(user.role, 'MANAGE_HR')
 
 		const raw = Object.fromEntries(await request.formData())
 		const parsed = advanceStageSchema.safeParse(raw)
@@ -69,7 +69,7 @@ export const actions: Actions = {
 
 	updateStatus: async ({ request, locals, params }) => {
 		const user = locals.user!
-		requireRole(user.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(user.role, 'MANAGE_HR')
 
 		const data = await request.formData()
 		const status = data.get('status') as string
@@ -99,7 +99,7 @@ export const actions: Actions = {
 
 	convert: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		requireRole(user.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(user.role, 'MANAGE_HR')
 
 		const data = await request.formData()
 		const applicantId = data.get('applicantId') as string

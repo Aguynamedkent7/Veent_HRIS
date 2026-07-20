@@ -1,3 +1,4 @@
+import { can } from '$lib/server/rbac'
 import { fail } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
 import { paginate } from '$lib/server/pagination'
@@ -9,7 +10,7 @@ import type { Actions, PageServerLoad, RequestEvent } from './$types'
 // Requests/Approvals page; this page lists leave (Request type=LEAVE) + balances.
 export const load: PageServerLoad = async ({ locals, url }) => {
 	const user = locals.user!
-	const isManager = ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
+	const isManager = can(user.role, 'VIEW_TEAM')
 
 	const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
 	const year = new Date().getFullYear()

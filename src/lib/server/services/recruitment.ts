@@ -83,6 +83,7 @@ export async function publishJobPosting(id: string, organizationId: string, ctx:
 
 export async function applyToPosting(
 	jobPostingId: string,
+	organizationId: string,
 	input: {
 		firstName: string
 		lastName: string
@@ -91,7 +92,11 @@ export async function applyToPosting(
 		coverLetter?: string
 	}
 ) {
-	const jp = await db.jobPosting.findUnique({ where: { id: jobPostingId } })
+	// Org-scoped: this is the HR-facing "add applicant" flow, so the posting must belong
+	// to the caller's organization. Existence and OPEN status were already re-checked
+	// here, but without the scope an HR admin could write an applicant onto another
+	// organization's posting by id.
+	const jp = await db.jobPosting.findFirst({ where: { id: jobPostingId, organizationId } })
 	if (!jp || jp.status !== 'OPEN') error(400, 'This position is not accepting applications')
 
 	return db.applicant.create({

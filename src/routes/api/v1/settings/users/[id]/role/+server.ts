@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit'
 import { z } from 'zod'
-import { requireRole } from '$lib/server/rbac'
+import { requireCapability } from '$lib/server/rbac'
 import { setUserRole } from '$lib/server/services/settings/org'
 import type { RequestHandler } from './$types'
 
@@ -13,7 +13,7 @@ const roleSchema = z.object({
 export const PATCH: RequestHandler = async ({ locals, params, request, getClientAddress }) => {
 	if (!locals.user) error(401, 'Unauthorized')
 	const user = locals.user
-	requireRole(user.role, 'SUPER_ADMIN')
+	requireCapability(user.role, 'ADMINISTER_SYSTEM')
 
 	if (params.id === user.id) error(400, 'You cannot change your own role.')
 
