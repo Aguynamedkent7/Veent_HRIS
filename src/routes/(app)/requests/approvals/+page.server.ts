@@ -1,18 +1,17 @@
 import { fail, isHttpError, redirect } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
 import { paginate } from '$lib/server/pagination'
-import {
-	decide,
-	listPendingRequestsForApprover,
-	APPROVER_ROLES
-} from '$lib/server/services/approvals'
+import { canAny } from '$lib/server/rbac'
+import { decide, listPendingRequestsForApprover } from '$lib/server/services/approvals'
 import type { ApprovalDecision } from '@prisma/client'
 import type { Actions, PageServerLoad } from './$types'
 
-// Request approvals (all request types) — any approver role, incl. Payroll Officer.
+// Request approvals (all request types) — reachable by any role that can approve, with
+// the actual per-stage authority (make/verify/approve) resolved in the service (#134).
 export const load: PageServerLoad = async ({ locals, url }) => {
 	const user = locals.user!
-	if (!APPROVER_ROLES.includes(user.role)) redirect(303, '/requests')
+	const roles = user.roles ?? [user.role]
+	if (!canAny(roles, 'APPROVE_REQUESTS')) redirect(303, '/requests')
 
 	const myEmployee = await db.employee.findUnique({
 		where: { userId: user.id },
@@ -21,7 +20,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 	const actionable = await listPendingRequestsForApprover(
 		user.organizationId,
-		user.role,
+		roles,
 		myEmployee?.id ?? null
 	)
 
@@ -36,7 +35,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 export const actions: Actions = {
 	decideRequest: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		if (!APPROVER_ROLES.includes(user.role)) return fail(403, { error: 'Insufficient permissions' })
+		const roles = user.roles ?? [user.role]
+		if (!canAny(roles, 'APPROVE_REQUESTS')) return fail(403, { error: 'Insufficient permissions' })
 
 		const data = await request.formData()
 		const id = data.get('id') as string
@@ -64,6 +64,7 @@ export const actions: Actions = {
 					organizationId: user.organizationId,
 					actorId: user.id,
 					actorRole: user.role,
+					actorRoles: roles,
 					ipAddress: getClientAddress()
 				},
 				myEmployee?.id ?? null
@@ -79,7 +80,8 @@ export const actions: Actions = {
 	// decide (e.g. no longer at their stage) throw and are counted as skipped, not aborting the batch.
 	rejectMany: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		if (!APPROVER_ROLES.includes(user.role)) return fail(403, { error: 'Insufficient permissions' })
+		const roles = user.roles ?? [user.role]
+		if (!canAny(roles, 'APPROVE_REQUESTS')) return fail(403, { error: 'Insufficient permissions' })
 
 		const data = await request.formData()
 		const ids = String(data.get('ids') ?? '')
@@ -98,6 +100,7 @@ export const actions: Actions = {
 			organizationId: user.organizationId,
 			actorId: user.id,
 			actorRole: user.role,
+			actorRoles: roles,
 			ipAddress: getClientAddress()
 		}
 

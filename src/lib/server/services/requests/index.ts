@@ -8,9 +8,15 @@ import {
 	deriveRequestColumns,
 	type RequestInput
 } from '$lib/server/schemas/requests'
-import { resolveChain } from './routing'
+import { buildApprovalChain } from './routing'
+import { canAny } from '$lib/server/rbac'
 import { computeLeaveTotalDays, assertLeaveBalance } from './leave'
 import type { AuditContext } from '../types'
+
+// The filer's live role set — approval-stage authority is multi-role aware (#133/#134).
+function rolesOf(ctx: AuditContext) {
+	return ctx.actorRoles?.length ? ctx.actorRoles : [ctx.actorRole]
+}
 
 // Create a request and its resolved approval chain in one transaction. The chain
 // comes from DEFAULT_ROUTING; the supervisor stage is only included when the
@@ -44,7 +50,15 @@ export async function createRequest(
 		payload = { ...parsed, totalDays }
 	}
 
-	const chain = resolveChain(parsed.type, { hasSupervisor: Boolean(employee.reportsToId) })
+	// Maker-checker chain (#134): when the filer is branch HR/Manager (MANAGE_HR) they
+	// are the maker, so MAKE completes at file-time and the chain opens at VERIFY. An
+	// employee filing their own request leaves MAKE for branch HR to act on first.
+	const filerIsMaker = canAny(rolesOf(ctx), 'MANAGE_HR')
+	const { steps, currentStage } = buildApprovalChain({
+		attempt: 1,
+		makerUserId: filerIsMaker ? ctx.actorId : null,
+		decidedAt: new Date()
+	})
 
 	const created = await db.request.create({
 		data: {
@@ -56,23 +70,17 @@ export async function createRequest(
 			hours: cols.hours,
 			reason: cols.reason,
 			payload: payload as unknown as Prisma.InputJsonValue,
-			currentStage: 0,
-			steps: {
-				create: chain.map((s) => ({
-					stageIndex: s.stageIndex,
-					stageKind: s.stageKind,
-					role: s.role
-				}))
-			}
+			currentStage,
+			steps: { create: steps }
 		},
-		include: { steps: { orderBy: { stageIndex: 'asc' } } }
+		include: { steps: { orderBy: [{ attempt: 'asc' }, { stageIndex: 'asc' }] } }
 	})
 
 	await writeAuditLog(ctx, {
 		action: 'CREATE',
 		entityType: 'Request',
 		entityId: created.id,
-		newValue: { type: parsed.type, dateFrom: cols.dateFrom, stages: chain.length }
+		newValue: { type: parsed.type, dateFrom: cols.dateFrom, stages: steps.length }
 	})
 
 	return created
@@ -130,27 +138,34 @@ export async function getRequest(id: string, organizationId: string) {
 	})
 }
 
-// Employee re-submits a RETURNED request: reset the chain and re-enter at stage 0.
+// Employee re-submits a RETURNED request. Append-only (#134): the prior attempt's steps
+// stay as frozen history and a fresh attempt is created, re-entering at MAKE so branch HR
+// re-checks the correction before it flows to verify/approve again.
 export async function resubmitRequest(id: string, employeeId: string, ctx: AuditContext) {
 	const req = await db.request.findFirst({
 		where: { id, employeeId },
-		select: { id: true, status: true }
+		include: { steps: { select: { attempt: true } } }
 	})
 	if (!req) error(404, 'Request not found')
 	if (req.status !== 'RETURNED') error(400, 'Only returned requests can be re-submitted')
 
+	const nextAttempt = Math.max(...req.steps.map((s) => s.attempt)) + 1
+	// The requester is refiling, not a maker, so MAKE stays pending for branch HR.
+	const { steps, currentStage } = buildApprovalChain({
+		attempt: nextAttempt,
+		makerUserId: null,
+		decidedAt: new Date()
+	})
+
 	const updated = await db.$transaction(async (tx) => {
-		await tx.approvalStep.updateMany({
-			where: { requestId: id },
-			data: { decision: null, actorId: null, note: null, decidedAt: null }
-		})
-		return tx.request.update({ where: { id }, data: { status: 'PENDING', currentStage: 0 } })
+		await tx.approvalStep.createMany({ data: steps.map((s) => ({ ...s, requestId: id })) })
+		return tx.request.update({ where: { id }, data: { status: 'PENDING', currentStage } })
 	})
 	await writeAuditLog(ctx, {
 		action: 'UPDATE',
 		entityType: 'Request',
 		entityId: id,
-		newValue: { status: 'PENDING', resubmitted: true }
+		newValue: { status: 'PENDING', resubmittedAttempt: nextAttempt }
 	})
 	return updated
 }

@@ -12,7 +12,12 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 	const user = locals.user
 	const [notifications, pendingApprovals, memberships] = await Promise.all([
 		listUnread(user.id),
-		countPendingApprovals({ id: user.id, role: user.role, organizationId: user.organizationId }),
+		countPendingApprovals({
+			id: user.id,
+			role: user.role,
+			roles: user.roles,
+			organizationId: user.organizationId
+		}),
 		db.userOrganization.findMany({
 			where: { userId: user.id },
 			select: { organization: { select: { id: true, name: true } } },
