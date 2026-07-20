@@ -9,8 +9,13 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 
 	const user = locals.user
 
-	const entry = await db.payrollEntry.findUnique({
-		where: { id: params.id },
+	// Scoped at the query, not checked afterwards: PayrollEntry has no organizationId
+	// of its own, so tenancy runs through payrollRun. The role gate below only ever
+	// constrained EMPLOYEE, which left every privileged role able to read any org's
+	// payslip by id. Filtering here also makes a foreign id indistinguishable from a
+	// nonexistent one (404, not 403) — no cross-org existence disclosure.
+	const entry = await db.payrollEntry.findFirst({
+		where: { id: params.id, payrollRun: { organizationId: user.organizationId } },
 		include: {
 			employee: {
 				select: {
