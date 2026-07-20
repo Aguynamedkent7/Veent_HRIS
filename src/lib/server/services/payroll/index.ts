@@ -6,6 +6,7 @@ import { computeEmployeeResult } from './calculator'
 import { ratesFromRule } from './rates'
 import { type AmortItem } from './deductions'
 import { recurringDeductionComponents } from './employee-deductions'
+import { D, q2n, sum, sumQ, ZERO } from './money'
 import { emptyAttendance, round2, type EmployeeComp } from './types'
 import { buildAttendanceInput } from '../attendance/input'
 import { computeWorkingDays } from '$lib/utils/dates'
@@ -139,13 +140,15 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		earnings: Array<{ code: string; label: string; amount: number; taxable: boolean }>
 		deductions: Array<{ code: string; label: string; amount: number; refId: string | null }>
 	}> = []
-	let totalGross = 0
-	let totalDeductions = 0
-	let totalNet = 0
+	// #119: run totals are the exact sum of the entries' already-quantized figures, so the run
+	// header reconciles against its entry rows the same way an entry reconciles against its lines.
+	let totalGross = ZERO
+	let totalDeductions = ZERO
+	let totalNet = ZERO
 
 	for (const emp of employees) {
 		const comp: EmployeeComp = {
-			basicMonthlySalary: Number(emp.basicMonthlySalary),
+			basicMonthlySalary: emp.basicMonthlySalary,
 			rateType: emp.rateType
 		}
 
@@ -160,21 +163,23 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		})
 		const approvedHours = timesheets
 			.flatMap((ts) => ts.entries)
-			.reduce((sum, e) => sum + Number(e.hoursWorked), 0)
+			// Hours, not money — plain number arithmetic is correct here. Named `acc` so it does not
+			// shadow the exact-money `sum` helper imported above.
+			.reduce((acc, e) => acc + Number(e.hoursWorked), 0)
 		const scheduledHours = workingDays * (comp.dailyWorkingHours ?? 8)
 		const regularHours = approvedHours > 0 ? approvedHours : scheduledHours
 
 		const loans: AmortItem[] = (loansByEmp.get(emp.id) ?? []).map((l) => ({
 			refId: l.id,
 			label: l.type ?? 'Loan',
-			installment: Number(l.installment),
-			balance: Number(l.balance)
+			installment: l.installment,
+			balance: l.balance
 		}))
 		const cashAdvances: AmortItem[] = (advancesByEmp.get(emp.id) ?? []).map((a) => ({
 			refId: a.id,
 			label: 'Cash advance',
-			installment: Number(a.installment),
-			balance: Number(a.balance)
+			installment: a.installment,
+			balance: a.balance
 		}))
 
 		// Prefer derived attendance (OT/holiday/night-diff buckets); fall back to timesheet hours.
@@ -183,11 +188,12 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 
 		// Recurring allowances/incentives, prorated to the period like statutory (#65).
 		const recurring = recurringByEmp.get(emp.id) ?? []
+		// #119: sum exactly, prorate exactly, quantize once — not sum→round→scale→round.
 		const monthlyOf = (kind: 'ALLOWANCE' | 'INCENTIVE') =>
-			recurring.filter((r) => r.kind === kind).reduce((s, r) => s + Number(r.monthlyAmount), 0)
+			sum(recurring.filter((r) => r.kind === kind).map((r) => D(r.monthlyAmount)))
 		const adjustments = {
-			allowances: round2(monthlyOf('ALLOWANCE') * periodShare),
-			incentives: round2(monthlyOf('INCENTIVE') * periodShare)
+			allowances: q2n(monthlyOf('ALLOWANCE').times(periodShare)),
+			incentives: q2n(monthlyOf('INCENTIVE').times(periodShare))
 		}
 
 		// Shared engine — identical to the Payroll Calculator for the same inputs.
@@ -195,6 +201,8 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			taxableByCode,
 			rates,
 			periodShare,
+			// Holiday-aware schedule for the period — values absences for fixed-basic staff (#121).
+			expectedHours: scheduledHours,
 			loans,
 			cashAdvances,
 			recurringDeductions: recurringDeductionComponents(
@@ -217,12 +225,15 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		const benefitDeductions = (enrollmentsByEmp.get(emp.id) ?? []).map((e) => ({
 			code: 'BENEFIT',
 			label: e.plan.name,
-			amount: round2(Number(e.plan.employeeCost) * periodShare),
+			// Each benefit line quantizes once, here — it is a payable line like any other.
+			amount: q2n(D(e.plan.employeeCost).times(periodShare)),
 			refId: e.id
 		}))
-		const benefitTotal = round2(benefitDeductions.reduce((s, d) => s + d.amount, 0))
-		const entryTotalDeductions = round2(Number(result.totalDeductions) + benefitTotal)
-		const entryNetPay = round2(Number(result.netPay) - benefitTotal)
+		// Lines-authoritative (#119): totals are sums of already-quantized lines, so the entry
+		// reconciles against its printed deduction lines with no residual.
+		const benefitTotal = sumQ(benefitDeductions.map((d) => d.amount))
+		const entryTotalDeductions = D(result.totalDeductions).plus(benefitTotal).toNumber()
+		const entryNetPay = D(result.netPay).minus(benefitTotal).toNumber()
 
 		perEmployee.push({
 			entry: {
@@ -260,9 +271,9 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			]
 		})
 
-		totalGross += result.grossPay
-		totalDeductions += entryTotalDeductions
-		totalNet += entryNetPay
+		totalGross = totalGross.plus(result.grossPay)
+		totalDeductions = totalDeductions.plus(entryTotalDeductions)
+		totalNet = totalNet.plus(entryNetPay)
 	}
 
 	await db.$transaction(async (tx: Prisma.TransactionClient) => {
@@ -277,9 +288,9 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			where: { id: runId },
 			data: {
 				status: 'COMPUTED',
-				totalGross: round2(totalGross),
-				totalDeductions: round2(totalDeductions),
-				totalNet: round2(totalNet)
+				totalGross,
+				totalDeductions,
+				totalNet
 			}
 		})
 	})
@@ -288,7 +299,7 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		action: 'UPDATE',
 		entityType: 'PayrollRun',
 		entityId: runId,
-		newValue: { status: 'COMPUTED', totalGross: round2(totalGross), totalNet: round2(totalNet) }
+		newValue: { status: 'COMPUTED', totalGross: totalGross.toNumber(), totalNet: totalNet.toNumber() }
 	})
 
 	return db.payrollRun.findUnique({

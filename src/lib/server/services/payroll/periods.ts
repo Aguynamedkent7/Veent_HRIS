@@ -3,7 +3,7 @@ import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import { Prisma } from '@prisma/client'
 import { computePayroll } from './index'
-import { round2 } from './types'
+import { D, q2, sum } from './money'
 import { deriveRange, lockRange } from '../attendance'
 import type { AuditContext } from '../types'
 
@@ -162,18 +162,22 @@ export async function lock(
 		// Commit loan / cash-advance amortization from the itemized deduction lines.
 		for (const entry of entries) {
 			for (const d of entry.deductions) {
-				const amount = Number(d.amount)
-				if (amount <= 0 || !d.refId) continue
-				if (d.code === 'LOAN') {
-					const loan = await tx.loan.findUnique({ where: { id: d.refId } })
-					if (!loan) continue
+				// #119: balances stay in exact decimal — no Number() round-trip. Both operands are
+					// scale-2 at rest, so decrements introduce no drift and the running balance stays
+					// reconcilable against the original principal.
+					const amount = D(d.amount)
+					if (amount.lte(0) || !d.refId) continue
+					if (d.code === 'LOAN') {
+						const loan = await tx.loan.findUnique({ where: { id: d.refId } })
+						if (!loan) continue
 
 					// `amount` was frozen into the deduction line at compute time, capped
 					// against the balance as it stood then. Re-cap against the live balance:
 					// if the borrower paid the loan down in between, the frozen figure would
 					// over-collect and drive the balance negative.
-					const applied = round2(Math.min(amount, Number(loan.balance)))
-					if (applied <= 0) continue
+					const liveBalance = D(loan.balance)
+					const applied = q2(amount.lt(liveBalance) ? amount : liveBalance)
+					if (applied.lte(0)) continue
 
 					// One payment per (loan, payroll entry) — the DB unique constraint makes
 					// this the idempotency key, so a replayed lock cannot double-apply even
@@ -191,10 +195,10 @@ export async function lock(
 					// it, count is 0 and we abort rather than clobbering their write. Plain
 					// `update` here was a read-modify-write and lost updates under the default
 					// READ COMMITTED isolation.
-					const newBalance = round2(Number(loan.balance) - applied)
+					const newBalance = liveBalance.minus(applied)
 					const res = await tx.loan.updateMany({
 						where: { id: d.refId, balance: loan.balance },
-						data: { balance: newBalance, status: newBalance <= 0 ? 'PAID' : loan.status }
+						data: { balance: newBalance, status: newBalance.lte(0) ? 'PAID' : loan.status }
 					})
 					if (res.count === 0) {
 						error(409, 'A loan balance changed while locking — nothing was committed, retry')
@@ -206,12 +210,13 @@ export async function lock(
 					// Cash advances have no payment ledger, so there is no idempotency key to
 					// lean on — the atomic period claim above is what stops a second pass, and
 					// this conditional update is what stops a concurrent one.
-					const applied = round2(Math.min(amount, Number(ca.balance)))
-					if (applied <= 0) continue
-					const newBalance = round2(Number(ca.balance) - applied)
+					const liveBalance = D(ca.balance)
+					const applied = q2(amount.lt(liveBalance) ? amount : liveBalance)
+					if (applied.lte(0)) continue
+					const newBalance = liveBalance.minus(applied)
 					const res = await tx.cashAdvance.updateMany({
 						where: { id: d.refId, balance: ca.balance },
-						data: { balance: newBalance, status: newBalance <= 0 ? 'PAID' : ca.status }
+						data: { balance: newBalance, status: newBalance.lte(0) ? 'PAID' : ca.status }
 					})
 					if (res.count === 0) {
 						error(
@@ -278,8 +283,11 @@ export async function voidPeriod(id: string, organizationId: string, ctx: AuditC
 			})
 			for (const entry of entries) {
 				for (const d of entry.deductions) {
-					const amount = Number(d.amount)
-					if (amount <= 0 || !d.refId) continue
+					// #119: balances stay in exact decimal — no Number() round-trip. Both operands are
+					// scale-2 at rest, so decrements introduce no drift and the running balance stays
+					// reconcilable against the original principal.
+					const amount = D(d.amount)
+					if (amount.lte(0) || !d.refId) continue
 					if (d.code === 'LOAN') {
 						// Reverse what was actually applied, not the frozen deduction line. Lock
 						// re-caps against the live balance, so the two can differ; the payment
@@ -289,15 +297,15 @@ export async function voidPeriod(id: string, organizationId: string, ctx: AuditC
 							where: { loanId: d.refId, payrollEntryId: entry.id },
 							select: { amount: true }
 						})
-						const reversal = round2(payments.reduce((s, p) => s + Number(p.amount), 0))
+						const reversal = sum(payments.map((p) => p.amount))
 						const loan = await tx.loan.findUnique({ where: { id: d.refId } })
-						if (loan && reversal > 0) {
-							const restored = round2(Number(loan.balance) + reversal)
+						if (loan && reversal.gt(0)) {
+							const restored = D(loan.balance).plus(reversal)
 							await tx.loan.update({
 								where: { id: d.refId },
 								// Only reopen a loan the reversal actually un-pays; a loan settled
 								// by some other payment stays PAID.
-								data: { balance: restored, status: restored > 0 ? 'ACTIVE' : loan.status }
+								data: { balance: restored, status: restored.gt(0) ? 'ACTIVE' : loan.status }
 							})
 						}
 						await tx.loanPayment.deleteMany({
@@ -308,7 +316,7 @@ export async function voidPeriod(id: string, organizationId: string, ctx: AuditC
 						if (ca) {
 							await tx.cashAdvance.update({
 								where: { id: d.refId },
-								data: { balance: round2(Number(ca.balance) + amount), status: 'ACTIVE' }
+								data: { balance: D(ca.balance).plus(amount), status: 'ACTIVE' }
 							})
 						}
 					}

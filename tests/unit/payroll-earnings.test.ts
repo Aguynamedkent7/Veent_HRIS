@@ -18,16 +18,32 @@ describe('computeEarnings — hourly rate + basic', () => {
 	it('derives the hourly rate from monthly salary / (days*hours)', () => {
 		const r = computeEarnings(comp, att({ regularHours: 80 }))
 		expect(r.hourlyRate).toBeCloseTo(170.45, 2)
+	})
+
+	// #121: BASIC is hours-derived only for hourly staff. MONTHLY employees are on a fixed salary,
+	// so their basic no longer varies with `regularHours` — see the FIXED cases below.
+	it('pays hourly staff for hours actually worked', () => {
+		const r = computeEarnings({ ...comp, rateType: 'HOURLY' }, att({ regularHours: 80 }))
 		expect(amt(r, 'BASIC')).toBeCloseTo(13636.36, 2)
 	})
 
 	it('respects custom working days/hours', () => {
 		const r = computeEarnings(
-			{ ...comp, monthlyWorkingDays: 20, dailyWorkingHours: 8 },
+			{ ...comp, rateType: 'HOURLY', monthlyWorkingDays: 20, dailyWorkingHours: 8 },
 			att({ regularHours: 8 })
 		)
 		// 30000/(20*8)=187.5/hr → 8h = 1500
 		expect(amt(r, 'BASIC')).toBeCloseTo(1500, 2)
+	})
+
+	it('pays MONTHLY staff a fixed basic, prorated to the period (#121)', () => {
+		const full = computeEarnings(comp, att({ regularHours: 80 }))
+		expect(amt(full, 'BASIC')).toBeCloseTo(30000, 2)
+
+		const half = computeEarnings(comp, att({ regularHours: 80 }), {}, undefined, {
+			periodShare: 0.5
+		})
+		expect(amt(half, 'BASIC')).toBeCloseTo(15000, 2)
 	})
 })
 

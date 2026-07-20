@@ -123,6 +123,7 @@ const ALLOWANCE_KIND_PREFIX = 'ALLOWANCE'
 const BASIC_PAY_CODE = 'BASIC'
 
 const TARDINESS_CODE = 'TARDINESS'
+const ABSENCE_CODE = 'ABSENCE'
 const LOAN_PREFIX = 'LOAN'
 
 const EMPLOYMENT_STATUS_LABEL: Record<string, string> = {
@@ -219,11 +220,14 @@ export function assemblePayslipDocument(input: HydrateInput): PayslipDocument {
 		entry.deductions.filter((d) => d.code.startsWith(LOAN_PREFIX)),
 		(d) => d.amount
 	)
+	// The paper template has one row for time not rendered. ABSENCE (#121) is the same kind of
+	// deduction as TARDINESS — unworked hours valued at the hourly rate — so it shares that row
+	// rather than disappearing into OTHERS alongside benefit costs. Totals are unaffected.
 	const tardiness = sumBy(
-		entry.deductions.filter((d) => d.code === TARDINESS_CODE),
+		entry.deductions.filter((d) => d.code === TARDINESS_CODE || d.code === ABSENCE_CODE),
 		(d) => d.amount
 	)
-	const namedDeductions = new Set<string>([TARDINESS_CODE])
+	const namedDeductions = new Set<string>([TARDINESS_CODE, ABSENCE_CODE])
 	const othersDeductions = sumBy(
 		entry.deductions.filter((d) => !namedDeductions.has(d.code) && !d.code.startsWith(LOAN_PREFIX)),
 		(d) => d.amount

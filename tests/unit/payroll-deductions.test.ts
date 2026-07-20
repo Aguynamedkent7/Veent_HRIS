@@ -16,9 +16,10 @@ const loan = (over: Partial<AmortItem> = {}): AmortItem => ({
 
 describe('computeTardiness', () => {
 	it('values unpaid minutes at the hourly rate', () => {
-		expect(computeTardiness(180, 60, 0)).toBeCloseTo(180, 2) // 1h late
-		expect(computeTardiness(180, 30, 30)).toBeCloseTo(180, 2) // 30 late + 30 undertime = 1h
-		expect(computeTardiness(180, 0, 0)).toBe(0)
+		// #119: exact `Decimal` now, so these hold to the last digit rather than to a tolerance.
+		expect(computeTardiness(180, 60, 0).toNumber()).toBe(180) // 1h late
+		expect(computeTardiness(180, 30, 30).toNumber()).toBe(180) // 30 late + 30 undertime = 1h
+		expect(computeTardiness(180, 0, 0).toNumber()).toBe(0)
 	})
 })
 
@@ -28,7 +29,7 @@ describe('applyAmortizations', () => {
 		expect(r.applied).toHaveLength(1)
 		expect(r.applied[0].amount).toBe(1000)
 		expect(r.balances.L1).toBe(4000)
-		expect(r.remainingNet).toBe(9000)
+		expect(r.remainingNet.toNumber()).toBe(9000)
 	})
 
 	it('caps the final installment at the remaining balance', () => {
@@ -41,7 +42,7 @@ describe('applyAmortizations', () => {
 		const r = applyAmortizations([loan()], 500)
 		expect(r.applied).toHaveLength(0)
 		expect(r.balances.L1).toBe(5000) // unchanged
-		expect(r.remainingNet).toBe(500)
+		expect(r.remainingNet.toNumber()).toBe(500)
 	})
 
 	it('applies items in order and stops covering once net is depleted', () => {
