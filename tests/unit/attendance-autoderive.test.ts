@@ -16,6 +16,7 @@ const { dbMock } = vi.hoisted(() => ({
 		publicHoliday: { findMany: vi.fn() },
 		timeLog: { findMany: vi.fn(), count: vi.fn() },
 		request: { findMany: vi.fn() },
+		workSchedule: { findFirst: vi.fn() },
 		attendanceDay: { findUnique: vi.fn(), upsert: vi.fn() }
 	}
 }))
@@ -32,12 +33,13 @@ const CTX = {
 	actorRole: 'EMPLOYEE' as const,
 	ipAddress: 'test'
 }
-// Single PHT day: Mon 2026-07-13, a regular weekday under the default 09:00–18:00 shift.
+// Single PHT day: Mon 2026-07-13, a regular weekday. The employee has no assigned schedule and
+// the org has no default (findFirst → null), so the Mon–Fri 08:00–17:00 last resort applies.
 const RANGE = { from: new Date('2026-07-13'), to: new Date('2026-07-13'), employeeId: 'emp1' }
-// A full worked day: IN 09:00 PHT (01:00Z), OUT 18:00 PHT (10:00Z) → PRESENT, 8h regular.
+// A full worked day: IN 08:00 PHT (00:00Z), OUT 17:00 PHT (09:00Z) → PRESENT, 8h regular.
 const WORKED = [
-	{ punchType: 'IN' as const, timestamp: new Date('2026-07-13T01:00:00Z') },
-	{ punchType: 'OUT' as const, timestamp: new Date('2026-07-13T10:00:00Z') }
+	{ punchType: 'IN' as const, timestamp: new Date('2026-07-13T00:00:00Z') },
+	{ punchType: 'OUT' as const, timestamp: new Date('2026-07-13T09:00:00Z') }
 ]
 const machineDay = { isLocked: false, manuallyEdited: false }
 
@@ -46,6 +48,8 @@ beforeEach(() => {
 	dbMock.employee.findMany.mockResolvedValue([EMP])
 	dbMock.publicHoliday.findMany.mockResolvedValue([])
 	dbMock.request.findMany.mockResolvedValue([])
+	// No org-default schedule configured — exercises the last-resort shift.
+	dbMock.workSchedule.findFirst.mockResolvedValue(null)
 	dbMock.attendanceDay.upsert.mockResolvedValue({})
 })
 
@@ -113,5 +117,59 @@ describe('autoDeriveFromPunches — public entrypoint', () => {
 		expect(dbMock.attendanceDay.findUnique).not.toHaveBeenCalled()
 		expect(dbMock.attendanceDay.upsert).not.toHaveBeenCalled()
 		expect(res).toEqual({ derived: 0, flagged: 0 })
+	})
+})
+
+describe('org default schedule is consulted for unassigned employees', () => {
+	// The fix: `isDefault` used to be written and displayed but never read, so an unassigned
+	// employee was derived against a hardcoded 09:00–18:00 that matched no configuration.
+	const orgDefault = (startMinutes: number, endMinutes: number) => ({
+		days: [1, 2, 3, 4, 5].map((weekday) => ({
+			weekday,
+			startMinutes,
+			endMinutes,
+			breakMinutes: 60
+		}))
+	})
+
+	it('derives an unassigned employee against the org default, not a hardcoded shift', async () => {
+		dbMock.workSchedule.findFirst.mockResolvedValue(orgDefault(480, 1020)) // 08:00–17:00
+		dbMock.timeLog.findMany.mockResolvedValue(WORKED) // punched 08:00–17:00
+		dbMock.attendanceDay.findUnique.mockResolvedValue(null)
+
+		await deriveRange('org1', RANGE, CTX, { skipUnpunched: true })
+
+		const written = dbMock.attendanceDay.upsert.mock.calls[0][0].update
+		expect(written.status).toBe('PRESENT')
+		expect(written.lateMinutes).toBe(0)
+		expect(written.undertimeMinutes).toBe(0)
+	})
+
+	it('honours a non-default-hours org schedule, proving the lookup is real', async () => {
+		// Org default 10:00–19:00 against the same 08:00–17:00 punches: early in (not late),
+		// but two hours short at the end. A hardcoded shift could not produce this.
+		dbMock.workSchedule.findFirst.mockResolvedValue(orgDefault(600, 1140))
+		dbMock.timeLog.findMany.mockResolvedValue(WORKED)
+		dbMock.attendanceDay.findUnique.mockResolvedValue(null)
+
+		await deriveRange('org1', RANGE, CTX, { skipUnpunched: true })
+
+		const written = dbMock.attendanceDay.upsert.mock.calls[0][0].update
+		expect(written.lateMinutes).toBe(0)
+		expect(written.undertimeMinutes).toBe(120)
+	})
+
+	it('an assigned schedule still wins over the org default', async () => {
+		dbMock.employee.findMany.mockResolvedValue([
+			{ ...EMP, workSchedule: orgDefault(480, 1020) } // assigned 08:00–17:00
+		])
+		dbMock.workSchedule.findFirst.mockResolvedValue(orgDefault(600, 1140)) // default 10:00–19:00
+		dbMock.timeLog.findMany.mockResolvedValue(WORKED)
+		dbMock.attendanceDay.findUnique.mockResolvedValue(null)
+
+		await deriveRange('org1', RANGE, CTX, { skipUnpunched: true })
+
+		const written = dbMock.attendanceDay.upsert.mock.calls[0][0].update
+		expect(written.undertimeMinutes).toBe(0) // assigned shift matched exactly
 	})
 })
