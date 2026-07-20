@@ -934,6 +934,7 @@ model TimeLog {
   @@index([employeeId, timestamp])
   @@index([timesheetId])
   @@map("time_logs")
+  @@unique([discordMessageId, employeeId])
 }
 
 // ─── Benefits Administration ──────────────────────────────────────────────────
