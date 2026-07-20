@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
+	import { RATE_BASIS_OPTIONS, rateBasisCopy, type RateBasis } from '$lib/utils/rate-basis'
 	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import type { PageData, ActionData } from './$types'
@@ -30,9 +31,21 @@
 			? `${Math.max(1, Math.round(b / 1024))} KB`
 			: `${(b / 1024 / 1024).toFixed(1)} MB`
 
+	// #120: the amount field's label follows the selected basis, exactly as on the create form.
+	// Seeded from the saved value and re-seeded whenever `load` re-runs after a save.
+	let rateType = $state<RateBasis>('MONTHLY')
+	$effect(() => {
+		rateType = employee.rateType as RateBasis
+	})
+	const rate = $derived(rateBasisCopy(rateType))
+	// Read-only display follows the SAVED basis, not the in-progress form selection.
+	const savedRate = $derived(rateBasisCopy(employee.rateType as RateBasis))
+
 	// Salary-band check: employee inherits their grade via their position (T163).
+	// Grades are monthly bands (#120), so an hourly rate must not be scored against them.
 	const grade = $derived(employee.position?.salaryGrade ?? null)
 	const band = $derived.by(() => {
+		if (employee.rateType !== 'MONTHLY') return null
 		if (!grade || employee.basicMonthlySalary == null) return null
 		const s = Number(employee.basicMonthlySalary),
 			min = Number(grade.minSalary),
@@ -149,7 +162,7 @@
 				{#if canManage}
 					<dt class="text-muted-foreground">Basic Salary</dt>
 					<dd class="font-medium">
-						{formatCurrency(Number(employee.basicMonthlySalary))}/mo
+						{formatCurrency(Number(employee.basicMonthlySalary))}{savedRate.suffix}
 						{#if band}
 							{#if band.status === 'within'}
 								<span
@@ -288,16 +301,30 @@
 						</select>
 					</div>
 					<div>
-						<label for="basicMonthlySalary" class="text-sm font-medium">Basic Monthly Salary</label>
+						<label for="rateType" class="text-sm font-medium">Rate Basis</label>
+						<select
+							id="rateType"
+							name="rateType"
+							bind:value={rateType}
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						>
+							{#each RATE_BASIS_OPTIONS as opt (opt.value)}
+								<option value={opt.value}>{opt.label}</option>
+							{/each}
+						</select>
+					</div>
+					<div>
+						<label for="basicMonthlySalary" class="text-sm font-medium">{rate.label}</label>
 						<input
 							id="basicMonthlySalary"
 							name="basicMonthlySalary"
 							type="number"
-							step="1000"
+							step={rate.step}
 							min="0"
 							value={Number(employee.basicMonthlySalary)}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
+						<p class="mt-1 text-xs text-muted-foreground">{rate.hint}</p>
 					</div>
 					<div class="sm:col-span-3">
 						<label for="discordId" class="text-sm font-medium">Discord ID</label>

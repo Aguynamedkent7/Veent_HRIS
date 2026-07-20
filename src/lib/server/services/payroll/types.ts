@@ -5,11 +5,18 @@
 
 import { D, q2n, type Money, type MoneyLike } from './money'
 
-export type RateType = 'MONTHLY' | 'DAILY' | 'HOURLY'
+/** MONTHLY = fixed monthly salary, HOURLY = paid for hours worked. No daily rate (#122). */
+export type RateType = 'MONTHLY' | 'HOURLY'
 
 /** An employee's compensation basis. */
 export interface EmployeeComp {
-	/** Exact at the boundary (#119) — accepts a DB `Decimal` without a lossy `Number()` cast. */
+	/**
+	 * The employee's pay figure, interpreted per `rateType` (#120): a fixed monthly salary when
+	 * MONTHLY, a per-hour rate when HOURLY. The column kept its `basicMonthlySalary` name — use
+	 * `hourlyRateOf` / `monthlyBasisOf` rather than reading it raw.
+	 *
+	 * Exact at the boundary (#119) — accepts a DB `Decimal` without a lossy `Number()` cast.
+	 */
 	basicMonthlySalary: MoneyLike
 	rateType: RateType
 	/** Working days used to derive the daily/hourly rate. Default 22. */
@@ -90,17 +97,37 @@ export function round2(n: number): number {
 	return q2n(n)
 }
 
+/** Hours in a full month for this employee — the MONTHLY↔HOURLY conversion factor.
+ *  The 22×8 defaults are a placeholder until they become configurable (#110). */
+function monthlyHoursOf(comp: EmployeeComp): Money {
+	return D(comp.monthlyWorkingDays ?? 22).times(comp.dailyWorkingHours ?? 8)
+}
+
 /**
- * Derive the hourly rate from a monthly salary, exactly (#119).
+ * The employee's hourly rate, exactly (#119).
  *
- * This is a repeating decimal for most salaries (₱30,000 / 176 = 170.4545…) and it feeds OT,
- * night differential, holiday premiums and the tardiness/absence valuation — so it is carried at
- * decimal.js precision and quantized only where a payable line is produced, never here.
+ * `basicMonthlySalary` is interpreted per `rateType` (#120): for HOURLY staff it already IS the
+ * hourly rate and must be used as-is — dividing it by 176 would underpay them 176× on every line.
+ * For MONTHLY staff it is derived, and is a repeating decimal for most salaries
+ * (₱30,000 / 176 = 170.4545…). It feeds OT, night differential, holiday premiums and the
+ * tardiness/absence valuation, so it is carried at decimal.js precision and quantized only where
+ * a payable line is produced, never here.
  */
 export function hourlyRateOf(comp: EmployeeComp): Money {
-	const days = comp.monthlyWorkingDays ?? 22
-	const hours = comp.dailyWorkingHours ?? 8
-	return D(comp.basicMonthlySalary).dividedBy(D(days).times(hours))
+	if (comp.rateType === 'HOURLY') return D(comp.basicMonthlySalary)
+	return D(comp.basicMonthlySalary).dividedBy(monthlyHoursOf(comp))
+}
+
+/**
+ * The employee's monthly-equivalent basis — the inverse of `hourlyRateOf` (#120).
+ *
+ * SSS/PhilHealth brackets are defined on a monthly salary credit, so an HOURLY employee's rate has
+ * to be projected to a month before bracket lookup. Without this a ₱200/hr employee is assessed as
+ * if they earned ₱200 a month and lands in the lowest bracket.
+ */
+export function monthlyBasisOf(comp: EmployeeComp): Money {
+	if (comp.rateType === 'MONTHLY') return D(comp.basicMonthlySalary)
+	return D(comp.basicMonthlySalary).times(monthlyHoursOf(comp))
 }
 
 /**

@@ -11,6 +11,7 @@ import {
 	basicPayBasis,
 	expectedHoursOf,
 	hourlyRateOf,
+	monthlyBasisOf,
 	type AttendanceInput,
 	type EmployeeComp,
 	type PayAdjustments,
@@ -61,6 +62,8 @@ export interface EmployeeComputeResult {
 	totalDeductions: number
 	netPay: number
 	statutory: ProratedStatutory
+	/** Deductions gross could not fund (#103). > 0 means net was floored and needs review. */
+	uncollected: number
 }
 
 export function computeEmployeeResult(
@@ -84,7 +87,9 @@ export function computeEmployeeResult(
 
 	// #119: the monthly statutory figures come back EXACT, are prorated in decimal, and quantize
 	// exactly once — here. Previously each was rounded, scaled by 0.5, then rounded again.
-	const m = computeStatutoryDeductions(comp.basicMonthlySalary)
+	// #120: brackets are defined on a MONTHLY salary credit, so hourly staff are projected to a
+	// monthly equivalent first — passing a raw hourly rate would floor them in the lowest bracket.
+	const m = computeStatutoryDeductions(monthlyBasisOf(comp))
 	const share = D(cfg.periodShare)
 	const statutory: ProratedStatutory = {
 		sssEe: q2n(m.sssEe.times(share)),
@@ -127,7 +132,8 @@ export function computeEmployeeResult(
 		taxableGross,
 		totalDeductions: ded.total,
 		netPay: ded.net,
-		statutory
+		statutory,
+		uncollected: ded.uncollected
 	}
 }
 

@@ -234,6 +234,7 @@ const updateSchema = z.object({
 	contactPhone: z.string().optional(),
 	contactAddress: z.string().optional(),
 	basicMonthlySalary: z.coerce.number().positive().optional(),
+	rateType: z.enum(['MONTHLY', 'HOURLY']).optional(),
 	// Empty string clears the link; a value sets it (unique per employee).
 	discordId: z
 		.string()

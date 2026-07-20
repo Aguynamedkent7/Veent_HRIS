@@ -1,12 +1,21 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
+	import { RATE_BASIS_OPTIONS, rateBasisCopy, type RateBasis } from '$lib/utils/rate-basis'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 
 	// #108: a double-click here would create a duplicate employee + user + welcome email.
 	const create = createSubmitGuard()
+
+	// #120: the amount field means different things per basis, so its label follows the selection.
+	// Re-seeded from `form` so a failed submit redisplays the basis HR actually chose.
+	let rateType = $state<RateBasis>('MONTHLY')
+	$effect(() => {
+		rateType = (form?.values?.rateType as RateBasis) ?? 'MONTHLY'
+	})
+	const rate = $derived(rateBasisCopy(rateType))
 </script>
 
 <svelte:head>
@@ -236,19 +245,35 @@
 					{/if}
 				</div>
 				<div>
+					<label for="rateType" class="text-sm font-medium"
+						>Rate Basis <span class="text-destructive">*</span></label
+					>
+					<select
+						id="rateType"
+						name="rateType"
+						bind:value={rateType}
+						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					>
+						{#each RATE_BASIS_OPTIONS as opt (opt.value)}
+							<option value={opt.value}>{opt.label}</option>
+						{/each}
+					</select>
+				</div>
+				<div>
 					<label for="basicMonthlySalary" class="text-sm font-medium"
-						>Basic Monthly Salary (PHP) <span class="text-destructive">*</span></label
+						>{rate.label} <span class="text-destructive">*</span></label
 					>
 					<input
 						id="basicMonthlySalary"
 						name="basicMonthlySalary"
 						type="number"
 						min="0"
-						step="1000"
+						step={rate.step}
 						required
 						value={form?.values?.basicMonthlySalary ?? ''}
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					/>
+					<p class="mt-1 text-xs text-muted-foreground">{rate.hint}</p>
 					{#if form?.fieldErrors?.basicMonthlySalary}
 						<p class="mt-1 text-xs text-destructive">{form.fieldErrors.basicMonthlySalary[0]}</p>
 					{/if}
