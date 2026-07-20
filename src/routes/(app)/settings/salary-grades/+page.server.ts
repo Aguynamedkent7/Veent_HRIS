@@ -20,12 +20,16 @@ export const load: PageServerLoad = async ({ locals }) => {
 	return { grades, positions }
 }
 
-const gradeSchema = z.object({
-	name: z.string().min(1).max(60),
-	minSalary: z.coerce.number().min(0),
-	midSalary: z.coerce.number().min(0),
-	maxSalary: z.coerce.number().min(0)
-})
+const gradeSchema = z
+	.object({
+		name: z.string().min(1).max(60),
+		minSalary: z.coerce.number().min(0),
+		midSalary: z.coerce.number().min(0),
+		maxSalary: z.coerce.number().min(0)
+	})
+	.refine((g) => g.minSalary <= g.midSalary && g.midSalary <= g.maxSalary, {
+		message: 'Salary values must satisfy min ≤ mid ≤ max'
+	})
 
 function ctxOf(locals: App.Locals, ip: string) {
 	return {

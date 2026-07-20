@@ -16,6 +16,9 @@ import {
 import { generateSeparationReport } from '$lib/server/services/separation'
 import type { RequestHandler } from './$types'
 
+const DAY_MS = 86_400_000
+const MAX_RANGE_DAYS = 366
+
 const VALID_TYPES = [
 	'headcount',
 	'attendance',
@@ -54,10 +57,28 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
 		requireCapability(user.role, 'MANAGE_HR')
 	}
 
-	const startDate = url.searchParams.get('start')
-		? new Date(url.searchParams.get('start')!)
+	const dateParam = z.coerce.date()
+	const rawStart = url.searchParams.get('start')
+	const rawEnd = url.searchParams.get('end')
+
+	const parsedStart = rawStart ? dateParam.safeParse(rawStart) : null
+	const parsedEnd = rawEnd ? dateParam.safeParse(rawEnd) : null
+	if ((rawStart && !parsedStart!.success) || (rawEnd && !parsedEnd!.success)) {
+		error(400, 'Invalid start or end date')
+	}
+
+	const startDate = parsedStart?.success
+		? parsedStart.data
 		: new Date(new Date().getFullYear(), 0, 1)
-	const endDate = url.searchParams.get('end') ? new Date(url.searchParams.get('end')!) : new Date()
+	const endDate = parsedEnd?.success ? parsedEnd.data : new Date()
+
+	if (endDate.getTime() < startDate.getTime()) {
+		error(400, 'End date must be on or after start date')
+	}
+	if (endDate.getTime() - startDate.getTime() > MAX_RANGE_DAYS * DAY_MS) {
+		error(400, `Date range must be ${MAX_RANGE_DAYS} days or fewer`)
+	}
+
 	const departmentId = url.searchParams.get('department') ?? undefined
 	const exportCsv = url.searchParams.get('export') === 'csv'
 

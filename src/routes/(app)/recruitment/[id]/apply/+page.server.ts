@@ -23,7 +23,11 @@ const applySchema = z.object({
 	email: z.string().email('A valid email address is required'),
 	phone: z.string().optional(),
 	coverLetter: z.string().optional(),
-	resumeUrl: z.string().optional()
+	resumeUrl: z
+		.string()
+		.url('Resume URL must be a valid URL')
+		.refine((u) => /^https?:\/\//i.test(u), 'Resume URL must start with http(s)://')
+		.optional()
 })
 
 export const actions: Actions = {

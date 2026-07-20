@@ -12,7 +12,11 @@ const applySchema = z.object({
 	email: z.string().email(),
 	phone: z.string().optional(),
 	coverLetter: z.string().optional(),
-	resumeUrl: z.string().optional()
+	resumeUrl: z
+		.string()
+		.url()
+		.refine((u) => /^https?:\/\//i.test(u), 'Must be an http(s) URL')
+		.optional()
 })
 
 const advanceSchema = z.object({
