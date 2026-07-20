@@ -6,6 +6,11 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 
+	// CEO manages roles; Super Admin manages account status. The page opens for either,
+	// so each control is shown only to the capability that owns it (#132).
+	const canManageRoles = $derived(data.canManageRoles)
+	const canManageActive = $derived(data.canManageActive)
+
 	// #108: every user row has its own `?/setActive` and `?/setRole` form, so each gets its own
 	// guard — a shared one would disable the whole table while one row is in flight. One map per
 	// action so toggling a user's status doesn't lock their role dropdown. Plain objects, not
@@ -75,44 +80,50 @@
 								>
 									{u.isActive ? 'ACTIVE' : 'INACTIVE'}
 								</span>
-								<form method="POST" action="?/setActive" use:enhance={setActive.enhance}>
-									<input type="hidden" name="userId" value={u.id} />
-									<input type="hidden" name="isActive" value={u.isActive ? 'false' : 'true'} />
-									<button
-										type="submit"
-										disabled={setActive.busy}
-										class="rounded-md border px-2 py-0.5 text-xs hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
-									>
-										{setActive.busy ? 'Saving…' : u.isActive ? 'Deactivate' : 'Activate'}
-									</button>
-								</form>
+								{#if canManageActive}
+									<form method="POST" action="?/setActive" use:enhance={setActive.enhance}>
+										<input type="hidden" name="userId" value={u.id} />
+										<input type="hidden" name="isActive" value={u.isActive ? 'false' : 'true'} />
+										<button
+											type="submit"
+											disabled={setActive.busy}
+											class="rounded-md border px-2 py-0.5 text-xs hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+										>
+											{setActive.busy ? 'Saving…' : u.isActive ? 'Deactivate' : 'Activate'}
+										</button>
+									</form>
+								{/if}
 							</div>
 						</td>
 						<td class="px-4 py-3" colspan="2">
-							<form
-								method="POST"
-								action="?/setRole"
-								use:enhance={setRole.enhance}
-								class="flex items-center gap-2"
-							>
-								<input type="hidden" name="userId" value={u.id} />
-								<select
-									name="role"
-									value={u.role}
-									class="flex h-9 w-40 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							{#if canManageRoles && u.role !== 'CEO'}
+								<form
+									method="POST"
+									action="?/setRole"
+									use:enhance={setRole.enhance}
+									class="flex items-center gap-2"
 								>
-									{#each roles as r (r)}
-										<option value={r}>{r.replace('_', ' ')}</option>
-									{/each}
-								</select>
-								<button
-									type="submit"
-									disabled={setRole.busy}
-									class="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
-								>
-									{setRole.busy ? 'Saving…' : 'Save'}
-								</button>
-							</form>
+									<input type="hidden" name="userId" value={u.id} />
+									<select
+										name="role"
+										value={u.role}
+										class="flex h-9 w-40 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+									>
+										{#each roles as r (r)}
+											<option value={r}>{r.replace('_', ' ')}</option>
+										{/each}
+									</select>
+									<button
+										type="submit"
+										disabled={setRole.busy}
+										class="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+									>
+										{setRole.busy ? 'Saving…' : 'Save'}
+									</button>
+								</form>
+							{:else}
+								<span class="text-sm text-muted-foreground">{u.role.replace('_', ' ')}</span>
+							{/if}
 						</td>
 					</tr>
 				{:else}

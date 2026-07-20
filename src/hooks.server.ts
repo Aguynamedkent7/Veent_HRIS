@@ -29,7 +29,13 @@ export const handle: Handle = async ({ event, resolve }) => {
 		})
 	}
 
-	event.locals.user = user
+	// Cross-org members (#131) carry an active org on the session. Everything
+	// downstream reads locals.user.organizationId for tenant isolation, so resolve
+	// the effective org here: session.currentOrgId when set, else the primary org.
+	event.locals.user =
+		user && session
+			? { ...user, organizationId: session.currentOrgId ?? user.organizationId }
+			: user
 	event.locals.session = session
 
 	if (user && !user.isActive) {

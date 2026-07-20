@@ -13,7 +13,11 @@ model Session {
   id        String   @id
   userId    String
   expiresAt DateTime
-  user      User     @relation(references: [id], fields: [userId], onDelete: Cascade)
+  // Active org for cross-org members (#131). Null → fall back to User.organizationId.
+  // Set at login to the user's primary org; changed only via the validated
+  // /api/v1/session/switch-org endpoint.
+  currentOrgId String?
+  user         User    @relation(references: [id], fields: [userId], onDelete: Cascade)
 
   @@map("sessions")
 }
@@ -27,6 +31,9 @@ enum Role {
   SUPER_ADMIN
   PAYROLL_OFFICER
   FINANCE
+  CEO
+  VERIFIER
+  APPROVER
 }
 
 enum EmploymentType {
@@ -255,6 +262,7 @@ model Organization {
 
   departments    Department[]
   users          User[]
+  memberships    UserOrganization[]
   leaveTypes     LeaveType[]
   payrollConfig  PayrollConfig?
   payrollRuns    PayrollRun[]
@@ -273,6 +281,26 @@ model Organization {
   announcements  Announcement[]
 
   @@map("organizations")
+}
+
+// Cross-org membership (#131) — a user can belong to more than one Organization.
+// Populated at seed time for every user (one row per primary org); CEO gets one
+// row per tenant. `User.organizationId` remains the user's primary org for
+// backwards-compat with everything that still passes it explicitly; the session
+// carries `currentOrgId` which points at whichever membership is active.
+model UserOrganization {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  createdAt      DateTime @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([userId])
+  @@index([organizationId])
+  @@map("user_organizations")
 }
 
 // ─── Department ───────────────────────────────────────────────────────────────
@@ -304,13 +332,18 @@ model User {
   organizationId String
   email          String    @unique
   passwordHash   String
+  // `role` is the primary label; `roles` is the full set for multi-role users (#133),
+  // e.g. [MANAGER, VERIFIER]. Capability checks match ANY role in the set. Backfilled
+  // to [role] for every existing user so single-role behaviour is unchanged.
   role           Role      @default(EMPLOYEE)
+  roles          Role[]    @default([])
   isActive       Boolean   @default(true)
   lastLoginAt    DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
   organization             Organization       @relation(fields: [organizationId], references: [id])
+  memberships              UserOrganization[]
   sessions                 Session[]
   employee                 Employee?
   auditLogs                AuditLog[]

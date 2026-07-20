@@ -10,6 +10,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!
 	const orgId = user.organizationId
 	const canPost = can(user.role, 'MANAGE_HR')
+	// The "Last Payroll" tile is payroll-report data, not general dashboard info (#132).
+	const canViewPayroll = can(user.role, 'VIEW_PAYROLL_REPORTS')
 
 	// Today's PHT day, stored as the UTC-midnight date key used by AttendanceDay.
 	const todayKey = manilaDayKey(new Date())
@@ -69,6 +71,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	return {
 		canPost,
+		canViewPayroll,
 		announcements,
 		metrics: {
 			headcount,
@@ -76,7 +79,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 			pendingApprovals: pendingRequests + pendingTimesheets,
 			pendingRequests,
 			pendingTimesheets,
-			lastPayrollRun,
+			// Withhold payroll figures from clients that may not view them.
+			lastPayrollRun: canViewPayroll ? lastPayrollRun : null,
 			attendance
 		}
 	}

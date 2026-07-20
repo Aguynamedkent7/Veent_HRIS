@@ -1,12 +1,44 @@
 <script lang="ts">
 	import { page } from '$app/stores'
 	import { browser } from '$app/environment'
+	import { invalidateAll } from '$app/navigation'
 	import Toaster from '$lib/components/ui/Toaster.svelte'
 	import { addToast } from '$lib/stores/toast.svelte'
-	import { can } from '$lib/rbac'
+	import { canAny } from '$lib/rbac'
 	import type { LayoutData } from './$types'
 
 	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props()
+
+	// Company switcher (#131) — only cross-org members see it. The active org comes
+	// from data.user.organizationId, which the server resolves from the session.
+	const memberOrgs = $derived(data.memberOrgs ?? [])
+	const showOrgSwitcher = $derived(memberOrgs.length > 1)
+	const currentOrg = $derived(memberOrgs.find((o) => o.id === data.user.organizationId))
+	let orgMenuOpen = $state(false)
+	let switchingOrg = $state(false)
+
+	async function switchOrg(organizationId: string) {
+		if (switchingOrg || organizationId === data.user.organizationId) {
+			orgMenuOpen = false
+			return
+		}
+		switchingOrg = true
+		try {
+			const res = await fetch('/api/v1/session/switch-org', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ organizationId })
+			})
+			if (!res.ok) {
+				addToast('Could not switch organization.')
+				return
+			}
+			orgMenuOpen = false
+			await invalidateAll()
+		} finally {
+			switchingOrg = false
+		}
+	}
 
 	let isDark = $state(browser ? localStorage.getItem('theme') !== 'light' : true)
 
@@ -35,15 +67,20 @@
 
 	// Same capability table the server enforces with ($lib/rbac) — a nav item shown to
 	// a role the server would reject is its own bug, so both read one source of truth.
+	// Nav uses the full role set (#133) so a multi-role user sees every entry they hold.
 	const role = $derived(data.user.role)
-	const isManager = $derived(can(role, 'VIEW_TEAM'))
-	const isAdmin = $derived(can(role, 'MANAGE_HR'))
-	const isSuperAdmin = $derived(can(role, 'ADMINISTER_SYSTEM'))
+	const roles = $derived(data.user.roles ?? [data.user.role])
+	const isManager = $derived(canAny(roles, 'VIEW_TEAM'))
+	const isAdmin = $derived(canAny(roles, 'MANAGE_HR'))
+	const isSuperAdmin = $derived(canAny(roles, 'ADMINISTER_SYSTEM'))
+	// Role assignment is CEO-only (#132); the Roles page also hosts Super Admin's
+	// account-status controls, so it shows for either capability.
+	const canManageUserRoles = $derived(canAny(roles, 'MANAGE_USER_ROLES'))
 	// Payroll Officer manages payroll; Finance reads payroll reports only.
-	const isPayroll = $derived(can(role, 'MANAGE_PAYROLL'))
-	const canViewReports = $derived(can(role, 'VIEW_PAYROLL_REPORTS'))
-	// Approvers (manager ladder + Payroll Officer) get the Requests/Approvals dropdown.
-	const canApprove = $derived(can(role, 'APPROVE_REQUESTS'))
+	const isPayroll = $derived(canAny(roles, 'MANAGE_PAYROLL'))
+	const canViewReports = $derived(canAny(roles, 'VIEW_PAYROLL_REPORTS'))
+	// Approvers (manager ladder + Payroll Officer + sign-off roles) get the dropdown.
+	const canApprove = $derived(canAny(roles, 'APPROVE_REQUESTS'))
 
 	const navItems = $derived(
 		[
@@ -154,7 +191,7 @@
 			{ href: '/settings/salary-grades', label: 'Salary Grades', show: isAdmin },
 			{ href: '/settings/org', label: 'Org Structure', show: isAdmin },
 			{ href: '/settings/schedules', label: 'Schedules', show: isAdmin },
-			{ href: '/settings/roles', label: 'Roles', show: isSuperAdmin },
+			{ href: '/settings/roles', label: 'Roles', show: isSuperAdmin || canManageUserRoles },
 			{ href: '/settings/holidays', label: 'Holidays', show: isSuperAdmin }
 		].filter((i) => i.show)
 	)
@@ -202,7 +239,10 @@
 		HR_ADMIN: 'HR Admin',
 		SUPER_ADMIN: 'Super Admin',
 		PAYROLL_OFFICER: 'Payroll Officer',
-		FINANCE: 'Finance'
+		FINANCE: 'Finance',
+		CEO: 'CEO',
+		VERIFIER: 'Verifier',
+		APPROVER: 'Approver'
 	}
 
 	// Mobile sidebar drawer. Close it whenever the route changes.
@@ -285,6 +325,82 @@
 				</svg>
 			</button>
 		</div>
+
+		<!-- Company switcher (cross-org members only) -->
+		{#if showOrgSwitcher}
+			<div class="relative shrink-0 border-b border-border px-3 py-2">
+				<button
+					type="button"
+					onclick={() => (orgMenuOpen = !orgMenuOpen)}
+					aria-expanded={orgMenuOpen}
+					disabled={switchingOrg}
+					class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent disabled:opacity-60"
+				>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						class="h-4 w-4 shrink-0 text-muted-foreground"
+						fill="none"
+						viewBox="0 0 24 24"
+						stroke="currentColor"
+						stroke-width="1.75"
+					>
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21"
+						/>
+					</svg>
+					<span class="flex-1 truncate text-left">{currentOrg?.name ?? 'Select org'}</span>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						class="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform {orgMenuOpen
+							? 'rotate-180'
+							: ''}"
+						fill="none"
+						viewBox="0 0 24 24"
+						stroke="currentColor"
+						stroke-width="2"
+					>
+						<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+					</svg>
+				</button>
+				{#if orgMenuOpen}
+					<div
+						class="absolute inset-x-3 top-full z-10 mt-1 overflow-hidden rounded-md border border-border bg-card shadow-lg"
+					>
+						{#each memberOrgs as org (org.id)}
+							{@const active = org.id === data.user.organizationId}
+							<button
+								type="button"
+								onclick={() => switchOrg(org.id)}
+								class="flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors
+									{active
+									? 'bg-primary/15 font-medium text-primary'
+									: 'text-muted-foreground hover:bg-accent hover:text-foreground'}"
+							>
+								<span class="flex-1 truncate text-left">{org.name}</span>
+								{#if active}
+									<svg
+										xmlns="http://www.w3.org/2000/svg"
+										class="h-4 w-4 shrink-0"
+										fill="none"
+										viewBox="0 0 24 24"
+										stroke="currentColor"
+										stroke-width="2"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											d="M4.5 12.75l6 6 9-13.5"
+										/>
+									</svg>
+								{/if}
+							</button>
+						{/each}
+					</div>
+				{/if}
+			</div>
+		{/if}
 
 		<!-- Nav -->
 		<nav class="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">

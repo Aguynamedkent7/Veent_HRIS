@@ -74,28 +74,30 @@
 			</p>
 		</a>
 
-		<a
-			href="/payroll"
-			class="card flex flex-col gap-3 transition-colors hover:border-primary/40 hover:bg-card/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-		>
-			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-				Last Payroll
-			</p>
-			{#if metrics.lastPayrollRun}
-				<p class="text-3xl font-bold text-foreground">
-					{formatCurrency(Number(metrics.lastPayrollRun.totalNet))}
+		{#if data.canViewPayroll}
+			<a
+				href="/payroll"
+				class="card flex flex-col gap-3 transition-colors hover:border-primary/40 hover:bg-card/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+			>
+				<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+					Last Payroll
 				</p>
-				<p class="flex items-center gap-2 text-xs text-muted-foreground">
-					<span>{formatShortDate(metrics.lastPayrollRun.periodEnd)}</span>
-					<span class="badge-{metrics.lastPayrollRun.status === 'APPROVED' ? 'green' : 'yellow'}">
-						{metrics.lastPayrollRun.status}
-					</span>
-				</p>
-			{:else}
-				<p class="text-2xl font-semibold text-muted-foreground/60">—</p>
-				<p class="text-xs text-muted-foreground">no payroll runs yet</p>
-			{/if}
-		</a>
+				{#if metrics.lastPayrollRun}
+					<p class="text-3xl font-bold text-foreground">
+						{formatCurrency(Number(metrics.lastPayrollRun.totalNet))}
+					</p>
+					<p class="flex items-center gap-2 text-xs text-muted-foreground">
+						<span>{formatShortDate(metrics.lastPayrollRun.periodEnd)}</span>
+						<span class="badge-{metrics.lastPayrollRun.status === 'APPROVED' ? 'green' : 'yellow'}">
+							{metrics.lastPayrollRun.status}
+						</span>
+					</p>
+				{:else}
+					<p class="text-2xl font-semibold text-muted-foreground/60">—</p>
+					<p class="text-xs text-muted-foreground">no payroll runs yet</p>
+				{/if}
+			</a>
+		{/if}
 	</div>
 
 	<!-- Attendance summary (today) -->

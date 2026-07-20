@@ -6,12 +6,26 @@ const db = new PrismaClient()
 async function main() {
 	const org = await db.organization.upsert({
 		where: { id: 'org_seed' },
-		update: {},
+		update: { name: 'Veent' },
 		create: {
 			id: 'org_seed',
-			name: 'Veent Corp',
+			name: 'Veent',
 			address: 'Makati City, Metro Manila, Philippines'
 		}
+	})
+
+	// Three-org rollout (#131). The primary tenant above keeps id `org_seed` for
+	// backwards-compat; JoJo and Sweetleaf are the two additional tenants. Managers
+	// and cross-org memberships for these are seeded in #132/#140.
+	await db.organization.upsert({
+		where: { id: 'org_jojo' },
+		update: { name: 'JoJo' },
+		create: { id: 'org_jojo', name: 'JoJo' }
+	})
+	await db.organization.upsert({
+		where: { id: 'org_sweetleaf' },
+		update: { name: 'Sweetleaf' },
+		create: { id: 'org_sweetleaf', name: 'Sweetleaf' }
 	})
 
 	const dept = await db.department.upsert({
@@ -77,6 +91,27 @@ async function main() {
 			rateType: 'MONTHLY'
 		}
 	})
+
+	// CEO (#132): the exclusive role-changer, member of all three tenants. Executive
+	// access account — no Employee record; its authority is cross-org via memberships.
+	const ceoHash = await bcrypt.hash('Ceo@1234', 12)
+	const ceo = await db.user.upsert({
+		where: { email: 'ceo@veent.ph' },
+		update: { role: 'CEO' },
+		create: {
+			organizationId: org.id,
+			email: 'ceo@veent.ph',
+			passwordHash: ceoHash,
+			role: 'CEO'
+		}
+	})
+	for (const orgId of ['org_seed', 'org_jojo', 'org_sweetleaf']) {
+		await db.userOrganization.upsert({
+			where: { userId_organizationId: { userId: ceo.id, organizationId: orgId } },
+			update: {},
+			create: { userId: ceo.id, organizationId: orgId }
+		})
+	}
 
 	// Idempotent: LeaveType has no unique constraint on (organizationId, name), so
 	// createMany would duplicate on every run. Only seed when none exist yet.
@@ -579,7 +614,25 @@ async function main() {
 		})
 	}
 
+	// Backfill cross-org memberships (#131) and the multi-role set (#133): every user
+	// gets one membership mirroring their primary org, and `roles` seeded to [role] so
+	// single-role behaviour is unchanged. Both idempotent.
+	const allUsers = await db.user.findMany({
+		select: { id: true, organizationId: true, role: true, roles: true }
+	})
+	for (const u of allUsers) {
+		await db.userOrganization.upsert({
+			where: { userId_organizationId: { userId: u.id, organizationId: u.organizationId } },
+			update: {},
+			create: { userId: u.id, organizationId: u.organizationId }
+		})
+		if (u.roles.length === 0) {
+			await db.user.update({ where: { id: u.id }, data: { roles: [u.role] } })
+		}
+	}
+
 	console.log('Seed complete. Logins:')
+	console.log('  CEO:             ceo@veent.ph / Ceo@1234  (Veent + JoJo + Sweetleaf)')
 	console.log('  Super Admin:     admin@veent.ph / Admin@1234')
 	console.log('  Manager:         manager@veent.ph / Manager@1234')
 	console.log('  Employee:        employee@veent.ph / Employee@1234')

@@ -43,18 +43,22 @@ test.afterAll(async () => {
 	}
 })
 
-test('manager sees no disbursement numbers and no reveal button', async ({ page }) => {
+test('manager (promoted to HR, #133) sees masked disbursement and the reveal button', async ({
+	page
+}) => {
 	await login(page, USERS.manager)
-	// employee@veent.ph reports to the manager, so the page itself is accessible.
 	await page.goto(`/employees/${employeeId}`, { waitUntil: 'domcontentloaded' })
 	await expect(page.getByRole('heading', { name: 'Employee, Elena' })).toBeVisible()
 
-	// Not masked-vs-unmasked for managers — the whole disbursement card is HR-only,
-	// and the full values must appear nowhere in the served document.
+	// #133 promoted Manager to on-branch HR (MANAGE_HR), so the disbursement card is now
+	// visible to managers. Masking still happens server-side: masked values show and the
+	// full numbers are absent from the DOM until the audited reveal.
+	await expect(page.getByText('•••• 4321')).toBeVisible()
+	await expect(page.getByText('•••• 9999')).toBeVisible()
 	const html = await page.content()
 	expect(html).not.toContain(FULL_BANK_NO)
 	expect(html).not.toContain(FULL_GCASH_NO)
-	await expect(page.getByRole('button', { name: 'Reveal full numbers' })).not.toBeVisible()
+	await expect(page.getByRole('button', { name: 'Reveal full numbers' })).toBeVisible()
 })
 
 test('admin sees masked numbers, reveals full values, and the reveal is audited', async ({
@@ -128,8 +132,10 @@ test('manager listing employees via the API receives no compensation, gov IDs, o
 	expect(raw).not.toContain(FULL_GCASH_NO)
 })
 
-test('forged reveal POST by a manager is rejected with 403', async ({ page }) => {
-	await login(page, USERS.manager)
+test('forged reveal POST by a non-HR employee is rejected with 403', async ({ page }) => {
+	// Manager is HR-level now (#133), so the reveal boundary is asserted against a plain
+	// employee — a role that still holds no MANAGE_HR and must never obtain full numbers.
+	await login(page, USERS.employee)
 	// Same-origin header so this exercises the action's RBAC check rather than
 	// SvelteKit's CSRF rejection (both are 403, but we want the role gate).
 	const response = await page.request.post(`/employees/${employeeId}?/revealDisbursement`, {
