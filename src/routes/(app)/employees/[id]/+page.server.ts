@@ -159,8 +159,8 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 			where: { organizationId: locals.user!.organizationId },
 			orderBy: { name: 'asc' }
 		}),
-		canManage ? listLoans(params.id) : Promise.resolve([]),
-		canManage ? listCashAdvances(params.id) : Promise.resolve([]),
+		canManage ? listLoans(params.id, locals.user!.organizationId) : Promise.resolve([]),
+		canManage ? listCashAdvances(params.id, locals.user!.organizationId) : Promise.resolve([]),
 		canManage ? listEmployeeEarnings(params.id) : Promise.resolve([]),
 		canManage ? listEmployeeDeductions(params.id) : Promise.resolve([]),
 		// Assignable codes for the recurring-deduction form — statutory are computed automatically.
