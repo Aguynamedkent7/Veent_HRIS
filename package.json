@@ -31,6 +31,7 @@
 		"@testing-library/svelte": "^5.2.0",
 		"@types/bcrypt": "^5.0.2",
 		"@types/node": "^22.0.0",
+		"@types/pdfkit": "^0.17.6",
 		"@typescript-eslint/eslint-plugin": "^8.0.0",
 		"@typescript-eslint/parser": "^8.0.0",
 		"autoprefixer": "^10.4.0",
@@ -62,6 +63,7 @@
 		"layerchart": "^2.0.1",
 		"lucia": "^3.2.0",
 		"lucide-svelte": "^0.460.0",
+		"pdfkit": "^0.19.1",
 		"prisma": "^5.22.0",
 		"tailwind-merge": "^2.5.0",
 		"zod": "^3.23.0"

@@ -1,18 +1,12 @@
-import { error, redirect } from '@sveltejs/kit'
+import { error } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
 import { isPayslipVisible } from '$lib/server/services/payroll/runs'
 import type { PageServerLoad } from './$types'
 
+const PRIVILEGED = new Set(['SUPER_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER', 'FINANCE'])
+
 export const load: PageServerLoad = async ({ locals, params }) => {
 	const user = locals.user!
-
-	const myEmployee = await db.employee.findFirst({
-		where: { userId: user.id }
-	})
-
-	if (!myEmployee) {
-		redirect(302, '/dashboard')
-	}
 
 	const entry = await db.payrollEntry.findUnique({
 		where: { id: params.id },
@@ -23,6 +17,8 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 					lastName: true,
 					employeeNumber: true,
 					jobTitle: true,
+					userId: true,
+					organizationId: true,
 					department: { select: { name: true } }
 				}
 			},
@@ -32,18 +28,29 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 					periodEnd: true,
 					status: true,
 					approvedAt: true,
-					period: { select: { status: true } }
+					period: { select: { status: true } },
+					organizationId: true
 				}
 			}
 		}
 	})
 
 	if (!entry) error(404, 'Payslip not found')
-	if (entry.employeeId !== myEmployee.id) error(403, 'Access denied')
-	if (!isPayslipVisible(entry.payrollRun)) error(403, 'Payslip not yet available')
+	if (entry.payrollRun.organizationId !== user.organizationId) {
+		error(404, 'Payslip not found')
+	}
 
-	// Coerce Prisma Decimal fields to numbers at the boundary so PageData matches
-	// the component's numeric prop types (the transport hook serializes them at runtime).
+	// Employees + managers can only see their own; privileged roles can see any.
+	if (!PRIVILEGED.has(user.role)) {
+		const myEmployee = await db.employee.findFirst({ where: { userId: user.id } })
+		if (!myEmployee || entry.employeeId !== myEmployee.id) {
+			error(403, 'Access denied')
+		}
+		if (!isPayslipVisible(entry.payrollRun)) {
+			error(403, 'Payslip not yet available')
+		}
+	}
+
 	return {
 		entry: {
 			...entry,
