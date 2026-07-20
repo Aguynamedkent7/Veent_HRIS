@@ -1,3 +1,4 @@
+import { can } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
@@ -102,7 +103,7 @@ async function assertCanModify(
 	})
 	const isOwner = actorEmployee?.id === ts.employeeId
 	if (isOwner) return { isOwner: true }
-	if (['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN'].includes(ctx.actorRole)) {
+	if (can(ctx.actorRole, 'VIEW_TEAM')) {
 		await assertManagesEmployee(ctx, ts.employee.reportsToId)
 		return { isOwner: false }
 	}

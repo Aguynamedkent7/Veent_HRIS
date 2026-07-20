@@ -13,9 +13,14 @@ test.describe.configure({ mode: 'serial' })
 
 // ~30 days out: no punches exist there (the punch spec seeds last week), so the
 // derived timesheet is empty, and the period never collides with the other specs.
-function futurePeriod(): { start: string; end: string } {
+//
+// Offset by the retry index: this test mutates state (it approves the sheet), and a
+// timeout near the end used to leave an APPROVED row behind, so every retry then
+// failed looking for a DRAFT in the same period — retries could never recover. Each
+// attempt now works in its own week.
+function futurePeriod(retry: number): { start: string; end: string } {
 	const startD = new Date()
-	startD.setDate(startD.getDate() + 30)
+	startD.setDate(startD.getDate() + 30 + retry * 7)
 	const endD = new Date(startD)
 	endD.setDate(endD.getDate() + 4)
 	return { start: startD.toISOString().slice(0, 10), end: endD.toISOString().slice(0, 10) }
@@ -23,14 +28,14 @@ function futurePeriod(): { start: string; end: string } {
 
 test('employee creates a timesheet, submits it, and the manager approves it', async ({
 	browser
-}) => {
-	const { start, end } = futurePeriod()
+}, testInfo) => {
+	const { start, end } = futurePeriod(testInfo.retry)
 
 	// --- Employee creates a draft from the New Timesheet popup, then submits it ---
 	const empCtx = await browser.newContext()
 	const empPage = await empCtx.newPage()
 	await login(empPage, USERS.employee)
-	await empPage.goto('/timesheets')
+	await empPage.goto('/timesheets', { waitUntil: 'domcontentloaded' })
 
 	// The header button opens the shared dialog client-side; retry until it hydrates.
 	const dialog = empPage.getByRole('dialog', { name: 'New timesheet' })
@@ -65,7 +70,7 @@ test('employee creates a timesheet, submits it, and the manager approves it', as
 	const mgrCtx = await browser.newContext()
 	const mgrPage = await mgrCtx.newPage()
 	await login(mgrPage, USERS.manager)
-	await mgrPage.goto('/requests/timesheets')
+	await mgrPage.goto('/requests/timesheets', { waitUntil: 'domcontentloaded' })
 
 	// Pin this spec's 0.0-hr card — the punch spec routes its own 7.00-hr submission
 	// through this same queue, so an unqualified "Elena's card" would race with it.
@@ -88,7 +93,7 @@ test('employee creates a timesheet, submits it, and the manager approves it', as
 	const verifyCtx = await browser.newContext()
 	const verifyPage = await verifyCtx.newPage()
 	await login(verifyPage, USERS.employee)
-	await verifyPage.goto('/timesheets')
+	await verifyPage.goto('/timesheets', { waitUntil: 'domcontentloaded' })
 	const approvedRow = verifyPage
 		.locator('tr')
 		.filter({ hasText: 'APPROVED' })

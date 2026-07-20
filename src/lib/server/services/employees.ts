@@ -132,7 +132,20 @@ export async function listEmployees(
 ) {
 	return db.employee.findMany({
 		where: employeeListWhere(organizationId, filters),
-		include: {
+		// Explicit select, never `include`: the roster is reachable at MANAGER via
+		// GET /api/v1/employees, and a bare `include` returns every scalar — salary,
+		// government IDs, bank/GCash — defeating the HR-only masking in getEmployee.
+		// Display fields only; anything sensitive must stay out of this list.
+		select: {
+			id: true,
+			employeeNumber: true,
+			firstName: true,
+			lastName: true,
+			middleName: true,
+			jobTitle: true,
+			employmentType: true,
+			employmentStatus: true,
+			startDate: true,
 			department: { select: { id: true, name: true } },
 			user: { select: { email: true, role: true, isActive: true } }
 		},

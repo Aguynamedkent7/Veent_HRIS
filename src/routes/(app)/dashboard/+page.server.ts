@@ -2,14 +2,14 @@ import { fail } from '@sveltejs/kit'
 import { z } from 'zod'
 import { db } from '$lib/server/db'
 import { manilaDayKey } from '$lib/utils/dates'
-import { requireRole } from '$lib/server/rbac'
+import { can, requireCapability } from '$lib/server/rbac'
 import { listRecentAnnouncements, createAnnouncement } from '$lib/server/services/announcements'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!
 	const orgId = user.organizationId
-	const canPost = ['HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
+	const canPost = can(user.role, 'MANAGE_HR')
 
 	// Today's PHT day, stored as the UTC-midnight date key used by AttendanceDay.
 	const todayKey = manilaDayKey(new Date())
@@ -90,7 +90,7 @@ const announcementSchema = z.object({
 export const actions: Actions = {
 	postAnnouncement: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		requireRole(user.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(user.role, 'MANAGE_HR')
 
 		const parsed = announcementSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success)

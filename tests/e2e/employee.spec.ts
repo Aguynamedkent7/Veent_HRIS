@@ -7,7 +7,7 @@ test.describe.configure({ mode: 'serial' })
 test.describe('Employee self-service', () => {
 	test('files a leave request that appears as PENDING', async ({ page }) => {
 		await login(page, USERS.employee)
-		await page.goto('/leave/new')
+		await page.goto('/leave/new', { waitUntil: 'domcontentloaded' })
 		// Wait for hydration before touching the bound <select>; otherwise Svelte's
 		// bind:value re-initialises it to empty after our selection.
 		await page.waitForLoadState('networkidle')
@@ -29,7 +29,7 @@ test.describe('Employee self-service', () => {
 
 	test('updates profile contact details', async ({ page }) => {
 		await login(page, USERS.employee)
-		await page.goto('/profile')
+		await page.goto('/profile', { waitUntil: 'domcontentloaded' })
 
 		await page.getByLabel('Phone').fill('+63 917 555 0101')
 		await page.getByRole('button', { name: 'Save Changes' }).click()

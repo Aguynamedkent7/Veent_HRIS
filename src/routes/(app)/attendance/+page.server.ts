@@ -1,7 +1,7 @@
 import { fail } from '@sveltejs/kit'
 import { z } from 'zod'
 import { db } from '$lib/server/db'
-import { requireMinRole, requireRole } from '$lib/server/rbac'
+import { can, requireMinRole, requireCapability } from '$lib/server/rbac'
 import {
 	countAttendanceDays,
 	listAttendanceDays,
@@ -33,8 +33,8 @@ function clampRange(fromKey: string, toKey: string) {
 
 export const load: PageServerLoad = async ({ locals, url, getClientAddress }) => {
 	const user = locals.user!
-	const canManage = ['HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
-	const canUnlock = user.role === 'SUPER_ADMIN' // reopening locked days is privileged
+	const canManage = can(user.role, 'MANAGE_HR')
+	const canUnlock = can(user.role, 'ADMINISTER_SYSTEM') // reopening locked days is privileged
 
 	const today = manilaDayKey(new Date())
 	const rawFrom = url.searchParams.get('from') ?? manilaDayKey(new Date(Date.now() - 13 * DAY_MS))
@@ -228,7 +228,7 @@ export const actions: Actions = {
 
 	// Reopening locked days is privileged (super admin only).
 	unlock: async (event) => {
-		requireRole(event.locals.user!.role, 'SUPER_ADMIN')
+		requireCapability(event.locals.user!.role, 'ADMINISTER_SYSTEM')
 		const parsed = rangeSchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid range' })
 		if (spanExceeded(parsed.data.from, parsed.data.to))
@@ -245,7 +245,7 @@ export const actions: Actions = {
 	},
 
 	unlockTeam: async (event) => {
-		requireRole(event.locals.user!.role, 'SUPER_ADMIN')
+		requireCapability(event.locals.user!.role, 'ADMINISTER_SYSTEM')
 		const parsed = teamDaySchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid date' })
 		try {

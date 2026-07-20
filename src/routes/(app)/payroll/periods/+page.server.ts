@@ -1,6 +1,6 @@
 import { fail } from '@sveltejs/kit'
 import { z } from 'zod'
-import { requireRole, requirePayrollManage } from '$lib/server/rbac'
+import { can, requireCapability, requirePayrollManage } from '$lib/server/rbac'
 import {
 	listPeriods,
 	openPeriod,
@@ -16,7 +16,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	requirePayrollManage(locals.user!.role)
 	return {
 		periods: await listPeriods(locals.user!.organizationId),
-		isSuperAdmin: locals.user!.role === 'SUPER_ADMIN'
+		isSuperAdmin: can(locals.user!.role, 'ADMINISTER_SYSTEM')
 	}
 }
 
@@ -110,7 +110,7 @@ export const actions: Actions = {
 	},
 
 	void: async (event) => {
-		requireRole(event.locals.user!.role, 'SUPER_ADMIN')
+		requireCapability(event.locals.user!.role, 'ADMINISTER_SYSTEM')
 		const id = (await event.request.formData()).get('id') as string
 		try {
 			await voidPeriod(id, event.locals.user!.organizationId, ctxOf(event))

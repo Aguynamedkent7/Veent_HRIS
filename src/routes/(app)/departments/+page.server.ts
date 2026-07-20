@@ -1,6 +1,6 @@
 import { fail } from '@sveltejs/kit'
 import { z } from 'zod'
-import { requireRole } from '$lib/server/rbac'
+import { requireCapability } from '$lib/server/rbac'
 import {
 	listDepartments,
 	createDepartment,
@@ -13,7 +13,7 @@ import type { Actions, PageServerLoad } from './$types'
 export const load: PageServerLoad = async ({ locals }) => {
 	// Same gate as the actions (the nav already hides this page from non-admins);
 	// the load now returns the org's employee roster for the Members panel.
-	requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+	requireCapability(locals.user!.role, 'MANAGE_HR')
 	const [departments, employees] = await Promise.all([
 		listDepartments(locals.user!.organizationId),
 		// For the per-department Members panel (#71): current members + assignable others.
@@ -48,7 +48,7 @@ const assignSchema = z.object({
 
 export const actions: Actions = {
 	create: async ({ request, locals, getClientAddress }) => {
-		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(locals.user!.role, 'MANAGE_HR')
 		const user = locals.user!
 
 		const raw = Object.fromEntries(await request.formData())
@@ -67,7 +67,7 @@ export const actions: Actions = {
 	},
 
 	update: async ({ request, locals, getClientAddress }) => {
-		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(locals.user!.role, 'MANAGE_HR')
 		const user = locals.user!
 
 		const raw = Object.fromEntries(await request.formData())
@@ -88,7 +88,7 @@ export const actions: Actions = {
 	// Transfer an existing employee into a department (#71). Goes through
 	// updateEmployee so the change lands in the employment-history audit trail.
 	assignEmployee: async ({ request, locals, getClientAddress }) => {
-		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(locals.user!.role, 'MANAGE_HR')
 		const user = locals.user!
 
 		const parsed = assignSchema.safeParse(Object.fromEntries(await request.formData()))

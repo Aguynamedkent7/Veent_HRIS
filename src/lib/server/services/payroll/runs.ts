@@ -1,7 +1,7 @@
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
-import { requireRole } from '$lib/server/rbac'
+import { requireCapability } from '$lib/server/rbac'
 import type { AuditContext } from '../types'
 
 /**
@@ -106,7 +106,7 @@ export async function approveRun(
 }
 
 export async function voidRun(id: string, organizationId: string, ctx: AuditContext) {
-	requireRole(ctx.actorRole, 'SUPER_ADMIN')
+	requireCapability(ctx.actorRole, 'ADMINISTER_SYSTEM')
 
 	const run = await db.payrollRun.findFirst({ where: { id, organizationId } })
 	if (!run) error(404, 'Payroll run not found')

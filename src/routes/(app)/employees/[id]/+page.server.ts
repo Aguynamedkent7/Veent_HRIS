@@ -1,5 +1,5 @@
 import { error, fail, isHttpError } from '@sveltejs/kit'
-import { requireMinRole, requireRole } from '$lib/server/rbac'
+import { can, requireMinRole, requireCapability } from '$lib/server/rbac'
 import {
 	getEmployee,
 	updateEmployee,
@@ -127,7 +127,7 @@ function buildOnboarding(
 export const load: PageServerLoad = async ({ locals, params }) => {
 	requireMinRole(locals.user!.role, 'MANAGER')
 
-	const canManage = ['HR_ADMIN', 'SUPER_ADMIN'].includes(locals.user!.role)
+	const canManage = can(locals.user!.role, 'MANAGE_HR')
 
 	const employee = await getEmployee(params.id, locals.user!.organizationId, locals.user!.role)
 
@@ -184,7 +184,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 
 	// #54: disbursement numbers leave the server masked — full values are only
 	// obtainable through the audited ?/revealDisbursement action below.
-	const canRevealDisbursement = ['HR_ADMIN', 'SUPER_ADMIN'].includes(locals.user!.role)
+	const canRevealDisbursement = can(locals.user!.role, 'MANAGE_HR')
 
 	return {
 		employee: {
@@ -343,7 +343,7 @@ export const actions: Actions = {
 	// #54: audited reveal of the masked disbursement numbers. The role check runs
 	// server-side — the UI button is cosmetic gating only (Constitution P2).
 	revealDisbursement: async ({ locals, params, getClientAddress }) => {
-		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(locals.user!.role, 'MANAGE_HR')
 		const user = locals.user!
 
 		const employee = await db.employee.findFirst({
@@ -483,7 +483,7 @@ export const actions: Actions = {
 	},
 
 	addEmergencyContact: async ({ request, locals, params, getClientAddress }) => {
-		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(locals.user!.role, 'MANAGE_HR')
 		const parsed = emergencyContactSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Name, relationship, and phone are required.' })
 		try {
@@ -501,7 +501,7 @@ export const actions: Actions = {
 	},
 
 	deleteEmergencyContact: async ({ request, locals, getClientAddress }) => {
-		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(locals.user!.role, 'MANAGE_HR')
 		const contactId = (await request.formData()).get('contactId') as string
 		if (!contactId) return fail(400, { error: 'Missing contact id.' })
 		try {
@@ -518,7 +518,7 @@ export const actions: Actions = {
 	},
 
 	uploadDocument: async ({ request, locals, params, getClientAddress }) => {
-		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(locals.user!.role, 'MANAGE_HR')
 
 		const data = await request.formData()
 		const file = data.get('file')
@@ -547,7 +547,7 @@ export const actions: Actions = {
 	},
 
 	deleteDocument: async ({ request, locals, getClientAddress }) => {
-		requireRole(locals.user!.role, 'HR_ADMIN', 'SUPER_ADMIN')
+		requireCapability(locals.user!.role, 'MANAGE_HR')
 		const docId = (await request.formData()).get('docId') as string
 		if (!docId) return fail(400, { error: 'Missing document id.' })
 		try {

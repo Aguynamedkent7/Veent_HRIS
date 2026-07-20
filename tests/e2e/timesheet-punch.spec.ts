@@ -65,7 +65,7 @@ test('signed punch → aggregate → approve', async ({ browser, request }) => {
 	const ctx = await browser.newContext()
 	const page = await ctx.newPage()
 	await login(page, USERS.admin)
-	await page.goto('/timesheets')
+	await page.goto('/timesheets', { waitUntil: 'domcontentloaded' })
 
 	// Pick the employee by option text (id isn't known to the test) and the week by any day in it.
 	const empValue = await page
@@ -114,7 +114,7 @@ test('signed punch → aggregate → approve', async ({ browser, request }) => {
 	await expect(page.getByText('Timesheet submitted for review.')).toBeVisible()
 
 	// --- 4. Approval happens in the review queue ---
-	await page.goto('/requests/timesheets')
+	await page.goto('/requests/timesheets', { waitUntil: 'domcontentloaded' })
 	const card = page
 		.locator('[role="button"]', { hasText: 'Employee, Elena' })
 		.filter({ hasText: '7.0 hrs' })
@@ -127,7 +127,7 @@ test('signed punch → aggregate → approve', async ({ browser, request }) => {
 	await expect(dialog).toBeHidden()
 
 	// --- 5. Back on /timesheets the aggregated week is APPROVED ---
-	await page.goto('/timesheets')
+	await page.goto('/timesheets', { waitUntil: 'domcontentloaded' })
 	const approvedRow = page
 		.locator('tr', { hasText: 'Employee, Elena' })
 		.filter({ hasText: 'APPROVED' })

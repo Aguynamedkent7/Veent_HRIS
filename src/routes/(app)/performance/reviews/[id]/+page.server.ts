@@ -1,6 +1,7 @@
 import { fail, isHttpError } from '@sveltejs/kit'
 import { z } from 'zod'
 import { db } from '$lib/server/db'
+import { requireMinRole } from '$lib/server/rbac'
 import {
 	getReview,
 	saveSelfAssessment,
@@ -14,11 +15,17 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	const review = await getReview(params.id, user.organizationId)
 	const me = await db.employee.findUnique({ where: { userId: user.id }, select: { id: true } })
 
-	return {
-		review,
-		isSubject: me?.id === review.employee.id,
-		isReviewer: me?.id === review.reviewer.id
+	const isSubject = me?.id === review.employee.id
+	const isReviewer = me?.id === review.reviewer.id
+
+	// A review is private to its two participants. Org scoping alone let any colleague
+	// read someone's self-assessment, manager comments and rating by walking ids —
+	// isSubject/isReviewer only drove the UI. HR may read any review in the org.
+	if (!isSubject && !isReviewer) {
+		requireMinRole(user.role, 'HR_ADMIN')
 	}
+
+	return { review, isSubject, isReviewer }
 }
 
 function ctxOf(locals: App.Locals, ip: string) {
