@@ -574,13 +574,25 @@ export async function generateBIRWithholding(
 
 // ─── exportToCSV ──────────────────────────────────────────────────────────────
 
+// Cells whose first character triggers spreadsheet formula evaluation. Prefixed
+// with `\t` before quoting so Excel/Sheets renders them as text rather than
+// executing `=HYPERLINK(...)`, `+cmd|'…'`, `-2+cmd`, `@cell`, etc. (#98).
+const FORMULA_PREFIX = /^[=+\-@\t\r]/
+
 export function exportToCSV(rows: Record<string, unknown>[]): string {
 	if (rows.length === 0) return ''
 
 	const headers = Object.keys(rows[0])
 	const escape = (val: unknown): string => {
-		const str = val === null || val === undefined ? '' : String(val)
-		if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+		let str = val === null || val === undefined ? '' : String(val)
+		// Formula-injection defense: prepend a tab so spreadsheets treat the cell
+		// as text. The tab is stripped on paste-back but is inert as a formula
+		// trigger. Applied before quoting so the neutralizer lives inside the
+		// quoted body when quoting kicks in.
+		if (FORMULA_PREFIX.test(str)) {
+			str = `\t${str}`
+		}
+		if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\t')) {
 			return `"${str.replace(/"/g, '""')}"`
 		}
 		return str

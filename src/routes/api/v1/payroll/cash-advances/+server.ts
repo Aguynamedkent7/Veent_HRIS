@@ -20,7 +20,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	}
 	const employeeId = url.searchParams.get('employeeId')
 	if (!employeeId) return badRequest('employeeId is required')
-	return json({ data: await listCashAdvances(employeeId) })
+	return json({ data: await listCashAdvances(employeeId, locals.user.organizationId) })
 }
 
 export const POST: RequestHandler = async ({ locals, request, getClientAddress }) => {

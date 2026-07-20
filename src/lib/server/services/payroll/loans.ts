@@ -19,12 +19,18 @@ async function requireEmployee(employeeId: string, organizationId: string) {
 	return e
 }
 
-export function listLoans(employeeId: string) {
-	return db.loan.findMany({ where: { employeeId }, orderBy: { createdAt: 'desc' } })
+export function listLoans(employeeId: string, organizationId: string) {
+	return db.loan.findMany({
+		where: { employeeId, employee: { user: { organizationId } } },
+		orderBy: { createdAt: 'desc' }
+	})
 }
 
-export function listCashAdvances(employeeId: string) {
-	return db.cashAdvance.findMany({ where: { employeeId }, orderBy: { createdAt: 'desc' } })
+export function listCashAdvances(employeeId: string, organizationId: string) {
+	return db.cashAdvance.findMany({
+		where: { employeeId, employee: { user: { organizationId } } },
+		orderBy: { createdAt: 'desc' }
+	})
 }
 
 export async function createLoan(
