@@ -3,6 +3,12 @@
 	import type { SubmitFunction } from '@sveltejs/kit'
 	import Pagination from '$lib/components/Pagination.svelte'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
+	import {
+		periodOf,
+		toPeriodInputValue,
+		isValidStandardPeriod,
+		type PeriodKind
+	} from '$lib/utils/pay-periods'
 	import type { PageData, ActionData } from './$types'
 
 	// Don't reset the form on success: enhance's default form.reset() clears the cross-cell
@@ -42,6 +48,40 @@
 	}
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
+
+	// #129: the range stays free-form (HR browses arbitrary spans for corrections), but quick-picks
+	// snap it to a standard pay period and "Save as timesheet" only enables on a standard one — since
+	// createTimesheet now rejects non-standard shapes. from/to are YYYY-MM-DD (UTC-midnight days).
+	const rangeIsStandard = $derived(
+		!!data.from && !!data.to && isValidStandardPeriod(new Date(data.from), new Date(data.to))
+	)
+
+	// Set the From/To inputs to a range and re-run the GET filter (same path the date inputs use).
+	function applyRange(from: string, to: string) {
+		const f = document.getElementById('from') as HTMLInputElement | null
+		const t = document.getElementById('to') as HTMLInputElement | null
+		if (!f || !t) return
+		f.value = from
+		t.value = to
+		f.form?.requestSubmit()
+	}
+	function pickPeriod(kind: PeriodKind, monthsBack = 0) {
+		const now = new Date()
+		let y = now.getFullYear()
+		let m = now.getMonth() - monthsBack
+		while (m < 0) {
+			m += 12
+			y--
+		}
+		const p = periodOf(kind, y, m)
+		applyRange(toPeriodInputValue(p.periodStart), toPeriodInputValue(p.periodEnd))
+	}
+	const QUICK_PICKS: { label: string; kind: PeriodKind; monthsBack?: number }[] = [
+		{ label: 'First half', kind: 'FIRST_HALF' },
+		{ label: 'Second half', kind: 'SECOND_HALF' },
+		{ label: 'This month', kind: 'WHOLE_MONTH' },
+		{ label: 'Prev month', kind: 'WHOLE_MONTH', monthsBack: 1 }
+	]
 
 	const badge: Record<string, string> = {
 		PRESENT: 'bg-green-100 text-green-700',
@@ -287,6 +327,17 @@
 					class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 				/>
 			</div>
+			<div class="flex w-full flex-wrap items-center gap-1.5">
+				<span class="text-xs font-medium text-muted-foreground">Quick pick:</span>
+				{#each QUICK_PICKS as q (q.label)}
+					<button
+						type="button"
+						onclick={() => pickPeriod(q.kind, q.monthsBack)}
+						class="rounded-full border px-3 py-1 text-xs font-medium hover:bg-accent"
+						>{q.label}</button
+					>
+				{/each}
+			</div>
 			<p class="w-full text-xs text-muted-foreground">
 				Range is capped at {data.maxRangeDays} days (~2 months); longer spans are trimmed automatically.
 			</p>
@@ -340,8 +391,10 @@
 				<input type="hidden" name="from" value={data.from} />
 				<input type="hidden" name="to" value={data.to} />
 				<button
-					title="Persist this range as a Timesheet record"
-					disabled={saveTimesheet.busy}
+					title={rangeIsStandard
+						? 'Persist this range as a Timesheet record'
+						: 'Pick a standard pay period (1–15, 16–EOM, or whole month) to save as a timesheet'}
+					disabled={saveTimesheet.busy || !rangeIsStandard}
 					class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
 					>{@render icon(IC.document)}Save as timesheet</button
 				>

@@ -2,6 +2,7 @@ import { can } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
+import { isValidStandardPeriod } from '$lib/utils/pay-periods'
 import type { AuditContext } from './types'
 
 interface TimesheetEntryInput {
@@ -115,8 +116,15 @@ export async function createTimesheet(
 	periodStart: Date,
 	periodEnd: Date,
 	entries: TimesheetEntryInput[],
-	ctx: AuditContext
+	ctx: AuditContext,
+	// Escape hatch for seeds / legacy imports only (#129). Off by default so all UI-driven
+	// creates are locked to the standard 1-15 / 16-EOM / whole-month shapes.
+	opts: { allowNonStandardPeriod?: boolean } = {}
 ) {
+	if (!opts.allowNonStandardPeriod && !isValidStandardPeriod(periodStart, periodEnd)) {
+		error(400, 'Timesheets must cover a standard pay period (1–15, 16–EOM, or the whole month)')
+	}
+
 	const existing = await db.timesheet.findUnique({
 		where: { employeeId_periodStart: { employeeId, periodStart } }
 	})

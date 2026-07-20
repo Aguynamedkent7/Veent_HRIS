@@ -8,6 +8,7 @@ import {
 	type EmployeeComp,
 	type AttendanceInput
 } from '$lib/server/services/payroll/types'
+import { periodShareOf, periodOf } from '$lib/utils/pay-periods'
 
 const comp: EmployeeComp = { basicMonthlySalary: 30000, rateType: 'MONTHLY' }
 const att = (over: Partial<AttendanceInput> = {}): AttendanceInput => ({
@@ -62,6 +63,34 @@ describe('computeEmployeeResult (shared run/calculator engine)', () => {
 		expect(r.deductions.find((c) => c.code === 'LOAN')?.amount).toBe(1000)
 		expect(r.totalDeductions).toBeCloseTo(1616.7 + 1000, 2)
 		expect(r.netPay).toBeCloseTo(r.grossPay - r.totalDeductions, 2)
+	})
+
+	// #129: computePayroll now derives periodShare from the run's ACTUAL period shape
+	// (WHOLE_MONTH → 1, either half → 0.5) instead of the org-wide payFrequency. This asserts
+	// the two shares flow through the shared engine to the expected full vs half statutory.
+	it('prorates statutory by the period kind (whole month = 2× a half period)', () => {
+		const may = 4
+		const firstHalf = periodOf('FIRST_HALF', 2026, may)
+		const whole = periodOf('WHOLE_MONTH', 2026, may)
+		expect(periodShareOf(firstHalf.periodStart, firstHalf.periodEnd)).toBe(0.5)
+		expect(periodShareOf(whole.periodStart, whole.periodEnd)).toBe(1)
+
+		const half = computeEmployeeResult(
+			comp,
+			att({ regularHours: FULL_PERIOD_HOURS }),
+			{},
+			cfg({ periodShare: 0.5 })
+		)
+		const full = computeEmployeeResult(
+			comp,
+			att({ regularHours: FULL_PERIOD_HOURS * 2 }),
+			{},
+			cfg({ periodShare: 1 })
+		)
+		// A whole-month run carries the full monthly statutory — exactly double the half period's.
+		expect(full.statutory.sssEe).toBeCloseTo(half.statutory.sssEe * 2, 2)
+		expect(full.statutory.philhealthEe).toBeCloseTo(half.statutory.philhealthEe * 2, 2)
+		expect(full.statutory.pagibigEe).toBeCloseTo(half.statutory.pagibigEe * 2, 2)
 	})
 
 	it('is deterministic for identical inputs (calculator == run guarantee)', () => {

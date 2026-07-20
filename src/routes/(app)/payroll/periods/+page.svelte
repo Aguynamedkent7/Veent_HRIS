@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
-	import { advanceTo } from '$lib/actions/dateRange'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
+	import PeriodPicker from '$lib/components/ui/PeriodPicker.svelte'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
@@ -67,51 +67,18 @@
 			class="rounded-lg border p-4 space-y-3"
 		>
 			<h2 class="font-semibold">Open a Payroll Period</h2>
-			<div class="grid gap-3 sm:grid-cols-4">
-				<div>
+			<div class="grid gap-4 sm:grid-cols-2">
+				<div class="space-y-1.5">
 					<label for="name" class="text-sm font-medium">Name</label>
 					<input
 						id="name"
 						name="name"
 						required
 						placeholder="Jul 1–15 2026"
-						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					/>
 				</div>
-				<div>
-					<label for="start" class="text-sm font-medium">Start</label>
-					<input
-						id="start"
-						name="start"
-						type="date"
-						required
-						use:advanceTo={'end'}
-						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-					/>
-				</div>
-				<div>
-					<label for="end" class="text-sm font-medium">End</label>
-					<input
-						id="end"
-						name="end"
-						type="date"
-						required
-						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-					/>
-				</div>
-				<div>
-					<label for="cutoff" class="text-sm font-medium"
-						>Cutoff <span class="text-muted-foreground">(day)</span></label
-					>
-					<input
-						id="cutoff"
-						name="cutoff"
-						type="number"
-						min="1"
-						max="31"
-						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-					/>
-				</div>
+				<PeriodPicker startName="start" endName="end" />
 			</div>
 			<div class="flex justify-end gap-2">
 				<button

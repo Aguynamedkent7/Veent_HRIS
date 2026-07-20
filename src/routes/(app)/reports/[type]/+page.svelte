@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { formatCurrency } from '$lib/utils/format'
 	import { advanceTo } from '$lib/actions/dateRange'
+	import { periodOf, toPeriodInputValue, type PeriodKind } from '$lib/utils/pay-periods'
 	import { navigating } from '$app/stores'
 	import TableSkeleton from '$lib/components/ui/TableSkeleton.svelte'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
@@ -12,6 +13,28 @@
 	let startValue = $state(data.startDate)
 	// svelte-ignore state_referenced_locally
 	let endValue = $state(data.endDate)
+
+	// #129: reports stay free-form (report data isn't sensitive to period shape), but quick-picks
+	// let HR snap the range to a standard pay period. They only fill the inputs — the user still
+	// clicks Generate — so arbitrary ranges remain fully allowed here.
+	function pickPeriod(kind: PeriodKind, monthsBack = 0) {
+		const now = new Date()
+		let y = now.getFullYear()
+		let m = now.getMonth() - monthsBack
+		while (m < 0) {
+			m += 12
+			y--
+		}
+		const p = periodOf(kind, y, m)
+		startValue = toPeriodInputValue(p.periodStart)
+		endValue = toPeriodInputValue(p.periodEnd)
+	}
+	const QUICK_PICKS: { label: string; kind: PeriodKind; monthsBack?: number }[] = [
+		{ label: 'First half', kind: 'FIRST_HALF' },
+		{ label: 'Second half', kind: 'SECOND_HALF' },
+		{ label: 'This month', kind: 'WHOLE_MONTH' },
+		{ label: 'Prev month', kind: 'WHOLE_MONTH', monthsBack: 1 }
+	]
 
 	// True while a report is being (re)generated via the same-route GET filter form.
 	const isGenerating = $derived(
@@ -166,6 +189,17 @@
 		>
 			Generate
 		</button>
+		<div class="flex w-full flex-wrap items-center gap-1.5">
+			<span class="text-xs font-medium text-muted-foreground">Quick pick:</span>
+			{#each QUICK_PICKS as q (q.label)}
+				<button
+					type="button"
+					onclick={() => pickPeriod(q.kind, q.monthsBack)}
+					class="rounded-full border px-3 py-1 text-xs font-medium hover:bg-accent"
+					>{q.label}</button
+				>
+			{/each}
+		</div>
 	</form>
 
 	<!-- Results -->
