@@ -392,17 +392,15 @@ function drawTotals(doc: Doc, d: PayslipDocument, x: number, y: number, w: numbe
 	cursor += rowH
 
 	// Full horizontal divider before the emphasized NET PAY row.
-	doc.lineWidth(0.75).moveTo(x, cursor).lineTo(x + w, cursor).stroke()
+	doc
+		.lineWidth(0.75)
+		.moveTo(x, cursor)
+		.lineTo(x + w, cursor)
+		.stroke()
 
 	// NET PAY row — shaded background, larger bold text, sits taller for emphasis.
 	const netH = 30
-	doc
-		.save()
-		.rect(x, cursor, w, netH)
-		.fillOpacity(0.08)
-		.fillColor('#000')
-		.fill()
-		.restore()
+	doc.save().rect(x, cursor, w, netH).fillOpacity(0.08).fillColor('#000').fill().restore()
 	textAt(doc, 'NET PAY', x + 6, cursor + 9, {
 		font: FONT_BOLD,
 		size: 12,
@@ -415,7 +413,11 @@ function drawTotals(doc: Doc, d: PayslipDocument, x: number, y: number, w: numbe
 		align: 'right'
 	})
 	cursor += netH
-	doc.lineWidth(0.75).moveTo(x, cursor).lineTo(x + w, cursor).stroke()
+	doc
+		.lineWidth(0.75)
+		.moveTo(x, cursor)
+		.lineTo(x + w, cursor)
+		.stroke()
 
 	// Received-by / date footer block. Signature lines are drawn just above the
 	// labels so employees sign ON the line, not below the box.
