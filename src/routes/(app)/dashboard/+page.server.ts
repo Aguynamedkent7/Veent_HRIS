@@ -4,6 +4,7 @@ import { db } from '$lib/server/db'
 import { manilaDayKey } from '$lib/utils/dates'
 import { can, requireCapability } from '$lib/server/rbac'
 import { listRecentAnnouncements, createAnnouncement } from '$lib/server/services/announcements'
+import { countPendingApprovals } from '$lib/server/services/approvals'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -17,14 +18,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	const todayKey = manilaDayKey(new Date())
 	const today = new Date(`${todayKey}T00:00:00Z`)
 
-	const [
-		headcount,
-		onLeaveToday,
-		pendingRequests,
-		pendingTimesheets,
-		lastPayrollRun,
-		attendanceGroups
-	] = await Promise.all([
+	const [headcount, onLeaveToday, pending, lastPayrollRun, attendanceGroups] = await Promise.all([
 		db.employee.count({
 			where: { user: { organizationId: orgId }, employmentStatus: 'ACTIVE' }
 		}),
@@ -38,12 +32,14 @@ export const load: PageServerLoad = async ({ locals }) => {
 				dateTo: { gte: today }
 			}
 		}),
-		// All pending requests (leave, OT, etc.) awaiting a decision.
-		db.request.count({
-			where: { employee: { user: { organizationId: orgId } }, status: 'PENDING' }
-		}),
-		db.timesheet.count({
-			where: { employee: { user: { organizationId: orgId } }, status: 'SUBMITTED' }
+		// Items awaiting THIS user's decision — requests, timesheets, and payroll runs
+		// (#134) — the same per-user, stage-aware count the sidebar badge uses, so the two
+		// always agree. A payroll run pending sign-off now shows here (previously missing).
+		countPendingApprovals({
+			id: user.id,
+			role: user.role,
+			roles: user.roles,
+			organizationId: orgId
 		}),
 		db.payrollRun.findFirst({
 			where: { organizationId: orgId },
@@ -76,9 +72,10 @@ export const load: PageServerLoad = async ({ locals }) => {
 		metrics: {
 			headcount,
 			onLeaveToday,
-			pendingApprovals: pendingRequests + pendingTimesheets,
-			pendingRequests,
-			pendingTimesheets,
+			pendingApprovals: pending.total,
+			pendingRequests: pending.requests,
+			pendingTimesheets: pending.timesheets,
+			pendingPayrollRuns: pending.payrollRuns,
 			// Withhold payroll figures from clients that may not view them.
 			lastPayrollRun: canViewPayroll ? lastPayrollRun : null,
 			attendance

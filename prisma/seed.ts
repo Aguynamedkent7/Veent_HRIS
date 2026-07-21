@@ -6,25 +6,51 @@ const db = new PrismaClient()
 async function main() {
 	const org = await db.organization.upsert({
 		where: { id: 'org_seed' },
-		update: { name: 'Veent' },
+		// Per-org branding (#135/#139): logo + brand colour. Veent keeps the red palette.
+		update: { name: 'Veent', logoUrl: '/veent-logo.png', themePrimary: '0 79% 45%' },
 		create: {
 			id: 'org_seed',
 			name: 'Veent',
+			logoUrl: '/veent-logo.png',
+			themePrimary: '0 79% 45%',
 			address: 'Makati City, Metro Manila, Philippines'
 		}
 	})
 
 	// Three-org rollout (#131). The primary tenant above keeps id `org_seed` for
-	// backwards-compat; JoJo and Sweetleaf are the two additional tenants.
-	await db.organization.upsert({
+	// backwards-compat; JoJo Potato and Sweetleaf are the two additional food-service
+	// tenants. Their on-branch Managers + reporting employees are seeded below (#140).
+	const jojo = await db.organization.upsert({
 		where: { id: 'org_jojo' },
-		update: { name: 'JoJo' },
-		create: { id: 'org_jojo', name: 'JoJo' }
+		update: {
+			name: 'JoJo Potato',
+			logoUrl: '/jojo-logo.svg',
+			themePrimary: '32 95% 44%', // amber
+			address: 'Quezon City, Metro Manila, Philippines'
+		},
+		create: {
+			id: 'org_jojo',
+			name: 'JoJo Potato',
+			logoUrl: '/jojo-logo.svg',
+			themePrimary: '32 95% 44%',
+			address: 'Quezon City, Metro Manila, Philippines'
+		}
 	})
-	await db.organization.upsert({
+	const sweetleaf = await db.organization.upsert({
 		where: { id: 'org_sweetleaf' },
-		update: { name: 'Sweetleaf' },
-		create: { id: 'org_sweetleaf', name: 'Sweetleaf' }
+		update: {
+			name: 'Sweetleaf',
+			logoUrl: '/sweetleaf-logo.svg',
+			themePrimary: '142 71% 42%', // green
+			address: 'Pasig City, Metro Manila, Philippines'
+		},
+		create: {
+			id: 'org_sweetleaf',
+			name: 'Sweetleaf',
+			logoUrl: '/sweetleaf-logo.svg',
+			themePrimary: '142 71% 42%',
+			address: 'Pasig City, Metro Manila, Philippines'
+		}
 	})
 
 	const dept = await db.department.upsert({

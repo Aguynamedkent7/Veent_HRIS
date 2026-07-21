@@ -3,6 +3,7 @@
 	import { browser } from '$app/environment'
 	import { invalidateAll } from '$app/navigation'
 	import Toaster from '$lib/components/ui/Toaster.svelte'
+	import DevLoginSwitcher from '$lib/components/dev/DevLoginSwitcher.svelte' // TEMP DEV — remove before merge
 	import { addToast } from '$lib/stores/toast.svelte'
 	import { canAny } from '$lib/rbac'
 	import type { LayoutData } from './$types'
@@ -14,6 +15,18 @@
 	const memberOrgs = $derived(data.memberOrgs ?? [])
 	const showOrgSwitcher = $derived(memberOrgs.length > 1)
 	const currentOrg = $derived(memberOrgs.find((o) => o.id === data.user.organizationId))
+
+	// App-wide branding (#139): header logo follows the active org, falling back to
+	// the default asset when the tenant has no logoUrl set.
+	const orgLogo = $derived(data.org?.logoUrl || '/veent-logo.png')
+	const orgName = $derived(data.org?.name || 'Veent HRIS')
+	// Per-org theme (#139): override the brand CSS variables for the active tenant. The
+	// value is a raw HSL triple; descendants' `bg-primary`/`ring` pick up the cascade.
+	const themeStyle = $derived(
+		data.org?.themePrimary
+			? `--primary: ${data.org.themePrimary}; --ring: ${data.org.themePrimary}`
+			: undefined
+	)
 	let orgMenuOpen = $state(false)
 	let switchingOrg = $state(false)
 
@@ -79,6 +92,8 @@
 	// Payroll Officer manages payroll; Finance reads payroll reports only.
 	const isPayroll = $derived(canAny(roles, 'MANAGE_PAYROLL'))
 	const canViewReports = $derived(canAny(roles, 'VIEW_PAYROLL_REPORTS'))
+	// Sign-off roles (Verifier/Approver) reach Payroll read-only to verify/approve runs (#134).
+	const canSignOff = $derived(canAny(roles, 'VERIFY_REQUESTS') || canAny(roles, 'APPROVE_SIGNOFF'))
 	// Approvers (manager ladder + Payroll Officer + sign-off roles) get the dropdown.
 	const canApprove = $derived(canAny(roles, 'APPROVE_REQUESTS'))
 
@@ -153,7 +168,7 @@
 			{
 				href: '/payroll',
 				label: 'Payroll',
-				show: isPayroll,
+				show: isPayroll || canSignOff,
 				icon: 'M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z'
 			},
 			{
@@ -224,6 +239,14 @@
 				label: 'Requests',
 				show: canApprove,
 				badge: data.pendingApprovals.requests
+			},
+			{
+				// Sign-off roles reach payroll runs to verify/approve here (#134); managers
+				// already have the top-level Payroll nav, so this row is sign-off-only.
+				href: '/payroll',
+				label: 'Payroll runs',
+				show: canSignOff,
+				badge: data.pendingApprovals.payrollRuns
 			}
 		].filter((i) => i.show)
 	)
@@ -254,8 +277,9 @@
 </script>
 
 <Toaster />
+<DevLoginSwitcher />
 
-<div class="flex min-h-screen bg-background">
+<div class="flex min-h-screen bg-background" style={themeStyle}>
 	<!-- Mobile top bar (hamburger) — hidden on lg+ -->
 	<header
 		class="fixed inset-x-0 top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-card px-4 lg:hidden"
@@ -282,7 +306,7 @@
 			</svg>
 		</button>
 		<a href="/dashboard" class="flex items-center">
-			<img src="/veent-logo.png" alt="Veent HRIS" class="h-8 w-auto" />
+			<img src={orgLogo} alt={orgName} class="h-8 w-auto" />
 		</a>
 	</header>
 
@@ -305,7 +329,7 @@
 		<!-- Logo -->
 		<div class="flex h-14 shrink-0 items-center justify-between border-b border-border px-5">
 			<a href="/dashboard" class="flex items-center">
-				<img src="/veent-logo.png" alt="Veent HRIS" class="h-9 w-auto" />
+				<img src={orgLogo} alt={orgName} class="h-9 w-auto" />
 			</a>
 			<button
 				type="button"

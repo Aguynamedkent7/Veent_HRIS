@@ -19,6 +19,13 @@
 - Seeded logins (Super Admin, Manager, Employee, Payroll Officer, Finance) are created by
   `prisma/seed.ts` — see the seed script for the local-only credentials. These are development
   defaults; never commit real passwords here.
+- **Three-org shape (#131/#140)**: the seed provisions three tenants under the **Avipa** brand —
+  **Veent** (tech/office), **JoJo Potato** and **Sweetleaf** (food service, each with an on-branch
+  **Manager = "Head of Operations"** who is that branch's HR, plus a few reporting crew). A single
+  **CEO** account (`ceo@veent.ph` / `Ceo@1234`) is a member of all three and switches tenants via
+  the header dropdown; the CEO is the exclusive role-changer (`MANAGE_USER_ROLES`). Log in through
+  the Avipa tenant selector: pick the company first, then enter credentials. The seed also
+  backfills `/payroll/periods` with the last 6 months (two rows/month: 1–15 and 16–EOM) per org.
 
 ## Schema changes this session (require `pnpm db:push`)
 

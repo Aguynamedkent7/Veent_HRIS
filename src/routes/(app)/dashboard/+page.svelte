@@ -70,7 +70,8 @@
 				{metrics.pendingApprovals}
 			</p>
 			<p class="text-xs text-muted-foreground">
-				{metrics.pendingRequests} requests · {metrics.pendingTimesheets} timesheets
+				{metrics.pendingRequests} requests · {metrics.pendingTimesheets} timesheets · {metrics.pendingPayrollRuns}
+				payroll
 			</p>
 		</a>
 
