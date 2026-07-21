@@ -1,0 +1,47 @@
+name: Deploy
+
+# Runs after the CI workflow succeeds on main, then SSHes into the droplet and
+# rebuilds the stack from source via docker compose. Also triggerable by hand.
+on:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+# Never run two deploys at once; let an in-flight deploy finish.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build & restart on droplet
+    runs-on: ubuntu-latest
+    # For workflow_run: only deploy when CI actually passed. (workflow_dispatch has
+    # no workflow_run payload, so `conclusion` is empty and the second clause allows it.)
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.DROPLET_SSH_PORT || 22 }}
+          # Fail the deploy if any command fails, and don't let a hung build run forever.
+          command_timeout: 20m
+          script: |
+            set -euo pipefail
+            cd /repos/Veent_HRIS
+            # Deterministic checkout: match origin/main exactly. .env.prod is gitignored,
+            # so reset --hard leaves it (and the db volume) untouched.
+            git fetch --all --prune
+            git reset --hard origin/main
+            # Rebuild the app image and restart app + db. Compose runs `prisma db push`
+            # on app startup (see docker-compose.yml), so schema changes apply here.
+            docker compose up -d --build
+            # Reclaim space from the previous image build.
+            docker image prune -f

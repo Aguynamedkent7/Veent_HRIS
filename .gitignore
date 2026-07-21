@@ -6,7 +6,8 @@ dist/
 # Environment
 .env
 .env.*
-!.env.example
+!.env.dev.example
+!.env.prod.example
 
 # Prisma
 prisma/migrations/**/migration_lock.toml

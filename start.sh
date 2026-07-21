@@ -92,7 +92,9 @@ if ! timeout 5 bash -c "exec 3<>/dev/tcp/${PROBE_HOST}/${PROBE_PORT}" 2>/dev/nul
 fi
 
 echo "==> Syncing Prisma schema..."
-pnpm exec prisma db push --skip-generate
+# Load .env.dev explicitly: this calls prisma directly (not the db:push npm script),
+# and prisma only auto-loads a file literally named .env, which no longer exists.
+pnpm exec dotenv -e .env.dev -- prisma db push --skip-generate
 
 echo "==> Checking if seed is needed..."
 ORG_COUNT=$(docker exec "${CONTAINER}" psql -U "${DB_USER}" -d "${DB_NAME}" -p "${DB_PORT}" -tc \

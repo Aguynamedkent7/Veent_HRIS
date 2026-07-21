@@ -94,7 +94,9 @@ jobs:
         run: pnpm exec prisma db push --skip-generate
 
       - name: Seed database
-        run: pnpm db:seed
+        # Call the seed directly (not `pnpm db:seed`) so it uses the workflow-provided
+        # env vars above; the db:seed script loads .env.dev, which does not exist in CI.
+        run: pnpm exec tsx prisma/seed.ts
 
       - name: Install Playwright browser
         run: pnpm exec playwright install --with-deps chromium

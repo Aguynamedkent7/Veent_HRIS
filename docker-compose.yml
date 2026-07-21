@@ -1,0 +1,51 @@
+# Production-ish stack: SvelteKit app (adapter-node) + Postgres, wired together.
+#
+#   docker compose up --build        # build the image and start app + db
+#   docker compose up -d --build     # ... detached (background)
+#   docker compose logs -f app       # follow app logs
+#   docker compose down              # stop (keeps the db volume / data)
+#   docker compose down -v           # stop AND delete the db volume (wipes data)
+#
+# First run only — seed the database once the stack is up:
+#   docker compose run --rm app pnpm exec tsx prisma/seed.ts
+#
+# All config comes from .env.prod (gitignored). Copy .env.prod.example → .env.prod
+# and fill in real values first. The app reaches Postgres at host `db` (the service
+# name below), so DATABASE_URL in .env.prod must use @db:5432.
+
+services:
+  db:
+    # CLAUDE.md targets PostgreSQL 16; start.sh uses 18. Pick one and keep dev/prod
+    # in sync — a fresh volume works with either. Bump to postgres:18 to match start.sh.
+    image: postgres:16
+    restart: unless-stopped
+    # Postgres reads POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB from here; the
+    # other vars in the file are ignored by the image.
+    env_file: .env.prod
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # $$ escapes compose interpolation so the value is expanded inside the container,
+      # where POSTGRES_USER / POSTGRES_DB are set from env_file.
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env.prod
+    ports:
+      - '3000:3000'
+    depends_on:
+      db:
+        # Wait until Postgres actually accepts connections, not just until it starts.
+        condition: service_healthy
+    # Sync the schema, then start the server. prisma + tsx ship in the image (prisma is
+    # a runtime dependency; the single-stage build keeps devDeps). Swap `db push` for
+    # `migrate deploy` once you adopt real Prisma migrations.
+    command: sh -c "pnpm exec prisma db push --skip-generate && node build"
+
+volumes:
+  pgdata:
