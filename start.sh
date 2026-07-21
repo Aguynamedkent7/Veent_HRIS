@@ -102,7 +102,9 @@ ORG_COUNT=$(docker exec "${CONTAINER}" psql -U "${DB_USER}" -d "${DB_NAME}" -p "
 
 if [ "${ORG_COUNT}" = "0" ] || [ -z "${ORG_COUNT}" ]; then
   echo "==> Seeding database..."
-  pnpm db:seed
+  # Local dev uses the full roster (manager/employee/verifier/approver + demo data),
+  # matching what the E2E suite expects. Prod uses the minimal `pnpm db:seed`.
+  pnpm db:seed:e2e
 else
   echo "    Database already seeded (${ORG_COUNT} organization(s) found)."
 fi

@@ -17,6 +17,7 @@
 		"db:migrate": "dotenv -e .env.dev -- prisma db push",
 		"db:push": "dotenv -e .env.dev -- prisma db push",
 		"db:seed": "dotenv -e .env.dev -- tsx prisma/seed.ts",
+		"db:seed:e2e": "dotenv -e .env.dev -- tsx prisma/seed-e2e.ts",
 		"db:studio": "dotenv -e .env.dev -- prisma studio",
 		"prisma": "dotenv -e .env.dev -- prisma",
 		"bot": "dotenv -e .env.dev -- tsx scripts/discord-bot.ts"
