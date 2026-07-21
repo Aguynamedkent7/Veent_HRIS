@@ -10,14 +10,14 @@ datasource db {
 // ─── Lucia Auth ──────────────────────────────────────────────────────────────
 
 model Session {
-  id        String   @id
-  userId    String
-  expiresAt DateTime
+  id           String   @id
+  userId       String
+  expiresAt    DateTime
   // Active org for cross-org members (#131). Null → fall back to User.organizationId.
   // Set at login to the user's primary org; changed only via the validated
   // /api/v1/session/switch-org endpoint.
   currentOrgId String?
-  user         User    @relation(references: [id], fields: [userId], onDelete: Cascade)
+  user         User     @relation(references: [id], fields: [userId], onDelete: Cascade)
 
   @@map("sessions")
 }
@@ -263,35 +263,38 @@ enum DayType {
 // ─── Organization ─────────────────────────────────────────────────────────────
 
 model Organization {
-  id        String   @id @default(cuid())
-  name      String   @db.VarChar(200)
-  logoUrl   String?
+  id           String   @id @default(cuid())
+  name         String   @db.VarChar(200)
+  logoUrl      String?
   // Per-tenant brand colour as a raw HSL triple ("H S% L%", e.g. "142 71% 42%") so it can
   // be injected straight into the `--primary`/`--ring` CSS variables. Null → default palette.
   themePrimary String?
-  address   String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  address      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  departments    Department[]
-  users          User[]
-  memberships    UserOrganization[]
-  leaveTypes     LeaveType[]
-  payrollConfig  PayrollConfig?
-  payrollRuns    PayrollRun[]
-  jobPostings    JobPosting[]
-  publicHolidays PublicHoliday[]
-  auditLogs      AuditLog[]
-  benefitPlans   BenefitPlan[]
-  reviewCycles   ReviewCycle[]
-  positions      Position[]
-  payrollPeriods PayrollPeriod[]
-  earningTypes   EarningType[]
-  deductionTypes DeductionType[]
-  payRateRule    PayRateRule?
-  workSchedules  WorkSchedule[]
-  salaryGrades   SalaryGrade[]
-  announcements  Announcement[]
+  departments              Department[]
+  users                    User[]
+  memberships              UserOrganization[]
+  leaveTypes               LeaveType[]
+  payrollConfig            PayrollConfig?
+  payrollRuns              PayrollRun[]
+  jobPostings              JobPosting[]
+  publicHolidays           PublicHoliday[]
+  auditLogs                AuditLog[]
+  benefitPlans             BenefitPlan[]
+  reviewCycles             ReviewCycle[]
+  positions                Position[]
+  payrollPeriods           PayrollPeriod[]
+  earningTypes             EarningType[]
+  deductionTypes           DeductionType[]
+  payRateRule              PayRateRule?
+  workSchedules            WorkSchedule[]
+  salaryGrades             SalaryGrade[]
+  announcements            Announcement[]
+  onboardingChecklistItems OnboardingChecklistItem[]
+  jobBoards                JobBoard[]
+  inventoryItems           InventoryItem[]
 
   @@map("organizations")
 }
@@ -412,31 +415,33 @@ model Employee {
   createdAt                DateTime         @default(now())
   updatedAt                DateTime         @updatedAt
 
-  user               User                @relation(fields: [userId], references: [id])
-  department         Department          @relation(fields: [departmentId], references: [id])
-  position           Position?           @relation(fields: [positionId], references: [id])
-  reportsTo          Employee?           @relation("EmployeeHierarchy", fields: [reportsToId], references: [id])
-  directReports      Employee[]          @relation("EmployeeHierarchy")
-  timesheets         Timesheet[]
-  timeLogs           TimeLog[]
-  leaveBalances      LeaveBalance[]
-  leaveRequests      LeaveRequest[]
-  requests           Request[]
-  documents          EmployeeDocument[]
-  payrollEntries     PayrollEntry[]
-  convertedApplicant Applicant?          @relation("ConvertedEmployee")
-  benefitEnrollments BenefitEnrollment[]
-  performanceReviews PerformanceReview[] @relation("ReviewSubject")
-  reviewsGiven       PerformanceReview[] @relation("Reviewer")
-  goals              Goal[]
-  loans              Loan[]
-  cashAdvances       CashAdvance[]
-  recurringEarnings  EmployeeEarning[]
-  recurringDeductions EmployeeDeduction[]
-  workSchedule       WorkSchedule?       @relation(fields: [workScheduleId], references: [id])
-  attendanceDays     AttendanceDay[]
-  separations        SeparationRecord[]
-  emergencyContacts  EmergencyContact[]
+  user                  User                   @relation(fields: [userId], references: [id])
+  department            Department             @relation(fields: [departmentId], references: [id])
+  position              Position?              @relation(fields: [positionId], references: [id])
+  reportsTo             Employee?              @relation("EmployeeHierarchy", fields: [reportsToId], references: [id])
+  directReports         Employee[]             @relation("EmployeeHierarchy")
+  timesheets            Timesheet[]
+  timeLogs              TimeLog[]
+  leaveBalances         LeaveBalance[]
+  leaveRequests         LeaveRequest[]
+  requests              Request[]
+  documents             EmployeeDocument[]
+  payrollEntries        PayrollEntry[]
+  convertedApplicant    Applicant?             @relation("ConvertedEmployee")
+  benefitEnrollments    BenefitEnrollment[]
+  performanceReviews    PerformanceReview[]    @relation("ReviewSubject")
+  reviewsGiven          PerformanceReview[]    @relation("Reviewer")
+  goals                 Goal[]
+  loans                 Loan[]
+  cashAdvances          CashAdvance[]
+  recurringEarnings     EmployeeEarning[]
+  recurringDeductions   EmployeeDeduction[]
+  workSchedule          WorkSchedule?          @relation(fields: [workScheduleId], references: [id])
+  attendanceDays        AttendanceDay[]
+  separations           SeparationRecord[]
+  emergencyContacts     EmergencyContact[]
+  onboardingCompletions OnboardingCompletion[]
+  assignedInventory     InventoryItem[]
 
   @@unique([organizationId, employeeNumber])
   @@map("employees")
@@ -533,6 +538,53 @@ model LeaveBalance {
   @@map("leave_balances")
 }
 
+// Onboarding checklist (#116). Org-scoped, ordered list HR configures in Settings.
+// DERIVED items are auto-checked from the employee's own 201-file record via a fixed
+// `derivedKey` (the "done" logic stays in code); MANUAL items are ticked off by HR and
+// their completion is stored per employee in OnboardingCompletion. When an org has no
+// rows configured, the 201 file falls back to the built-in default derived steps.
+enum OnboardingItemKind {
+  DERIVED
+  MANUAL
+}
+
+model OnboardingChecklistItem {
+  id             String             @id @default(cuid())
+  organizationId String
+  kind           OnboardingItemKind
+  // Non-null only for DERIVED items — identifies which built-in condition checks it off.
+  derivedKey     String?
+  label          String
+  hint           String             @default("")
+  order          Int
+  isActive       Boolean            @default(true)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  organization Organization           @relation(fields: [organizationId], references: [id])
+  completions  OnboardingCompletion[]
+
+  // A given derived condition is configured at most once per org.
+  @@unique([organizationId, derivedKey])
+  @@index([organizationId])
+  @@map("onboarding_checklist_items")
+}
+
+model OnboardingCompletion {
+  id            String   @id @default(cuid())
+  itemId        String
+  employeeId    String
+  completedAt   DateTime @default(now())
+  completedById String?
+
+  item     OnboardingChecklistItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  employee Employee                @relation(fields: [employeeId], references: [id])
+
+  @@unique([itemId, employeeId])
+  @@index([employeeId])
+  @@map("onboarding_completions")
+}
+
 model LeaveRequest {
   id              String             @id @default(cuid())
   employeeId      String
@@ -583,7 +635,7 @@ model Request {
 }
 
 model ApprovalStep {
-  id String @id @default(cuid())
+  id           String            @id @default(cuid())
   // Polymorphic subject (#134): exactly one of requestId / timesheetId / payrollRunId is
   // set. The same maker-checker chain drives requests, timesheets, and payroll runs.
   requestId    String?
@@ -869,11 +921,62 @@ model JobPosting {
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id])
-  department   Department   @relation(fields: [departmentId], references: [id])
+  organization Organization        @relation(fields: [organizationId], references: [id])
+  department   Department          @relation(fields: [departmentId], references: [id])
   applicants   Applicant[]
+  channels     JobPostingChannel[]
 
   @@map("job_postings")
+}
+
+// Where a posting was published (#117). A manual tracking checklist — NOT an API
+// integration. Mirrors the DeductionType/EmployeeDeduction split: JobBoard is the
+// org catalog, JobPostingChannel is the per-posting assignment.
+enum JobChannelStatus {
+  NOT_POSTED
+  POSTED
+  EXPIRED
+  TAKEN_DOWN
+}
+
+// Org-scoped catalog of job boards (JobStreet, Indeed, LinkedIn, …). Deactivate rather
+// than delete so historical postings keep their context (same reasoning as DeductionType).
+model JobBoard {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization        @relation(fields: [organizationId], references: [id])
+  channels     JobPostingChannel[]
+
+  @@unique([organizationId, name])
+  @@map("job_boards")
+}
+
+// One row per (posting, board). Ticking a board on the posting creates/reactivates a
+// POSTED row; unticking flips it to TAKEN_DOWN (with takenDownAt) rather than deleting,
+// so the history of where a role was advertised survives.
+model JobPostingChannel {
+  id           String           @id @default(cuid())
+  jobPostingId String
+  jobBoardId   String
+  status       JobChannelStatus @default(POSTED)
+  url          String?
+  postedAt     DateTime?
+  takenDownAt  DateTime?
+  postedById   String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  jobPosting JobPosting @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+  jobBoard   JobBoard   @relation(fields: [jobBoardId], references: [id])
+
+  @@unique([jobPostingId, jobBoardId])
+  @@index([jobPostingId])
+  @@map("job_posting_channels")
 }
 
 model Applicant {
@@ -951,6 +1054,43 @@ model Offer {
   @@map("offers")
 }
 
+// ─── Inventory (#114) ─────────────────────────────────────────────────────────
+//
+// A simple org-scoped asset/equipment/supplies registry. v1 is pure tracking — no
+// barcodes, purchase orders, or stock-level alerts. An item may be assigned to an
+// employee (which ties into the 201 file / offboarding clearance later).
+enum InventoryStatus {
+  IN_STOCK
+  ASSIGNED
+  RETIRED
+}
+
+model InventoryItem {
+  id             String          @id @default(cuid())
+  organizationId String
+  name           String
+  category       String
+  quantity       Int             @default(1)
+  unit           String          @default("pc")
+  location       String?
+  status         InventoryStatus @default(IN_STOCK)
+  // Set only when status is ASSIGNED. SetNull so retiring an employee doesn't delete
+  // the asset row — it just becomes unassigned.
+  assignedToId   String?
+  serialNumber   String?
+  value          Decimal?        @db.Decimal(12, 2)
+  notes          String?         @db.Text
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  assignedTo   Employee?    @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([assignedToId])
+  @@map("inventory_items")
+}
+
 // ─── Audit Log ────────────────────────────────────────────────────────────────
 
 model AuditLog {
@@ -992,10 +1132,10 @@ model TimeLog {
   employee  Employee   @relation(fields: [employeeId], references: [id])
   timesheet Timesheet? @relation(fields: [timesheetId], references: [id])
 
+  @@unique([discordMessageId, employeeId])
   @@index([employeeId, timestamp])
   @@index([timesheetId])
   @@map("time_logs")
-  @@unique([discordMessageId, employeeId])
 }
 
 // ─── Benefits Administration ──────────────────────────────────────────────────
@@ -1291,11 +1431,11 @@ model LoanPayment {
 
   loan Loan @relation(fields: [loanId], references: [id], onDelete: Cascade)
 
-  @@index([loanId])
   // Idempotency key for the amortization committed at period lock: one payment per
   // (loan, payroll entry). NULL payrollEntryId stays distinct in Postgres, so manual
   // off-payroll payments are unaffected.
   @@unique([loanId, payrollEntryId])
+  @@index([loanId])
   @@map("loan_payments")
 }
 
