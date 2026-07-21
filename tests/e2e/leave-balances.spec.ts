@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { PrismaClient } from '@prisma/client'
-import { login, USERS } from './helpers'
+import { login, USERS, nextWeekdayISO } from './helpers'
 
 // #137 (HR-facing balances view) + #150 (privileged roles could not see any balances).
 test.describe.configure({ mode: 'serial' })
@@ -83,5 +83,49 @@ test.describe('Leave balances', () => {
 		await expect(panel).toBeVisible()
 		await expect(panel).toContainText('Vacation Leave')
 		await expect(panel).toContainText('Service Incentive Leave')
+	})
+
+	// An approver should not have to open the filer's 201 file to see whether the days are
+	// actually there, and the type being requested must be the one highlighted.
+	// Switching users needs a fresh context — the login helper drives the real form, which a
+	// live session would skip straight past. Same pattern as verifyAndApproveTimesheet.
+	test('a leave request detail shows the filer’s balances', async ({ browser }) => {
+		const filerCtx = await browser.newContext()
+		const filer = await filerCtx.newPage()
+		try {
+			await login(filer, USERS.employee)
+			await filer.goto('/leave/new', { waitUntil: 'domcontentloaded' })
+			await filer.waitForLoadState('networkidle')
+
+			const leaveType = filer.getByLabel('Leave Type')
+			await leaveType.selectOption({ label: 'Sick Leave' })
+			await expect(leaveType).not.toHaveValue('')
+			const day = nextWeekdayISO()
+			await filer.getByLabel('Start Date').fill(day)
+			await filer.getByLabel('End Date').fill(day)
+			await filer.getByRole('button', { name: 'Submit Request' }).click()
+			await filer.waitForURL('**/leave')
+		} finally {
+			await filerCtx.close()
+		}
+
+		const reviewCtx = await browser.newContext()
+		const reviewer = await reviewCtx.newPage()
+		try {
+			await login(reviewer, USERS.admin)
+			await reviewer.goto('/leave', { waitUntil: 'domcontentloaded' })
+			await reviewer.locator('tbody tr', { hasText: 'Sick Leave' }).first().click()
+			await reviewer.waitForURL(/\/requests\/[^/]+$/)
+
+			const requested = reviewer.locator('[data-leave-type="Sick Leave"]')
+			await expect(requested).toBeVisible()
+			await expect(requested).toContainText('This request')
+			// Other types are listed, but not flagged as the one being drawn against.
+			const other = reviewer.locator('[data-leave-type="Vacation Leave"]')
+			await expect(other).toBeVisible()
+			await expect(other).not.toContainText('This request')
+		} finally {
+			await reviewCtx.close()
+		}
 	})
 })
