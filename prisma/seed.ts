@@ -20,7 +20,7 @@ async function main() {
 	// Three-org rollout (#131). The primary tenant above keeps id `org_seed` for
 	// backwards-compat; JoJo Potato and Sweetleaf are the two additional food-service
 	// tenants. Their on-branch Managers + reporting employees are seeded below (#140).
-	const jojo = await db.organization.upsert({
+	await db.organization.upsert({
 		where: { id: 'org_jojo' },
 		update: {
 			name: 'JoJo Potato',
@@ -36,7 +36,7 @@ async function main() {
 			address: 'Quezon City, Metro Manila, Philippines'
 		}
 	})
-	const sweetleaf = await db.organization.upsert({
+	await db.organization.upsert({
 		where: { id: 'org_sweetleaf' },
 		update: {
 			name: 'Sweetleaf',
@@ -167,6 +167,94 @@ async function main() {
 		}
 	})
 
+	// Verifier + Approver (#134): pure sign-off accounts for the maker→verifier→approver
+	// chain. No Employee record — they only check and approve, never file requests.
+	const verifierHash = await bcrypt.hash('Verifier@1234', 12)
+	await db.user.upsert({
+		where: { email: 'verifier@veent.ph' },
+		update: { role: 'VERIFIER' },
+		create: {
+			organizationId: org.id,
+			email: 'verifier@veent.ph',
+			passwordHash: verifierHash,
+			role: 'VERIFIER'
+		}
+	})
+	const approverHash = await bcrypt.hash('Approver@1234', 12)
+	await db.user.upsert({
+		where: { email: 'approver@veent.ph' },
+		update: { role: 'APPROVER' },
+		create: {
+			organizationId: org.id,
+			email: 'approver@veent.ph',
+			passwordHash: approverHash,
+			role: 'APPROVER'
+		}
+	})
+
+	// --- Manager (direct supervisor; approves the employee's timesheets in the E2E suite) ---
+	const managerHash = await bcrypt.hash('Manager@1234', 12)
+	const managerUser = await db.user.upsert({
+		where: { email: 'manager@veent.ph' },
+		update: {},
+		create: {
+			organizationId: org.id,
+			email: 'manager@veent.ph',
+			passwordHash: managerHash,
+			role: 'MANAGER'
+		}
+	})
+	const managerEmployee = await db.employee.upsert({
+		where: { userId: managerUser.id },
+		update: {},
+		create: {
+			userId: managerUser.id,
+			organizationId: org.id,
+			employeeNumber: 'EMP-003',
+			firstName: 'Maria',
+			lastName: 'Manager',
+			departmentId: dept.id,
+			jobTitle: 'People Operations Manager',
+			employmentType: 'FULL_TIME',
+			startDate: new Date('2025-01-15'),
+			basicMonthlySalary: 45000,
+			rateType: 'MONTHLY'
+		}
+	})
+
+	// --- Regular employee reporting to the manager. Required by the E2E suite:
+	// global-setup pins a known discordId and resets this employee's punches/leave. ---
+	const employeeHash = await bcrypt.hash('Employee@1234', 12)
+	const employeeUser = await db.user.upsert({
+		where: { email: 'employee@veent.ph' },
+		update: {},
+		create: {
+			organizationId: org.id,
+			email: 'employee@veent.ph',
+			passwordHash: employeeHash,
+			role: 'EMPLOYEE'
+		}
+	})
+	const employee = await db.employee.upsert({
+		where: { userId: employeeUser.id },
+		update: { reportsToId: managerEmployee.id, discordId: '123456789012345678' },
+		create: {
+			userId: employeeUser.id,
+			organizationId: org.id,
+			employeeNumber: 'EMP-004',
+			firstName: 'Elena',
+			lastName: 'Employee',
+			departmentId: dept.id,
+			jobTitle: 'Software Engineer',
+			employmentType: 'FULL_TIME',
+			startDate: new Date('2025-02-01'),
+			basicMonthlySalary: 30000,
+			rateType: 'MONTHLY',
+			reportsToId: managerEmployee.id,
+			discordId: '123456789012345678'
+		}
+	})
+
 	// Idempotent: LeaveType has no unique constraint on (organizationId, name), so
 	// createMany would duplicate on every run. Only seed when none exist yet.
 	const existingLeaveTypes = await db.leaveType.count({ where: { organizationId: org.id } })
@@ -186,6 +274,30 @@ async function main() {
 				{ organizationId: org.id, name: 'Maternity Leave', isPaid: true, defaultDaysPerYear: 105 },
 				{ organizationId: org.id, name: 'Paternity Leave', isPaid: true, defaultDaysPerYear: 7 }
 			]
+		})
+	}
+
+	// --- Leave balances for the employee (current year) so leave-filing E2E validates ---
+	const balanceYear = new Date().getFullYear()
+	const employeeLeaveTypes = await db.leaveType.findMany({ where: { organizationId: org.id } })
+	for (const lt of employeeLeaveTypes) {
+		await db.leaveBalance.upsert({
+			where: {
+				employeeId_leaveTypeId_year: {
+					employeeId: employee.id,
+					leaveTypeId: lt.id,
+					year: balanceYear
+				}
+			},
+			update: {},
+			create: {
+				employeeId: employee.id,
+				leaveTypeId: lt.id,
+				year: balanceYear,
+				allocated: lt.defaultDaysPerYear,
+				used: 0,
+				remaining: lt.defaultDaysPerYear
+			}
 		})
 	}
 
@@ -314,6 +426,10 @@ async function main() {
 	console.log('  CEO:         ceo@veent.ph / Ceo@1234  (Veent + JoJo + Sweetleaf)')
 	console.log('  Super Admin: admin@veent.ph / Admin@1234')
 	console.log('  HR Admin:    hr@veent.ph / Hr@1234')
+	console.log('  Manager:     manager@veent.ph / Manager@1234')
+	console.log('  Employee:    employee@veent.ph / Employee@1234')
+	console.log('  Verifier:    verifier@veent.ph / Verifier@1234')
+	console.log('  Approver:    approver@veent.ph / Approver@1234')
 }
 
 main()
