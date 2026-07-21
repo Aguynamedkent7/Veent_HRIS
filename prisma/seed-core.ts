@@ -25,6 +25,95 @@ async function backfillMembershipsAndRoles(db: PrismaClient) {
 	}
 }
 
+// Food-service branch org (#140): an "Operations" department, a "Head of Operations"
+// Manager (that branch's HR), branch sign-off accounts, and a few crew reporting to the
+// Manager. Used by the cross-org tenancy E2E — "Head of Operations" exists in JoJo Potato
+// / Sweetleaf but not Veent, which cleanly proves an org switch.
+async function seedBranchOrg(
+	db: PrismaClient,
+	branch: { id: string; slug: string; empPrefix: string },
+	crew: { first: string; last: string; title: string }[]
+) {
+	const branchDept = await db.department.upsert({
+		where: { organizationId_name: { organizationId: branch.id, name: 'Operations' } },
+		update: {},
+		create: { organizationId: branch.id, name: 'Operations' }
+	})
+	const mgrHash = await bcrypt.hash('Manager@1234', 12)
+	const mgrUser = await db.user.upsert({
+		where: { email: `manager@${branch.slug}.ph` },
+		update: { role: 'MANAGER' },
+		create: {
+			organizationId: branch.id,
+			email: `manager@${branch.slug}.ph`,
+			passwordHash: mgrHash,
+			role: 'MANAGER'
+		}
+	})
+	const mgrEmployee = await db.employee.upsert({
+		where: { userId: mgrUser.id },
+		update: {},
+		create: {
+			userId: mgrUser.id,
+			organizationId: branch.id,
+			employeeNumber: `${branch.empPrefix}-001`,
+			firstName: 'Head',
+			lastName: 'of Operations',
+			departmentId: branchDept.id,
+			jobTitle: 'Head of Operations',
+			employmentType: 'FULL_TIME',
+			startDate: new Date('2025-01-15'),
+			basicMonthlySalary: 40000,
+			rateType: 'MONTHLY'
+		}
+	})
+
+	// Branch sign-off accounts (#134) so the maker → verifier → approver chain works within
+	// this org, not just Veent. Pure sign-off, no Employee record.
+	for (const [role, pw] of [
+		['VERIFIER', 'Verifier@1234'],
+		['APPROVER', 'Approver@1234']
+	] as const) {
+		const email = `${role.toLowerCase()}@${branch.slug}.ph`
+		const h = await bcrypt.hash(pw, 12)
+		await db.user.upsert({
+			where: { email },
+			update: { role },
+			create: { organizationId: branch.id, email, passwordHash: h, role }
+		})
+	}
+
+	let n = 2
+	for (const c of crew) {
+		const email = `${c.first.toLowerCase()}@${branch.slug}.ph`
+		const uHash = await bcrypt.hash('Employee@1234', 12)
+		const u = await db.user.upsert({
+			where: { email },
+			update: {},
+			create: { organizationId: branch.id, email, passwordHash: uHash, role: 'EMPLOYEE' }
+		})
+		await db.employee.upsert({
+			where: { userId: u.id },
+			update: { reportsToId: mgrEmployee.id },
+			create: {
+				userId: u.id,
+				organizationId: branch.id,
+				employeeNumber: `${branch.empPrefix}-00${n}`,
+				firstName: c.first,
+				lastName: c.last,
+				departmentId: branchDept.id,
+				jobTitle: c.title,
+				employmentType: 'FULL_TIME',
+				startDate: new Date('2025-03-01'),
+				basicMonthlySalary: 18000,
+				rateType: 'MONTHLY',
+				reportsToId: mgrEmployee.id
+			}
+		})
+		n++
+	}
+}
+
 /**
  * Minimal production seed: the three tenants, org-level configuration, and the three
  * administrative accounts (CEO, Super Admin, HR Admin). No demo employees, timesheets,
@@ -444,6 +533,18 @@ export async function seedE2E(db: PrismaClient) {
 			}
 		})
 	}
+
+	// Branch orgs (#140): JoJo Potato and Sweetleaf each get a "Head of Operations" Manager
+	// + crew. The cross-org tenancy E2E switches the CEO into JoJo and asserts this roster.
+	await seedBranchOrg(db, { id: 'org_jojo', slug: 'jojo', empPrefix: 'JJ' }, [
+		{ first: 'Benjie', last: 'Fryer', title: 'Fry Cook' },
+		{ first: 'Carla', last: 'Server', title: 'Service Crew' },
+		{ first: 'Dino', last: 'Cashier', title: 'Cashier' }
+	])
+	await seedBranchOrg(db, { id: 'org_sweetleaf', slug: 'sweetleaf', empPrefix: 'SL' }, [
+		{ first: 'Ella', last: 'Barista', title: 'Barista' },
+		{ first: 'Fritz', last: 'Baker', title: 'Baker' }
+	])
 
 	// Cover the demo roster just added (seedProd already ran this for the admin accounts).
 	await backfillMembershipsAndRoles(db)
