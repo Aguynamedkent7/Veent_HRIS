@@ -1,7 +1,7 @@
 import { db } from '$lib/server/db'
 import { error } from '@sveltejs/kit'
 import type { Prisma } from '@prisma/client'
-import { computeWorkingDays } from '$lib/utils/dates'
+import { computeWorkingDays, monthsOfService, tenureRequirement } from '$lib/utils/dates'
 
 // Workdays (Mon–Fri) between two dates, excluding org holidays. Delegates to the shared
 // PHT-correct counter so leave day-math agrees with payroll/attendance on any server
@@ -24,6 +24,56 @@ export async function computeLeaveTotalDays(
 		endDate,
 		holidays.map((h) => h.date)
 	)
+}
+
+// --- Tenure gate (#137) -----------------------------------------------------------
+// Service Incentive Leave is a 1-year entitlement under the Labor Code, so a leave type
+// can require a minimum tenure before it may be filed. The threshold is data
+// (`LeaveType.minMonthsOfService`), not a name match: HR can rename a type in Settings,
+// and a string check would silently switch the statutory gate off.
+
+/**
+ * Whole calendar months, so the gate agrees with the tenure shown on the 201 file — an
+ * employee reading "1 year" must be exactly the one who can file SIL. Pure, so the
+ * boundary cases are unit-testable without a database.
+ */
+export function meetsLeaveTenure(
+	startDate: Date,
+	minMonthsOfService: number,
+	asOf: Date = new Date()
+): boolean {
+	if (minMonthsOfService <= 0) return true
+	return monthsOfService(startDate, asOf) >= minMonthsOfService
+}
+
+/**
+ * Resolve the leave type within the caller's org and enforce its tenure gate.
+ *
+ * The org scope matters on its own: `assertLeaveBalance` looks a balance up by
+ * (employee, type, year) with no tenant check, so a forged cross-org `leaveTypeId` used
+ * to fall through to a confusing "no balance on record" 400. Now it is a clean 404.
+ */
+export async function assertLeaveEligibility(
+	organizationId: string,
+	leaveTypeId: string,
+	employeeStartDate: Date,
+	asOf: Date = new Date()
+) {
+	const leaveType = await db.leaveType.findFirst({
+		where: { id: leaveTypeId, organizationId },
+		select: { name: true, isActive: true, minMonthsOfService: true }
+	})
+	if (!leaveType) error(404, 'Leave type not found')
+	if (!leaveType.isActive) error(400, `${leaveType.name} is no longer available for filing.`)
+
+	if (!meetsLeaveTenure(employeeStartDate, leaveType.minMonthsOfService, asOf)) {
+		error(
+			403,
+			`${leaveType.name} becomes available after ${tenureRequirement(
+				leaveType.minMonthsOfService
+			)} of employment.`
+		)
+	}
 }
 
 // Throw if the employee lacks the balance to cover `totalDays` for the leave type.

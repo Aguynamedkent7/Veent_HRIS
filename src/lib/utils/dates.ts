@@ -120,6 +120,21 @@ export function monthsOfService(startDate: Date, endDate: Date = new Date()): nu
 }
 
 /**
+ * A tenure *threshold* in words: 12 → "1 year", 6 → "6 months", 18 → "1 year, 6 months".
+ * Shared by the server's refusal message and the file form's disabled-option hint (#137)
+ * so the employee is told the same thing in both places. Distinct from `tenureLabel`,
+ * which describes tenure already served and floors at "less than a month".
+ */
+export function tenureRequirement(months: number): string {
+	const years = Math.floor(months / 12)
+	const rest = months % 12
+	const parts: string[] = []
+	if (years) parts.push(`${years} year${years === 1 ? '' : 's'}`)
+	if (rest) parts.push(`${rest} month${rest === 1 ? '' : 's'}`)
+	return parts.join(', ')
+}
+
+/**
  * Human tenure, e.g. "2 years, 3 months" / "5 months" / "1 year". Anything under a
  * month reads "less than a month" rather than "0 months". Pass `endDate` for
  * offboarded staff so their tenure freezes at their last day.

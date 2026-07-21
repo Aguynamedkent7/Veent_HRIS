@@ -522,6 +522,11 @@ model LeaveType {
   allowCarryOver     Boolean  @default(false)
   maxCarryOverDays   Decimal? @db.Decimal(5, 2)
   isActive           Boolean  @default(true)
+  // Tenure gate (#137). Filing is blocked until the employee has this many whole calendar
+  // months of service. 0 = available from day one (every type except SIL, which the Labor
+  // Code makes a 1-year entitlement). Kept as data rather than a name check so renaming a
+  // type in Settings can't silently switch a statutory gate off.
+  minMonthsOfService Int      @default(0)
 
   organization  Organization   @relation(fields: [organizationId], references: [id])
   leaveBalances LeaveBalance[]

@@ -2,7 +2,7 @@
 	import { enhance } from '$app/forms'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
-	import { tenureLabel } from '$lib/utils/dates'
+	import { tenureLabel, tenureRequirement, monthsOfService } from '$lib/utils/dates'
 	import { RATE_BASIS_OPTIONS, rateBasisCopy, type RateBasis } from '$lib/utils/rate-basis'
 	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
@@ -581,6 +581,46 @@
 				</div>
 			</form>
 		{/if}
+
+		<!-- Leave Balances (#137). Read-only: allocations come from the org's leave-type
+		     defaults at onboarding, and deductions from approved leave requests. -->
+		<section class="rounded-lg border bg-card p-6 space-y-4 lg:col-span-2">
+			<h2 class="font-semibold">
+				Leave Balances
+				<span class="text-xs font-normal text-muted-foreground"
+					>({new Date().getFullYear()}, days)</span
+				>
+			</h2>
+
+			{#if data.leaveBalances.length}
+				<div class="flex flex-wrap gap-3">
+					{#each data.leaveBalances as bal (bal.id)}
+						{@const gated =
+							bal.minMonthsOfService > 0 &&
+							monthsOfService(new Date(employee.startDate)) < bal.minMonthsOfService}
+						<div class="min-w-[150px] rounded-lg border bg-background p-4">
+							<p class="text-xs font-medium text-muted-foreground">{bal.name}</p>
+							{#if gated}
+								<p class="mt-1 text-2xl font-bold text-muted-foreground">Locked</p>
+								<p class="text-xs text-muted-foreground">
+									after {tenureRequirement(bal.minMonthsOfService)} of service
+								</p>
+							{:else}
+								<p class="mt-1 text-2xl font-bold">{bal.remaining.toFixed(1)}</p>
+								<p class="text-xs text-muted-foreground">of {bal.allocated.toFixed(0)} allocated</p>
+								<p class="text-xs text-muted-foreground">{bal.used.toFixed(1)} used</p>
+							{/if}
+						</div>
+					{/each}
+				</div>
+			{:else}
+				<p class="text-sm text-muted-foreground">
+					No leave allocated for {new Date().getFullYear()}. Balances are created at onboarding from
+					the org's
+					<a href="/settings/leave-types" class="text-primary hover:underline">leave types</a>.
+				</p>
+			{/if}
+		</section>
 
 		<!-- Emergency Contacts (visible to any viewer of the 201 file; HR manages) -->
 		<section class="rounded-lg border bg-card p-6 space-y-4 lg:col-span-2">

@@ -11,6 +11,11 @@ import type { Actions, PageServerLoad, RequestEvent } from './$types'
 export const load: PageServerLoad = async ({ locals, url }) => {
 	const user = locals.user!
 	const isManager = can(user.role, 'VIEW_TEAM')
+	// #150: HR/admin/CEO have no balances of their own (often no employee record at all), so
+	// this panel was simply blank for them. They get a route to the org-wide view instead —
+	// the balances themselves live on /leave/balances rather than being duplicated here,
+	// which would mean rendering every employee in the org on a self-service page.
+	const canViewOrgBalances = can(user.role, 'MANAGE_HR')
 
 	const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
 	const year = new Date().getFullYear()
@@ -40,7 +45,15 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		myEmployee ? getLeaveBalances(myEmployee.id, year) : []
 	])
 
-	return { requests, leaveTypes, balances, myEmployeeId: myEmployee?.id, isManager, pagination }
+	return {
+		requests,
+		leaveTypes,
+		balances,
+		myEmployeeId: myEmployee?.id,
+		isManager,
+		canViewOrgBalances,
+		pagination
+	}
 }
 
 function ctxOf(event: RequestEvent) {

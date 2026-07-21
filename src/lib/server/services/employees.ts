@@ -4,6 +4,7 @@ import { ROLE_HIERARCHY } from '$lib/server/rbac'
 import { error } from '@sveltejs/kit'
 import bcrypt from 'bcrypt'
 import { Prisma } from '@prisma/client'
+import { ensureLeaveBalances } from './leave'
 import type { AuditContext } from './types'
 import type { EmploymentType, EmploymentStatus, RateType, Gender, Role } from '@prisma/client'
 
@@ -220,7 +221,7 @@ export async function createEmployee(
 			}
 		})
 
-		return tx.employee.create({
+		const created = await tx.employee.create({
 			data: {
 				userId: user.id,
 				organizationId,
@@ -259,6 +260,14 @@ export async function createEmployee(
 			},
 			include: { department: true, user: { select: { email: true, role: true } } }
 		})
+
+		// Allocate this year's leave entitlement from the org's leave-type defaults (#137).
+		// Inside the transaction so a new hire is never left half-onboarded with no ledger —
+		// `assertLeaveBalance` reads a missing row as zero, so that state blocks their first
+		// filing outright.
+		await ensureLeaveBalances(created.id, organizationId, input.startDate.getFullYear(), tx)
+
+		return created
 	})
 
 	await writeAuditLog(ctx, {

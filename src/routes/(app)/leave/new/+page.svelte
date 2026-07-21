@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import { advanceTo } from '$lib/actions/dateRange'
-	import { formatDateISO } from '$lib/utils/dates'
+	import { formatDateISO, tenureRequirement } from '$lib/utils/dates'
 	import BalanceSummary from '$lib/components/leave/BalanceSummary.svelte'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
@@ -59,7 +59,11 @@
 			>
 				<option value="">Select leave type…</option>
 				{#each data.leaveTypes as lt (lt.id)}
-					<option value={lt.id}>{lt.name}</option>
+					<option value={lt.id} disabled={!lt.eligible}>
+						{lt.name}{lt.eligible
+							? ''
+							: ` — available after ${tenureRequirement(lt.minMonthsOfService)}`}
+					</option>
 				{/each}
 			</select>
 			{#if selectedBalance}

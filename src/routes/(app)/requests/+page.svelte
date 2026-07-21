@@ -3,7 +3,7 @@
 	import { advanceTo } from '$lib/actions/dateRange'
 	import { goto } from '$app/navigation'
 	import { formatDateRange, formatShortDate } from '$lib/utils/format'
-	import { formatDateISO } from '$lib/utils/dates'
+	import { formatDateISO, tenureRequirement } from '$lib/utils/dates'
 	import Pagination from '$lib/components/Pagination.svelte'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
@@ -20,6 +20,10 @@
 		{ value: 'INFO_UPDATE', label: 'Info Update' }
 	]
 	const typeLabel = (t: string) => TYPES.find((x) => x.value === t)?.label ?? t
+
+	// Pre-select the first type the filer can actually use — defaulting to leaveTypes[0]
+	// would land on a disabled option when that type is tenure-gated (#137).
+	const defaultLeaveTypeId = $derived(data.leaveTypes.find((lt) => lt.eligible)?.id ?? '')
 
 	// Submitted values echoed back by a failed create action — re-populates the form
 	// on a non-enhanced (no-JS) rerender; with enhance the browser keeps the inputs,
@@ -154,13 +158,17 @@
 						id="leaveTypeId"
 						name="leaveTypeId"
 						required
-						value={submitted?.leaveTypeId ?? data.leaveTypes[0]?.id ?? ''}
+						value={submitted?.leaveTypeId ?? defaultLeaveTypeId}
 						aria-invalid={invalid('leaveTypeId')}
 						aria-describedby={describedBy('leaveTypeId')}
 						class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 					>
 						{#each data.leaveTypes as lt (lt.id)}
-							<option value={lt.id}>{lt.name}</option>
+							<option value={lt.id} disabled={!lt.eligible}>
+								{lt.name}{lt.eligible
+									? ''
+									: ` — available after ${tenureRequirement(lt.minMonthsOfService)}`}
+							</option>
 						{/each}
 					</select>
 					{@render fieldError('leaveTypeId')}

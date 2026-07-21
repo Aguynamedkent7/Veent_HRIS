@@ -61,6 +61,14 @@
 				<a href="/requests" class="text-primary hover:underline">Requests/Approvals</a>.
 			</p>
 		</div>
+		{#if data.canViewOrgBalances}
+			<a
+				href="/leave/balances"
+				class="rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent"
+			>
+				View all balances
+			</a>
+		{/if}
 	</div>
 
 	<!-- Balances -->

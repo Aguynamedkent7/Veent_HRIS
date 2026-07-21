@@ -1,0 +1,87 @@
+import { test, expect } from '@playwright/test'
+import { PrismaClient } from '@prisma/client'
+import { login, USERS } from './helpers'
+
+// #137 (HR-facing balances view) + #150 (privileged roles could not see any balances).
+test.describe.configure({ mode: 'serial' })
+
+test.describe('Leave balances', () => {
+	test('HR reaches the org-wide balances view from /leave', async ({ page }) => {
+		await login(page, USERS.admin)
+		await page.goto('/leave', { waitUntil: 'domcontentloaded' })
+
+		// #150: admins have no balances of their own, so before this the panel was blank
+		// with no route to anyone else's.
+		await page.getByRole('link', { name: 'View all balances' }).click()
+		await page.waitForURL('**/leave/balances')
+
+		await expect(page.getByRole('heading', { name: 'Leave Balances', level: 1 })).toBeVisible()
+		// Seeded leave types render as columns.
+		await expect(page.getByRole('columnheader', { name: /Vacation Leave/ })).toBeVisible()
+		await expect(page.getByRole('columnheader', { name: /Service Incentive Leave/ })).toBeVisible()
+
+		// Elena is seeded with the org's default allocation.
+		const row = page.locator('tbody tr[data-employee="EMP-004"]')
+		await expect(row).toBeVisible()
+		await expect(row).toContainText('Employee, Elena')
+	})
+
+	test('filters the balances table by search term', async ({ page }) => {
+		await login(page, USERS.admin)
+		await page.goto('/leave/balances?search=EMP-004', { waitUntil: 'domcontentloaded' })
+
+		await expect(page.locator('tbody tr[data-employee="EMP-004"]')).toBeVisible()
+		await expect(page.locator('tbody tr[data-employee="EMP-003"]')).toHaveCount(0)
+	})
+
+	test('a regular employee cannot open the HR balances view', async ({ page }) => {
+		await login(page, USERS.employee)
+		const res = await page.goto('/leave/balances', { waitUntil: 'domcontentloaded' })
+		expect(res?.status()).toBe(403)
+	})
+
+	// The SIL tenure gate is enforced server-side (unit-tested in leave-tenure.test.ts); this
+	// covers the other half — that a filer under a year is told so up front instead of
+	// filling in dates and being refused on submit. Every seeded employee is over a year, so
+	// the spec moves the start date and puts it back.
+	test('a filer under one year sees Service Incentive Leave disabled', async ({ page }) => {
+		const db = new PrismaClient()
+		const elena = await db.employee.findFirstOrThrow({ where: { employeeNumber: 'EMP-004' } })
+		const originalStart = elena.startDate
+		const threeMonthsAgo = new Date()
+		threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
+
+		try {
+			await db.employee.update({
+				where: { id: elena.id },
+				data: { startDate: threeMonthsAgo }
+			})
+
+			await login(page, USERS.employee)
+			await page.goto('/leave/new', { waitUntil: 'domcontentloaded' })
+			await page.waitForLoadState('networkidle')
+
+			const sil = page.locator('#leaveTypeId option', { hasText: 'Service Incentive Leave' })
+			await expect(sil).toBeDisabled()
+			await expect(sil).toContainText('available after 1 year')
+
+			// An ungated type stays selectable.
+			await expect(page.locator('#leaveTypeId option', { hasText: 'Vacation Leave' })).toBeEnabled()
+		} finally {
+			await db.employee.update({ where: { id: elena.id }, data: { startDate: originalStart } })
+			await db.$disconnect()
+		}
+	})
+
+	test('the 201 file shows the employee leave ledger', async ({ page }) => {
+		await login(page, USERS.admin)
+		await page.goto('/leave/balances?search=EMP-004', { waitUntil: 'domcontentloaded' })
+		await page.locator('tbody tr[data-employee="EMP-004"]').click()
+		await page.waitForURL(/\/employees\/[^/]+$/)
+
+		const panel = page.locator('section', { hasText: 'Leave Balances' }).first()
+		await expect(panel).toBeVisible()
+		await expect(panel).toContainText('Vacation Leave')
+		await expect(panel).toContainText('Service Incentive Leave')
+	})
+})
