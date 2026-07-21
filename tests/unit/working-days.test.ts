@@ -42,4 +42,26 @@ describe('computeWorkingDays', () => {
 	it('never returns negative days for an inverted range', () => {
 		expect(computeWorkingDays(end, start, [])).toBe(0)
 	})
+
+	// #105: weekday/day-key math must run in Philippine Standard Time, not the server's
+	// local zone mixed with UTC slices. These pin instants whose PHT calendar day differs
+	// from a naive UTC read, so a regression back to local-getDay + UTC-slice fails here
+	// even on a UTC runner.
+	describe('Philippine-time bucketing (#105)', () => {
+		it('counts an evening-UTC instant on its PHT day, excluding the PHT-day holiday', () => {
+			// 2026-07-20 20:00 UTC = 2026-07-21 04:00 PHT → Tuesday the 21st (a workday).
+			const instant = new Date('2026-07-20T20:00:00.000Z')
+			expect(computeWorkingDays(instant, instant, [])).toBe(1)
+			// The holiday keyed to the PHT day (the 21st) must exclude it → 0. A naive UTC
+			// read would look for the 20th, miss the match, and wrongly return 1.
+			expect(computeWorkingDays(instant, instant, [new Date('2026-07-21T00:00:00.000Z')])).toBe(0)
+		})
+
+		it('treats a Friday-evening-UTC instant that is Saturday in PHT as a non-working day', () => {
+			// 2026-07-24 18:00 UTC = 2026-07-25 02:00 PHT → Saturday. Naive UTC reads Friday
+			// and counts it; PHT correctly counts zero.
+			const instant = new Date('2026-07-24T18:00:00.000Z')
+			expect(computeWorkingDays(instant, instant, [])).toBe(0)
+		})
+	})
 })
