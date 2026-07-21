@@ -88,7 +88,7 @@ function buildOnboarding(
 		},
 		{
 			key: 'schedule',
-			// The built-in default (Mon–Fri 9–6) applies when none is explicitly
+			// The organization's default schedule applies when none is explicitly
 			// assigned, so a schedule is always in effect and attendance always
 			// tracks — the default counts as satisfied here.
 			label: emp.workScheduleId ? 'Work schedule assigned' : 'Work schedule (default)',
@@ -234,6 +234,7 @@ const updateSchema = z.object({
 	contactPhone: z.string().optional(),
 	contactAddress: z.string().optional(),
 	basicMonthlySalary: z.coerce.number().positive().optional(),
+	rateType: z.enum(['MONTHLY', 'HOURLY']).optional(),
 	// Empty string clears the link; a value sets it (unique per employee).
 	discordId: z
 		.string()

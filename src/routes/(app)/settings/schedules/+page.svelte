@@ -64,7 +64,7 @@
 						id="name"
 						name="name"
 						required
-						placeholder="Regular (Mon–Fri 9–6)"
+						placeholder="Regular (Mon–Fri 8–5)"
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
 					/>
 				</div>
@@ -74,7 +74,7 @@
 						id="start"
 						name="start"
 						type="time"
-						value="09:00"
+						value="08:00"
 						required
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
 					/>
@@ -85,7 +85,7 @@
 						id="end"
 						name="end"
 						type="time"
-						value="18:00"
+						value="17:00"
 						required
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
 					/>
@@ -167,7 +167,8 @@
 				{:else}
 					<tr
 						><td colspan="4" class="px-4 py-8 text-center text-muted-foreground"
-							>No schedules yet. Unassigned employees use a Mon–Fri 9–6 default.</td
+							>No schedules yet. Until one is marked the organization default, unassigned employees
+							fall back to Mon–Fri 8:00–17:00.</td
 						></tr
 					>
 				{/each}

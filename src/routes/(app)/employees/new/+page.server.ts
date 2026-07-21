@@ -63,6 +63,8 @@ const createSchema = z.object({
 	employmentType: z.enum(['FULL_TIME', 'PROBATIONARY', 'CONTRACTUAL', 'PART_TIME']),
 	startDate: z.coerce.date(),
 	basicMonthlySalary: z.coerce.number().positive(),
+	// #120: how the amount above is read — a fixed monthly salary or a per-hour rate.
+	rateType: z.enum(['MONTHLY', 'HOURLY']).default('MONTHLY'),
 	sssNumber: z.string().optional(),
 	philhealthNumber: z.string().optional(),
 	pagibigNumber: z.string().optional(),

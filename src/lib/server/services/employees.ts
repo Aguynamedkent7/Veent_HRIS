@@ -82,6 +82,7 @@ const HISTORY_FIELDS = [
 	'departmentId',
 	'positionId',
 	'basicMonthlySalary',
+	'rateType',
 	'employmentType',
 	'employmentStatus',
 	'workScheduleId'
@@ -92,6 +93,7 @@ const HISTORY_LABELS: Record<(typeof HISTORY_FIELDS)[number], string> = {
 	departmentId: 'Department',
 	positionId: 'Position',
 	basicMonthlySalary: 'Basic salary',
+	rateType: 'Rate basis',
 	employmentType: 'Employment type',
 	employmentStatus: 'Status',
 	workScheduleId: 'Work schedule'
@@ -388,6 +390,8 @@ export async function getEmploymentHistory(
 		if (field === 'positionId') return posMap.get(v) ?? '(removed)'
 		if (field === 'workScheduleId') return schedMap.get(v) ?? 'Default schedule'
 		if (field === 'basicMonthlySalary') return money.format(Number(raw))
+		// The figure's basis (#120) — 'Monthly salary' / 'Hourly rate', not the raw enum.
+		if (field === 'rateType') return v === 'HOURLY' ? 'Hourly rate' : 'Monthly salary'
 		if (field === 'employmentType' || field === 'employmentStatus') return v.replace(/_/g, ' ')
 		return v
 	}

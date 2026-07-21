@@ -26,7 +26,8 @@ function baseInput(overrides: Partial<HydrateInput> = {}): HydrateInput {
 			employeeNumber: '0005',
 			jobTitle: 'Grillwoman',
 			employmentType: 'FULL_TIME',
-			basicMonthlySalary: 11880
+			basicMonthlySalary: 11880,
+			rateType: 'MONTHLY'
 		},
 		organization: {
 			name: 'Mr. Liempo',

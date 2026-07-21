@@ -20,20 +20,34 @@ describe('computeEarnings — hourly rate + basic', () => {
 		expect(r.hourlyRate).toBeCloseTo(170.45, 2)
 	})
 
-	// #121: BASIC is hours-derived only for hourly staff. MONTHLY employees are on a fixed salary,
-	// so their basic no longer varies with `regularHours` — see the FIXED cases below.
-	it('pays hourly staff for hours actually worked', () => {
-		const r = computeEarnings({ ...comp, rateType: 'HOURLY' }, att({ regularHours: 80 }))
-		expect(amt(r, 'BASIC')).toBeCloseTo(13636.36, 2)
+	// #121: BASIC is hours-derived only for hourly staff — MONTHLY employees are on a fixed salary
+	// and their basic does not vary with `regularHours` (the FIXED case below).
+	// #120: and an HOURLY employee's stored figure IS their hourly rate, used as-is rather than
+	// divided by 176 — dividing would pay ₱200/hr staff ₱1.14/hr.
+	it('pays hourly staff for hours actually worked, at their stated rate', () => {
+		const r = computeEarnings(
+			{ basicMonthlySalary: 200, rateType: 'HOURLY' },
+			att({ regularHours: 80 })
+		)
+		expect(r.hourlyRate).toBeCloseTo(200, 2)
+		expect(amt(r, 'BASIC')).toBeCloseTo(16000, 2)
 	})
 
-	it('respects custom working days/hours', () => {
+	it('ignores the working-days divisor for hourly staff — there is nothing to divide', () => {
 		const r = computeEarnings(
-			{ ...comp, rateType: 'HOURLY', monthlyWorkingDays: 20, dailyWorkingHours: 8 },
+			{ basicMonthlySalary: 200, rateType: 'HOURLY', monthlyWorkingDays: 20, dailyWorkingHours: 8 },
 			att({ regularHours: 8 })
 		)
-		// 30000/(20*8)=187.5/hr → 8h = 1500
-		expect(amt(r, 'BASIC')).toBeCloseTo(1500, 2)
+		expect(amt(r, 'BASIC')).toBeCloseTo(1600, 2)
+	})
+
+	it('respects custom working days/hours when deriving a monthly salary', () => {
+		const r = computeEarnings(
+			{ ...comp, monthlyWorkingDays: 20, dailyWorkingHours: 8 },
+			att({ regularHours: 8, overtimeHours: 1 })
+		)
+		// 30000/(20*8) = 187.5/hr, which prices the OT line (basic is fixed for MONTHLY staff).
+		expect(r.hourlyRate).toBeCloseTo(187.5, 2)
 	})
 
 	it('pays MONTHLY staff a fixed basic, prorated to the period (#121)', () => {

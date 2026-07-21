@@ -6,7 +6,7 @@ import { computeEmployeeResult } from './calculator'
 import { ratesFromRule } from './rates'
 import { type AmortItem } from './deductions'
 import { recurringDeductionComponents } from './employee-deductions'
-import { D, q2n, sum, sumQ, ZERO } from './money'
+import { D, q2n, sum, ZERO } from './money'
 import { emptyAttendance, round2, type EmployeeComp } from './types'
 import { buildAttendanceInput } from '../attendance/input'
 import { computeWorkingDays } from '$lib/utils/dates'
@@ -209,6 +209,18 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			incentives: q2n(monthlyOf('INCENTIVE').times(periodShare))
 		}
 
+		// Employee-paid benefit costs, prorated to the period (T148). These go INTO the engine as
+		// discretionary deductions rather than being subtracted from net afterwards (#103) — a
+		// post-hoc subtraction bypasses the affordability gate and can drive net negative again.
+		const benefitDeductions = (enrollmentsByEmp.get(emp.id) ?? []).map((e) => ({
+			code: 'BENEFIT',
+			label: e.plan.name,
+			// Each benefit line quantizes once, here — it is a payable line like any other.
+			amount: q2n(D(e.plan.employeeCost).times(periodShare)),
+			taxable: false,
+			refId: e.id
+		}))
+
 		// Shared engine — identical to the Payroll Calculator for the same inputs.
 		const result = computeEmployeeResult(comp, attendance, adjustments, {
 			taxableByCode,
@@ -218,10 +230,10 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			expectedHours: scheduledHours,
 			loans,
 			cashAdvances,
-			recurringDeductions: recurringDeductionComponents(
-				recurringDeductionsByEmp.get(emp.id) ?? [],
-				periodShare
-			)
+			recurringDeductions: [
+				...recurringDeductionComponents(recurringDeductionsByEmp.get(emp.id) ?? [], periodShare),
+				...benefitDeductions
+			]
 		})
 		const paidHours =
 			attendance.regularHours +
@@ -232,21 +244,15 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			attendance.regularHolidayOtHours +
 			attendance.specialHolidayHours +
 			attendance.specialHolidayOtHours
-		const isFlagged = paidHours === 0
-
-		// Fold employee-paid benefit costs into deductions, prorated to the period (T148).
-		const benefitDeductions = (enrollmentsByEmp.get(emp.id) ?? []).map((e) => ({
-			code: 'BENEFIT',
-			label: e.plan.name,
-			// Each benefit line quantizes once, here — it is a payable line like any other.
-			amount: q2n(D(e.plan.employeeCost).times(periodShare)),
-			refId: e.id
-		}))
-		// Lines-authoritative (#119): totals are sums of already-quantized lines, so the entry
-		// reconciles against its printed deduction lines with no residual.
-		const benefitTotal = sumQ(benefitDeductions.map((d) => d.amount))
-		const entryTotalDeductions = D(result.totalDeductions).plus(benefitTotal).toNumber()
-		const entryNetPay = D(result.netPay).minus(benefitTotal).toNumber()
+		// #103: a floored net is never silent — it means deductions outran gross and someone has to
+		// look at it. Zero paid hours stays a separate, more specific reason.
+		const isFlagged = paidHours === 0 || result.uncollected > 0
+		const flagReason =
+			paidHours === 0
+				? 'No hours recorded for period'
+				: result.uncollected > 0
+					? `Deductions exceed pay — ₱${result.uncollected.toFixed(2)} uncollected`
+					: null
 
 		perEmployee.push({
 			entry: {
@@ -262,10 +268,10 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 				pagibigEe: result.statutory.pagibigEe,
 				pagibigEr: result.statutory.pagibigEr,
 				withholdingTax: result.statutory.withholdingTax,
-				totalDeductions: entryTotalDeductions,
-				netPay: entryNetPay,
+				totalDeductions: result.totalDeductions,
+				netPay: result.netPay,
 				isFlagged,
-				flagReason: isFlagged ? 'No hours recorded for period' : null
+				flagReason
 			},
 			earnings: result.earnings.map((c) => ({
 				code: c.code,
@@ -273,20 +279,19 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 				amount: c.amount,
 				taxable: c.taxable
 			})),
-			deductions: [
-				...result.deductions.map((c) => ({
-					code: c.code,
-					label: c.label,
-					amount: c.amount,
-					refId: c.refId ?? null
-				})),
-				...benefitDeductions
-			]
+			// Benefits are already among `result.deductions` — the engine took them through the same
+			// affordability gate as every other discretionary line (#103).
+			deductions: result.deductions.map((c) => ({
+				code: c.code,
+				label: c.label,
+				amount: c.amount,
+				refId: c.refId ?? null
+			}))
 		})
 
 		totalGross = totalGross.plus(result.grossPay)
-		totalDeductions = totalDeductions.plus(entryTotalDeductions)
-		totalNet = totalNet.plus(entryNetPay)
+		totalDeductions = totalDeductions.plus(result.totalDeductions)
+		totalNet = totalNet.plus(result.netPay)
 	}
 
 	await db.$transaction(async (tx: Prisma.TransactionClient) => {

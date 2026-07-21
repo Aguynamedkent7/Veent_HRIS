@@ -5,6 +5,8 @@ import {
 } from '$lib/server/services/payroll/calculator'
 import {
 	emptyAttendance,
+	hourlyRateOf,
+	monthlyBasisOf,
 	type EmployeeComp,
 	type AttendanceInput
 } from '$lib/server/services/payroll/types'
@@ -25,7 +27,9 @@ const HR = 200 // 35200 / (22 * 8)
 const PERIOD_HOURS = 88 // semi-monthly: 11 working days × 8h
 
 const monthly: EmployeeComp = { basicMonthlySalary: SALARY, rateType: 'MONTHLY' }
-const hourly: EmployeeComp = { basicMonthlySalary: SALARY, rateType: 'HOURLY' }
+// #120: for HOURLY staff the stored figure IS the hourly rate, not a monthly salary — so this is
+// the same ₱200/hr as the monthly employee above, expressed the way HR now enters it.
+const hourly: EmployeeComp = { basicMonthlySalary: HR, rateType: 'HOURLY' }
 
 const att = (over: Partial<AttendanceInput> = {}): AttendanceInput => ({
 	...emptyAttendance(),
@@ -173,5 +177,39 @@ describe('#121 — both bases price unrendered time identically', () => {
 		)
 		expect(m.grossPay - h.grossPay).toBeCloseTo(HR, 2) // monthly gross still whole
 		expect(m.netPay).toBeCloseTo(h.netPay, 2) // ...but nets converge after TARDINESS
+	})
+})
+
+describe('#120 — the hourly rate is used as entered, never divided', () => {
+	// The headline acceptance case from #120: before rateType was readable, this employee's
+	// internal rate came out as 100/176 = ₱0.57 and they grossed ₱45.45 instead of ₱8,000.
+	it('grosses ₱8,000 for an employee at ₱100/hr over 80 hours', () => {
+		const r = computeEmployeeResult(
+			{ basicMonthlySalary: 100, rateType: 'HOURLY' },
+			att({ regularHours: 80 }),
+			{},
+			cfg({ expectedHours: 80 })
+		)
+		expect(earning(r, 'BASIC')).toBeCloseTo(8000, 2)
+		expect(r.grossPay).toBeCloseTo(8000, 2)
+	})
+
+	it('projects an hourly rate to a monthly basis for statutory brackets', () => {
+		// ₱200/hr × 176 h = ₱35,200/month, so an hourly employee must be assessed exactly like the
+		// monthly employee on ₱35,200 — not floored into the lowest bracket on a ₱200 "salary".
+		const h = computeEmployeeResult(hourly, att({ regularHours: PERIOD_HOURS }), {}, cfg())
+		const m = computeEmployeeResult(monthly, att({ regularHours: PERIOD_HOURS }), {}, cfg())
+
+		expect(monthlyBasisOf(hourly).toNumber()).toBeCloseTo(SALARY, 2)
+		expect(h.statutory.sssEe).toBeCloseTo(m.statutory.sssEe, 2)
+		expect(h.statutory.philhealthEe).toBeCloseTo(m.statutory.philhealthEe, 2)
+		expect(h.statutory.pagibigEe).toBeCloseTo(m.statutory.pagibigEe, 2)
+	})
+
+	it('round-trips: hourlyRateOf and monthlyBasisOf are inverses', () => {
+		expect(hourlyRateOf(monthly).toNumber()).toBeCloseTo(HR, 2)
+		expect(hourlyRateOf(hourly).toNumber()).toBeCloseTo(HR, 2)
+		expect(monthlyBasisOf(monthly).toNumber()).toBeCloseTo(SALARY, 2)
+		expect(monthlyBasisOf(hourly).toNumber()).toBeCloseTo(SALARY, 2)
 	})
 })

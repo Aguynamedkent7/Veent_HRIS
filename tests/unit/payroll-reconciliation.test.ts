@@ -125,7 +125,7 @@ describe('#119 — payslip reconciliation (fuzz over centavo salaries)', () => {
 		}
 	})
 
-	it('reconciles when deductions exceed gross (negative net, #103)', () => {
+	it('floors net at 0 and still reconciles when deductions exceed gross (#103)', () => {
 		// ROUND_HALF_UP is symmetric, unlike Math.round's half-toward-zero on negatives.
 		const comp: EmployeeComp = { basicMonthlySalary: '9000.55', rateType: 'MONTHLY' }
 		const r = computeEmployeeResult(
@@ -138,7 +138,22 @@ describe('#119 — payslip reconciliation (fuzz over centavo salaries)', () => {
 				]
 			})
 		)
-		expect(r.netPay).toBeLessThan(0)
-		assertReconciles(r, 'negative net')
+		// Previously this persisted a negative netPay. The unaffordable line is skipped whole
+		// rather than taken, so net never goes below 0 and the payslip still adds up.
+		expect(r.netPay).toBeGreaterThanOrEqual(0)
+		expect(r.deductions.find((c) => c.code === 'BIG')).toBeUndefined()
+		expect(r.uncollected).toBeCloseTo(9999.99, 2)
+		assertReconciles(r, 'floored net')
+	})
+
+	it('credits UNRECOVERED so net lands exactly on 0 when statutory alone outruns gross', () => {
+		const comp: EmployeeComp = { basicMonthlySalary: 35200, rateType: 'MONTHLY' }
+		// Almost no hours worked: absence against a fixed basic wipes out gross, but statutory is
+		// still owed on the monthly salary credit.
+		const r = computeEmployeeResult(comp, att({ regularHours: 0 }), {}, cfg())
+
+		expect(r.netPay).toBe(0)
+		expect(r.uncollected).toBeGreaterThan(0)
+		assertReconciles(r, 'unrecovered')
 	})
 })
