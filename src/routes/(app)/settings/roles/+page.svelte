@@ -35,7 +35,7 @@
 </svelte:head>
 
 <div class="space-y-6">
-	<BackButton fallback="/settings" label="Settings" />
+	<BackButton fallback="/settings" label="Settings" preferFallback />
 
 	<div>
 		<h1 class="text-2xl font-bold tracking-tight">Roles &amp; Permissions</h1>

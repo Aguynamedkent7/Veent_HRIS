@@ -9,9 +9,17 @@
 export function resolveBackTarget(
 	cameFrom: string | null,
 	fromParam: string | null,
-	fallback: string
+	fallback: string,
+	preferFallback = false
 ): string {
-	if (cameFrom) return cameFrom
+	// `preferFallback` makes Back move UP instead of sideways: a captured origin that is a
+	// sibling *under* the fallback is ignored. Settings needs this — hopping between tabs
+	// otherwise makes each tab's Back point at the previous tab, and the section index
+	// becomes unreachable. It stays opt-in because /requests/[id] deliberately goes back
+	// sideways to /requests/approvals.
+	const sideways =
+		preferFallback && cameFrom != null && pathnameOf(cameFrom).startsWith(`${fallback}/`)
+	if (cameFrom && !sideways) return cameFrom
 	if (fromParam && fromParam.startsWith('/') && !fromParam.startsWith('//')) return fromParam
 	return fallback
 }

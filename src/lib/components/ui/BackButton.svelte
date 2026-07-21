@@ -3,7 +3,14 @@
 	import { afterNavigate } from '$app/navigation'
 	import { resolveBackTarget, backLabel } from '$lib/utils/back'
 
-	let { fallback, label }: { fallback: string; label: string } = $props()
+	// `preferFallback` makes Back move UP to the section index instead of sideways to a
+	// sibling page — set it on section subpages (Settings) where hopping between tabs would
+	// otherwise chain Back through them and strand the index.
+	let {
+		fallback,
+		label,
+		preferFallback = false
+	}: { fallback: string; label: string; preferFallback?: boolean } = $props()
 
 	// Capture the page actually navigated from (ignoring same-pathname navigations,
 	// e.g. our own query-param changes) so Back returns to the real origin. ?from and
@@ -14,7 +21,9 @@
 		if (from && from.pathname !== $page.url.pathname) cameFrom = from.pathname + from.search
 	})
 
-	const target = $derived(resolveBackTarget(cameFrom, $page.url.searchParams.get('from'), fallback))
+	const target = $derived(
+		resolveBackTarget(cameFrom, $page.url.searchParams.get('from'), fallback, preferFallback)
+	)
 	const text = $derived(backLabel(target, fallback, label))
 </script>
 

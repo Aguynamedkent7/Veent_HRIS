@@ -92,7 +92,7 @@
 {/snippet}
 
 <div class="space-y-6">
-	<BackButton fallback="/settings" label="Settings" />
+	<BackButton fallback="/settings" label="Settings" preferFallback />
 
 	<div class="flex items-center justify-between">
 		<div>

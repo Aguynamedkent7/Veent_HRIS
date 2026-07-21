@@ -26,7 +26,7 @@
 
 <div class="mx-auto max-w-4xl space-y-6">
 	<div>
-		<BackButton fallback="/settings" label="Settings" />
+		<BackButton fallback="/settings" label="Settings" preferFallback />
 		<h1 class="mt-1 text-2xl font-bold tracking-tight">Earnings &amp; Deduction Codes</h1>
 		<p class="text-sm text-muted-foreground">
 			Codes used by the payroll engine. Deactivate instead of deleting — historical payslips

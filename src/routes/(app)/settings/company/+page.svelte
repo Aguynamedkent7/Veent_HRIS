@@ -35,7 +35,7 @@
 
 <div class="mx-auto max-w-2xl space-y-6">
 	<div>
-		<BackButton fallback="/settings" label="Settings" />
+		<BackButton fallback="/settings" label="Settings" preferFallback />
 		<h1 class="mt-1 text-2xl font-bold tracking-tight">Company Information</h1>
 		<p class="text-sm text-muted-foreground">Appears on payslips, reports, and the org header.</p>
 	</div>

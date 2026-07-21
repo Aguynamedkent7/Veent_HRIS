@@ -26,7 +26,7 @@
 
 <div class="mx-auto max-w-4xl space-y-6">
 	<div>
-		<BackButton fallback="/settings" label="Settings" />
+		<BackButton fallback="/settings" label="Settings" preferFallback />
 		<h1 class="mt-1 text-2xl font-bold tracking-tight">Salary Grades</h1>
 		<p class="text-sm text-muted-foreground">
 			Pay bands assignable to positions. Employees inherit their band via their position; HR is
