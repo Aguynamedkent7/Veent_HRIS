@@ -22,12 +22,32 @@ test.describe('Back navigation', () => {
 		await page.waitForURL('**/team')
 	})
 
-	test('hard-loaded employee detail falls back to /employees (HR)', async ({ page }) => {
+	test('hard-loaded employee from /team returns to /team via ?from (HR, #113)', async ({
+		page
+	}) => {
 		await login(page, USERS.admin)
 		await page.goto('/team', { waitUntil: 'domcontentloaded' })
 		const href = await page.locator('a[href^="/employees/"]').first().getAttribute('href')
 
-		await page.goto(href!, { waitUntil: 'domcontentloaded' }) // fresh document — no client-side origin to capture
+		// Team links carry ?from=/team (#113), so even a fresh document — with no client-side
+		// origin to capture — sends Back to /team, not the role-based /employees fallback.
+		expect(href).toContain('?from=/team')
+		await page.goto(href!, { waitUntil: 'domcontentloaded' })
+		const back = page.getByRole('link', { name: 'Back', exact: true })
+		await expect(back).toHaveAttribute('href', '/team')
+	})
+
+	test('hard-loaded employee with no origin hint falls back to /employees (HR)', async ({
+		page
+	}) => {
+		await login(page, USERS.admin)
+		await page.goto('/team', { waitUntil: 'domcontentloaded' })
+		const href = await page.locator('a[href^="/employees/"]').first().getAttribute('href')
+
+		// Strip the hint to model a direct link / Employees-list entry: with neither a captured
+		// origin nor a ?from, the role-based fallback (/employees for HR) still applies.
+		const bare = href!.split('?')[0]
+		await page.goto(bare, { waitUntil: 'domcontentloaded' })
 		const back = page.getByRole('link', { name: 'Back to Employees' })
 		await expect(back).toHaveAttribute('href', '/employees')
 	})
