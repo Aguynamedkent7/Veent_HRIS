@@ -13,7 +13,7 @@
 //   3. Click the run → each row has a "Payslip" link that opens the PDF page
 
 import { PrismaClient } from '@prisma/client'
-import { computePayroll } from '../src/lib/server/services/payroll/index'
+import { createPayrollRun } from '../src/lib/server/services/payroll/index'
 
 const db = new PrismaClient()
 
@@ -70,7 +70,7 @@ async function main() {
 	})
 
 	// Wipe any prior run for this period (entries first — FK is RESTRICT), then
-	// create a fresh DRAFT run and compute it (DRAFT → COMPUTED).
+	// create a fresh run — `createPayrollRun` computes it in the same call (#138).
 	const prior = await db.payrollRun.findMany({
 		where: { organizationId: org.id, periodStart: PERIOD_START, periodEnd: PERIOD_END },
 		select: { id: true }
@@ -82,22 +82,25 @@ async function main() {
 		await db.payrollEntry.deleteMany({ where: { payrollRunId: { in: runIds } } })
 		await db.payrollRun.deleteMany({ where: { id: { in: runIds } } })
 	}
-	const run = await db.payrollRun.create({
-		data: { organizationId: org.id, periodStart: PERIOD_START, periodEnd: PERIOD_END }
-	})
-
 	const admin = await db.user.findFirst({
 		where: { organizationId: org.id, role: 'SUPER_ADMIN' }
 	})
 	if (!admin) {
 		throw new Error('No SUPER_ADMIN user in the org — run `pnpm db:seed` first for the base seed.')
 	}
-	await computePayroll(run.id, org.id, {
-		organizationId: org.id,
-		actorId: admin.id,
-		actorRole: admin.role,
-		ipAddress: '127.0.0.1'
-	})
+	// 5/11–5/25 is not a standard pay period; the seed keeps the paper template's dates.
+	await createPayrollRun(
+		org.id,
+		PERIOD_START,
+		PERIOD_END,
+		{
+			organizationId: org.id,
+			actorId: admin.id,
+			actorRole: admin.role,
+			ipAddress: '127.0.0.1'
+		},
+		{ allowNonStandardPeriod: true }
+	)
 
 	console.log('')
 	console.log('✓ Payroll demo seeded (status: COMPUTED — awaiting admin approval).')

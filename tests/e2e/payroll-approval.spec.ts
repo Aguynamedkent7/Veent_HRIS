@@ -35,7 +35,7 @@ test.afterAll(async () => {
 	}
 })
 
-// Create + compute a run as the admin (maker), returning its id.
+// Create a run as the admin (maker), returning its id. Creating computes it (#138).
 async function makeComputedRun(
 	page: Page,
 	periodStart: string,
@@ -62,11 +62,6 @@ async function makeComputedRun(
 		await db.$disconnect()
 	}
 
-	const computed = await page.request.post('/payroll?/compute', {
-		form: { id },
-		headers: { origin }
-	})
-	expect(computed.status()).toBe(200)
 	return id
 }
 

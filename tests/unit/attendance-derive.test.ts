@@ -247,6 +247,64 @@ describe('deriveAttendanceDay — night differential', () => {
 	})
 })
 
+// The AttendanceDay is keyed on the punch-in date, so a shift that runs past midnight keeps
+// ALL of its hours — regular, OT and night differential — on the day the employee clocked in.
+// Nothing is split at the calendar boundary (see the header comment in derive.ts).
+describe('deriveAttendanceDay — shifts crossing midnight stay on the punch-in day', () => {
+	// 08:00–16:00 straight, no meal break: the customer's 16h case expects the full clock
+	// time to count, so the threshold is 8h with nothing deducted.
+	const SCHED_8H_NO_BREAK: ScheduleDay = { startMinutes: 480, endMinutes: 960, breakMinutes: 0 }
+
+	it('16h shift (Mon 08:00 → Tue 00:00) = 8 regular + 8 OT + 2 night-diff, all on Monday', () => {
+		const r = derive([p('IN', T('08:00')), p('OUT', T2('00:00'))], {
+			schedule: SCHED_8H_NO_BREAK,
+			approvedOtHours: 8
+		})
+		expect(r.workedHours).toBeCloseTo(16, 2)
+		expect(r.regularHours).toBeCloseTo(8, 2)
+		expect(r.rawOvertimeHours).toBeCloseTo(8, 2)
+		expect(r.overtimeHours).toBeCloseTo(8, 2)
+		expect(r.nightDiffHours).toBeCloseTo(2, 2) // 22:00 Mon → 00:00 Tue
+		expect(r.status).toBe('PRESENT')
+		// One result, one day: the punch-out lands on Tuesday but the hours above are Monday's.
+		expect(r.timeIn?.toISOString()).toBe(new Date(T('08:00')).toISOString())
+		expect(r.timeOut?.toISOString()).toBe(new Date(T2('00:00')).toISOString())
+	})
+
+	it('20h shift (Mon 08:00 → Tue 04:00) = 8 regular + 12 OT + 6 night-diff', () => {
+		const r = derive([p('IN', T('08:00')), p('OUT', T2('04:00'))], {
+			schedule: SCHED_8H_NO_BREAK,
+			approvedOtHours: 12
+		})
+		expect(r.workedHours).toBeCloseTo(20, 2)
+		expect(r.regularHours).toBeCloseTo(8, 2)
+		expect(r.rawOvertimeHours).toBeCloseTo(12, 2)
+		expect(r.overtimeHours).toBeCloseTo(12, 2)
+		expect(r.nightDiffHours).toBeCloseTo(6, 2) // 22:00 Mon → 04:00 Tue
+	})
+
+	it('still deducts the unpaid meal break on a cross-midnight shift', () => {
+		// Same 16 clock hours, but on an 08:00–17:00 schedule the 1h lunch comes off: 15 paid.
+		const r = derive([p('IN', T('08:00')), p('OUT', T2('00:00'))], {
+			schedule: SCHED_8_5,
+			approvedOtHours: 8
+		})
+		expect(r.workedHours).toBeCloseTo(15, 2)
+		expect(r.regularHours).toBeCloseTo(8, 2)
+		expect(r.rawOvertimeHours).toBeCloseTo(7, 2)
+		expect(r.breakMinutes).toBe(60)
+	})
+
+	it('leaves the ordinary 8-hour day untouched — no OT, no night differential', () => {
+		const r = derive([p('IN', T('08:00')), p('OUT', T('17:00'))], { schedule: SCHED_8_5 })
+		expect(r.workedHours).toBeCloseTo(8, 2)
+		expect(r.regularHours).toBeCloseTo(8, 2)
+		expect(r.rawOvertimeHours).toBe(0)
+		expect(r.overtimeHours).toBe(0)
+		expect(r.nightDiffHours).toBe(0)
+	})
+})
+
 describe('deriveAttendanceDay — day types & holidays', () => {
 	it('routes worked hours to the regular-holiday bucket', () => {
 		const r = derive([p('IN', T('09:00')), p('OUT', T('17:00'))], {
