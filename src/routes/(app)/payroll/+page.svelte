@@ -137,6 +137,8 @@
 							</td>
 							<td class="px-4 py-3">
 								<div class="flex items-center justify-end gap-2">
+									<!-- Creating a run computes it (#138), so a run only stays DRAFT when that
+									     compute failed — this button is the recovery path. -->
 									{#if data.canManage && run.status === 'DRAFT'}
 										{@const computeG = guard(`${run.id}:compute`)}
 										<form method="POST" action="?/compute" use:enhance={computeG.enhance}>

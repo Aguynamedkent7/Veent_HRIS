@@ -4,6 +4,13 @@
  * approved-OT and on-leave flags) into the hour buckets the payroll engine consumes, plus
  * late/undertime, night differential, and a status. Overtime is GATED on approval: the engine
  * reports `rawOvertimeHours` (worked beyond the threshold) but only pays `min(raw, approvedOtHours)`.
+ *
+ * An AttendanceDay always represents the **punch-in date**. Hours worked past midnight are
+ * aggregated to that day, never split at the calendar boundary: a Monday 08:00 → Tuesday 00:00
+ * shift is 16 worked hours on Monday. Night differential intersects `netIntervals` with the
+ * configured window regardless of which calendar day the minutes fall on, so the 22:00–24:00
+ * slice of that shift is Monday's too. Splitting at midnight would break the one-row-per-date
+ * uniqueness invariant and the payslip's "Days of Work" count.
  */
 
 const DAY_MS = 86_400_000

@@ -52,7 +52,13 @@ export async function createPayrollRun(
 		newValue: { periodStart, periodEnd }
 	})
 
-	return run
+	// Compute in the same request (#138): the numbers are deterministic given attendance, so
+	// making HR click a separate "Compute" was friction without a decision attached. The run
+	// comes back COMPUTED; "Recompute" on the detail page re-derives it after later edits
+	// (e.g. assigning a recurring allowance).
+	await computePayroll(run.id, organizationId, ctx)
+
+	return db.payrollRun.findUniqueOrThrow({ where: { id: run.id } })
 }
 
 /**
