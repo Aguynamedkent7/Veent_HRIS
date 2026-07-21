@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { PrismaClient } from '@prisma/client'
 import { login, USERS } from './helpers'
 
 // Branches — the food-service tenants' physical stores. The seed gives JoJo Potato three
@@ -41,6 +42,20 @@ test.describe('Branches', () => {
 	test('adding a branch with a manager puts them on its roster, and closing keeps it', async ({
 		page
 	}) => {
+		// Branches are closed, never deleted, so this test leaves a row behind. Drop it up
+		// front or a second local run finds the branch already CLOSED and has no Close button
+		// to click. (CI is unaffected — it seeds a fresh database.)
+		const db = new PrismaClient()
+		try {
+			const stale = await db.branch.findFirst({ where: { name: 'E2E Test Branch' } })
+			if (stale) {
+				await db.employee.updateMany({ where: { branchId: stale.id }, data: { branchId: null } })
+				await db.branch.delete({ where: { id: stale.id } })
+			}
+		} finally {
+			await db.$disconnect()
+		}
+
 		await login(page, USERS.jojoManager, 'JoJo Potato')
 		await page.goto('/branches', { waitUntil: 'domcontentloaded' })
 		await page.waitForLoadState('networkidle')
