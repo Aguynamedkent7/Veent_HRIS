@@ -349,7 +349,15 @@ export async function offboardEmployee(
 	endDate: Date,
 	ctx: AuditContext
 ) {
-	await getEmployee(id, organizationId)
+	const target = await getEmployee(id, organizationId)
+
+	// Refuse self-offboarding: the transaction below deactivates the target's
+	// user account, so an admin offboarding their own record would be locked out
+	// on their next request (hooks.server.ts redirects inactive users to /login).
+	// Guarding here covers both the form action and the v1 API in one place.
+	if (target.userId === ctx.actorId) {
+		error(400, 'You cannot offboard your own employee record — ask another admin to do it.')
+	}
 
 	const [employee] = await db.$transaction([
 		db.employee.update({
