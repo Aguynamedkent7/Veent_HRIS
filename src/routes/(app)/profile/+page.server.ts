@@ -1,0 +1,115 @@
+import { fail, redirect } from '@sveltejs/kit'
+import { z } from 'zod'
+import { db } from '$lib/server/db'
+import { getEmployee, updateEmployee } from '$lib/server/services/employees'
+import { listEmployeeDocuments } from '$lib/server/services/documents'
+import { listEnrollmentsForEmployee } from '$lib/server/services/benefits'
+import { listPunches } from '$lib/server/services/timelog'
+import { manilaDateTime, manilaDayKey } from '$lib/utils/dates'
+import type { Actions, PageServerLoad } from './$types'
+
+// How far back the read-only punch view looks. Discord punches accumulate quickly, so a
+// two-week window keeps the list useful without paging.
+const PUNCH_WINDOW_DAYS = 14
+
+const PUNCH_LABELS: Record<string, string> = {
+	IN: 'Clock in',
+	OUT: 'Clock out',
+	BREAK_START: 'Break start',
+	BREAK_END: 'Break end'
+}
+
+export const load: PageServerLoad = async ({ locals }) => {
+	const user = locals.user!
+
+	const employeeRecord = await db.employee.findUnique({
+		where: { userId: user.id },
+		select: { id: true }
+	})
+
+	if (!employeeRecord) redirect(303, '/dashboard')
+
+	const from = new Date(Date.now() - PUNCH_WINDOW_DAYS * 24 * 60 * 60 * 1000)
+
+	const [employee, documents, benefits, rawPunches] = await Promise.all([
+		getEmployee(employeeRecord.id, user.organizationId),
+		listEmployeeDocuments(employeeRecord.id, user.organizationId),
+		listEnrollmentsForEmployee(employeeRecord.id),
+		listPunches(employeeRecord.id, { from })
+	])
+
+	// Format PHT date/time server-side (newest first) so the read-only view is timezone-safe.
+	const punches = rawPunches
+		.map((p) => ({
+			id: p.id,
+			type: p.punchType,
+			label: PUNCH_LABELS[p.punchType] ?? p.punchType,
+			source: p.source,
+			dayKey: manilaDayKey(p.timestamp),
+			at: manilaDateTime(p.timestamp)
+		}))
+		.reverse()
+
+	return { employee, documents, benefits, punches, punchWindowDays: PUNCH_WINDOW_DAYS }
+}
+
+const updateSchema = z.object({
+	firstName: z.string().min(1).optional(),
+	lastName: z.string().min(1).optional(),
+	contactPhone: z
+		.string()
+		.optional()
+		.transform((v) => v || undefined),
+	contactAddress: z
+		.string()
+		.optional()
+		.transform((v) => v || undefined),
+	dateOfBirth: z
+		.string()
+		.optional()
+		.transform((v) => (v ? new Date(v) : undefined))
+})
+
+export const actions: Actions = {
+	update: async ({ request, locals }) => {
+		const user = locals.user!
+
+		const employeeRecord = await db.employee.findUnique({
+			where: { userId: user.id },
+			select: { id: true }
+		})
+
+		if (!employeeRecord) {
+			return fail(400, { error: 'No employee profile found.' })
+		}
+
+		const formData = await request.formData()
+		const result = updateSchema.safeParse({
+			firstName: formData.get('firstName') || undefined,
+			lastName: formData.get('lastName') || undefined,
+			contactPhone: formData.get('contactPhone') || undefined,
+			contactAddress: formData.get('contactAddress') || undefined,
+			dateOfBirth: formData.get('dateOfBirth') || undefined
+		})
+
+		if (!result.success) {
+			const firstError = result.error.errors[0]
+			return fail(400, { error: firstError?.message ?? 'Validation error.' })
+		}
+
+		const ctx = {
+			organizationId: user.organizationId,
+			actorId: user.id,
+			actorRole: user.role
+		}
+
+		try {
+			await updateEmployee(employeeRecord.id, user.organizationId, result.data, ctx)
+		} catch (err: unknown) {
+			const e = err as { body?: { message?: string }; message?: string }
+			return fail(400, { error: e?.body?.message ?? e?.message ?? 'Failed to update profile.' })
+		}
+
+		return { success: true }
+	}
+}

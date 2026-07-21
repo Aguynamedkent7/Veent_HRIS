@@ -1,11 +1,75 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
+	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
-	import type { PageData } from './$types'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
+	import type { PageData, ActionData } from './$types'
 
-	let { data }: { data: PageData } = $props()
-	const { run } = data
+	let { data, form }: { data: PageData; form: ActionData } = $props()
+	const run = $derived(data.run)
 	let overrideEntryId = $state<string | null>(null)
+	let expandedEntryId = $state<string | null>(null)
+	let showReturn = $state(false)
+
+	// #108: a double-submitted recompute rebuilds every entry twice — expensive to unwind.
+	const compute = createSubmitGuard()
+	const decideGuard = createSubmitGuard()
+
+	// Maker-checker chain (#134): each attempt is MAKE → VERIFY → APPROVE. Group the
+	// append-only steps by attempt so a recomputed/refiled run shows its full history.
+	type Step = (typeof run.approvalSteps)[number]
+	const stageName: Record<string, string> = { MAKE: 'Make', VERIFY: 'Verify', APPROVE: 'Approve' }
+	const latestAttempt = $derived(Math.max(1, ...run.approvalSteps.map((s) => s.attempt)))
+	const attempts = $derived.by(() => {
+		const groups = new Map<number, Step[]>()
+		for (const s of run.approvalSteps) {
+			const list = groups.get(s.attempt) ?? []
+			list.push(s)
+			groups.set(s.attempt, list)
+		}
+		return [...groups.entries()]
+			.sort((a, b) => a[0] - b[0])
+			.map(([attempt, steps]) => ({
+				attempt,
+				steps: [...steps].sort((a, b) => a.stageIndex - b.stageIndex)
+			}))
+	})
+
+	function stepLabel(step: Step): string {
+		if (step.decision === 'APPROVED') {
+			return step.stage === 'MAKE' ? 'Prepared' : step.stage === 'VERIFY' ? 'Verified' : 'Approved'
+		}
+		if (step.decision === 'REJECTED') return 'Rejected'
+		if (step.decision === 'RETURNED') return 'Returned'
+		return stageName[step.stage] ?? 'Pending'
+	}
+
+	// The live stage is highlighted only while the run is open for review and the
+	// latest attempt hasn't been returned. `data.canAct` gates whether *this* user acts.
+	const haltedLatest = $derived(
+		run.approvalSteps.some(
+			(s) => s.attempt === latestAttempt && (s.decision === 'RETURNED' || s.decision === 'REJECTED')
+		)
+	)
+	function isActive(step: Step): boolean {
+		return (
+			run.status === 'COMPUTED' &&
+			!haltedLatest &&
+			step.attempt === latestAttempt &&
+			step.decision == null &&
+			data.liveStage === step.stage
+		)
+	}
+	const actVerb = $derived(data.liveStage === 'APPROVE' ? 'Approve' : 'Verify')
+
+	// #108: the override form is rendered inside an {#each}, so it gets a per-entry guard rather
+	// than a shared one. Memoised by entry id so the identity is stable across re-renders.
+	const overrideGuards = new Map<string, ReturnType<typeof createSubmitGuard>>()
+	function overrideGuard(entryId: string) {
+		let g = overrideGuards.get(entryId)
+		if (!g) overrideGuards.set(entryId, (g = createSubmitGuard()))
+		return g
+	}
 </script>
 
 <svelte:head>
@@ -14,15 +78,37 @@
 
 <div class="space-y-6">
 	<div class="flex items-center gap-4">
-		<a href="/payroll" class="text-sm text-muted-foreground hover:text-foreground">← Payroll</a>
-		<h1 class="text-2xl font-bold">{formatShortDate(run.periodStart)} – {formatShortDate(run.periodEnd)}</h1>
-		<span class="rounded-full px-2.5 py-1 text-xs font-medium {run.status === 'APPROVED' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}">
+		<BackButton fallback="/payroll" label="Payroll" />
+		<h1 class="text-2xl font-bold">
+			{formatShortDate(run.periodStart)} – {formatShortDate(run.periodEnd)}
+		</h1>
+		<span class={run.status === 'APPROVED' ? 'badge-green' : 'badge-blue'}>
 			{run.status}
 		</span>
 		{#if run.hasOverride}
-			<span class="text-xs text-yellow-600 font-medium">Has overrides</span>
+			<span class="text-xs text-yellow-600 font-medium dark:text-yellow-500">Has overrides</span>
+		{/if}
+		{#if data.canManage && run.status === 'COMPUTED'}
+			<!-- Recompute rebuilds all entries from current data (e.g. after assigning
+			     recurring earnings/deductions). Managers only; disabled once approved. -->
+			<form method="POST" action="?/compute" use:enhance={compute.enhance} class="ml-auto">
+				<button
+					type="submit"
+					disabled={compute.busy}
+					class="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+					>{compute.busy ? 'Computing…' : 'Recompute'}</button
+				>
+			</form>
 		{/if}
 	</div>
+
+	{#if form?.error}
+		<div
+			class="rounded-md border border-destructive/20 bg-destructive/10 px-4 py-2 text-sm text-destructive"
+		>
+			{form.error}
+		</div>
+	{/if}
 
 	<div class="grid gap-4 sm:grid-cols-3">
 		<div class="rounded-lg border bg-card p-4">
@@ -35,7 +121,9 @@
 		</div>
 		<div class="rounded-lg border bg-card p-4">
 			<p class="text-sm text-muted-foreground">Total Net Pay</p>
-			<p class="text-xl font-bold font-mono text-green-700">{formatCurrency(Number(run.totalNet))}</p>
+			<p class="text-xl font-bold font-mono text-green-700 dark:text-green-400">
+				{formatCurrency(Number(run.totalNet))}
+			</p>
 		</div>
 	</div>
 
@@ -55,41 +143,139 @@
 			</thead>
 			<tbody class="divide-y">
 				{#each run.entries as entry (entry.id)}
-					<tr class="hover:bg-muted/30 {entry.isFlagged ? 'bg-yellow-50' : ''}">
+					<tr class="hover:bg-muted/30 {entry.isFlagged ? 'bg-yellow-500/10' : ''}">
 						<td class="px-4 py-3">
 							<div class="font-medium">{entry.employee.lastName}, {entry.employee.firstName}</div>
-							<div class="text-xs text-muted-foreground">{entry.employee.employeeNumber} · {entry.employee.department.name}</div>
+							<div class="text-xs text-muted-foreground">
+								{entry.employee.employeeNumber} · {entry.employee.department.name}
+							</div>
 							{#if entry.isFlagged}
-								<div class="text-xs text-yellow-600">⚠ {entry.flagReason}</div>
+								<div class="text-xs text-yellow-600 dark:text-yellow-500">⚠ {entry.flagReason}</div>
 							{/if}
 						</td>
 						<td class="px-4 py-3 text-right font-mono">{formatCurrency(Number(entry.grossPay))}</td>
-						<td class="px-4 py-3 text-right font-mono text-muted-foreground">{formatCurrency(Number(entry.sssEe))}</td>
-						<td class="px-4 py-3 text-right font-mono text-muted-foreground">{formatCurrency(Number(entry.philhealthEe))}</td>
-						<td class="px-4 py-3 text-right font-mono text-muted-foreground">{formatCurrency(Number(entry.pagibigEe))}</td>
-						<td class="px-4 py-3 text-right font-mono text-muted-foreground">{formatCurrency(Number(entry.withholdingTax))}</td>
-						<td class="px-4 py-3 text-right font-mono font-medium">{formatCurrency(Number(entry.netPay))}</td>
+						<td class="px-4 py-3 text-right font-mono text-muted-foreground"
+							>{formatCurrency(Number(entry.sssEe))}</td
+						>
+						<td class="px-4 py-3 text-right font-mono text-muted-foreground"
+							>{formatCurrency(Number(entry.philhealthEe))}</td
+						>
+						<td class="px-4 py-3 text-right font-mono text-muted-foreground"
+							>{formatCurrency(Number(entry.pagibigEe))}</td
+						>
+						<td class="px-4 py-3 text-right font-mono text-muted-foreground"
+							>{formatCurrency(Number(entry.withholdingTax))}</td
+						>
+						<td class="px-4 py-3 text-right font-mono font-medium"
+							>{formatCurrency(Number(entry.netPay))}</td
+						>
 						<td class="px-4 py-3">
-							{#if run.status !== 'APPROVED'}
-								<button onclick={() => (overrideEntryId = entry.id)} class="text-xs text-primary hover:underline">Override</button>
-							{/if}
+							<div class="flex items-center justify-end gap-2">
+								<a href={`/payslips/${entry.id}`} class="btn-row">Payslip</a>
+								<button
+									onclick={() => (expandedEntryId = expandedEntryId === entry.id ? null : entry.id)}
+									class="btn-row">{expandedEntryId === entry.id ? 'Hide' : 'Breakdown'}</button
+								>
+								{#if data.canManage && run.status !== 'APPROVED'}
+									<button onclick={() => (overrideEntryId = entry.id)} class="btn-row"
+										>Override</button
+									>
+								{/if}
+							</div>
 						</td>
 					</tr>
+					{#if expandedEntryId === entry.id}
+						<tr>
+							<td colspan="8" class="bg-muted/30 px-4 py-3">
+								<div class="grid gap-6 sm:grid-cols-2">
+									<div>
+										<p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+											Earnings
+										</p>
+										<table class="mt-1 w-full text-sm">
+											<tbody>
+												{#each entry.earnings as c (c.id)}
+													<tr
+														><td class="py-0.5">{c.label}{c.taxable ? '' : ' (non-taxable)'}</td><td
+															class="py-0.5 text-right font-mono"
+															>{formatCurrency(Number(c.amount))}</td
+														></tr
+													>
+												{:else}
+													<tr><td class="py-0.5 text-muted-foreground">No earning lines.</td></tr>
+												{/each}
+											</tbody>
+										</table>
+									</div>
+									<div>
+										<p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+											Deductions
+										</p>
+										<table class="mt-1 w-full text-sm">
+											<tbody>
+												{#each entry.deductions as c (c.id)}
+													<tr
+														><td class="py-0.5">{c.label}</td><td
+															class="py-0.5 text-right font-mono text-muted-foreground"
+															>{formatCurrency(Number(c.amount))}</td
+														></tr
+													>
+												{:else}
+													<tr><td class="py-0.5 text-muted-foreground">No deduction lines.</td></tr>
+												{/each}
+											</tbody>
+										</table>
+									</div>
+								</div>
+							</td>
+						</tr>
+					{/if}
 					{#if overrideEntryId === entry.id}
+						{@const overrideG = overrideGuard(entry.id)}
 						<tr>
 							<td colspan="8" class="px-4 py-3 bg-muted/30">
-								<form method="POST" action="?/override" use:enhance class="flex items-end gap-3">
+								<form
+									method="POST"
+									action="?/override"
+									use:enhance={overrideG.enhance}
+									class="flex items-end gap-3"
+								>
 									<input type="hidden" name="entryId" value={entry.id} />
 									<div>
-										<label class="text-xs font-medium">Override Net Pay</label>
-										<input name="netPay" type="number" step="0.01" value={Number(entry.netPay)} class="mt-1 flex h-8 w-36 rounded border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
+										<label for={'netPay-' + entry.id} class="text-xs font-medium"
+											>Override Net Pay</label
+										>
+										<input
+											id={'netPay-' + entry.id}
+											name="netPay"
+											type="number"
+											step="any"
+											value={Number(entry.netPay)}
+											class="mt-1 flex h-8 w-36 rounded border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+										/>
 									</div>
 									<div class="flex-1">
-										<label class="text-xs font-medium">Reason (required)</label>
-										<input name="note" required class="mt-1 flex h-8 w-full rounded border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
+										<label for={'note-' + entry.id} class="text-xs font-medium"
+											>Reason (required)</label
+										>
+										<input
+											id={'note-' + entry.id}
+											name="note"
+											required
+											class="mt-1 flex h-8 w-full rounded border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+										/>
 									</div>
-									<button type="submit" class="rounded bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90">Save</button>
-									<button type="button" onclick={() => (overrideEntryId = null)} class="rounded border px-3 py-1.5 text-xs hover:bg-accent">Cancel</button>
+									<button
+										type="submit"
+										disabled={overrideG.busy}
+										class="rounded bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+										>{overrideG.busy ? 'Saving…' : 'Save'}</button
+									>
+									<button
+										type="button"
+										onclick={() => (overrideEntryId = null)}
+										class="rounded border px-3 py-1.5 text-xs hover:bg-accent">Cancel</button
+									>
 								</form>
 							</td>
 						</tr>
@@ -97,5 +283,122 @@
 				{/each}
 			</tbody>
 		</table>
+	</div>
+
+	<!-- Maker-checker approval chain (#134) -->
+	<div class="space-y-3">
+		<div class="flex items-center justify-between">
+			<h2 class="text-lg font-semibold">Approval chain</h2>
+			<p class="text-xs text-muted-foreground">Maker → Verifier → Approver</p>
+		</div>
+
+		{#if run.approvalSteps.length === 0}
+			<p class="text-sm text-muted-foreground">
+				No approval chain yet — compute this run to start the maker-checker flow.
+			</p>
+		{/if}
+
+		{#each attempts as group (group.attempt)}
+			{#if attempts.length > 1}
+				<p class="pt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+					Attempt {group.attempt}
+				</p>
+			{/if}
+			<ol class="space-y-2">
+				{#each group.steps as step, i (step.id)}
+					{@const active = isActive(step)}
+					<li
+						class="flex items-start gap-3 rounded-lg border p-3 {active
+							? 'border-primary/50 bg-primary/5'
+							: ''}"
+					>
+						<div
+							class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium
+							{step.decision === 'APPROVED'
+								? 'bg-green-100 text-green-700'
+								: step.decision === 'REJECTED'
+									? 'bg-red-100 text-red-700'
+									: step.decision === 'RETURNED'
+										? 'bg-orange-100 text-orange-700'
+										: 'bg-muted text-muted-foreground'}"
+						>
+							{i + 1}
+						</div>
+						<div class="min-w-0 flex-1">
+							<p class="text-sm font-medium">
+								{stepLabel(step)}
+								<span class="font-normal text-muted-foreground"
+									>· {stageName[step.stage]} stage</span
+								>
+							</p>
+							<p class="text-xs text-muted-foreground">
+								{#if step.decision}
+									{#if step.actor}by {step.actor.email}{/if}{#if step.decidedAt}{' '}
+										· {formatShortDate(step.decidedAt)}{/if}
+								{:else if active}
+									Pending — awaiting {stageName[step.stage].toLowerCase()}
+								{:else}
+									Not yet reached
+								{/if}
+							</p>
+							{#if step.note}<p class="mt-1 text-xs text-muted-foreground">“{step.note}”</p>{/if}
+						</div>
+					</li>
+				{/each}
+			</ol>
+		{/each}
+
+		{#if data.canAct}
+			<div class="rounded-lg border bg-card p-4">
+				<p class="text-sm font-medium">
+					This run is awaiting your {data.liveStage === 'APPROVE' ? 'approval' : 'verification'}.
+				</p>
+				<div class="mt-3 flex flex-wrap items-center gap-2">
+					<form method="POST" action="?/decide" use:enhance={decideGuard.enhance}>
+						<input type="hidden" name="action" value="approve" />
+						<button
+							type="submit"
+							disabled={decideGuard.busy}
+							class="btn-row-positive disabled:pointer-events-none disabled:opacity-50"
+							>{decideGuard.busy ? 'Saving…' : actVerb}</button
+						>
+					</form>
+					<button type="button" onclick={() => (showReturn = !showReturn)} class="btn-row"
+						>Return to maker</button
+					>
+				</div>
+
+				{#if showReturn}
+					<form
+						method="POST"
+						action="?/decide"
+						use:enhance={decideGuard.enhance}
+						class="mt-3 flex items-end gap-3"
+					>
+						<input type="hidden" name="action" value="return" />
+						<div class="flex-1">
+							<label for="return-note" class="text-xs font-medium">Reason (required)</label>
+							<input
+								id="return-note"
+								name="note"
+								required
+								placeholder="What needs to be corrected before refiling?"
+								class="mt-1 flex h-8 w-full rounded border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+							/>
+						</div>
+						<button
+							type="submit"
+							disabled={decideGuard.busy}
+							class="rounded border px-3 py-1.5 text-xs hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+							>{decideGuard.busy ? 'Returning…' : 'Confirm return'}</button
+						>
+					</form>
+				{/if}
+			</div>
+		{:else if run.status === 'COMPUTED' && haltedLatest}
+			<p class="text-sm text-orange-600 dark:text-orange-500">
+				Returned to the maker — recompute this run to refile it for review.
+			</p>
+		{/if}
 	</div>
 </div>

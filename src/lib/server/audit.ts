@@ -1,4 +1,4 @@
-import type { AuditAction, Role } from '@prisma/client'
+import type { AuditAction, Prisma, Role } from '@prisma/client'
 import { db } from './db'
 
 interface AuditContext {
@@ -17,11 +17,14 @@ interface AuditPayload {
 	newValue?: Record<string, unknown>
 }
 
+// `client` defaults to the shared db, but callers inside a $transaction can pass their tx
+// client so the audit row commits or rolls back atomically with the mutation it records.
 export async function writeAuditLog(
 	ctx: AuditContext,
-	payload: AuditPayload
+	payload: AuditPayload,
+	client: Prisma.TransactionClient = db
 ): Promise<void> {
-	await db.auditLog.create({
+	await client.auditLog.create({
 		data: {
 			organizationId: ctx.organizationId,
 			actorId: ctx.actorId,

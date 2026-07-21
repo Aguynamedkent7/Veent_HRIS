@@ -26,12 +26,13 @@ Create a job posting.
 **Roles**: `HR_ADMIN`, `SUPER_ADMIN`
 
 **Request body**:
+
 ```json
 {
-  "title": "string",
-  "departmentId": "uuid",
-  "description": "string",
-  "status": "DRAFT | OPEN"
+	"title": "string",
+	"departmentId": "uuid",
+	"description": "string",
+	"status": "DRAFT | OPEN"
 }
 ```
 
@@ -58,6 +59,7 @@ Submit an application (internal self-application or HR-added).
 **Roles**: All authenticated (self-apply); `HR_ADMIN`/`SUPER_ADMIN` (add on behalf)
 
 **Request body** (multipart/form-data):
+
 ```
 firstName: string
 lastName: string
@@ -90,10 +92,11 @@ Advance or reject an applicant.
 **Roles**: `HR_ADMIN`, `SUPER_ADMIN`
 
 **Request body**:
+
 ```json
 {
-  "stage": "SCREENING | INTERVIEW | OFFER | HIRED | REJECTED",
-  "notes": "string | null"
+	"stage": "SCREENING | INTERVIEW | OFFER | HIRED | REJECTED",
+	"notes": "string | null"
 }
 ```
 
@@ -109,14 +112,15 @@ Convert a hired applicant to an Employee.
 **Roles**: `HR_ADMIN`, `SUPER_ADMIN`
 
 **Request body**:
+
 ```json
 {
-  "departmentId": "uuid",
-  "jobTitle": "string",
-  "startDate": "2025-08-01",
-  "basicMonthlySalary": 30000,
-  "employmentType": "FULL_TIME",
-  "role": "EMPLOYEE | MANAGER"
+	"departmentId": "uuid",
+	"jobTitle": "string",
+	"startDate": "2025-08-01",
+	"basicMonthlySalary": 30000,
+	"employmentType": "FULL_TIME",
+	"role": "EMPLOYEE | MANAGER"
 }
 ```
 

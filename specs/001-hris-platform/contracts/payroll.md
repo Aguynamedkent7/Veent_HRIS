@@ -51,10 +51,11 @@ Compute a new payroll run.
 **Roles**: `HR_ADMIN`, `SUPER_ADMIN`
 
 **Request body**:
+
 ```json
 {
-  "periodStart": "2025-07-01",
-  "periodEnd": "2025-07-15"
+	"periodStart": "2025-07-01",
+	"periodEnd": "2025-07-15"
 }
 ```
 
@@ -62,6 +63,7 @@ Compute a new payroll run.
 **Response 409**: A run for this period already exists.
 
 **Computation logic**:
+
 1. Collect all active employees
 2. For each employee, sum hours from `APPROVED` timesheets within the period
 3. Compute `grossPay`, `sssEe/Er`, `philhealthEe/Er`, `pagibigEe/Er`, `withholdingTax`, `netPay`
@@ -87,9 +89,11 @@ Approve a computed payroll run and issue payslips.
 **Roles**: `HR_ADMIN`, `SUPER_ADMIN`
 
 **If `isFlagged` entries exist**, request body must include override confirmation:
+
 ```json
 { "overrideNote": "string" }
 ```
+
 If flagged entries exist and `overrideNote` is absent → **Response 422** with list of flagged employees.
 
 **Response 200**: `{ "status": "APPROVED", "approvedAt": "...", "payslipsIssued": 95 }`
@@ -129,21 +133,22 @@ Get detailed payslip (itemized breakdown).
 **Roles**: `EMPLOYEE`/`MANAGER` (own); `HR_ADMIN`/`SUPER_ADMIN` (any)
 
 **Response 200**:
+
 ```json
 {
-  "employee": { "id": "uuid", "name": "string", "employeeNumber": "EMP-0001" },
-  "period": { "start": "2025-07-01", "end": "2025-07-15" },
-  "earnings": {
-    "basicPay": 15000,
-    "grossPay": 15000
-  },
-  "deductions": {
-    "sssEe": 675,
-    "philhealthEe": 375,
-    "pagibigEe": 100,
-    "withholdingTax": 0,
-    "total": 1150
-  },
-  "netPay": 13850
+	"employee": { "id": "uuid", "name": "string", "employeeNumber": "EMP-0001" },
+	"period": { "start": "2025-07-01", "end": "2025-07-15" },
+	"earnings": {
+		"basicPay": 15000,
+		"grossPay": 15000
+	},
+	"deductions": {
+		"sssEe": 675,
+		"philhealthEe": 375,
+		"pagibigEe": 100,
+		"withholdingTax": 0,
+		"total": 1150
+	},
+	"netPay": 13850
 }
 ```

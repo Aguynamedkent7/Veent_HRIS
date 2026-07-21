@@ -18,6 +18,7 @@ with Lucia v3 session auth, strict RBAC, and an immutable audit log.
 **Language/Version**: TypeScript 5.x — Node.js 20 LTS
 
 **Primary Dependencies**:
+
 - Framework: SvelteKit 2, Svelte 5, Vite 5
 - ORM: Prisma 5
 - Auth: Lucia v3 + @lucia-auth/adapter-prisma
@@ -37,12 +38,14 @@ dashboard metric caching only (max 5-min stale, per FR-025)
 **Project Type**: Full-stack web application (REST API backend + React frontend)
 
 **Performance Goals**:
+
 - Page load: <2s for all dashboard and list views
 - Payroll run computation: <30 min for 200 employees (SC-004)
 - Report generation: <60s for 12 months of data (SC-005)
 - Dashboard data: max 5-min cache age (FR-025)
 
 **Constraints**:
+
 - Single company, single PostgreSQL database, no multi-tenancy
 - Payroll statutory rules: Philippines (SSS, PhilHealth, Pag-IBIG, BIR TRAIN law)
 - Audit logs: immutable, 3-year retention minimum
@@ -53,15 +56,15 @@ dashboard metric caching only (max 5-min stale, per FR-025)
 
 ## Constitution Check
 
-*GATE: Must pass before Phase 0 research. Re-checked after Phase 1 design.*
+_GATE: Must pass before Phase 0 research. Re-checked after Phase 1 design._
 
-| Principle | Gate Question | Status |
-|-----------|--------------|--------|
-| I. Data Privacy & Security | Are passwords hashed (bcrypt)? PII encrypted in transit (HTTPS)? Secrets in env vars? Access logged? | ✅ PASS — bcrypt via Lucia v3, TLS at deployment, all config via `.env`, audit log covers access |
-| II. Role-Based Access Control | Are all 4 roles defined? Is enforcement server-side? Are role changes audited? | ✅ PASS — `requireRole()` helper in `hooks.server.ts` + each route handler; role changes in AuditLog |
-| III. Spec-Driven Development | Is there a complete, validated spec before planning? | ✅ PASS — spec.md complete, all 14 checklist items passing |
-| IV. Audit Trail & Compliance | Are all entity mutations logged with actor/timestamp/before/after? Are logs immutable and retained 3 years? | ✅ PASS — `writeAuditLog()` called in every service mutation; no DELETE/UPDATE route on AuditLog; DB-level revoke |
-| V. Test-First & Deliverability | Is each user story independently testable? Are tests written before implementation? | ✅ PASS — 6 stories with independent checkpoints; TDD enforced in tasks.md |
+| Principle                      | Gate Question                                                                                               | Status                                                                                                            |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| I. Data Privacy & Security     | Are passwords hashed (bcrypt)? PII encrypted in transit (HTTPS)? Secrets in env vars? Access logged?        | ✅ PASS — bcrypt via Lucia v3, TLS at deployment, all config via `.env`, audit log covers access                  |
+| II. Role-Based Access Control  | Are all 4 roles defined? Is enforcement server-side? Are role changes audited?                              | ✅ PASS — `requireRole()` helper in `hooks.server.ts` + each route handler; role changes in AuditLog              |
+| III. Spec-Driven Development   | Is there a complete, validated spec before planning?                                                        | ✅ PASS — spec.md complete, all 14 checklist items passing                                                        |
+| IV. Audit Trail & Compliance   | Are all entity mutations logged with actor/timestamp/before/after? Are logs immutable and retained 3 years? | ✅ PASS — `writeAuditLog()` called in every service mutation; no DELETE/UPDATE route on AuditLog; DB-level revoke |
+| V. Test-First & Deliverability | Is each user story independently testable? Are tests written before implementation?                         | ✅ PASS — 6 stories with independent checkpoints; TDD enforced in tasks.md                                        |
 
 **Post-design re-check**: No new violations introduced. RBAC enforcement is server-side via
 SvelteKit `hooks.server.ts` and explicit `requireRole()` calls. Audit log has no mutable
@@ -159,3 +162,44 @@ CSV exports and any programmatic consumers. Business logic lives exclusively in
 
 No complexity justifications required. All architectural choices align with constitution
 principles. No extra projects, patterns, or abstractions beyond what is needed.
+
+## Addendum — Phase 10 Expansion (Benefits, Performance, Settings/Org, Discord Time Tracking)
+
+**Date**: 2026-07-10. Extends this feature; see spec.md FR-034–FR-046, data-model.md
+"Expansion Entities", contracts `benefits.md` / `performance.md` / `settings.md` / `timelog.md`,
+and tasks.md Phase 10.
+
+**Corrections to the original plan**: Redis was removed (dashboards query the DB directly);
+the frontend is **Svelte**, not React (line 37 is a template typo).
+
+**New models**: `TimeLog`, `BenefitPlan`, `BenefitEnrollment`, `ReviewCycle`, `PerformanceReview`,
+`Goal`, `Position`, plus `Employee.discordId`/`positionId`.
+
+**New source layout**:
+
+- `src/lib/server/services/{benefits,performance,timelog}.ts`, `services/settings/org.ts`
+- `src/lib/server/hmac.ts` (HMAC sign/verify), Manila UTC+8 helpers in `src/lib/utils/dates.ts`
+- `src/routes/(app)/{benefits,performance}/`, `(app)/settings/{org,roles}/`
+- `src/routes/api/v1/timesheets/log/+server.ts` (HMAC-authed punch ingestion)
+- `scripts/discord-bot.ts` + `scripts/README.md` (standalone `discord.js` bot)
+
+**Integration decisions**:
+
+- **Discord bot → API auth**: HMAC-SHA256 over `${timestamp}.${rawBody}` with `TIMELOG_API_SECRET`
+  and a ±5-min replay window (not Lucia sessions — it is server-to-server).
+- **Timezone**: punches stored UTC (`timestamptz`); all day/week bucketing in PHT (UTC+8, no DST).
+- **Timesheet reuse**: raw `TimeLog` punches aggregate into the existing DRAFT→SUBMITTED→APPROVED
+  `Timesheet` workflow, so payroll is unchanged.
+
+**Delivery**: this pass shipped the foundation (schema, docs, integration code + tests, service
+layers, route scaffolds). Rich page UIs and per-module REST routes are deferred (tasks T137–T160).
+
+### Constitution re-check (Phase 10)
+
+| Principle                      | Status                                                                                                                                                    |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| I. Data Privacy & Security     | ✅ Secret in env (`TIMELOG_API_SECRET`), HMAC + replay guard; Decimal transport hook. ⚠️ Add a PIA note for health/benefit + review PII (spec follow-up). |
+| II. RBAC                       | ✅ Every new endpoint/route declares roles; role changes audited (FR-042); self-role-change blocked.                                                      |
+| III. Spec-Driven               | ✅ spec/data-model/contracts/tasks updated for FR-034–FR-046.                                                                                             |
+| IV. Audit Trail                | ✅ Every new service mutation calls `writeAuditLog`. ⚠️ Note benefits compliance (DPA) in spec (follow-up).                                               |
+| V. Test-First & Deliverability | ✅ Unit tests for HMAC + aggregation. ⚠️ RBAC integration tests for deferred REST routes tracked as T142.                                                 |

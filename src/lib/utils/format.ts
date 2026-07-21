@@ -20,6 +20,27 @@ export function formatShortDate(date: Date | string): string {
 	})
 }
 
+// Short date span, collapsing same-day ranges to a single date. Comparing the
+// formatted strings (not Date identity — two Date objects are never ===) also
+// collapses ranges that differ only by time-of-day.
+export function formatDateRange(from: Date | string, to?: Date | string | null): string {
+	const start = formatShortDate(from)
+	if (!to) return start
+	const end = formatShortDate(to)
+	return end === start ? start : `${start} – ${end}`
+}
+
+// Mask a bank/GCash account number for display: separators stripped, everything but
+// the last 4 characters hidden. Values that are 4 chars or shorter after stripping
+// are fully masked so short numbers never leak. Null passes through so `?? '—'`
+// placeholders keep working.
+export function maskAccountNumber(value: string | null): string | null {
+	if (value == null) return null
+	const compact = value.replace(/[\s-]/g, '')
+	if (compact.length <= 4) return '••••'
+	return `•••• ${compact.slice(-4)}`
+}
+
 export function formatFullName(
 	firstName: string,
 	lastName: string,

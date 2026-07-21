@@ -1,76 +1,83 @@
+import { can } from '$lib/server/rbac'
 import { fail } from '@sveltejs/kit'
-import { requireMinRole } from '$lib/server/rbac'
-import { listLeaveRequests, requestLeave, reviewLeaveRequest, getLeaveBalances } from '$lib/server/services/leave'
 import { db } from '$lib/server/db'
-import { z } from 'zod'
-import type { Actions, PageServerLoad } from './$types'
+import { paginate } from '$lib/server/pagination'
+import { getLeaveBalances } from '$lib/server/services/leave'
+import { countRequests, listRequests, deleteRequest } from '$lib/server/services/requests'
+import type { Actions, PageServerLoad, RequestEvent } from './$types'
 
-export const load: PageServerLoad = async ({ locals }) => {
+// Read-only leave view. Leave filing/approval now flows through the unified
+// Requests/Approvals page; this page lists leave (Request type=LEAVE) + balances.
+export const load: PageServerLoad = async ({ locals, url }) => {
 	const user = locals.user!
-	const isManager = ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
+	const isManager = can(user.role, 'VIEW_TEAM')
 
 	const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
 	const year = new Date().getFullYear()
 
+	// Non-managers without an employee record have no leave to show — return an empty
+	// list rather than passing an undefined employeeId (which would leak org-wide rows).
+	const canListLeave = isManager || Boolean(myEmployee)
+
+	// #64: paginate the requests table only; balances/types stay whole.
+	const listParams = {
+		organizationId: user.organizationId,
+		employeeId: isManager ? undefined : myEmployee?.id,
+		type: 'LEAVE' as const
+	}
+	const total = canListLeave ? await countRequests(listParams) : 0
+	const pagination = paginate(url, total)
+
 	const [requests, leaveTypes, balances] = await Promise.all([
-		listLeaveRequests({
-			organizationId: user.organizationId,
-			employeeId: isManager ? undefined : myEmployee?.id
-		}),
+		canListLeave
+			? listRequests(listParams, { skip: pagination.skip, take: pagination.take })
+			: Promise.resolve([]),
 		db.leaveType.findMany({
 			where: { organizationId: user.organizationId, isActive: true },
-			orderBy: { name: 'asc' }
+			orderBy: { name: 'asc' },
+			select: { id: true, name: true }
 		}),
 		myEmployee ? getLeaveBalances(myEmployee.id, year) : []
 	])
 
-	return { requests, leaveTypes, balances, myEmployeeId: myEmployee?.id, isManager }
+	return { requests, leaveTypes, balances, myEmployeeId: myEmployee?.id, isManager, pagination }
 }
 
-const requestSchema = z.object({
-	leaveTypeId: z.string().min(1),
-	startDate: z.coerce.date(),
-	endDate: z.coerce.date(),
-	reason: z.string().optional()
-})
+function ctxOf(event: RequestEvent) {
+	const u = event.locals.user!
+	return {
+		organizationId: u.organizationId,
+		actorId: u.id,
+		actorRole: u.role,
+		ipAddress: event.getClientAddress()
+	}
+}
 
 export const actions: Actions = {
-	request: async ({ request, locals, getClientAddress }) => {
-		const user = locals.user!
-		const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
-		if (!myEmployee) return fail(400, { error: 'No employee profile found' })
+	// Bulk delete: remove each selected leave request. Authorization is per item in deleteRequest —
+	// approved requests, and (for non-HR) ones the caller doesn't own, throw and are counted as
+	// skipped rather than aborting the batch.
+	deleteMany: async (event) => {
+		const ids = String((await event.request.formData()).get('ids') ?? '')
+			.split(',')
+			.map((s) => s.trim())
+			.filter(Boolean)
+		if (!ids.length) return fail(400, { error: 'No leave requests selected' })
 
-		const raw = Object.fromEntries(await request.formData())
-		const parsed = requestSchema.safeParse(raw)
-		if (!parsed.success) return fail(400, { error: 'Invalid input' })
-
-		try {
-			await requestLeave(myEmployee.id, user.organizationId, parsed.data, {
-				organizationId: user.organizationId,
-				actorId: user.id,
-				actorRole: user.role,
-				ipAddress: getClientAddress()
-			})
-		} catch (e: unknown) {
-			if (e instanceof Error) return fail(400, { error: e.message })
-			throw e
+		const org = event.locals.user!.organizationId
+		const ctx = ctxOf(event)
+		let deleted = 0
+		let skipped = 0
+		for (const id of ids) {
+			try {
+				await deleteRequest(id, org, ctx)
+				deleted++
+			} catch {
+				skipped++
+			}
 		}
-	},
-
-	review: async ({ request, locals, getClientAddress }) => {
-		const user = locals.user!
-		requireMinRole(user.role, 'MANAGER')
-
-		const data = await request.formData()
-		const id = data.get('id') as string
-		const approved = data.get('approved') === 'true'
-		const rejectionReason = data.get('rejectionReason') as string | undefined
-
-		await reviewLeaveRequest(id, user.organizationId, approved, rejectionReason, {
-			organizationId: user.organizationId,
-			actorId: user.id,
-			actorRole: user.role,
-			ipAddress: getClientAddress()
-		})
+		return {
+			saved: `Deleted ${deleted} leave request${deleted === 1 ? '' : 's'}${skipped ? `, ${skipped} skipped` : ''}.`
+		}
 	}
 }

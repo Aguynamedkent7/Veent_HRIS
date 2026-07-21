@@ -1,39 +1,69 @@
 import { db } from '$lib/server/db'
-import { writeAuditLog } from '$lib/server/audit'
-import { error } from '@sveltejs/kit'
-import { Prisma } from '@prisma/client'
+import { createRequest } from './requests'
+import { decide } from './approvals'
 import type { AuditContext } from './types'
 
-function workdaysBetween(start: Date, end: Date, holidays: Date[]): number {
-	let count = 0
-	const cur = new Date(start)
-	const holidayStrings = new Set(holidays.map((h) => h.toISOString().slice(0, 10)))
+// Leave is now a Request of type LEAVE (T168/T169). These wrappers keep the legacy
+// service surface so existing leave routes/templates work: list rows are mapped back
+// to the old {startDate, endDate, totalDays, leaveType} shape.
 
-	while (cur <= end) {
-		const day = cur.getDay()
-		const iso = cur.toISOString().slice(0, 10)
-		if (day !== 0 && day !== 6 && !holidayStrings.has(iso)) count++
-		cur.setDate(cur.getDate() + 1)
-	}
-	return count
+type LeaveRow = {
+	id: string
+	employeeId: string
+	startDate: Date
+	endDate: Date
+	totalDays: number | null
+	status: string
+	reason: string | null
+	employee: { id: string; firstName: string; lastName: string }
+	leaveType: { name: string; isPaid: boolean }
 }
 
 export async function listLeaveRequests(params: {
 	organizationId: string
 	employeeId?: string
 	status?: string
-}) {
-	return db.leaveRequest.findMany({
+}): Promise<LeaveRow[]> {
+	const rows = await db.request.findMany({
 		where: {
+			type: 'LEAVE',
 			employee: { user: { organizationId: params.organizationId } },
 			...(params.employeeId && { employeeId: params.employeeId }),
 			...(params.status && { status: params.status as never })
 		},
-		include: {
-			employee: { select: { id: true, firstName: true, lastName: true } },
-			leaveType: { select: { id: true, name: true, isPaid: true } }
-		},
+		include: { employee: { select: { id: true, firstName: true, lastName: true } } },
 		orderBy: { createdAt: 'desc' }
+	})
+
+	const typeIds = [
+		...new Set(
+			rows
+				.map((r) => (r.payload as { leaveTypeId?: string })?.leaveTypeId)
+				.filter(Boolean) as string[]
+		)
+	]
+	const types = typeIds.length
+		? await db.leaveType.findMany({
+				where: { id: { in: typeIds } },
+				select: { id: true, name: true, isPaid: true }
+			})
+		: []
+	const typeMap = new Map(types.map((t) => [t.id, t]))
+
+	return rows.map((r) => {
+		const payload = (r.payload ?? {}) as { leaveTypeId?: string; totalDays?: number }
+		const lt = payload.leaveTypeId ? typeMap.get(payload.leaveTypeId) : undefined
+		return {
+			id: r.id,
+			employeeId: r.employeeId,
+			startDate: r.dateFrom as Date,
+			endDate: r.dateTo as Date,
+			totalDays: payload.totalDays ?? null,
+			status: r.status,
+			reason: r.reason,
+			employee: r.employee,
+			leaveType: { name: lt?.name ?? '—', isPaid: lt?.isPaid ?? false }
+		}
 	})
 }
 
@@ -43,52 +73,22 @@ export async function requestLeave(
 	input: { leaveTypeId: string; startDate: Date; endDate: Date; reason?: string },
 	ctx: AuditContext
 ) {
-	const balance = await db.leaveBalance.findUnique({
-		where: {
-			employeeId_leaveTypeId_year: {
-				employeeId,
-				leaveTypeId: input.leaveTypeId,
-				year: input.startDate.getFullYear()
-			}
-		}
-	})
-
-	const holidays = await db.publicHoliday.findMany({
-		where: {
-			organizationId,
-			date: { gte: input.startDate, lte: input.endDate }
-		},
-		select: { date: true }
-	})
-
-	const totalDays = workdaysBetween(input.startDate, input.endDate, holidays.map((h: { date: Date }) => h.date))
-
-	if (balance && Number(balance.remaining) < totalDays) {
-		error(400, `Insufficient leave balance. Available: ${balance.remaining} days`)
-	}
-
-	const request = await db.leaveRequest.create({
-		data: {
-			employeeId,
+	return createRequest(
+		employeeId,
+		organizationId,
+		{
+			type: 'LEAVE',
 			leaveTypeId: input.leaveTypeId,
 			startDate: input.startDate,
 			endDate: input.endDate,
-			totalDays,
 			reason: input.reason
 		},
-		include: { leaveType: true }
-	})
-
-	await writeAuditLog(ctx, {
-		action: 'CREATE',
-		entityType: 'LeaveRequest',
-		entityId: request.id,
-		newValue: { leaveTypeId: input.leaveTypeId, totalDays, startDate: input.startDate }
-	})
-
-	return request
+		ctx
+	)
 }
 
+// Decide the current stage of a leave request. Multi-stage now: a manager approves
+// the supervisor stage, HR the HR stage. Balance is deducted on final approval.
 export async function reviewLeaveRequest(
 	id: string,
 	organizationId: string,
@@ -96,48 +96,11 @@ export async function reviewLeaveRequest(
 	rejectionReason: string | undefined,
 	ctx: AuditContext
 ) {
-	const request = await db.leaveRequest.findFirst({
-		where: { id, employee: { user: { organizationId } } }
+	const actor = await db.employee.findUnique({
+		where: { userId: ctx.actorId },
+		select: { id: true }
 	})
-	if (!request) error(404, 'Leave request not found')
-	if (request.status !== 'PENDING') error(400, 'Only pending requests can be reviewed')
-
-	const updated = await db.$transaction(async (tx: Prisma.TransactionClient) => {
-		const lr = await tx.leaveRequest.update({
-			where: { id },
-			data: {
-				status: approved ? 'APPROVED' : 'REJECTED',
-				reviewedById: ctx.actorId,
-				reviewedAt: new Date(),
-				rejectionReason: approved ? null : rejectionReason
-			}
-		})
-
-		if (approved) {
-			await tx.leaveBalance.updateMany({
-				where: {
-					employeeId: request.employeeId,
-					leaveTypeId: request.leaveTypeId,
-					year: request.startDate.getFullYear()
-				},
-				data: {
-					used: { increment: Number(request.totalDays) },
-					remaining: { decrement: Number(request.totalDays) }
-				}
-			})
-		}
-
-		return lr
-	})
-
-	await writeAuditLog(ctx, {
-		action: 'UPDATE',
-		entityType: 'LeaveRequest',
-		entityId: id,
-		newValue: { status: updated.status }
-	})
-
-	return updated
+	return decide(id, approved ? 'APPROVED' : 'REJECTED', rejectionReason, ctx, actor?.id ?? null)
 }
 
 export async function getLeaveBalances(employeeId: string, year: number) {

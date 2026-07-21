@@ -1,9 +1,21 @@
-import type { Config } from 'tailwindcss';
+import type { Config } from 'tailwindcss'
+import plugin from 'tailwindcss/plugin'
 
 export default {
 	content: ['./src/**/*.{html,js,svelte,ts}'],
 	theme: {
+		container: {
+			center: true,
+			padding: {
+				DEFAULT: '1rem',
+				sm: '1.5rem',
+				lg: '2rem'
+			}
+		},
 		extend: {
+			fontFamily: {
+				sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'sans-serif']
+			},
 			colors: {
 				border: 'hsl(var(--border))',
 				input: 'hsl(var(--input))',
@@ -46,5 +58,15 @@ export default {
 			}
 		}
 	},
-	plugins: []
-} satisfies Config;
+	plugins: [
+		plugin(({ addUtilities }) => {
+			addUtilities({
+				'.scrollbar-none': {
+					'-ms-overflow-style': 'none',
+					'scrollbar-width': 'none',
+					'&::-webkit-scrollbar': { display: 'none' }
+				}
+			})
+		})
+	]
+} satisfies Config

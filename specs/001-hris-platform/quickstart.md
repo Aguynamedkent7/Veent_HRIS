@@ -24,6 +24,7 @@
 4. Click **Create Employee**
 
 **Expected**:
+
 - New employee appears in employee list with auto-generated `EMP-XXXX` number
 - Welcome email sent to new employee's email with temporary password
 - AuditLog contains a `CREATE` entry for the new Employee record
@@ -43,6 +44,7 @@
 5. Click **Submit for Approval**
 
 **Expected**:
+
 - Timesheet status changes to `SUBMITTED`
 - Manager receives a notification
 - Attempting to submit again for the same week returns an error (duplicate prevention)
@@ -61,6 +63,7 @@
 4. Click **Approve**
 
 **Expected**:
+
 - Timesheet status changes to `APPROVED`
 - Employee receives a notification
 - Timesheet appears in the employee's history with `APPROVED` status
@@ -77,6 +80,7 @@
 4. Submit
 
 **Expected**:
+
 - Request status is `PENDING`
 - Manager notified
 - Employee's remaining leave balance still shows pre-request amount (balance deducted only on approval)
@@ -96,6 +100,7 @@
 5. Click **Compute**
 
 **Expected**:
+
 - PayrollRun created with `status: COMPUTED`
 - Each PayrollEntry shows: `basicPay`, `sssEe`, `philhealthEe`, `pagibigEe`, `withholdingTax`, `netPay`
 - Employees with unapproved timesheets appear in a warning list (flagged)
@@ -103,11 +108,13 @@
 6. Click **Approve** (with `overrideNote` if flagged employees exist)
 
 **Expected**:
+
 - PayrollRun status → `APPROVED`
 - Employees can now view their payslip under **My Payslips**
 - Payslip shows itemized deductions matching PH statutory rules
 
 **Verify PH computations** for an employee with `basicMonthlySalary = 30,000`:
+
 - SSS EE ≈ PHP 1,350 (lookup table)
 - PhilHealth EE = PHP 750 (30,000 × 2.5%)
 - Pag-IBIG EE = PHP 100 (capped)
@@ -127,6 +134,7 @@
 2. Open **Dashboard**
 
 **Expected**:
+
 - See: total headcount, employees on leave today, pending approvals count, next payroll date
 - Numbers match what's in the database (verify against employee list counts)
 
@@ -134,6 +142,7 @@
 4. Set date range to last 3 months, click **Generate**
 
 **Expected**:
+
 - Report generates in under 60 seconds
 - Headcount numbers match employee list for each period
 - Click **Export CSV** → file downloads with correct columns
@@ -151,6 +160,7 @@
 5. Click **Convert to Employee**
 
 **Expected**:
+
 - New Employee record created with pre-populated data from the application
 - User account created; welcome email sent
 - Applicant record shows `convertedToEmployeeId`
@@ -166,6 +176,7 @@
 3. Filter by `entityType: Employee`
 
 **Expected**:
+
 - All employee creates, updates, and offboardings from previous scenarios appear
 - Each entry has: `actorId`, `timestamp`, `entityType`, `entityId`, `action`, `oldValue`, `newValue`
 - Attempting to delete an audit log entry via API returns **403 Forbidden**

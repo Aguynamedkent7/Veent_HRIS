@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 210 48" fill="none" role="img" aria-label="Sweetleaf">
+  <!-- leaf -->
+  <path d="M11 36 C9 18 24 8 40 9 C41 27 26 37 11 36 Z" fill="#1F9D50" />
+  <path d="M14 33 C22 25 32 17 38 12" stroke="#0C6b34" stroke-width="1.8" stroke-linecap="round" />
+  <text x="52" y="32" font-family="'Segoe UI', Arial, sans-serif" font-size="23" font-weight="700" fill="#1F9D50">Sweetleaf</text>
+</svg>

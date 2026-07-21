@@ -1,71 +1,131 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
-	import type { ActionData } from './$types'
+	import DevLoginSwitcher from '$lib/components/dev/DevLoginSwitcher.svelte' // TEMP DEV — remove before merge
+	import type { ActionData, PageData } from './$types'
 
-	let { form }: { form: ActionData } = $props()
+	let { data, form }: { data: PageData; form: ActionData } = $props()
 	let loading = $state(false)
+
+	// Two-step Avipa login (#135): pick a tenant, then enter credentials. The chosen
+	// org is posted as `selectedOrg`; the server scopes the credential to it.
+	let selectedOrg = $state<{ id: string; name: string } | null>(null)
 </script>
 
 <svelte:head>
-	<title>Sign In — Veent HRIS</title>
+	<title>Sign In — Avipa</title>
 </svelte:head>
 
-<div class="flex min-h-screen items-center justify-center bg-background px-4">
-	<div class="w-full max-w-sm space-y-6">
-		<div class="space-y-2 text-center">
-			<h1 class="text-2xl font-bold tracking-tight">Veent HRIS</h1>
-			<p class="text-sm text-muted-foreground">Sign in to your account</p>
-		</div>
+<div class="flex min-h-screen flex-col items-center justify-center bg-background px-4">
+	<!-- Avipa brand -->
+	<div class="mb-8 flex flex-col items-center gap-3">
+		<img src="/avipa-logo.png" alt="Avipa" class="h-16 w-auto" />
+		<p class="text-sm text-muted-foreground">Log in to your company</p>
+	</div>
 
-		<form
-			method="POST"
-			class="space-y-4"
-			use:enhance={() => {
-				loading = true
-				return async ({ update }) => {
-					loading = false
-					update()
-				}
-			}}
-		>
+	<!-- Card -->
+	<div class="w-full max-w-sm rounded-lg border border-border bg-card p-6 shadow-xl">
+		{#if !selectedOrg}
+			<!-- Step 1: tenant selector -->
+			<div class="mb-5">
+				<h1 class="text-base font-semibold">Choose your company</h1>
+				<p class="mt-1 text-xs text-muted-foreground">Select a workspace to continue</p>
+			</div>
+
+			<div class="space-y-2">
+				{#each data.orgs as org (org.id)}
+					<button
+						type="button"
+						onclick={() => (selectedOrg = org)}
+						class="btn-row flex w-full items-center justify-between px-4 py-3 text-left"
+					>
+						<span class="text-sm font-medium">{org.name}</span>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							class="h-4 w-4 text-muted-foreground"
+							fill="none"
+							viewBox="0 0 24 24"
+							stroke="currentColor"
+							stroke-width="2"
+						>
+							<path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+						</svg>
+					</button>
+				{/each}
+			</div>
+		{:else}
+			<!-- Step 2: credentials, scoped to the chosen tenant -->
+			<div class="mb-5 flex items-start justify-between gap-2">
+				<div>
+					<h1 class="text-base font-semibold">Sign in to {selectedOrg.name}</h1>
+					<p class="mt-1 text-xs text-muted-foreground">Enter your work credentials to continue</p>
+				</div>
+				<button
+					type="button"
+					onclick={() => (selectedOrg = null)}
+					class="shrink-0 text-xs font-medium text-muted-foreground hover:text-foreground"
+				>
+					Change
+				</button>
+			</div>
+
 			{#if form?.error}
-				<div class="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
+				<div class="mb-4 rounded bg-destructive/15 px-3 py-2 text-sm text-red-400">
 					{form.error}
 				</div>
 			{/if}
 
-			<div class="space-y-2">
-				<label for="email" class="text-sm font-medium leading-none">Email</label>
-				<input
-					id="email"
-					name="email"
-					type="email"
-					autocomplete="email"
-					required
-					class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-					placeholder="you@company.com"
-				/>
-			</div>
-
-			<div class="space-y-2">
-				<label for="password" class="text-sm font-medium leading-none">Password</label>
-				<input
-					id="password"
-					name="password"
-					type="password"
-					autocomplete="current-password"
-					required
-					class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-				/>
-			</div>
-
-			<button
-				type="submit"
-				disabled={loading}
-				class="inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground ring-offset-background transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+			<form
+				method="POST"
+				class="space-y-4"
+				use:enhance={() => {
+					loading = true
+					return async ({ update }) => {
+						loading = false
+						update()
+					}
+				}}
 			>
-				{loading ? 'Signing in…' : 'Sign in'}
-			</button>
-		</form>
+				<input type="hidden" name="selectedOrg" value={selectedOrg.id} />
+
+				<div class="space-y-1.5">
+					<label for="email" class="text-sm font-medium">Email</label>
+					<input
+						id="email"
+						name="email"
+						type="email"
+						autocomplete="email"
+						required
+						placeholder="you@company.com"
+						class="input"
+					/>
+				</div>
+
+				<div class="space-y-1.5">
+					<label for="password" class="text-sm font-medium">Password</label>
+					<input
+						id="password"
+						name="password"
+						type="password"
+						autocomplete="current-password"
+						required
+						placeholder="••••••••"
+						class="input"
+					/>
+				</div>
+
+				<button
+					type="submit"
+					disabled={loading}
+					class="btn-primary w-full h-10 disabled:opacity-60"
+				>
+					{loading ? 'Signing in…' : 'Sign In'}
+				</button>
+			</form>
+		{/if}
 	</div>
+
+	<p class="mt-6 text-xs text-muted-foreground">Avipa · {new Date().getFullYear()}</p>
 </div>
+
+<DevLoginSwitcher />
+<!-- TEMP DEV — remove before merge -->

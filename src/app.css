@@ -3,49 +3,72 @@
 @tailwind utilities;
 
 @layer base {
+	/* Light theme (default) */
 	:root {
-		--background: 0 0% 100%;
-		--foreground: 222.2 84% 4.9%;
+		--background: 0 0% 98%;
+		--foreground: 0 0% 9%;
+
 		--card: 0 0% 100%;
-		--card-foreground: 222.2 84% 4.9%;
+		--card-foreground: 0 0% 9%;
+
 		--popover: 0 0% 100%;
-		--popover-foreground: 222.2 84% 4.9%;
-		--primary: 221.2 83.2% 53.3%;
-		--primary-foreground: 210 40% 98%;
-		--secondary: 210 40% 96.1%;
-		--secondary-foreground: 222.2 47.4% 11.2%;
-		--muted: 210 40% 96.1%;
-		--muted-foreground: 215.4 16.3% 46.9%;
-		--accent: 210 40% 96.1%;
-		--accent-foreground: 222.2 47.4% 11.2%;
-		--destructive: 0 84.2% 60.2%;
-		--destructive-foreground: 210 40% 98%;
-		--border: 214.3 31.8% 91.4%;
-		--input: 214.3 31.8% 91.4%;
-		--ring: 221.2 83.2% 53.3%;
-		--radius: 0.5rem;
+		--popover-foreground: 0 0% 9%;
+
+		--primary: 0 79% 45%; /* #CC1515 — Veent Red */
+		--primary-foreground: 0 0% 100%;
+
+		--secondary: 0 0% 96%;
+		--secondary-foreground: 0 0% 9%;
+
+		--muted: 0 0% 96%;
+		--muted-foreground: 0 0% 45%;
+
+		--accent: 0 0% 94%;
+		--accent-foreground: 0 0% 9%;
+
+		--destructive: 0 70% 50%;
+		--destructive-foreground: 0 0% 100%;
+
+		--border: 0 0% 89%;
+		--input: 0 0% 94%;
+		--ring: 0 79% 45%;
+		--radius: 0.375rem;
+
+		--success: 142 71% 45%;
+		--success-foreground: 0 0% 100%;
+		--warning: 38 92% 50%;
+		--warning-foreground: 0 0% 10%;
 	}
 
+	/* Dark theme */
 	.dark {
-		--background: 222.2 84% 4.9%;
-		--foreground: 210 40% 98%;
-		--card: 222.2 84% 4.9%;
-		--card-foreground: 210 40% 98%;
-		--popover: 222.2 84% 4.9%;
-		--popover-foreground: 210 40% 98%;
-		--primary: 217.2 91.2% 59.8%;
-		--primary-foreground: 222.2 47.4% 11.2%;
-		--secondary: 217.2 32.6% 17.5%;
-		--secondary-foreground: 210 40% 98%;
-		--muted: 217.2 32.6% 17.5%;
-		--muted-foreground: 215 20.2% 65.1%;
-		--accent: 217.2 32.6% 17.5%;
-		--accent-foreground: 210 40% 98%;
-		--destructive: 0 62.8% 30.6%;
-		--destructive-foreground: 210 40% 98%;
-		--border: 217.2 32.6% 17.5%;
-		--input: 217.2 32.6% 17.5%;
-		--ring: 224.3 76.3% 48%;
+		--background: 0 0% 7%;
+		--foreground: 0 0% 94%;
+
+		--card: 0 0% 10%;
+		--card-foreground: 0 0% 94%;
+
+		--popover: 0 0% 12%;
+		--popover-foreground: 0 0% 94%;
+
+		--primary: 0 79% 45%;
+		--primary-foreground: 0 0% 100%;
+
+		--secondary: 0 0% 14%;
+		--secondary-foreground: 0 0% 94%;
+
+		--muted: 0 0% 14%;
+		--muted-foreground: 0 0% 52%;
+
+		--accent: 0 0% 16%;
+		--accent-foreground: 0 0% 94%;
+
+		--destructive: 0 70% 50%;
+		--destructive-foreground: 0 0% 100%;
+
+		--border: 0 0% 18%;
+		--input: 0 0% 13%;
+		--ring: 0 79% 45%;
 	}
 }
 
@@ -53,8 +76,130 @@
 	* {
 		@apply border-border;
 	}
+
+	html {
+		color-scheme: light;
+	}
+	html.dark {
+		color-scheme: dark;
+	}
+
 	body {
 		@apply bg-background text-foreground;
-		font-feature-settings: 'rlig' 1, 'calt' 1;
+		font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+		font-feature-settings:
+			'rlig' 1,
+			'calt' 1;
+		-webkit-font-smoothing: antialiased;
+	}
+
+	/* Textareas: vertical resize only, capped both ways so dragging can't blow
+	   up the card/row layout or collapse below one visible line — long text
+	   scrolls inside the box instead (#70). */
+	textarea {
+		@apply resize-y overflow-y-auto;
+		min-height: 2.25rem;
+		max-height: 16rem;
+	}
+
+	/* Scrollbar styling */
+	::-webkit-scrollbar {
+		width: 6px;
+		height: 6px;
+	}
+	::-webkit-scrollbar-track {
+		@apply bg-background;
+	}
+	::-webkit-scrollbar-thumb {
+		@apply bg-border rounded-full;
+	}
+	::-webkit-scrollbar-thumb:hover {
+		background: hsl(0 0% 28%);
+	}
+}
+
+@layer components {
+	/* Status badge variants */
+	.badge-green {
+		@apply rounded-full bg-green-500/15 px-2 py-0.5 text-xs font-medium text-green-400;
+	}
+	.badge-red {
+		@apply rounded-full bg-red-500/15 px-2 py-0.5 text-xs font-medium text-red-400;
+	}
+	.badge-yellow {
+		@apply rounded-full bg-yellow-500/15 px-2 py-0.5 text-xs font-medium text-yellow-400;
+	}
+	.badge-blue {
+		@apply rounded-full bg-blue-500/15 px-2 py-0.5 text-xs font-medium text-blue-400;
+	}
+	.badge-gray {
+		@apply rounded-full bg-white/10 px-2 py-0.5 text-xs font-medium text-white/50;
+	}
+
+	/* Input base style */
+	.input {
+		@apply flex h-9 w-full rounded-md border border-input bg-input px-3 py-1 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50;
+	}
+
+	/* Button variants */
+	.btn {
+		@apply inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50;
+	}
+	.btn-primary {
+		@apply btn h-9 px-4 bg-primary text-primary-foreground hover:bg-primary/90;
+	}
+	.btn-secondary {
+		@apply btn h-9 px-4 bg-secondary text-secondary-foreground hover:bg-secondary/80;
+	}
+	.btn-ghost {
+		@apply btn h-9 px-3 hover:bg-accent hover:text-accent-foreground;
+	}
+	.btn-destructive {
+		@apply btn h-9 px-4 bg-destructive/20 text-red-400 hover:bg-destructive/30;
+	}
+
+	/* Compact bordered actions for table rows — theme-aware (dark-mode safe),
+	   used instead of colored text hyperlinks (#68/#76). */
+	.btn-row {
+		@apply inline-flex items-center justify-center rounded-md border border-border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50;
+	}
+	.btn-row-positive {
+		@apply inline-flex items-center justify-center rounded-md border border-green-600/30 px-2.5 py-1 text-xs font-medium text-green-600 transition-colors hover:bg-green-600/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 dark:text-green-400;
+	}
+	.btn-row-warning {
+		@apply inline-flex items-center justify-center rounded-md border border-yellow-600/30 px-2.5 py-1 text-xs font-medium text-yellow-600 transition-colors hover:bg-yellow-600/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 dark:text-yellow-500;
+	}
+	.btn-row-danger {
+		@apply inline-flex items-center justify-center rounded-md border border-red-600/30 px-2.5 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-600/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 dark:text-red-400;
+	}
+
+	/* Card */
+	.card {
+		@apply rounded-lg border border-border bg-card p-6;
+	}
+
+	/* Data table */
+	.data-table {
+		@apply w-full text-sm;
+	}
+	.data-table thead {
+		@apply border-b border-border;
+	}
+	.data-table thead th {
+		@apply px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground;
+	}
+	.data-table tbody tr {
+		@apply border-b border-border/50 transition-colors hover:bg-accent/50;
+	}
+	.data-table tbody td {
+		@apply px-4 py-3;
+	}
+
+	/* Page header */
+	.page-header {
+		@apply flex items-center justify-between;
+	}
+	.page-title {
+		@apply text-xl font-semibold tracking-tight;
 	}
 }
