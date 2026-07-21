@@ -8,7 +8,10 @@ export const USERS = {
 	verifier: { email: 'verifier@veent.ph', password: 'Verifier@1234' },
 	approver: { email: 'approver@veent.ph', password: 'Approver@1234' },
 	// Cross-org CEO (#131/#132): member of Veent + JoJo Potato + Sweetleaf.
-	ceo: { email: 'ceo@veent.ph', password: 'Ceo@1234' }
+	ceo: { email: 'ceo@veent.ph', password: 'Ceo@1234' },
+	// Food-service tenant HR (#140) — Branches is gated to those orgs, so its spec logs in
+	// here rather than as a Veent admin.
+	jojoManager: { email: 'manager@jojo.ph', password: 'Manager@1234' }
 }
 
 // Deterministic Discord link for the punch → aggregate → approve E2E. `global-setup`

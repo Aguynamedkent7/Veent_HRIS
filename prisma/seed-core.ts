@@ -25,27 +25,32 @@ async function backfillMembershipsAndRoles(db: PrismaClient) {
 	}
 }
 
-// Food-service branch org (#140): an "Operations" department, a "Head of Operations"
-// Manager (that branch's HR), branch sign-off accounts, and a few crew reporting to the
-// Manager. Used by the cross-org tenancy E2E — "Head of Operations" exists in JoJo Potato
-// / Sweetleaf but not Veent, which cleanly proves an org switch.
-async function seedBranchOrg(
+// Food-service tenant (#140): an "Operations" department, a "Head of Operations" Manager
+// (that tenant's HR), sign-off accounts, a few crew reporting to the Manager, and the
+// tenant's physical stores. Used by the cross-org tenancy E2E — "Head of Operations" exists
+// in JoJo Potato / Sweetleaf but not Veent, which cleanly proves an org switch.
+//
+// NOTE: "branch" here means a STORE (the Branch model), never the tenant — this function was
+// called seedBranchOrg when the word still meant the tenant itself.
+async function seedFoodServiceOrg(
 	db: PrismaClient,
-	branch: { id: string; slug: string; empPrefix: string },
-	crew: { first: string; last: string; title: string }[]
+	tenant: { id: string; slug: string; empPrefix: string },
+	crew: { first: string; last: string; title: string }[],
+	// The tenant's physical stores. Fixed ids keep the upsert idempotent.
+	stores: { id: string; name: string; address: string; status?: 'OPEN' | 'CLOSED' }[]
 ) {
 	const branchDept = await db.department.upsert({
-		where: { organizationId_name: { organizationId: branch.id, name: 'Operations' } },
+		where: { organizationId_name: { organizationId: tenant.id, name: 'Operations' } },
 		update: {},
-		create: { organizationId: branch.id, name: 'Operations' }
+		create: { organizationId: tenant.id, name: 'Operations' }
 	})
 	const mgrHash = await bcrypt.hash('Manager@1234', 12)
 	const mgrUser = await db.user.upsert({
-		where: { email: `manager@${branch.slug}.ph` },
+		where: { email: `manager@${tenant.slug}.ph` },
 		update: { role: 'MANAGER' },
 		create: {
-			organizationId: branch.id,
-			email: `manager@${branch.slug}.ph`,
+			organizationId: tenant.id,
+			email: `manager@${tenant.slug}.ph`,
 			passwordHash: mgrHash,
 			role: 'MANAGER'
 		}
@@ -55,8 +60,8 @@ async function seedBranchOrg(
 		update: {},
 		create: {
 			userId: mgrUser.id,
-			organizationId: branch.id,
-			employeeNumber: `${branch.empPrefix}-001`,
+			organizationId: tenant.id,
+			employeeNumber: `${tenant.empPrefix}-001`,
 			firstName: 'Head',
 			lastName: 'of Operations',
 			departmentId: branchDept.id,
@@ -74,31 +79,31 @@ async function seedBranchOrg(
 		['VERIFIER', 'Verifier@1234'],
 		['APPROVER', 'Approver@1234']
 	] as const) {
-		const email = `${role.toLowerCase()}@${branch.slug}.ph`
+		const email = `${role.toLowerCase()}@${tenant.slug}.ph`
 		const h = await bcrypt.hash(pw, 12)
 		await db.user.upsert({
 			where: { email },
 			update: { role },
-			create: { organizationId: branch.id, email, passwordHash: h, role }
+			create: { organizationId: tenant.id, email, passwordHash: h, role }
 		})
 	}
 
 	let n = 2
 	for (const c of crew) {
-		const email = `${c.first.toLowerCase()}@${branch.slug}.ph`
+		const email = `${c.first.toLowerCase()}@${tenant.slug}.ph`
 		const uHash = await bcrypt.hash('Employee@1234', 12)
 		const u = await db.user.upsert({
 			where: { email },
 			update: {},
-			create: { organizationId: branch.id, email, passwordHash: uHash, role: 'EMPLOYEE' }
+			create: { organizationId: tenant.id, email, passwordHash: uHash, role: 'EMPLOYEE' }
 		})
 		await db.employee.upsert({
 			where: { userId: u.id },
 			update: { reportsToId: mgrEmployee.id },
 			create: {
 				userId: u.id,
-				organizationId: branch.id,
-				employeeNumber: `${branch.empPrefix}-00${n}`,
+				organizationId: tenant.id,
+				employeeNumber: `${tenant.empPrefix}-00${n}`,
 				firstName: c.first,
 				lastName: c.last,
 				departmentId: branchDept.id,
@@ -111,6 +116,44 @@ async function seedBranchOrg(
 			}
 		})
 		n++
+	}
+
+	// Branches: the tenant's physical stores. The Head of Operations manages the first one
+	// (and is assigned to it); the crew are spread across the OPEN stores round-robin, with
+	// the last one deliberately left unassigned so the "unassigned" count has something to show.
+	const created: { id: string; status: string }[] = []
+	for (const st of stores) {
+		const row = await db.branch.upsert({
+			where: { id: st.id },
+			update: {},
+			create: {
+				id: st.id,
+				organizationId: tenant.id,
+				name: st.name,
+				address: st.address,
+				status: st.status ?? 'OPEN'
+			}
+		})
+		created.push({ id: row.id, status: row.status })
+	}
+
+	const open = created.filter((b) => b.status === 'OPEN')
+	if (open.length) {
+		await db.branch.update({ where: { id: open[0].id }, data: { managerId: mgrEmployee.id } })
+		await db.employee.update({ where: { id: mgrEmployee.id }, data: { branchId: open[0].id } })
+
+		const roster = await db.employee.findMany({
+			where: { organizationId: tenant.id, reportsToId: mgrEmployee.id },
+			select: { id: true },
+			orderBy: { employeeNumber: 'asc' }
+		})
+		// Leave the last crew member unassigned.
+		for (let i = 0; i < roster.length - 1; i++) {
+			await db.employee.update({
+				where: { id: roster[i].id },
+				data: { branchId: open[i % open.length].id }
+			})
+		}
 	}
 }
 
@@ -666,17 +709,63 @@ export async function seedE2E(db: PrismaClient) {
 		}
 	})
 
-	// Branch orgs (#140): JoJo Potato and Sweetleaf each get a "Head of Operations" Manager
-	// + crew. The cross-org tenancy E2E switches the CEO into JoJo and asserts this roster.
-	await seedBranchOrg(db, { id: 'org_jojo', slug: 'jojo', empPrefix: 'JJ' }, [
-		{ first: 'Benjie', last: 'Fryer', title: 'Fry Cook' },
-		{ first: 'Carla', last: 'Server', title: 'Service Crew' },
-		{ first: 'Dino', last: 'Cashier', title: 'Cashier' }
-	])
-	await seedBranchOrg(db, { id: 'org_sweetleaf', slug: 'sweetleaf', empPrefix: 'SL' }, [
-		{ first: 'Ella', last: 'Barista', title: 'Barista' },
-		{ first: 'Fritz', last: 'Baker', title: 'Baker' }
-	])
+	// Food-service tenants (#140): JoJo Potato and Sweetleaf each get a "Head of Operations"
+	// Manager + crew, and their physical stores. The cross-org tenancy E2E switches the CEO
+	// into JoJo and asserts this roster; the Branches E2E asserts these stores.
+	await seedFoodServiceOrg(
+		db,
+		{ id: 'org_jojo', slug: 'jojo', empPrefix: 'JJ' },
+		[
+			{ first: 'Benjie', last: 'Fryer', title: 'Fry Cook' },
+			{ first: 'Carla', last: 'Server', title: 'Service Crew' },
+			{ first: 'Dino', last: 'Cashier', title: 'Cashier' }
+		],
+		[
+			{
+				id: 'br_jojo_smdowntown',
+				name: 'SM CDO Downtown Premier',
+				address: 'Ground Floor, SM CDO Downtown Premier, Claro M. Recto Ave., Cagayan de Oro'
+			},
+			{
+				id: 'br_jojo_centrio',
+				name: 'Centrio Ayala Mall',
+				address: '2F Centrio Ayala Mall, Corrales cor. CM Recto Ave., Cagayan de Oro'
+			},
+			{
+				id: 'br_jojo_limketkai',
+				name: 'Limketkai Center',
+				address: 'Limketkai Center, Lapasan, Cagayan de Oro',
+				status: 'CLOSED'
+			}
+		]
+	)
+	await seedFoodServiceOrg(
+		db,
+		{ id: 'org_sweetleaf', slug: 'sweetleaf', empPrefix: 'SL' },
+		[
+			{ first: 'Ella', last: 'Barista', title: 'Barista' },
+			{ first: 'Fritz', last: 'Baker', title: 'Baker' }
+		],
+		[
+			{
+				id: 'br_sl_smuptown',
+				name: 'SM CDO Uptown',
+				address:
+					'Upper Ground Floor, SM City CDO Uptown, Masterson Ave., Upper Balulang, Cagayan de Oro'
+			},
+			{
+				id: 'br_sl_gaisano',
+				name: 'Gaisano Mall of CDO',
+				address: 'Gaisano City Mall, Corrales Ave. cor. Yacapin St., Cagayan de Oro'
+			},
+			{
+				id: 'br_sl_ororama',
+				name: 'Ororama Megacenter',
+				address: 'Ororama Megacenter, Cogon, Cagayan de Oro',
+				status: 'CLOSED'
+			}
+		]
+	)
 
 	// Cover the demo roster just added (seedProd already ran this for the admin accounts).
 	await backfillMembershipsAndRoles(db)

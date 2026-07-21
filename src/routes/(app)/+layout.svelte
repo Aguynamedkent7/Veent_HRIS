@@ -6,6 +6,7 @@
 	import DevLoginSwitcher from '$lib/components/dev/DevLoginSwitcher.svelte' // TEMP DEV — remove before merge
 	import { addToast } from '$lib/stores/toast.svelte'
 	import { canAny } from '$lib/rbac'
+	import { isFoodServiceOrg } from '$lib/orgs'
 	import type { LayoutData } from './$types'
 
 	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props()
@@ -22,7 +23,11 @@
 	const orgName = $derived(data.org?.name || 'Veent HRIS')
 	// The Veent logo already carries the "Veent HRIS" wordmark; JoJo Potato and Sweetleaf
 	// use brand marks without it, so show a "{name} HRIS" wordmark beside their logo.
-	const showWordmark = $derived(data.org?.id === 'org_jojo' || data.org?.id === 'org_sweetleaf')
+	const showWordmark = $derived(isFoodServiceOrg(data.org?.id))
+	// Branches are the food-service tenants' physical stores, so the tab only exists for
+	// them. `data.org.id` is the ACTIVE org, so switching the CEO into JoJo reveals it with
+	// no CEO-specific code. The server guard (requireFoodServiceOrg) is the real enforcement.
+	const hasBranches = $derived(isFoodServiceOrg(data.org?.id))
 	// Per-org theme (#139): override the brand CSS variables for the active tenant. The
 	// value is a raw HSL triple; descendants' `bg-primary`/`ring` pick up the cascade.
 	const themeStyle = $derived(
@@ -169,6 +174,12 @@
 				icon: 'M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21'
 			},
 			{
+				href: '/branches',
+				label: 'Branches',
+				show: isAdmin && hasBranches,
+				icon: 'M13.5 21v-7.5a.75.75 0 01.75-.75h3a.75.75 0 01.75.75V21m-4.5 0H2.36m11.14 0H18m0 0h3.64m-1.39 0V9.349M3.75 21V9.349m0 0a3.001 3.001 0 003.75-.615A2.993 2.993 0 009.75 9.75c.896 0 1.7-.393 2.25-1.016a2.993 2.993 0 002.25 1.016c.896 0 1.7-.393 2.25-1.015a3.001 3.001 0 003.75.614m-16.5 0a3.004 3.004 0 01-.621-4.72L4.318 3.44A1.5 1.5 0 015.378 3h13.243a1.5 1.5 0 011.06.44l1.19 1.189a3 3 0 01-.621 4.72M6.75 18h3.75a.75.75 0 00.75-.75V13.5a.75.75 0 00-.75-.75H6.75a.75.75 0 00-.75.75v3.75c0 .414.336.75.75.75z'
+			},
+			{
 				href: '/payroll',
 				label: 'Payroll',
 				show: isPayroll || canSignOff,
@@ -210,6 +221,9 @@
 	// Settings is a collapsible group; its pages live in this dropdown, not the flat nav.
 	const settingsChildren = $derived(
 		[
+			// The group header is a toggle, not a link, so without this the settings index
+			// (which lists every card, including pages absent from this list) is unreachable.
+			{ href: '/settings', label: 'All settings', show: isAdmin },
 			{ href: '/settings/company', label: 'Company', show: isAdmin },
 			{ href: '/settings/pay-codes', label: 'Earnings & Deductions', show: isAdmin },
 			{ href: '/settings/salary-grades', label: 'Salary Grades', show: isAdmin },

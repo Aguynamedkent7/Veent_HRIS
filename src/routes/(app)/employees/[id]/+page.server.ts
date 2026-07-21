@@ -8,6 +8,8 @@ import {
 } from '$lib/server/services/employees'
 import { listPositions } from '$lib/server/services/settings/org'
 import { getEmployeeOnboarding, setManualCompletion } from '$lib/server/services/onboarding'
+import { listAssignableBranches, selectableBranches } from '$lib/server/services/branches'
+import { isFoodServiceOrg } from '$lib/orgs'
 import {
 	listLoans,
 	listCashAdvances,
@@ -116,6 +118,14 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		canManage ? getEmploymentHistory(params.id, locals.user!.organizationId) : Promise.resolve([])
 	])
 	const schedules = canManage ? await listSchedules(locals.user!.organizationId) : []
+	// Branches only exist for the food-service tenants; elsewhere the picker is not rendered.
+	const showBranches = canManage && isFoodServiceOrg(locals.user!.organizationId)
+	const branches = showBranches
+		? selectableBranches(
+				await listAssignableBranches(locals.user!.organizationId),
+				employee.branchId
+			)
+		: []
 	const onboarding = canManage
 		? await getEmployeeOnboarding(
 				locals.user!.organizationId,
@@ -143,6 +153,8 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		recurringDeductions,
 		deductionTypes,
 		schedules,
+		branches,
+		showBranches,
 		documents,
 		positions,
 		history,
@@ -184,6 +196,12 @@ const updateSchema = z.object({
 		.optional()
 		.transform((v) => (v ? v : null)),
 	workScheduleId: z
+		.string()
+		.optional()
+		.transform((v) => (v ? v : null)),
+	// Store assignment. Empty string clears it. Only accepted for food-service tenants —
+	// the update action strips it elsewhere.
+	branchId: z
 		.string()
 		.optional()
 		.transform((v) => (v ? v : null)),
@@ -258,11 +276,14 @@ export const actions: Actions = {
 		// #54: the form never prefills the stored disbursement numbers (they render as
 		// placeholders), so an empty submission means "leave unchanged", not "clear".
 		// Explicit clearing is deferred until a dedicated clear affordance exists.
-		const { bankAccountNumber, gcashNumber, ...rest } = parsed.data
+		const { bankAccountNumber, gcashNumber, branchId, ...rest } = parsed.data
 		const input = {
 			...rest,
 			...(bankAccountNumber !== null && { bankAccountNumber }),
-			...(gcashNumber !== null && { gcashNumber })
+			...(gcashNumber !== null && { gcashNumber }),
+			// Branches only exist for the food-service tenants; ignore a posted branchId
+			// anywhere else. updateEmployee still re-checks the branch is in this org.
+			...(isFoodServiceOrg(user.organizationId) && { branchId })
 		}
 
 		try {

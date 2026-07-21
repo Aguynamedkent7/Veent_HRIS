@@ -26,13 +26,26 @@
 	</div>
 
 	<!-- Search -->
-	<form method="GET" class="flex gap-2">
+	<!-- One GET form: a sibling form would submit on its own and drop the search term. -->
+	<form method="GET" class="flex flex-wrap gap-2">
 		<input
 			name="search"
 			value={search}
 			placeholder="Search by name or employee number…"
 			class="flex h-9 w-64 rounded-md border border-input bg-background px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 		/>
+		{#if data.showBranches}
+			<select
+				name="branch"
+				aria-label="Branch"
+				class="flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+			>
+				<option value="">All branches</option>
+				{#each data.branches as br (br.id)}
+					<option value={br.id} selected={data.branchFilter === br.id}>{br.name}</option>
+				{/each}
+			</select>
+		{/if}
 		<button type="submit" class="rounded-md border px-3 py-1 text-sm hover:bg-accent">Search</button
 		>
 	</form>
@@ -47,6 +60,9 @@
 					<tr>
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Employee</th>
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Department</th>
+						{#if data.showBranches}
+							<th class="px-4 py-3 text-left font-medium text-muted-foreground">Branch</th>
+						{/if}
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Title</th>
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Type</th>
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
@@ -72,6 +88,9 @@
 								<div class="text-xs text-muted-foreground">{emp.employeeNumber}</div>
 							</td>
 							<td class="px-4 py-3 text-muted-foreground">{emp.department.name}</td>
+							{#if data.showBranches}
+								<td class="px-4 py-3 text-muted-foreground">{emp.branch?.name ?? '—'}</td>
+							{/if}
 							<td class="px-4 py-3">{emp.jobTitle}</td>
 							<td class="px-4 py-3 text-muted-foreground">{emp.employmentType.replace('_', ' ')}</td
 							>
