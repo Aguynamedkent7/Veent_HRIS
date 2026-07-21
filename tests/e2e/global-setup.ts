@@ -5,7 +5,7 @@ import { E2E_DISCORD_ID } from './helpers'
 /**
  * Resets the seeded employee's transactional data before the E2E run so tests
  * that create a current-week timesheet / leave request are deterministic across
- * repeated runs. Relies on the seed having been applied (`pnpm db:seed`).
+ * repeated runs. Relies on the seed having been applied (`pnpm db:seed:e2e`).
  */
 /**
  * Compile the hot routes once, before any test's clock is running.
@@ -66,7 +66,7 @@ async function globalSetup() {
 
 		if (!employee) {
 			throw new Error(
-				'E2E seed missing: employee@veent.ph not found. Run `pnpm db:seed` before the E2E suite.'
+				'E2E seed missing: employee@veent.ph not found. Run `pnpm db:seed:e2e` before the E2E suite.'
 			)
 		}
 

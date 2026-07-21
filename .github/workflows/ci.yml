@@ -94,7 +94,10 @@ jobs:
         run: pnpm exec prisma db push --skip-generate
 
       - name: Seed database
-        run: pnpm db:seed
+        # Full E2E roster (manager/employee/verifier/approver + demo data the suite needs).
+        # Call the seed directly (not `pnpm db:seed:e2e`) so it uses the workflow-provided
+        # env vars above; the db:seed:e2e script loads .env.dev, which does not exist in CI.
+        run: pnpm exec tsx prisma/seed-e2e.ts
 
       - name: Install Playwright browser
         run: pnpm exec playwright install --with-deps chromium

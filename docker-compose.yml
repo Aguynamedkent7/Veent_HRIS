@@ -1,0 +1,72 @@
+# Production stack for the droplet: SvelteKit app (adapter-node) + Discord bot + Postgres.
+#
+# The image is built in CI and pushed to GHCR (the 512MB droplet can't run `vite build`).
+# The droplet only PULLS and runs:
+#   docker compose pull                # fetch the latest image from GHCR
+#   docker compose up -d --no-build    # start app + bot + db (never builds locally)
+#   docker compose logs -f app         # follow app logs
+#   docker compose down                # stop (keeps the db volume / data)
+#   docker compose down -v             # stop AND delete the db volume (wipes data)
+#
+# First run only — seed the database once the stack is up (minimal prod seed):
+#   docker compose run --rm app pnpm exec tsx prisma/seed.ts
+#
+# 512MB box: add swap first, or Postgres + app + bot will OOM.
+#   fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+#   echo '/swapfile none swap sw 0 0' >> /etc/fstab
+#
+# All config comes from .env.prod (gitignored). Copy .env.prod.example → .env.prod and fill
+# it in first. The app reaches Postgres at host `db`, so DATABASE_URL must use @db:5432.
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    # Tuned for a 512MB droplet: smaller shared_buffers + connection cap so Postgres
+    # leaves room for the app and bot. Raise these if you move to a bigger box.
+    command: postgres -c shared_buffers=64MB -c max_connections=20 -c effective_cache_size=192MB
+    # Postgres reads POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB from here; the
+    # other vars in the file are ignored by the image.
+    env_file: .env.prod
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # $$ escapes compose interpolation so the value is expanded inside the container,
+      # where POSTGRES_USER / POSTGRES_DB are set from env_file.
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    # Pulled from GHCR (built by .github/workflows/deploy.yml). To build locally instead
+    # (e.g. to test prod on a beefier machine): `docker compose build` uses this same tag.
+    image: ghcr.io/aguynamedkent7/veent-hris:latest
+    build: .
+    restart: unless-stopped
+    env_file: .env.prod
+    ports:
+      - '3000:3000'
+    depends_on:
+      db:
+        # Wait until Postgres actually accepts connections, not just until it starts.
+        condition: service_healthy
+    # Sync the schema, then start the server. prisma + tsx ship in the image. Swap
+    # `db push` for `migrate deploy` once you adopt real Prisma migrations.
+    command: sh -c "pnpm exec prisma db push --skip-generate && node build"
+
+  # Discord time-tracking bot — a separate long-running process, not part of `node build`.
+  # Reuses the app image (tsx + scripts/ are baked in). Requires DISCORD_BOT_TOKEN in
+  # .env.prod; if you stop running a bot, delete this service (and leave the token unset).
+  # Calls tsx directly (not `pnpm bot`, which is wrapped for .env.dev) since compose
+  # injects env from env_file.
+  bot:
+    image: ghcr.io/aguynamedkent7/veent-hris:latest
+    restart: unless-stopped
+    env_file: .env.prod
+    depends_on:
+      - app
+    command: pnpm exec tsx scripts/discord-bot.ts
+
+volumes:
+  pgdata:

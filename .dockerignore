@@ -1,0 +1,15 @@
+node_modules
+.svelte-kit
+build
+dist
+.git
+.gitignore
+.env*
+playwright-report
+test-results
+coverage
+static/uploads
+uploads
+*.log
+.vscode
+.idea

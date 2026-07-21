@@ -92,7 +92,9 @@ if ! timeout 5 bash -c "exec 3<>/dev/tcp/${PROBE_HOST}/${PROBE_PORT}" 2>/dev/nul
 fi
 
 echo "==> Syncing Prisma schema..."
-pnpm exec prisma db push --skip-generate
+# Load .env.dev explicitly: this calls prisma directly (not the db:push npm script),
+# and prisma only auto-loads a file literally named .env, which no longer exists.
+pnpm exec dotenv -e .env.dev -- prisma db push --skip-generate
 
 echo "==> Checking if seed is needed..."
 ORG_COUNT=$(docker exec "${CONTAINER}" psql -U "${DB_USER}" -d "${DB_NAME}" -p "${DB_PORT}" -tc \
@@ -100,7 +102,9 @@ ORG_COUNT=$(docker exec "${CONTAINER}" psql -U "${DB_USER}" -d "${DB_NAME}" -p "
 
 if [ "${ORG_COUNT}" = "0" ] || [ -z "${ORG_COUNT}" ]; then
   echo "==> Seeding database..."
-  pnpm db:seed
+  # Local dev uses the full roster (manager/employee/verifier/approver + demo data),
+  # matching what the E2E suite expects. Prod uses the minimal `pnpm db:seed`.
+  pnpm db:seed:e2e
 else
   echo "    Database already seeded (${ORG_COUNT} organization(s) found)."
 fi
