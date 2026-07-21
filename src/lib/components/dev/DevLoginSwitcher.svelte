@@ -7,9 +7,19 @@
 	// login page so you can hop roles mid-flow (maker → verifier → approver).
 	// ───────────────────────────────────────────────────────────────────────────
 	import { dev } from '$app/environment'
+	import { onMount } from 'svelte'
 
 	let open = $state(false)
 	let busy = $state<string | null>(null)
+
+	// Render only in a real dev browser — never in the Playwright/WebDriver session,
+	// where this fixed bottom-right pill overlaps app controls (e.g. the /employees
+	// "Next →" pagination link) and intercepts their clicks. onMount keeps it off the
+	// server render, so there's no hydration flash of the switcher.
+	let show = $state(false)
+	onMount(() => {
+		if (dev && !navigator.webdriver) show = true
+	})
 
 	// Every seeded account, grouped by org (mirrors prisma/seed.ts).
 	const GROUPS: { org: string; accounts: { label: string; email: string }[] }[] = [
@@ -66,7 +76,7 @@
 	}
 </script>
 
-{#if dev}
+{#if show}
 	<div class="fixed bottom-4 right-4 z-[100] flex flex-col items-end gap-2">
 		{#if open}
 			<div class="w-60 overflow-hidden rounded-lg border border-border bg-card shadow-xl">
