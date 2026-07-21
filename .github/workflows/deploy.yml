@@ -75,7 +75,7 @@ jobs:
             # Authenticate to GHCR so the (private) image can be pulled. Skip this if you
             # make the GHCR package public — then no login is needed.
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-            cd /repos/Veent_HRIS
+            cd ~/repos/Veent_HRIS
             # Refresh compose file / config (.env.prod is gitignored, so it's untouched).
             git fetch --all --prune
             git reset --hard origin/main
