@@ -86,8 +86,8 @@
 		<h1 class="text-2xl font-bold">{employee.lastName}, {employee.firstName}</h1>
 		<span
 			class="rounded-full px-2.5 py-1 text-xs font-medium {employee.employmentStatus === 'ACTIVE'
-				? 'bg-green-100 text-green-700'
-				: 'bg-gray-100 text-gray-600'}"
+				? 'bg-green-500/15 text-green-400'
+				: 'bg-gray-500/15 text-gray-400'}"
 		>
 			{employee.employmentStatus}
 		</span>
@@ -121,19 +121,43 @@
 						></div>
 					</div>
 					<ul class="columns-1 gap-x-8 sm:columns-2">
-						{#each data.onboarding.steps as step (step.key)}
+						{#each data.onboarding.steps as step (step.id)}
 							<li class="mb-2.5 flex items-start gap-2 break-inside-avoid text-sm">
-								<span
-									class="mt-0.5 flex h-4 w-4 flex-none items-center justify-center rounded-full text-[10px] font-bold {step.done
-										? 'bg-green-500 text-white'
-										: 'border border-muted-foreground/40 text-transparent'}"
-								>
-									✓
-								</span>
+								{#if step.manual}
+									<!-- Manual step: HR ticks it off (equipment issued, NDA signed, …). #116 -->
+									<form method="POST" action="?/toggleOnboardingStep" use:enhance>
+										<input type="hidden" name="itemId" value={step.id} />
+										<input type="hidden" name="done" value={(!step.done).toString()} />
+										<button
+											type="submit"
+											aria-pressed={step.done}
+											aria-label="{step.done ? 'Uncheck' : 'Check'} {step.label}"
+											class="mt-0.5 flex h-4 w-4 flex-none items-center justify-center rounded-full text-[10px] font-bold transition-colors {step.done
+												? 'bg-green-500 text-white hover:bg-green-600'
+												: 'border border-muted-foreground/40 text-transparent hover:border-primary hover:text-muted-foreground'}"
+										>
+											✓
+										</button>
+									</form>
+								{:else}
+									<span
+										class="mt-0.5 flex h-4 w-4 flex-none items-center justify-center rounded-full text-[10px] font-bold {step.done
+											? 'bg-green-500 text-white'
+											: 'border border-muted-foreground/40 text-transparent'}"
+									>
+										✓
+									</span>
+								{/if}
 								<span>
 									<span class={step.done ? 'text-foreground' : 'font-medium text-foreground'}>
 										{step.label}
 									</span>
+									{#if step.manual}
+										<span
+											class="ml-1 rounded bg-muted px-1 text-[10px] font-medium text-muted-foreground"
+											>manual</span
+										>
+									{/if}
 									{#if !step.done}
 										<span class="block text-xs text-muted-foreground">{step.hint}</span>
 									{/if}
@@ -168,12 +192,12 @@
 						{#if band}
 							{#if band.status === 'within'}
 								<span
-									class="ml-1 rounded-full bg-green-100 px-1.5 py-0.5 text-xs font-normal text-green-700"
+									class="ml-1 rounded-full bg-green-500/15 px-1.5 py-0.5 text-xs font-normal text-green-400"
 									title="Within the {band.name} band">✓ {grade?.name}</span
 								>
 							{:else}
 								<span
-									class="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-normal text-amber-700"
+									class="ml-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-xs font-normal text-amber-400"
 									title="{band.name}: {formatCurrency(band.min)}–{formatCurrency(band.max)}"
 								>
 									⚠ {band.status === 'below' ? 'Below' : 'Above'}
@@ -570,7 +594,7 @@
 												<button
 													type="submit"
 													disabled={deleteEmergencyContact.busy}
-													class="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:pointer-events-none disabled:opacity-50"
+													class="rounded-md border border-red-500/20 px-3 py-1 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-500/10 disabled:pointer-events-none disabled:opacity-50"
 													>{deleteEmergencyContact.busy ? 'Removing…' : 'Remove'}</button
 												>
 											</form>
@@ -662,10 +686,10 @@
 											<td class="py-1.5 text-right"
 												><span
 													class="rounded-full px-2 py-0.5 text-xs {l.status === 'PAID'
-														? 'bg-green-100 text-green-700'
+														? 'bg-green-500/15 text-green-400'
 														: l.status === 'CANCELLED'
-															? 'bg-gray-100 text-gray-600'
-															: 'bg-blue-100 text-blue-700'}">{l.status}</span
+															? 'bg-gray-500/15 text-gray-400'
+															: 'bg-blue-500/15 text-blue-400'}">{l.status}</span
 												></td
 											>
 										</tr>
@@ -729,10 +753,10 @@
 											<td class="py-1.5 text-right"
 												><span
 													class="rounded-full px-2 py-0.5 text-xs {a.status === 'PAID'
-														? 'bg-green-100 text-green-700'
+														? 'bg-green-500/15 text-green-400'
 														: a.status === 'CANCELLED'
-															? 'bg-gray-100 text-gray-600'
-															: 'bg-blue-100 text-blue-700'}">{a.status}</span
+															? 'bg-gray-500/15 text-gray-400'
+															: 'bg-blue-500/15 text-blue-400'}">{a.status}</span
 												></td
 											>
 										</tr>
@@ -805,12 +829,12 @@
 												<button
 													type="submit"
 													disabled={endEarning.busy}
-													class="rounded-md border border-red-200 px-2 py-0.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:pointer-events-none disabled:opacity-50"
+													class="rounded-md border border-red-500/20 px-2 py-0.5 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-500/10 disabled:pointer-events-none disabled:opacity-50"
 													>{endEarning.busy ? 'Ending…' : 'End'}</button
 												>
 											</form>
 										{:else}
-											<span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"
+											<span class="rounded-full bg-gray-500/15 px-2 py-0.5 text-xs text-gray-400"
 												>ENDED</span
 											>
 										{/if}
@@ -887,12 +911,12 @@
 												<button
 													type="submit"
 													disabled={endDeduction.busy}
-													class="rounded-md border border-red-200 px-2 py-0.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:pointer-events-none disabled:opacity-50"
+													class="rounded-md border border-red-500/20 px-2 py-0.5 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-500/10 disabled:pointer-events-none disabled:opacity-50"
 													>{endDeduction.busy ? 'Ending…' : 'End'}</button
 												>
 											</form>
 										{:else}
-											<span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"
+											<span class="rounded-full bg-gray-500/15 px-2 py-0.5 text-xs text-gray-400"
 												>ENDED</span
 											>
 										{/if}
@@ -989,7 +1013,7 @@
 												action="?/deleteDocument"
 												title="Delete document?"
 												message="“{doc.label}” will be permanently removed."
-												triggerClass="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+												triggerClass="rounded-md border border-red-500/20 px-3 py-1 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-500/10"
 											>
 												<input type="hidden" name="docId" value={doc.id} />
 											</ConfirmButton>

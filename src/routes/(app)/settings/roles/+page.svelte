@@ -75,8 +75,8 @@
 							<div class="flex items-center gap-2">
 								<span
 									class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {u.isActive
-										? 'bg-green-100 text-green-700'
-										: 'bg-gray-100 text-gray-600'}"
+										? 'bg-green-500/15 text-green-400'
+										: 'bg-gray-500/15 text-gray-400'}"
 								>
 									{u.isActive ? 'ACTIVE' : 'INACTIVE'}
 								</span>

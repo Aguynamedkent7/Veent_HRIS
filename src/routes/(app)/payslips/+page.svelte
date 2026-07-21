@@ -47,7 +47,7 @@
 						</td>
 						<td class="px-4 py-3">
 							<span
-								class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700"
+								class="rounded-full bg-green-500/15 px-2 py-0.5 text-xs font-medium text-green-400"
 							>
 								{payslip.payrollRun.status}
 							</span>

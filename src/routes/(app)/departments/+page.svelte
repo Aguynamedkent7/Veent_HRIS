@@ -207,8 +207,10 @@
 										<ul class="flex flex-wrap gap-2">
 											{#each membersOf(dept.id) as emp (emp.id)}
 												<li>
+													<!-- ?from so the shared employee page's Back returns here, not the
+													     role-based /employees fallback, on reload/direct entry (#113). -->
 													<a
-														href="/employees/{emp.id}"
+														href="/employees/{emp.id}?from=/departments"
 														class="rounded-full border bg-card px-3 py-1 text-xs hover:border-primary/40"
 														>{emp.lastName}, {emp.firstName}
 														<span class="text-muted-foreground">· {emp.employeeNumber}</span></a

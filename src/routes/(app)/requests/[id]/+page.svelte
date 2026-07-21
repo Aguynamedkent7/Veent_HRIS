@@ -46,11 +46,11 @@
 	}
 
 	function statusClass(s: string) {
-		if (s === 'APPROVED') return 'bg-green-100 text-green-700'
-		if (s === 'REJECTED') return 'bg-red-100 text-red-700'
-		if (s === 'RETURNED') return 'bg-orange-100 text-orange-700'
-		if (s === 'CANCELLED') return 'bg-gray-100 text-gray-600'
-		return 'bg-yellow-100 text-yellow-700'
+		if (s === 'APPROVED') return 'bg-green-500/15 text-green-400'
+		if (s === 'REJECTED') return 'bg-red-500/15 text-red-400'
+		if (s === 'RETURNED') return 'bg-orange-500/15 text-orange-400'
+		if (s === 'CANCELLED') return 'bg-gray-500/15 text-gray-400'
+		return 'bg-yellow-500/15 text-yellow-400'
 	}
 
 	// payload is Json; show only the type-specific extras. Fields already surfaced in
@@ -77,7 +77,8 @@
 	// Maker-checker chain (#134): each attempt is MAKE → VERIFY → APPROVE. Group the
 	// append-only steps by attempt so a refiled request shows its full history.
 	type Step = (typeof req.steps)[number]
-	const stageName: Record<string, string> = { MAKE: 'Make', VERIFY: 'Verify', APPROVE: 'Approve' }
+	// Role-facing stage names: the maker stage is branch HR, then the Verifier and Approver.
+	const stageName: Record<string, string> = { MAKE: 'HR', VERIFY: 'Verifier', APPROVE: 'Approver' }
 	const latestAttempt = $derived(Math.max(1, ...req.steps.map((s) => s.attempt)))
 	const attempts = $derived.by(() => {
 		const groups = new Map<number, Step[]>()
@@ -160,12 +161,16 @@
 		<h2 class="text-lg font-semibold">Supporting documents</h2>
 
 		{#if form?.error}
-			<div class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+			<div
+				class="rounded-md border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-600 dark:text-red-400"
+			>
 				{form.error}
 			</div>
 		{/if}
 		{#if form?.message}
-			<div class="rounded-md border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
+			<div
+				class="rounded-md border border-green-500/20 bg-green-500/10 px-4 py-2 text-sm text-green-600 dark:text-green-400"
+			>
 				{form.message}
 			</div>
 		{/if}
@@ -188,7 +193,7 @@
 								{fmtSize(doc.size)} · uploaded {formatShortDate(doc.uploadedAt)}
 							</p>
 							{#if doc.verifiedAt}
-								<p class="text-xs text-green-700">
+								<p class="text-xs text-green-600 dark:text-green-400">
 									Verified{#if doc.verifiedBy}{' '}by {doc.verifiedBy.email}{/if} · {formatShortDate(
 										doc.verifiedAt
 									)}
@@ -198,8 +203,8 @@
 						<div class="flex shrink-0 items-center gap-3">
 							<span
 								class="rounded-full px-2 py-0.5 text-xs font-medium {doc.verifiedAt
-									? 'bg-green-100 text-green-700'
-									: 'bg-yellow-100 text-yellow-700'}"
+									? 'bg-green-500/15 text-green-400'
+									: 'bg-yellow-500/15 text-yellow-400'}"
 							>
 								{doc.verifiedAt ? 'Verified' : 'Unverified'}
 							</span>
@@ -224,7 +229,7 @@
 									<button
 										type="submit"
 										disabled={remove.busy}
-										class="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:pointer-events-none disabled:opacity-50"
+										class="rounded-md border border-red-500/20 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-500/10 disabled:pointer-events-none disabled:opacity-50"
 										>{remove.busy ? 'Removing…' : 'Remove'}</button
 									>
 								</form>
@@ -269,7 +274,29 @@
 
 	<div class="space-y-3">
 		<h2 class="text-lg font-semibold">Approval chain</h2>
-		<p class="text-xs text-muted-foreground">Maker → Verifier → Approver</p>
+		<p class="text-xs text-muted-foreground">Requester → HR → Verifier → Approver</p>
+
+		<!-- Origin: the employee's own submission, so "HR pending" doesn't read as if
+		     nothing has happened yet. -->
+		<ol class="space-y-2">
+			<li class="flex items-start gap-3 rounded-lg border p-3">
+				<div
+					class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-green-500/15 text-xs font-medium text-green-500"
+				>
+					✓
+				</div>
+				<div class="min-w-0 flex-1">
+					<p class="text-sm font-medium">
+						Submitted <span class="font-normal text-muted-foreground">· requester</span>
+					</p>
+					<p class="text-xs text-muted-foreground">
+						by {req.employee.firstName}
+						{req.employee.lastName} · {formatShortDate(req.createdAt)}
+					</p>
+				</div>
+			</li>
+		</ol>
+
 		{#each attempts as group (group.attempt)}
 			{#if attempts.length > 1}
 				<p class="pt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -287,11 +314,11 @@
 						<div
 							class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium
 							{step.decision === 'APPROVED'
-								? 'bg-green-100 text-green-700'
+								? 'bg-green-500/15 text-green-400'
 								: step.decision === 'REJECTED'
-									? 'bg-red-100 text-red-700'
+									? 'bg-red-500/15 text-red-400'
 									: step.decision === 'RETURNED'
-										? 'bg-orange-100 text-orange-700'
+										? 'bg-orange-500/15 text-orange-400'
 										: 'bg-muted text-muted-foreground'}"
 						>
 							{i + 1}

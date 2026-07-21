@@ -76,7 +76,7 @@
 	{#if form?.success && form.message}
 		<div
 			role="status"
-			class="rounded-md border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700"
+			class="rounded-md border border-green-500/20 bg-green-500/10 px-4 py-2 text-sm text-green-600 dark:text-green-400"
 		>
 			{form.message}
 		</div>
@@ -84,7 +84,7 @@
 	{#if form?.error}
 		<div
 			role="alert"
-			class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700"
+			class="rounded-md border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-600 dark:text-red-400"
 		>
 			{form.error}
 		</div>
@@ -207,10 +207,10 @@
 						<td class="px-4 py-3">
 							<span
 								class="rounded-full px-2 py-0.5 text-xs font-medium {jp.status === 'OPEN'
-									? 'bg-green-100 text-green-700'
+									? 'bg-green-500/15 text-green-400'
 									: jp.status === 'CLOSED'
-										? 'bg-gray-100 text-gray-600'
-										: 'bg-yellow-100 text-yellow-700'}"
+										? 'bg-gray-500/15 text-gray-400'
+										: 'bg-yellow-500/15 text-yellow-400'}"
 							>
 								{jp.status}
 							</span>

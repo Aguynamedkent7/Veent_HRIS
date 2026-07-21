@@ -7,6 +7,7 @@ import {
 	getEmploymentHistory
 } from '$lib/server/services/employees'
 import { listPositions } from '$lib/server/services/settings/org'
+import { getEmployeeOnboarding, setManualCompletion } from '$lib/server/services/onboarding'
 import {
 	listLoans,
 	listCashAdvances,
@@ -54,75 +55,10 @@ function ctxOf(locals: App.Locals, ip: string) {
 	}
 }
 
-// Onboarding checklist (T178 / FR-071): derived from the employee's own record so
-// completing the 201 file *is* completing onboarding — no separate data entry, and
-// everything flows straight into payroll/attendance.
-type OnboardingStep = { key: string; label: string; done: boolean; hint: string }
-function buildOnboarding(
-	emp: Awaited<ReturnType<typeof getEmployee>>,
-	documents: { category: string }[]
-) {
-	const hasContract = documents.some((d) => d.category === 'CONTRACT')
-	const hasDisbursement = !!(
-		(emp.bankName && emp.bankAccountName && emp.bankAccountNumber) ||
-		emp.gcashNumber
-	)
-	const govComplete = !!(
-		emp.sssNumber &&
-		emp.philhealthNumber &&
-		emp.pagibigNumber &&
-		emp.tinNumber
-	)
-	const steps: OnboardingStep[] = [
-		{
-			key: 'account',
-			label: 'Company account created',
-			done: !!emp.user?.isActive,
-			hint: 'A login is generated with the employee record.'
-		},
-		{
-			key: 'position',
-			label: 'Position assigned',
-			done: !!emp.positionId,
-			hint: 'Set “Position” in Update Profile below.'
-		},
-		{
-			key: 'schedule',
-			// The organization's default schedule applies when none is explicitly
-			// assigned, so a schedule is always in effect and attendance always
-			// tracks — the default counts as satisfied here.
-			label: emp.workScheduleId ? 'Work schedule assigned' : 'Work schedule (default)',
-			done: true,
-			hint: 'Set “Work Schedule” below — this starts attendance tracking.'
-		},
-		{
-			key: 'salary',
-			label: 'Compensation set',
-			done: Number(emp.basicMonthlySalary ?? 0) > 0,
-			hint: 'Set “Basic Monthly Salary” below.'
-		},
-		{
-			key: 'disbursement',
-			label: 'Payroll disbursement registered',
-			done: hasDisbursement,
-			hint: 'Add bank or GCash details under Disbursement.'
-		},
-		{
-			key: 'govids',
-			label: 'Government IDs on file',
-			done: govComplete,
-			hint: 'SSS, PhilHealth, Pag-IBIG, and TIN.'
-		},
-		{
-			key: 'contract',
-			label: 'Signed contract uploaded',
-			done: hasContract,
-			hint: 'Upload a “Contract” document below.'
-		}
-	]
-	const doneCount = steps.filter((s) => s.done).length
-	return { steps, doneCount, total: steps.length, complete: doneCount === steps.length }
-}
+// Onboarding checklist (T178 / FR-071, now HR-configurable per org — #116): the derived
+// steps come straight from the employee's own record so completing the 201 file *is*
+// completing onboarding, and HR can add manual steps (orientation, equipment, …). The
+// merge + per-org config lives in $lib/server/services/onboarding.
 
 export const load: PageServerLoad = async ({ locals, params }) => {
 	requireMinRole(locals.user!.role, 'MANAGER')
@@ -180,7 +116,13 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		canManage ? getEmploymentHistory(params.id, locals.user!.organizationId) : Promise.resolve([])
 	])
 	const schedules = canManage ? await listSchedules(locals.user!.organizationId) : []
-	const onboarding = canManage ? buildOnboarding(employee, documents) : null
+	const onboarding = canManage
+		? await getEmployeeOnboarding(
+				locals.user!.organizationId,
+				employee,
+				documents.map((d) => d.category)
+			)
+		: null
 
 	// #54: disbursement numbers leave the server masked — full values are only
 	// obtainable through the audited ?/revealDisbursement action below.
@@ -555,6 +497,29 @@ export const actions: Actions = {
 			await deleteEmployeeDocument(
 				docId,
 				locals.user!.organizationId,
+				ctxOf(locals, getClientAddress())
+			)
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
+		}
+		return { success: true }
+	},
+
+	// Tick a MANUAL onboarding step on/off for this employee (#116). Derived steps are
+	// read-only — they check themselves off from the record — so only manual items post here.
+	toggleOnboardingStep: async ({ request, locals, params, getClientAddress }) => {
+		requireCapability(locals.user!.role, 'MANAGE_HR')
+		const data = await request.formData()
+		const itemId = data.get('itemId') as string
+		if (!itemId) return fail(400, { error: 'Missing item id.' })
+		const done = data.get('done') === 'true'
+		try {
+			await setManualCompletion(
+				locals.user!.organizationId,
+				itemId,
+				params.id,
+				done,
 				ctxOf(locals, getClientAddress())
 			)
 		} catch (e: unknown) {

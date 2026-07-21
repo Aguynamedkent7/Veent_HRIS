@@ -13,9 +13,9 @@
 	const fe = (name: string) => fieldErrors?.[name]?.[0]
 
 	function statusClass(s: string) {
-		if (s === 'FINALIZED') return 'bg-gray-100 text-gray-600'
-		if (s === 'CLEARED') return 'bg-green-100 text-green-700'
-		return 'bg-yellow-100 text-yellow-700'
+		if (s === 'FINALIZED') return 'bg-gray-500/15 text-gray-400'
+		if (s === 'CLEARED') return 'bg-green-500/15 text-green-400'
+		return 'bg-yellow-500/15 text-yellow-400'
 	}
 	function clearedCount(items: { status: string }[]) {
 		return items.filter((i) => i.status === 'CLEARED').length
@@ -43,7 +43,9 @@
 	</div>
 
 	{#if form?.error}
-		<div class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+		<div
+			class="rounded-md border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-600 dark:text-red-400"
+		>
 			{form.error}
 		</div>
 	{/if}
