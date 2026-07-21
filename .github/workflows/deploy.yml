@@ -1,7 +1,8 @@
 name: Deploy
 
-# Runs after the CI workflow succeeds on main, then SSHes into the droplet and
-# rebuilds the stack from source via docker compose. Also triggerable by hand.
+# Runs after CI succeeds on main. Builds the image on the runner (the 512MB droplet
+# can't), pushes it to GHCR, then SSHes into the droplet to pull and restart. Also
+# triggerable by hand.
 on:
   workflow_run:
     workflows: ['CI']
@@ -9,39 +10,77 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Never run two deploys at once; let an in-flight deploy finish.
 concurrency:
   group: deploy-production
   cancel-in-progress: false
 
+env:
+  IMAGE: ghcr.io/aguynamedkent7/veent-hris
+
 jobs:
-  deploy:
-    name: Build & restart on droplet
+  build:
+    name: Build & push image to GHCR
     runs-on: ubuntu-latest
-    # For workflow_run: only deploy when CI actually passed. (workflow_dispatch has
-    # no workflow_run payload, so `conclusion` is empty and the second clause allows it.)
+    # Only build when CI passed (workflow_dispatch has no workflow_run payload, so the
+    # conclusion is empty and the second clause allows a manual run).
     if: >-
       ${{ github.event_name == 'workflow_dispatch' ||
           github.event.workflow_run.conclusion == 'success' }}
+    permissions:
+      contents: read
+      packages: write # push to GHCR with the built-in GITHUB_TOKEN
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push (linux/amd64 for the droplet)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Pull & restart on droplet
+    needs: build
+    runs-on: ubuntu-latest
     steps:
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GHCR_USER: ${{ github.repository_owner }}
         with:
           host: ${{ secrets.DROPLET_HOST }}
           username: ${{ secrets.DROPLET_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.DROPLET_SSH_PORT || 22 }}
-          # Fail the deploy if any command fails, and don't let a hung build run forever.
-          command_timeout: 20m
+          command_timeout: 10m
+          envs: GHCR_TOKEN,GHCR_USER
           script: |
             set -euo pipefail
+            # Authenticate to GHCR so the (private) image can be pulled. Skip this if you
+            # make the GHCR package public — then no login is needed.
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             cd /repos/Veent_HRIS
-            # Deterministic checkout: match origin/main exactly. .env.prod is gitignored,
-            # so reset --hard leaves it (and the db volume) untouched.
+            # Refresh compose file / config (.env.prod is gitignored, so it's untouched).
             git fetch --all --prune
             git reset --hard origin/main
-            # Rebuild the app image and restart app + db. Compose runs `prisma db push`
-            # on app startup (see docker-compose.yml), so schema changes apply here.
-            docker compose up -d --build
-            # Reclaim space from the previous image build.
+            # Pull the freshly built image and restart. --no-build guarantees the droplet
+            # never tries to compile (it can't). Compose runs `prisma db push` on app start.
+            docker compose pull
+            docker compose up -d --no-build
             docker image prune -f
