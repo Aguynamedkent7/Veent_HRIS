@@ -139,14 +139,14 @@ export async function seedProd(db: PrismaClient) {
 		where: { id: 'org_jojo' },
 		update: {
 			name: 'JoJo Potato',
-			logoUrl: '/jojo-logo.svg',
+			logoUrl: '/jojo-logo.png',
 			themePrimary: '32 95% 44%', // amber
 			address: 'Quezon City, Metro Manila, Philippines'
 		},
 		create: {
 			id: 'org_jojo',
 			name: 'JoJo Potato',
-			logoUrl: '/jojo-logo.svg',
+			logoUrl: '/jojo-logo.png',
 			themePrimary: '32 95% 44%',
 			address: 'Quezon City, Metro Manila, Philippines'
 		}
@@ -155,14 +155,14 @@ export async function seedProd(db: PrismaClient) {
 		where: { id: 'org_sweetleaf' },
 		update: {
 			name: 'Sweetleaf',
-			logoUrl: '/sweetleaf-logo.svg',
+			logoUrl: '/sweetleaf-logo.png',
 			themePrimary: '142 71% 42%', // green
 			address: 'Pasig City, Metro Manila, Philippines'
 		},
 		create: {
 			id: 'org_sweetleaf',
 			name: 'Sweetleaf',
-			logoUrl: '/sweetleaf-logo.svg',
+			logoUrl: '/sweetleaf-logo.png',
 			themePrimary: '142 71% 42%',
 			address: 'Pasig City, Metro Manila, Philippines'
 		}
@@ -533,6 +533,138 @@ export async function seedE2E(db: PrismaClient) {
 			}
 		})
 	}
+
+	// Onboarding checklist (#116): the derived defaults + one manual example for Veent so
+	// the Settings editor and the 201-file manual toggles are populated. Keys must match
+	// DERIVED_STEPS in src/lib/server/services/onboarding.ts.
+	const existingOnboarding = await db.onboardingChecklistItem.count({
+		where: { organizationId: org.id }
+	})
+	if (existingOnboarding === 0) {
+		const derivedSteps = [
+			{
+				derivedKey: 'account',
+				label: 'Company account created',
+				hint: 'A login is generated with the employee record.'
+			},
+			{
+				derivedKey: 'position',
+				label: 'Position assigned',
+				hint: 'Set “Position” in Update Profile.'
+			},
+			{
+				derivedKey: 'schedule',
+				label: 'Work schedule assigned',
+				hint: 'Set “Work Schedule” — this starts attendance tracking.'
+			},
+			{ derivedKey: 'salary', label: 'Compensation set', hint: 'Set “Basic Monthly Salary”.' },
+			{
+				derivedKey: 'disbursement',
+				label: 'Payroll disbursement registered',
+				hint: 'Add bank or GCash details under Disbursement.'
+			},
+			{
+				derivedKey: 'govids',
+				label: 'Government IDs on file',
+				hint: 'SSS, PhilHealth, Pag-IBIG, and TIN.'
+			},
+			{
+				derivedKey: 'contract',
+				label: 'Signed contract uploaded',
+				hint: 'Upload a “Contract” document.'
+			}
+		]
+		await db.onboardingChecklistItem.createMany({
+			data: [
+				...derivedSteps.map((d, i) => ({
+					organizationId: org.id,
+					kind: 'DERIVED' as const,
+					derivedKey: d.derivedKey,
+					label: d.label,
+					hint: d.hint,
+					order: i
+				})),
+				{
+					organizationId: org.id,
+					kind: 'MANUAL' as const,
+					label: 'Orientation completed',
+					hint: 'New-hire orientation attended.',
+					order: derivedSteps.length
+				}
+			]
+		})
+	}
+
+	// Job boards (#117): common PH boards for the recruitment publish-tracking checklist.
+	await db.jobBoard.createMany({
+		data: ['JobStreet', 'Indeed', 'LinkedIn', 'Facebook', 'Company Website', 'Referral'].map(
+			(name) => ({ organizationId: org.id, name })
+		),
+		skipDuplicates: true
+	})
+
+	// A demo open posting so the recruitment board-tracking checklist has something to act on.
+	await db.jobPosting.upsert({
+		where: { id: 'jp_seed_demo' },
+		update: {},
+		create: {
+			id: 'jp_seed_demo',
+			organizationId: org.id,
+			departmentId: dept.id,
+			title: 'Software Engineer',
+			description: 'Seed posting for the recruitment demo.',
+			status: 'OPEN',
+			postedAt: new Date('2026-06-01'),
+			createdById: managerUser.id
+		}
+	})
+
+	// Inventory (#114): a few demo assets so the registry isn't empty. Idempotent by id.
+	await db.inventoryItem.upsert({
+		where: { id: 'inv_seed_1' },
+		update: {},
+		create: {
+			id: 'inv_seed_1',
+			organizationId: org.id,
+			name: 'MacBook Pro 14"',
+			category: 'Laptop',
+			quantity: 1,
+			unit: 'pc',
+			location: 'Main office',
+			status: 'IN_STOCK',
+			serialNumber: 'C02-DEMO-001',
+			value: 120000
+		}
+	})
+	await db.inventoryItem.upsert({
+		where: { id: 'inv_seed_2' },
+		update: {},
+		create: {
+			id: 'inv_seed_2',
+			organizationId: org.id,
+			name: 'Office Chair',
+			category: 'Furniture',
+			quantity: 12,
+			unit: 'pcs',
+			location: 'Main office',
+			status: 'IN_STOCK',
+			value: 4500
+		}
+	})
+	await db.inventoryItem.upsert({
+		where: { id: 'inv_seed_3' },
+		update: {},
+		create: {
+			id: 'inv_seed_3',
+			organizationId: org.id,
+			name: 'Projector (old)',
+			category: 'AV Equipment',
+			quantity: 1,
+			unit: 'pc',
+			location: 'Storage',
+			status: 'RETIRED'
+		}
+	})
 
 	// Branch orgs (#140): JoJo Potato and Sweetleaf each get a "Head of Operations" Manager
 	// + crew. The cross-org tenancy E2E switches the CEO into JoJo and asserts this roster.
