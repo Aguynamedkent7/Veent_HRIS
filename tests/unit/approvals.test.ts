@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { canActOnStage, nextState } from '$lib/server/services/approvals'
+import {
+	canActOnStage,
+	nextState,
+	livePayrollStage,
+	type PayrollChainStep
+} from '$lib/server/services/approvals'
 import { buildApprovalChain } from '$lib/server/services/requests/routing'
-import type { Role } from '@prisma/client'
+import type { ApprovalDecision, ApprovalStage, Role } from '@prisma/client'
 
 // Maker-checker stage authority (#134): MAKE = MANAGE_HR, VERIFY = VERIFIER,
 // APPROVE = APPROVER. Signature: (stage, actorRoles, actorEmployeeId, ownerEmployeeId).
@@ -94,5 +99,73 @@ describe('buildApprovalChain', () => {
 	it('stamps the attempt number onto every step', () => {
 		const { steps } = buildApprovalChain({ attempt: 3, makerUserId: null, decidedAt: at })
 		expect(steps.every((s) => s.attempt === 3)).toBe(true)
+	})
+})
+
+// Payroll runs have no `currentStage` column and PayrollRunStatus has no RETURNED state,
+// so livePayrollStage derives the open stage from steps and treats a returned/rejected
+// attempt as closed until a recompute opens a fresh one (#134).
+describe('livePayrollStage', () => {
+	let auto = 0
+	const step = (
+		attempt: number,
+		stageIndex: number,
+		stage: ApprovalStage,
+		decision: ApprovalDecision | null,
+		actorId: string | null = null
+	): PayrollChainStep => ({ id: `s${auto++}`, attempt, stageIndex, stage, decision, actorId })
+
+	// A freshly computed run: MAKE auto-approved by the maker, VERIFY/APPROVE pending.
+	const attempt1Open = (): PayrollChainStep[] => [
+		step(1, 0, 'MAKE', 'APPROVED', 'maker'),
+		step(1, 1, 'VERIFY', null),
+		step(1, 2, 'APPROVE', null)
+	]
+
+	it('opens at VERIFY after compute (MAKE auto-completed)', () => {
+		const live = livePayrollStage(attempt1Open())
+		expect(live?.currentStep?.stage).toBe('VERIFY')
+		expect(live?.currentStage).toBe(1)
+	})
+
+	it('advances to APPROVE once VERIFY is signed off', () => {
+		const steps = attempt1Open()
+		steps[1].decision = 'APPROVED'
+		const live = livePayrollStage(steps)
+		expect(live?.currentStep?.stage).toBe('APPROVE')
+	})
+
+	it('reports no open stage once fully approved', () => {
+		const steps = attempt1Open()
+		steps[1].decision = 'APPROVED'
+		steps[2].decision = 'APPROVED'
+		expect(livePayrollStage(steps)?.currentStep ?? null).toBeNull()
+	})
+
+	it('halts the attempt on a return — no stage is actionable until a recompute', () => {
+		const steps = attempt1Open()
+		steps[1].decision = 'RETURNED' // returned at VERIFY
+		const live = livePayrollStage(steps)
+		// The still-null APPROVE step must NOT read as actionable.
+		expect(live?.currentStep ?? null).toBeNull()
+	})
+
+	it('reopens at VERIFY on a fresh attempt after a return', () => {
+		const steps = [
+			step(1, 0, 'MAKE', 'APPROVED', 'maker'),
+			step(1, 1, 'VERIFY', 'RETURNED'),
+			step(1, 2, 'APPROVE', null),
+			// Recompute opened attempt 2.
+			step(2, 0, 'MAKE', 'APPROVED', 'maker'),
+			step(2, 1, 'VERIFY', null),
+			step(2, 2, 'APPROVE', null)
+		]
+		const live = livePayrollStage(steps)
+		expect(live?.attempt).toBe(2)
+		expect(live?.currentStep?.stage).toBe('VERIFY')
+	})
+
+	it('returns null for a run with no chain yet', () => {
+		expect(livePayrollStage([])).toBeNull()
 	})
 })

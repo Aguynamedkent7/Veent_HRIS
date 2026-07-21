@@ -447,6 +447,59 @@ function drawTotals(doc: Doc, d: PayslipDocument, x: number, y: number, w: numbe
 	textAt(doc, 'Date Received', x, bottomY + 3, { size: 7, width: w, align: 'center' })
 }
 
+// Itemized breakdown page (#139) — every persisted earning/deduction line, so an
+// employee can trace each front-side bucket down to its components. Two side-by-side
+// columns (earnings | deductions); each column is a simple label→amount table that
+// grows with the number of lines rather than the fixed-grid template above.
+function drawDetail(doc: Doc, d: PayslipDocument, x: number, y: number, w: number) {
+	textAt(doc, 'ITEMIZED BREAKDOWN', x, y, { font: FONT_BOLD, size: 11, width: w })
+	textAt(doc, d.employee.fullName, x, y + 14, { size: 8, width: w })
+	textAt(doc, `${d.period.periodLabel}`, x, y + 14, { size: 8, width: w, align: 'right' })
+
+	const top = y + 34
+	const gap = 24
+	const colW = (w - gap) / 2
+	const rowH = 16
+
+	const column = (
+		colX: number,
+		title: string,
+		rows: { label: string; amount: string }[],
+		total: string
+	) => {
+		box(doc, colX, top, colW, rowH)
+		doc.save().rect(colX, top, colW, rowH).fillOpacity(0.06).fillColor('#000').fill().restore()
+		textAt(doc, title, colX + 6, top + 5, { font: FONT_BOLD, size: 8, width: colW - 12 })
+
+		let cy = top + rowH
+		const shown = rows.length > 0 ? rows : [{ label: '—', amount: '0.00' }]
+		for (const r of shown) {
+			box(doc, colX, cy, colW, rowH)
+			textAt(doc, r.label, colX + 6, cy + 5, { size: 8, width: colW * 0.62 })
+			textAt(doc, r.amount, colX + colW * 0.62, cy + 5, {
+				size: 8,
+				width: colW * 0.38 - 6,
+				align: 'right'
+			})
+			cy += rowH
+		}
+
+		// Column total.
+		box(doc, colX, cy, colW, rowH)
+		doc.save().rect(colX, cy, colW, rowH).fillOpacity(0.06).fillColor('#000').fill().restore()
+		textAt(doc, 'TOTAL', colX + 6, cy + 5, { font: FONT_BOLD, size: 8, width: colW * 0.62 })
+		textAt(doc, total, colX + colW * 0.62, cy + 5, {
+			font: FONT_BOLD,
+			size: 8,
+			width: colW * 0.38 - 6,
+			align: 'right'
+		})
+	}
+
+	column(x, 'EARNINGS', d.detail.earnings, d.totals.grossPay)
+	column(x + colW + gap, 'DEDUCTIONS', d.detail.deductions, d.totals.deduction)
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function renderPayslipPdf(d: PayslipDocument): Promise<Buffer> {
@@ -476,6 +529,11 @@ export async function renderPayslipPdf(d: PayslipDocument): Promise<Buffer> {
 			drawAdjustments(doc, d, x + COL_OT_W, y, COL_ADJ_W, BODY_H)
 			drawDeductions(doc, d, x + COL_OT_W + COL_ADJ_W, y, COL_DED_W, BODY_H)
 			drawTotals(doc, d, x + COL_OT_W + COL_ADJ_W + COL_DED_W, y, COL_TOT_W, BODY_H)
+
+			// Itemized breakdown on its own page (#139) — additive; the front-side
+			// summary above is untouched.
+			doc.addPage({ size: [PAGE_WIDTH, PAGE_HEIGHT], margin: 0 })
+			drawDetail(doc, d, MARGIN, MARGIN, CONTENT_WIDTH)
 
 			doc.end()
 		} catch (e) {

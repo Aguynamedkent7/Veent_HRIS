@@ -29,22 +29,28 @@
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
 		<h1 class="text-2xl font-bold tracking-tight">Payroll Runs</h1>
-		<div class="flex items-center gap-2">
-			<a
-				href="/payroll/calculator"
-				class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">Calculator</a
+		{#if data.canManage}
+			<div class="flex items-center gap-2">
+				<a
+					href="/payroll/calculator"
+					class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">Calculator</a
+				>
+				<a
+					href="/payroll/periods"
+					class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">Payroll Periods</a
+				>
+				<button
+					onclick={() => (showCreate = !showCreate)}
+					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+				>
+					New Payroll Run
+				</button>
+			</div>
+		{:else}
+			<!-- Sign-off roles (Verifier/Approver) see a read-only list and open a run to act. -->
+			<span class="text-xs text-muted-foreground">Open a computed run to verify or approve it.</span
 			>
-			<a
-				href="/payroll/periods"
-				class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">Payroll Periods</a
-			>
-			<button
-				onclick={() => (showCreate = !showCreate)}
-				class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-			>
-				New Payroll Run
-			</button>
-		</div>
+		{/if}
 	</div>
 
 	{#if form?.error && !showCreate}
@@ -131,7 +137,7 @@
 							</td>
 							<td class="px-4 py-3">
 								<div class="flex items-center justify-end gap-2">
-									{#if run.status === 'DRAFT'}
+									{#if data.canManage && run.status === 'DRAFT'}
 										{@const computeG = guard(`${run.id}:compute`)}
 										<form method="POST" action="?/compute" use:enhance={computeG.enhance}>
 											<input type="hidden" name="id" value={run.id} />
@@ -143,9 +149,8 @@
 											>
 										</form>
 									{/if}
-									{#if run.status === 'COMPUTED'}
+									{#if data.canManage && run.status === 'COMPUTED'}
 										{@const recomputeG = guard(`${run.id}:compute`)}
-										{@const approveG = guard(`${run.id}:approve`)}
 										<form method="POST" action="?/compute" use:enhance={recomputeG.enhance}>
 											<input type="hidden" name="id" value={run.id} />
 											<button
@@ -155,17 +160,11 @@
 												>{recomputeG.busy ? 'Computing…' : 'Recompute'}</button
 											>
 										</form>
-										<form method="POST" action="?/approve" use:enhance={approveG.enhance}>
-											<input type="hidden" name="id" value={run.id} />
-											<button
-												type="submit"
-												disabled={approveG.busy}
-												class="btn-row-positive disabled:pointer-events-none disabled:opacity-50"
-												>{approveG.busy ? 'Approving…' : 'Approve'}</button
-											>
-										</form>
 									{/if}
-									<a href="/payroll/{run.id}" class="btn-row">Detail</a>
+									<!-- Sign-off (verify → approve) happens through the chain on the detail page (#134). -->
+									<a href="/payroll/{run.id}" class="btn-row"
+										>{run.status === 'COMPUTED' ? 'Review' : 'Detail'}</a
+									>
 								</div>
 							</td>
 						</tr>

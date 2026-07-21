@@ -1,3 +1,4 @@
+import { chromium } from '@playwright/test'
 import { PrismaClient } from '@prisma/client'
 import { E2E_DISCORD_ID } from './helpers'
 
@@ -28,6 +29,29 @@ async function warmRoutes() {
 		} catch {
 			// Server not up yet, or this route is slow — tests will surface it properly.
 		}
+	}
+
+	// The fetch loop compiles server modules, but the two-step Avipa login (#135) reveals
+	// its credential form client-side, so the first *browser* hit to /login pays the client
+	// bundle + hydration cost. Prime it here in a real browser so the first test doesn't
+	// flake waiting for the tenant button to become interactive. Best-effort.
+	try {
+		const browser = await chromium.launch()
+		const page = await browser.newPage()
+		await page.goto(`${base}/login`, { waitUntil: 'load', timeout: 60_000 })
+		// Clicking the tenant button forces hydration; if it reveals the Email field the
+		// bundle is warm. Swallow failures — this is a warmup, not an assertion.
+		await page
+			.getByRole('button', { name: 'Veent', exact: true })
+			.click({ timeout: 30_000 })
+			.catch(() => {})
+		await page
+			.getByLabel('Email')
+			.waitFor({ state: 'visible', timeout: 10_000 })
+			.catch(() => {})
+		await browser.close()
+	} catch {
+		// Chromium not available or server slow — tests will surface any real problem.
 	}
 }
 

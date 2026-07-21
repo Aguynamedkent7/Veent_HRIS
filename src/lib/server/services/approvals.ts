@@ -4,6 +4,7 @@ import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import type { ApprovalDecision, ApprovalStage, Role } from '@prisma/client'
 import { applyApprovedRequest } from './requests/apply'
+import { buildApprovalChain } from './requests/routing'
 import { notify } from './notifications'
 import type { AuditContext } from './types'
 
@@ -195,6 +196,7 @@ export const APPROVER_ROLES: readonly Role[] = CAPABILITIES.APPROVE_REQUESTS
 export interface PendingApprovalCounts {
 	timesheets: number
 	requests: number
+	payrollRuns: number
 	total: number
 }
 
@@ -208,7 +210,8 @@ export async function countPendingApprovals(user: {
 	organizationId: string
 }): Promise<PendingApprovalCounts> {
 	const roles = user.roles?.length ? user.roles : [user.role]
-	if (!canAny(roles, 'APPROVE_REQUESTS')) return { timesheets: 0, requests: 0, total: 0 }
+	if (!canAny(roles, 'APPROVE_REQUESTS'))
+		return { timesheets: 0, requests: 0, payrollRuns: 0, total: 0 }
 
 	const myEmployee = await db.employee.findUnique({
 		where: { userId: user.id },
@@ -222,18 +225,53 @@ export async function countPendingApprovals(user: {
 		canAny(roles, 'VERIFY_REQUESTS') ||
 		canAny(roles, 'APPROVE_SIGNOFF')
 
-	const [requests, timesheetCount] = await Promise.all([
+	const [requests, timesheetCount, payrollRunCount] = await Promise.all([
 		listPendingRequestsForApprover(user.organizationId, roles, myEmployee?.id ?? null),
 		canReviewTimesheets
 			? countActionableTimesheets(user.organizationId, roles, myEmployee?.id ?? null)
-			: Promise.resolve(0)
+			: Promise.resolve(0),
+		countActionablePayrollRuns(user.organizationId, roles, user.id)
 	])
 
 	return {
 		timesheets: timesheetCount,
 		requests: requests.length,
-		total: timesheetCount + requests.length
+		payrollRuns: payrollRunCount,
+		total: timesheetCount + requests.length + payrollRunCount
 	}
+}
+
+// COMPUTED payroll runs whose live maker-checker stage this user can sign off (#134).
+// Only the sign-off roles act on runs; the maker of the live attempt is excluded (SoD).
+async function countActionablePayrollRuns(
+	organizationId: string,
+	roles: Role[],
+	userId: string
+): Promise<number> {
+	if (!canAny(roles, 'VERIFY_REQUESTS') && !canAny(roles, 'APPROVE_SIGNOFF')) return 0
+	const runs = await db.payrollRun.findMany({
+		where: { organizationId, status: 'COMPUTED' },
+		select: {
+			approvalSteps: {
+				select: {
+					id: true,
+					attempt: true,
+					stageIndex: true,
+					stage: true,
+					decision: true,
+					actorId: true
+				}
+			}
+		}
+	})
+	return runs.filter((r) => {
+		const live = livePayrollStage(r.approvalSteps)
+		if (!live?.currentStep) return false
+		const makeActorId = r.approvalSteps.find(
+			(s) => s.attempt === live.attempt && s.stage === 'MAKE'
+		)?.actorId
+		return canActOnStage(live.currentStep.stage, roles, null, null) && makeActorId !== userId
+	}).length
 }
 
 // SUBMITTED timesheets whose live maker-checker stage this user can act on (#134).
@@ -259,4 +297,139 @@ async function countActionableTimesheets(
 		if (!live || !live.currentStep) return canAny(roles, 'VIEW_TEAM')
 		return canActOnStage(live.currentStep.stage, roles, actorEmployeeId, ts.employeeId)
 	}).length
+}
+
+// ─── Payroll-run approval chain (#134) ──────────────────────────────────────────
+//
+// A payroll run adopts the same maker → verifier → approver chain as requests and
+// timesheets, but keyed on `payrollRunId`. Two differences shape the helpers below:
+//
+//   1. A run has no `currentStage` column — the live stage is derived from the
+//      append-only steps via liveChain(), exactly like timesheets.
+//   2. PayrollRunStatus has no RETURNED state. A returned run stays COMPUTED and the
+//      maker recomputes to refile; so a "returned" attempt must read as *closed*
+//      (no open stage) until a recompute opens a fresh attempt — otherwise a later
+//      stage's null step would look actionable and let an approver skip the return.
+
+export interface PayrollChainStep extends ChainStep {
+	id: string
+	actorId: string | null
+}
+
+// The live, still-actionable stage of a run's chain, or null when the latest attempt
+// is closed (fully approved, or returned/rejected and awaiting a recompute).
+export function livePayrollStage(steps: PayrollChainStep[]) {
+	const live = liveChain(steps)
+	if (!live) return null
+	// A return/reject halts the attempt: nothing further can be acted on until the maker
+	// recomputes, which starts a new attempt.
+	const halted = live.liveSteps.some((s) => s.decision === 'RETURNED' || s.decision === 'REJECTED')
+	if (halted || !live.currentStep) return { ...live, currentStep: null }
+	return live
+}
+
+// Ensure a computed run has an open approval chain. Called at the end of compute:
+// creates attempt 1 (MAKE auto-completed by the computing user, entering VERIFY) on the
+// first compute, and opens a fresh attempt after a return. A recompute while the chain
+// is still open is a no-op, so re-deriving numbers mid-review doesn't disturb sign-offs.
+export async function ensurePayrollApprovalChain(runId: string, makerUserId: string) {
+	const steps = await db.approvalStep.findMany({
+		where: { payrollRunId: runId },
+		orderBy: [{ attempt: 'asc' }, { stageIndex: 'asc' }]
+	})
+	if (livePayrollStage(steps)?.currentStep) return // chain already open
+
+	const attempt = steps.length ? Math.max(...steps.map((s) => s.attempt)) + 1 : 1
+	const { steps: newSteps } = buildApprovalChain({
+		attempt,
+		makerUserId,
+		decidedAt: new Date()
+	})
+	await db.approvalStep.createMany({
+		data: newSteps.map((s) => ({
+			payrollRunId: runId,
+			attempt: s.attempt,
+			stageIndex: s.stageIndex,
+			stageKind: s.stageKind,
+			stage: s.stage,
+			role: s.role,
+			requiredRole: s.requiredRole,
+			decision: s.decision ?? null,
+			actorId: s.actorId ?? null,
+			decidedAt: s.decidedAt ?? null
+		}))
+	})
+}
+
+// Act on a run's current maker-checker stage. `approved` advances the chain (final
+// APPROVE commits the run to APPROVED); otherwise the run is returned to the maker with
+// a required reason and stays COMPUTED for recompute/refile. Separation of duties: the
+// user who prepared (MADE) the attempt cannot verify or approve it.
+export async function decidePayrollRun(
+	runId: string,
+	organizationId: string,
+	approved: boolean,
+	note: string | undefined,
+	ctx: AuditContext
+) {
+	const run = await db.payrollRun.findFirst({
+		where: { id: runId, organizationId },
+		include: { approvalSteps: true }
+	})
+	if (!run) error(404, 'Payroll run not found')
+	if (run.status !== 'COMPUTED') error(400, 'Only computed payroll runs can be reviewed')
+
+	const live = livePayrollStage(run.approvalSteps)
+	if (!live || !live.currentStep) error(400, 'This run has no open approval stage')
+
+	const step = live.currentStep
+	const roles = rolesOf(ctx)
+	// Stage authority is a capability (VERIFY → Verifier, APPROVE → Approver). No employee
+	// owner exists for a run, so the owner-based guard args are null.
+	if (!canActOnStage(step.stage, roles, null, null)) {
+		error(403, 'You cannot act on this stage')
+	}
+	// Separation of duties: the maker of this attempt may not sign it off.
+	const makeStep = run.approvalSteps.find((s) => s.attempt === live.attempt && s.stage === 'MAKE')
+	if (makeStep?.actorId && makeStep.actorId === ctx.actorId) {
+		error(403, 'You cannot sign off a payroll run you prepared')
+	}
+
+	const decision: ApprovalDecision = approved ? 'APPROVED' : 'RETURNED'
+	if (!approved && !note?.trim()) error(400, 'A reason is required to return a payroll run')
+
+	const transition = nextState(live.currentStage, live.liveSteps.length, decision)
+	const finalApproved = transition.status === 'APPROVED'
+
+	await db.$transaction(async (tx) => {
+		await tx.approvalStep.update({
+			where: { id: step.id },
+			data: {
+				decision,
+				actorId: ctx.actorId,
+				note: approved ? null : (note ?? null),
+				decidedAt: new Date()
+			}
+		})
+		if (finalApproved) {
+			await tx.payrollRun.update({
+				where: { id: runId },
+				data: { status: 'APPROVED', approvedById: ctx.actorId, approvedAt: new Date() }
+			})
+		}
+	})
+
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'PayrollRun',
+		entityId: runId,
+		newValue: {
+			attempt: live.attempt,
+			stage: step.stage,
+			decision,
+			status: finalApproved ? 'APPROVED' : 'COMPUTED'
+		}
+	})
+
+	return { status: finalApproved ? 'APPROVED' : 'COMPUTED', stage: step.stage, decision }
 }

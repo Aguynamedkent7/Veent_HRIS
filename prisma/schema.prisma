@@ -265,6 +265,9 @@ model Organization {
   id        String   @id @default(cuid())
   name      String   @db.VarChar(200)
   logoUrl   String?
+  // Per-tenant brand colour as a raw HSL triple ("H S% L%", e.g. "142 71% 42%") so it can
+  // be injected straight into the `--primary`/`--ring` CSS variables. Null → default palette.
+  themePrimary String?
   address   String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 228 48" fill="none" role="img" aria-label="JoJo Potato">
+  <!-- potato -->
+  <g transform="rotate(-18 24 24)">
+    <ellipse cx="24" cy="24" rx="17" ry="12.5" fill="#D97706" />
+    <circle cx="17" cy="21" r="1.7" fill="#8A4B04" />
+    <circle cx="25" cy="18" r="1.4" fill="#8A4B04" />
+    <circle cx="30" cy="26" r="1.7" fill="#8A4B04" />
+    <circle cx="21" cy="29" r="1.4" fill="#8A4B04" />
+  </g>
+  <text x="50" y="32" font-family="'Segoe UI', Arial, sans-serif" font-size="23" font-weight="700" fill="#D97706">JoJo Potato</text>
+</svg>

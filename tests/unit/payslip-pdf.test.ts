@@ -36,6 +36,17 @@ const doc: PayslipDocument = {
 		{ label: 'LOAN', amount: '0.00' },
 		{ label: 'OTHERS', amount: '0.00' }
 	],
+	detail: {
+		earnings: [
+			{ label: 'BASIC PAY', amount: '7,020.00' },
+			{ label: 'OVERTIME', amount: '2,246.40' }
+		],
+		deductions: [
+			{ label: 'SSS', amount: '350.00' },
+			{ label: 'PHILHEALTH', amount: '150.00' },
+			{ label: 'PAG-IBIG', amount: '100.00' }
+		]
+	},
 	totals: { grossPay: '9,266.40', deduction: '600.00', netPay: '8,666.40' }
 }
 
@@ -54,5 +65,36 @@ describe('renderPayslipPdf', () => {
 		const buf = await renderPayslipPdf(doc)
 		const tail = buf.subarray(-6).toString('ascii')
 		expect(tail).toContain('%%EOF')
+	})
+
+	// #139: the itemized breakdown renders on a second page — the pages tree reports
+	// a count of 2 (front-side summary + detail).
+	it('emits a two-page document (summary + itemized detail)', async () => {
+		const buf = await renderPayslipPdf(doc)
+		expect(buf.toString('latin1')).toContain('/Count 2')
+	})
+
+	// A payslip with many loan / allowance lines still renders cleanly — every line
+	// flows onto the detail page (the column grows with the line count).
+	it('renders every earning and deduction line on the detail page', async () => {
+		const many: PayslipDocument = {
+			...doc,
+			detail: {
+				earnings: [
+					{ label: 'BASIC PAY', amount: '7,020.00' },
+					{ label: 'MEAL ALLOWANCE', amount: '800.00' },
+					{ label: 'TRANSPORT ALLOWANCE', amount: '500.00' },
+					{ label: 'PERFECT ATTENDANCE INCENTIVE', amount: '1,000.00' }
+				],
+				deductions: [
+					{ label: 'SSS SALARY LOAN', amount: '800.00' },
+					{ label: 'PAG-IBIG MPL', amount: '200.00' },
+					{ label: 'COMPANY CASH ADVANCE', amount: '1,500.00' }
+				]
+			}
+		}
+		const buf = await renderPayslipPdf(many)
+		expect(buf.byteLength).toBeGreaterThan(1000)
+		expect(buf.toString('latin1')).toContain('/Count 2')
 	})
 })

@@ -36,6 +36,13 @@ export interface PayslipDocument {
 	overtimeRows: { label: string; hours: string; pay: string }[]
 	adjustments: { label: string; amount: string }[]
 	deductions: { label: string; amount: string }[]
+	// Itemized breakdown (#139): every persisted PayrollEarning / PayrollDeduction line,
+	// verbatim, so an employee can trace each summary bucket down to its components.
+	// Additive to the summary columns above — the front-side buckets are unchanged.
+	detail: {
+		earnings: { label: string; amount: string }[]
+		deductions: { label: string; amount: string }[]
+	}
 	totals: {
 		grossPay: string
 		deduction: string
@@ -270,6 +277,18 @@ export function assemblePayslipDocument(input: HydrateInput): PayslipDocument {
 		overtimeRows,
 		adjustments,
 		deductions,
+		detail: {
+			// One row per line, in engine order. Label falls back to the code so a line
+			// without a human label still appears rather than rendering blank.
+			earnings: entry.earnings.map((e) => ({
+				label: (e.label || e.code).toUpperCase(),
+				amount: money(e.amount)
+			})),
+			deductions: entry.deductions.map((d) => ({
+				label: (d.label || d.code).toUpperCase(),
+				amount: money(d.amount)
+			}))
+		},
 		totals: {
 			grossPay: money(entry.grossPay),
 			deduction: money(entry.totalDeductions),
