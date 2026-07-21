@@ -17,20 +17,21 @@ export function getWeekEnd(date: Date): Date {
 }
 
 export function computeWorkingDays(start: Date, end: Date, holidays: Date[]): number {
-	const holidaySet = new Set(holidays.map((h) => h.toISOString().slice(0, 10)))
+	// All weekday and day-key math runs in Philippine Standard Time (#105). Mixing a
+	// local `getDay()` with a UTC `toISOString()` slice let a UTC (or any non-PHT) server
+	// bucket a boundary date onto the wrong calendar day, so leave/working-day counts
+	// disagreed with the PHT attendance helpers by a day. Keying both the iterated day and
+	// the holiday set through the same PHT helpers keeps them consistent on any server.
+	const holidaySet = new Set(holidays.map(manilaDayKey))
 	let count = 0
-	const cur = new Date(start)
-	cur.setHours(0, 0, 0, 0)
-	const endDay = new Date(end)
-	endDay.setHours(0, 0, 0, 0)
-
-	while (cur <= endDay) {
-		const day = cur.getDay()
-		const iso = cur.toISOString().slice(0, 10)
-		if (day !== 0 && day !== 6 && !holidaySet.has(iso)) {
+	let cur = manilaDayStart(start) // 00:00 PHT of start's PHT day
+	const last = manilaDayStart(end) // 00:00 PHT of end's PHT day
+	while (cur <= last) {
+		const weekday = new Date(cur.getTime() + MANILA_OFFSET_MS).getUTCDay() // 0=Sun…6=Sat in PHT
+		if (weekday !== 0 && weekday !== 6 && !holidaySet.has(manilaDayKey(cur))) {
 			count++
 		}
-		cur.setDate(cur.getDate() + 1)
+		cur = new Date(cur.getTime() + 24 * 60 * 60 * 1000) // +1 PHT day (PHT has no DST)
 	}
 	return count
 }

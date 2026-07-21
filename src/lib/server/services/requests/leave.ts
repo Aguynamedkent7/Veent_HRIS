@@ -1,20 +1,13 @@
 import { db } from '$lib/server/db'
 import { error } from '@sveltejs/kit'
 import type { Prisma } from '@prisma/client'
+import { computeWorkingDays } from '$lib/utils/dates'
 
-// Workdays (Mon–Fri) between two dates, excluding org holidays. Mirrors the legacy
-// leave service so migrated behaviour is unchanged.
+// Workdays (Mon–Fri) between two dates, excluding org holidays. Delegates to the shared
+// PHT-correct counter so leave day-math agrees with payroll/attendance on any server
+// timezone (#105) — the previous local-getDay + UTC-slice mix shifted boundary dates.
 export function workdaysBetween(start: Date, end: Date, holidays: Date[]): number {
-	let count = 0
-	const cur = new Date(start)
-	const holidayStrings = new Set(holidays.map((h) => h.toISOString().slice(0, 10)))
-	while (cur <= end) {
-		const day = cur.getDay()
-		const iso = cur.toISOString().slice(0, 10)
-		if (day !== 0 && day !== 6 && !holidayStrings.has(iso)) count++
-		cur.setDate(cur.getDate() + 1)
-	}
-	return count
+	return computeWorkingDays(start, end, holidays)
 }
 
 export async function computeLeaveTotalDays(
@@ -34,6 +27,9 @@ export async function computeLeaveTotalDays(
 }
 
 // Throw if the employee lacks the balance to cover `totalDays` for the leave type.
+// A missing balance row is itself a failure (#105): the old `if (balance && …)` guard
+// treated "no row" as unlimited, so the request was filed and later approved with no
+// ledger to deduct against. Treat absent as zero available and block up front.
 export async function assertLeaveBalance(
 	employeeId: string,
 	leaveTypeId: string,
@@ -43,12 +39,20 @@ export async function assertLeaveBalance(
 	const balance = await db.leaveBalance.findUnique({
 		where: { employeeId_leaveTypeId_year: { employeeId, leaveTypeId, year } }
 	})
-	if (balance && Number(balance.remaining) < totalDays) {
+	if (!balance) {
+		error(400, 'No leave balance on record for this leave type. Contact HR to set your allocation.')
+	}
+	if (Number(balance.remaining) < totalDays) {
 		error(400, `Insufficient leave balance. Available: ${balance.remaining} days`)
 	}
 }
 
-// Deduct on approval (used += days, remaining -= days). Safe inside a transaction.
+// Deduct on approval (used += days, remaining -= days). Must run inside the approval
+// transaction so a failure rolls the whole approval back (#101). The `remaining >= days`
+// guard in the WHERE makes the decrement conditional and atomic (#105): a race or a
+// second close approval can no longer drive `remaining` negative, and a missing/short
+// row updates nothing — surfaced as an error so the caller aborts rather than marking a
+// request approved with no ledger entry.
 export async function deductLeaveBalance(
 	tx: Prisma.TransactionClient,
 	employeeId: string,
@@ -56,8 +60,11 @@ export async function deductLeaveBalance(
 	year: number,
 	totalDays: number
 ) {
-	await tx.leaveBalance.updateMany({
-		where: { employeeId, leaveTypeId, year },
+	const { count } = await tx.leaveBalance.updateMany({
+		where: { employeeId, leaveTypeId, year, remaining: { gte: totalDays } },
 		data: { used: { increment: totalDays }, remaining: { decrement: totalDays } }
 	})
+	if (count === 0) {
+		error(409, 'Leave balance is insufficient or missing; cannot deduct.')
+	}
 }
