@@ -46,7 +46,7 @@ services:
     restart: unless-stopped
     env_file: .env.prod
     ports:
-      - '3000:3000'
+      - '127.0.0.1:3000:3000'
     depends_on:
       db:
         # Wait until Postgres actually accepts connections, not just until it starts.
