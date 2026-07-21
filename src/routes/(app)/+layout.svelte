@@ -20,6 +20,9 @@
 	// the default asset when the tenant has no logoUrl set.
 	const orgLogo = $derived(data.org?.logoUrl || '/veent-logo.png')
 	const orgName = $derived(data.org?.name || 'Veent HRIS')
+	// The Veent logo already carries the "Veent HRIS" wordmark; JoJo Potato and Sweetleaf
+	// use brand marks without it, so show a "{name} HRIS" wordmark beside their logo.
+	const showWordmark = $derived(data.org?.id === 'org_jojo' || data.org?.id === 'org_sweetleaf')
 	// Per-org theme (#139): override the brand CSS variables for the active tenant. The
 	// value is a raw HSL triple; descendants' `bg-primary`/`ring` pick up the cascade.
 	const themeStyle = $derived(
@@ -194,6 +197,12 @@
 				label: 'Benefits',
 				show: isAdmin,
 				icon: 'M9 12.75l2.25 2.25 4.5-4.5m3.75 2.25c0 5.592-3.824 10.29-9 11.622C6.324 22.29 2.5 17.592 2.5 12V6.75c0-.621.504-1.125 1.125-1.125A9.735 9.735 0 0012 3.286a9.735 9.735 0 008.375 2.339c.621 0 1.125.504 1.125 1.125V12z'
+			},
+			{
+				href: '/inventory',
+				label: 'Inventory',
+				show: isAdmin,
+				icon: 'M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0l-3-3m3 3l3-3M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z'
 			}
 		].filter((i) => i.show)
 	)
@@ -305,8 +314,13 @@
 				/>
 			</svg>
 		</button>
-		<a href="/dashboard" class="flex items-center">
+		<a href="/dashboard" class="flex items-center gap-2">
 			<img src={orgLogo} alt={orgName} class="h-8 w-auto" />
+			{#if showWordmark}
+				<span class="text-sm font-semibold whitespace-nowrap"
+					>{orgName} <span class="font-normal text-muted-foreground">HRIS</span></span
+				>
+			{/if}
 		</a>
 	</header>
 
@@ -328,8 +342,13 @@
 	>
 		<!-- Logo -->
 		<div class="flex h-14 shrink-0 items-center justify-between border-b border-border px-5">
-			<a href="/dashboard" class="flex items-center">
+			<a href="/dashboard" class="flex items-center gap-2">
 				<img src={orgLogo} alt={orgName} class="h-9 w-auto" />
+				{#if showWordmark}
+					<span class="text-sm font-semibold whitespace-nowrap"
+						>{orgName} <span class="font-normal text-muted-foreground">HRIS</span></span
+					>
+				{/if}
 			</a>
 			<button
 				type="button"

@@ -125,11 +125,15 @@
 				</div>
 				<div class="rounded-lg border bg-card p-4">
 					<p class="text-sm text-muted-foreground">Hired in {data.year}</p>
-					<p class="text-3xl font-bold text-green-700">{data.attrition.hired}</p>
+					<p class="text-3xl font-bold text-green-600 dark:text-green-400">
+						{data.attrition.hired}
+					</p>
 				</div>
 				<div class="rounded-lg border bg-card p-4">
 					<p class="text-sm text-muted-foreground">Offboarded in {data.year}</p>
-					<p class="text-3xl font-bold text-red-700">{data.attrition.offboarded}</p>
+					<p class="text-3xl font-bold text-red-600 dark:text-red-400">
+						{data.attrition.offboarded}
+					</p>
 				</div>
 			</div>
 		</section>

@@ -42,6 +42,18 @@
 			super: false
 		},
 		{
+			href: '/settings/onboarding',
+			title: 'Onboarding Checklist',
+			desc: 'Derived & manual 201-file steps',
+			super: false
+		},
+		{
+			href: '/settings/job-boards',
+			title: 'Job Boards',
+			desc: 'Where postings can be published',
+			super: false
+		},
+		{
 			href: '/payroll/config',
 			title: 'Payroll Config',
 			desc: 'Cutoffs, frequency, statutory rates',

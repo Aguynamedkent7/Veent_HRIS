@@ -130,7 +130,9 @@
 	</div>
 
 	{#if form?.error}
-		<div class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+		<div
+			class="rounded-md border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-600 dark:text-red-400"
+		>
 			{form.error}
 		</div>
 	{/if}
@@ -230,12 +232,12 @@
 								>
 								{#if unverified}
 									<span
-										class="ml-1 rounded-full bg-yellow-100 px-2 py-0.5 font-medium text-yellow-700"
+										class="ml-1 rounded-full bg-yellow-500/15 px-2 py-0.5 font-medium text-yellow-400"
 										>{unverified} unverified</span
 									>
 								{:else}
 									<span
-										class="ml-1 rounded-full bg-green-100 px-2 py-0.5 font-medium text-green-700"
+										class="ml-1 rounded-full bg-green-500/15 px-2 py-0.5 font-medium text-green-400"
 										>all verified</span
 									>
 								{/if}

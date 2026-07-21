@@ -11,12 +11,12 @@
 
 	// AttendanceDay.status → cell badge (short code, colour, legend label). Order drives the legend.
 	const STATUS: Record<string, { code: string; label: string; class: string }> = {
-		PRESENT: { code: 'P', label: 'Present', class: 'bg-green-100 text-green-700' },
-		LATE: { code: 'LT', label: 'Late', class: 'bg-amber-100 text-amber-700' },
-		INCOMPLETE: { code: 'IN', label: 'Incomplete', class: 'bg-orange-100 text-orange-700' },
-		ABSENT: { code: 'A', label: 'Absent', class: 'bg-red-100 text-red-700' },
-		ON_LEAVE: { code: 'LV', label: 'On Leave', class: 'bg-blue-100 text-blue-700' },
-		HOLIDAY: { code: 'H', label: 'Holiday', class: 'bg-purple-100 text-purple-700' },
+		PRESENT: { code: 'P', label: 'Present', class: 'bg-green-500/15 text-green-400' },
+		LATE: { code: 'LT', label: 'Late', class: 'bg-amber-500/15 text-amber-400' },
+		INCOMPLETE: { code: 'IN', label: 'Incomplete', class: 'bg-orange-500/15 text-orange-400' },
+		ABSENT: { code: 'A', label: 'Absent', class: 'bg-red-500/15 text-red-400' },
+		ON_LEAVE: { code: 'LV', label: 'On Leave', class: 'bg-blue-500/15 text-blue-400' },
+		HOLIDAY: { code: 'H', label: 'Holiday', class: 'bg-purple-500/15 text-purple-400' },
 		REST_DAY: { code: 'R', label: 'Rest Day', class: 'bg-muted text-muted-foreground' }
 	}
 	// The dash cell = no AttendanceDay record for that day (no punch / not yet derived).
@@ -113,7 +113,9 @@
 					{#each data.members as member (member.id)}
 						<tr class="hover:bg-muted/30">
 							<td class="px-4 py-3 font-medium whitespace-nowrap sticky left-0 bg-background z-10">
-								<a href="/employees/{member.id}" class="text-primary hover:underline">
+								<!-- ?from so the shared employee page's Back returns here, not the role-based
+							     /employees fallback, even on reload/direct entry (#113). -->
+								<a href="/employees/{member.id}?from=/team" class="text-primary hover:underline">
 									{member.lastName}, {member.firstName}
 								</a>
 							</td>

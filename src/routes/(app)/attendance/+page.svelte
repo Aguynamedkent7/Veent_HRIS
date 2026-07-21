@@ -84,13 +84,13 @@
 	]
 
 	const badge: Record<string, string> = {
-		PRESENT: 'bg-green-100 text-green-700',
-		LATE: 'bg-yellow-100 text-yellow-700',
-		ABSENT: 'bg-red-100 text-red-700',
-		INCOMPLETE: 'bg-orange-100 text-orange-700',
-		ON_LEAVE: 'bg-purple-100 text-purple-700',
-		HOLIDAY: 'bg-blue-100 text-blue-700',
-		REST_DAY: 'bg-gray-100 text-gray-600'
+		PRESENT: 'bg-green-500/15 text-green-400',
+		LATE: 'bg-yellow-500/15 text-yellow-400',
+		ABSENT: 'bg-red-500/15 text-red-400',
+		INCOMPLETE: 'bg-orange-500/15 text-orange-400',
+		ON_LEAVE: 'bg-purple-500/15 text-purple-400',
+		HOLIDAY: 'bg-blue-500/15 text-blue-400',
+		REST_DAY: 'bg-gray-500/15 text-gray-400'
 	}
 
 	const STATUSES = ['PRESENT', 'LATE', 'ABSENT', 'INCOMPLETE', 'ON_LEAVE', 'HOLIDAY', 'REST_DAY']
@@ -376,7 +376,7 @@
 					<button
 						title="Reopen locked days (super admin)"
 						disabled={unlock.busy}
-						class="inline-flex items-center gap-1.5 rounded-md border border-amber-300 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:pointer-events-none disabled:opacity-50"
+						class="inline-flex items-center gap-1.5 rounded-md border border-amber-500/20 px-4 py-2 text-sm font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 disabled:pointer-events-none disabled:opacity-50"
 						>{@render icon(IC.lockOpen)}Unlock range</button
 					>
 				</form>
@@ -425,7 +425,7 @@
 					<button
 						title="Reopen locked days (super admin)"
 						disabled={unlockTeam.busy}
-						class="inline-flex items-center gap-1.5 rounded-md border border-amber-300 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:pointer-events-none disabled:opacity-50"
+						class="inline-flex items-center gap-1.5 rounded-md border border-amber-500/20 px-4 py-2 text-sm font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 disabled:pointer-events-none disabled:opacity-50"
 						>{@render icon(IC.lockOpen)}Unlock day</button
 					>
 				</form>
@@ -500,7 +500,7 @@
 								{:else if d}
 									<span
 										class="rounded-full px-2 py-0.5 text-xs font-medium {badge[d.status] ??
-											'bg-gray-100 text-gray-600'}">{d.status}</span
+											'bg-gray-500/15 text-gray-400'}">{d.status}</span
 									>
 									{#if d.isLocked}<span
 											title="locked"
@@ -641,7 +641,7 @@
 								{:else}
 									<span
 										class="rounded-full px-2 py-0.5 text-xs font-medium {badge[d.status] ??
-											'bg-gray-100 text-gray-600'}">{d.status}</span
+											'bg-gray-500/15 text-gray-400'}">{d.status}</span
 									>
 								{/if}
 							</td>
@@ -692,7 +692,7 @@
 								{:else}{n(d.overtimeHours).toFixed(
 										2
 									)}{#if n(d.rawOvertimeHours) > n(d.overtimeHours)}<span
-											class="ml-1 text-xs text-amber-600"
+											class="ml-1 text-xs text-amber-600 dark:text-amber-400"
 											title="unapproved OT"
 											>(+{(n(d.rawOvertimeHours) - n(d.overtimeHours)).toFixed(1)})</span
 										>{/if}{/if}

@@ -3,7 +3,19 @@ import { z } from 'zod'
 import { requireCapability } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { advanceApplicant, convertApplicantToEmployee } from '$lib/server/services/recruitment'
+import { getPostingBoards, liveChannels, setChannel } from '$lib/server/services/job-boards'
 import type { Actions, PageServerLoad } from './$types'
+
+// A robust http(s) check (mirrors the #109 resumeUrl approach) so the board URL field
+// can't store javascript: or bare strings.
+function isHttpUrl(v: string): boolean {
+	try {
+		const u = new URL(v)
+		return u.protocol === 'http:' || u.protocol === 'https:'
+	} catch {
+		return false
+	}
+}
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const user = locals.user!
@@ -22,10 +34,20 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		orderBy: { createdAt: 'asc' }
 	})
 
+	// Where this role has been advertised (#117). When it's CLOSED, `stillLive` is the
+	// list of boards that still need a takedown — surfaced so filled roles don't keep
+	// collecting applicants from stale external listings.
+	const boards = await getPostingBoards(user.organizationId, params.id)
+	const stillLive = posting.status === 'CLOSED' ? liveChannels(boards) : []
+
 	return {
 		posting,
 		applicants,
-		userRole: user.role
+		userRole: user.role,
+		boards,
+		postedCount: boards.filter((b) => b.live).length,
+		boardCount: boards.length,
+		stillLive
 	}
 }
 
@@ -95,6 +117,44 @@ export const actions: Actions = {
 				...(status === 'CLOSED' ? { closedAt: new Date() } : {})
 			}
 		})
+	},
+
+	setChannel: async ({ request, locals, params, getClientAddress }) => {
+		const user = locals.user!
+		requireCapability(user.role, 'MANAGE_HR')
+
+		const data = await request.formData()
+		const boardId = data.get('boardId') as string
+		if (!boardId) return fail(400, { error: 'Missing board id' })
+		const posted = data.get('posted') === 'on' || data.get('posted') === 'true'
+		const url = ((data.get('url') as string) ?? '').trim()
+
+		// Field-level: reject a bad URL, echoing the board id so the row can show the error.
+		if (posted && url && !isHttpUrl(url)) {
+			return fail(400, {
+				error: 'Enter a valid URL starting with http:// or https://',
+				channelBoardId: boardId
+			})
+		}
+
+		try {
+			await setChannel(
+				user.organizationId,
+				params.id,
+				boardId,
+				{ posted, url: url || null },
+				{
+					organizationId: user.organizationId,
+					actorId: user.id,
+					actorRole: user.role,
+					ipAddress: getClientAddress()
+				}
+			)
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
+		}
+		return { success: true }
 	},
 
 	convert: async ({ request, locals, getClientAddress }) => {

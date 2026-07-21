@@ -27,8 +27,8 @@
 	})
 
 	function typeBadgeClass(type: string) {
-		if (type === 'REGULAR') return 'bg-red-100 text-red-700'
-		return 'bg-blue-100 text-blue-700'
+		if (type === 'REGULAR') return 'bg-red-500/15 text-red-400'
+		return 'bg-blue-500/15 text-blue-400'
 	}
 
 	function typeLabel(type: string) {
@@ -248,7 +248,7 @@
 										action="?/delete"
 										title="Delete holiday?"
 										message="“{holiday.name}” will be removed from the calendar."
-										triggerClass="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+										triggerClass="rounded-md border border-red-500/20 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-500/10"
 									>
 										<input type="hidden" name="id" value={holiday.id} />
 									</ConfirmButton>

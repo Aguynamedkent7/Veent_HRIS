@@ -35,7 +35,9 @@
 	</div>
 
 	{#if form?.error}
-		<div class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+		<div
+			class="rounded-md border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-600 dark:text-red-400"
+		>
 			{form.error}
 		</div>
 	{/if}
@@ -76,8 +78,8 @@
 											type="submit"
 											disabled={toggle.busy}
 											class="rounded-md border px-3 py-1 text-xs font-medium disabled:pointer-events-none disabled:opacity-50 {et.isActive
-												? 'border-red-200 text-red-600 hover:bg-red-50'
-												: 'border-green-200 text-green-600 hover:bg-green-50'}"
+												? 'border-red-500/20 text-red-600 hover:bg-red-500/10'
+												: 'border-green-500/20 text-green-600 hover:bg-green-500/10'}"
 											>{toggle.busy ? 'Saving…' : et.isActive ? 'Deactivate' : 'Activate'}</button
 										>
 									</form>
@@ -155,8 +157,8 @@
 											type="submit"
 											disabled={toggle.busy}
 											class="rounded-md border px-3 py-1 text-xs font-medium disabled:pointer-events-none disabled:opacity-50 {dt.isActive
-												? 'border-red-200 text-red-600 hover:bg-red-50'
-												: 'border-green-200 text-green-600 hover:bg-green-50'}"
+												? 'border-red-500/20 text-red-600 hover:bg-red-500/10'
+												: 'border-green-500/20 text-green-600 hover:bg-green-500/10'}"
 											>{toggle.busy ? 'Saving…' : dt.isActive ? 'Deactivate' : 'Activate'}</button
 										>
 									</form>

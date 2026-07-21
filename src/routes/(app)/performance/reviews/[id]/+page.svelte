@@ -14,10 +14,10 @@
 	const acknowledge = createSubmitGuard()
 
 	function statusClass(s: string) {
-		if (s === 'ACKNOWLEDGED') return 'bg-green-100 text-green-700'
-		if (s === 'COMPLETED') return 'bg-blue-100 text-blue-700'
-		if (s === 'PENDING') return 'bg-gray-100 text-gray-600'
-		return 'bg-yellow-100 text-yellow-700'
+		if (s === 'ACKNOWLEDGED') return 'bg-green-500/15 text-green-400'
+		if (s === 'COMPLETED') return 'bg-blue-500/15 text-blue-400'
+		if (s === 'PENDING') return 'bg-gray-500/15 text-gray-400'
+		return 'bg-yellow-500/15 text-yellow-400'
 	}
 </script>
 
@@ -45,7 +45,9 @@
 	</div>
 
 	{#if form?.error}
-		<div class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+		<div
+			class="rounded-md border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-600 dark:text-red-400"
+		>
 			{form.error}
 		</div>
 	{/if}
@@ -129,7 +131,7 @@
 			>
 		</form>
 	{:else if r.status === 'ACKNOWLEDGED'}
-		<p class="text-sm text-green-700">
+		<p class="text-sm text-green-600 dark:text-green-400">
 			✓ Acknowledged{#if r.acknowledgedAt}
 				on {formatShortDate(r.acknowledgedAt)}{/if}.
 		</p>

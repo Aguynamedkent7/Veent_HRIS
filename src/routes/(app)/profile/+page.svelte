@@ -313,10 +313,10 @@
 									<span
 										class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {b.status ===
 										'ACTIVE'
-											? 'bg-green-100 text-green-700'
+											? 'bg-green-500/15 text-green-400'
 											: b.status === 'WAIVED'
-												? 'bg-yellow-100 text-yellow-700'
-												: 'bg-gray-100 text-gray-600'}">{b.status}</span
+												? 'bg-yellow-500/15 text-yellow-400'
+												: 'bg-gray-500/15 text-gray-400'}">{b.status}</span
 									>
 								</td>
 							</tr>

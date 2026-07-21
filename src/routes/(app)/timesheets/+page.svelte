@@ -99,7 +99,7 @@
 							title="Delete selected timesheets?"
 							message="Draft and rejected timesheets you own will be permanently deleted; submitted and approved ones are skipped."
 							triggerLabel="Delete selected"
-							triggerClass="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+							triggerClass="rounded-md border border-red-500/20 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-500/10 disabled:opacity-50"
 							disabled={busy}
 							submit={clearOnSuccess('mine')}
 						>
@@ -113,7 +113,7 @@
 								? ''
 								: 's'} will be permanently deleted."
 							triggerLabel="Delete selected"
-							triggerClass="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+							triggerClass="rounded-md border border-red-500/20 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-500/10 disabled:opacity-50"
 							disabled={busy}
 							submit={clearOnSuccess('team')}
 						>
