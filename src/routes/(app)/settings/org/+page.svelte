@@ -34,7 +34,7 @@
 </svelte:head>
 
 <div class="space-y-8">
-	<BackButton fallback="/settings" label="Settings" />
+	<BackButton fallback="/settings" label="Settings" preferFallback />
 
 	<div class="flex items-center justify-between">
 		<h1 class="text-2xl font-bold tracking-tight">Organization Structure</h1>

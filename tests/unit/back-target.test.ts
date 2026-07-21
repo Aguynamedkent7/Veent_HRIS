@@ -33,6 +33,37 @@ describe('resolveBackTarget', () => {
 	})
 })
 
+// Settings tabs chained Back through each other (tab → previous tab), stranding the index.
+// `preferFallback` makes Back move UP instead of sideways.
+describe('resolveBackTarget — preferFallback (section subpages)', () => {
+	it('ignores a sibling origin under the fallback and goes up to the section index', () => {
+		expect(resolveBackTarget('/settings/company', null, '/settings', true)).toBe('/settings')
+	})
+
+	it('ignores the sibling even when it carries a query string', () => {
+		expect(resolveBackTarget('/settings/holidays?year=2026', null, '/settings', true)).toBe(
+			'/settings'
+		)
+	})
+
+	it('still honours an origin from outside the section', () => {
+		expect(resolveBackTarget('/dashboard', null, '/settings', true)).toBe('/dashboard')
+	})
+
+	// The opt-out half: /requests/[id] deliberately goes back sideways to the approvals
+	// queue, so the default must keep preferring the captured origin.
+	it('leaves sideways navigation alone when not opted in', () => {
+		expect(resolveBackTarget('/requests/approvals', null, '/requests')).toBe('/requests/approvals')
+	})
+
+	it('does not treat a prefix-sharing sibling directory as inside the section', () => {
+		// '/settings-archive' merely starts with the same characters — it is not under /settings.
+		expect(resolveBackTarget('/settings-archive', null, '/settings', true)).toBe(
+			'/settings-archive'
+		)
+	})
+})
+
 describe('backLabel', () => {
 	it('shows the destination label when the target is the fallback', () => {
 		expect(backLabel('/payroll', '/payroll', 'Payroll')).toBe('Payroll')

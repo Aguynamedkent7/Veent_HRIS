@@ -28,7 +28,7 @@
 
 <div class="mx-auto max-w-4xl space-y-6">
 	<div>
-		<BackButton fallback="/settings" label="Settings" />
+		<BackButton fallback="/settings" label="Settings" preferFallback />
 		<h1 class="mt-1 text-2xl font-bold tracking-tight">Leave Types</h1>
 		<p class="text-sm text-muted-foreground">
 			Master data for the leave/request flow: name, whether it's paid, the default yearly

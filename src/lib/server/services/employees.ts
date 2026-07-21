@@ -68,6 +68,7 @@ interface UpdateEmployeeInput {
 	reportsToId?: string
 	discordId?: string | null
 	workScheduleId?: string | null
+	branchId?: string | null
 	emergencyContactName?: string
 	emergencyContactRelation?: string
 	emergencyContactPhone?: string
@@ -85,7 +86,8 @@ const HISTORY_FIELDS = [
 	'rateType',
 	'employmentType',
 	'employmentStatus',
-	'workScheduleId'
+	'workScheduleId',
+	'branchId'
 ] as const
 
 const HISTORY_LABELS: Record<(typeof HISTORY_FIELDS)[number], string> = {
@@ -96,12 +98,14 @@ const HISTORY_LABELS: Record<(typeof HISTORY_FIELDS)[number], string> = {
 	rateType: 'Rate basis',
 	employmentType: 'Employment type',
 	employmentStatus: 'Status',
-	workScheduleId: 'Work schedule'
+	workScheduleId: 'Work schedule',
+	branchId: 'Branch'
 }
 
 interface EmployeeListFilters {
 	status?: EmploymentStatus
 	departmentId?: string
+	branchId?: string
 	search?: string
 }
 
@@ -113,6 +117,7 @@ function employeeListWhere(
 		user: { organizationId },
 		...(filters?.status && { employmentStatus: filters.status }),
 		...(filters?.departmentId && { departmentId: filters.departmentId }),
+		...(filters?.branchId && { branchId: filters.branchId }),
 		...(filters?.search && {
 			OR: [
 				{ firstName: { contains: filters.search, mode: 'insensitive' } },
@@ -149,6 +154,7 @@ export async function listEmployees(
 			employmentStatus: true,
 			startDate: true,
 			department: { select: { id: true, name: true } },
+			branch: { select: { id: true, name: true } },
 			user: { select: { email: true, role: true, isActive: true } }
 		},
 		orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
@@ -271,6 +277,20 @@ export async function updateEmployee(
 ) {
 	const existing = await getEmployee(id, organizationId)
 
+	// A branch change is a store transfer. Postgres can't express "the branch belongs to the
+	// same org", so verify it here — a forged id from another tenant must not cross over.
+	// Re-saving an employee who already sits on a closed branch is allowed: the picker keeps
+	// their current branch selectable, and blocking it would fail every unrelated edit on
+	// that 201 file.
+	if (input.branchId && input.branchId !== existing.branchId) {
+		const branch = await db.branch.findFirst({
+			where: { id: input.branchId, organizationId },
+			select: { id: true, status: true }
+		})
+		if (!branch) error(404, 'Branch not found')
+		if (branch.status === 'CLOSED') error(400, 'That branch is closed — choose an open branch.')
+	}
+
 	const updated = await db.employee.update({
 		where: { id },
 		data: input,
@@ -373,14 +393,16 @@ export async function getEmploymentHistory(
 	})
 
 	// Resolve foreign-key ids to human-readable names for display.
-	const [departments, positions, schedules] = await Promise.all([
+	const [departments, positions, schedules, branches] = await Promise.all([
 		db.department.findMany({ where: { organizationId }, select: { id: true, name: true } }),
 		db.position.findMany({ where: { organizationId }, select: { id: true, title: true } }),
-		db.workSchedule.findMany({ where: { organizationId }, select: { id: true, name: true } })
+		db.workSchedule.findMany({ where: { organizationId }, select: { id: true, name: true } }),
+		db.branch.findMany({ where: { organizationId }, select: { id: true, name: true } })
 	])
 	const deptMap = new Map(departments.map((d) => [d.id, d.name]))
 	const posMap = new Map(positions.map((p) => [p.id, p.title]))
 	const schedMap = new Map(schedules.map((s) => [s.id, s.name]))
+	const branchMap = new Map(branches.map((b) => [b.id, b.name]))
 	const money = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' })
 
 	const display = (field: string, raw: unknown): string => {
@@ -388,6 +410,7 @@ export async function getEmploymentHistory(
 		const v = String(raw)
 		if (field === 'departmentId') return deptMap.get(v) ?? '(removed)'
 		if (field === 'positionId') return posMap.get(v) ?? '(removed)'
+		if (field === 'branchId') return branchMap.get(v) ?? '(removed)'
 		if (field === 'workScheduleId') return schedMap.get(v) ?? 'Default schedule'
 		if (field === 'basicMonthlySalary') return money.format(Number(raw))
 		// The figure's basis (#120) — 'Monthly salary' / 'Hourly rate', not the raw enum.

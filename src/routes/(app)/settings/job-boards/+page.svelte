@@ -22,7 +22,7 @@
 
 <div class="mx-auto max-w-3xl space-y-6">
 	<div>
-		<BackButton fallback="/settings" label="Settings" />
+		<BackButton fallback="/settings" label="Settings" preferFallback />
 		<h1 class="mt-1 text-2xl font-bold tracking-tight">Job Boards</h1>
 		<p class="text-sm text-muted-foreground">
 			The sites HR can mark a posting as published to (JobStreet, Indeed, LinkedIn…). Track where a

@@ -31,7 +31,7 @@
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
 		<div class="flex items-center gap-3">
-			<BackButton fallback="/settings" label="Settings" />
+			<BackButton fallback="/settings" label="Settings" preferFallback />
 			<h1 class="text-2xl font-bold tracking-tight">Work Schedules</h1>
 		</div>
 		<button

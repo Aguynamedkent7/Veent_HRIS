@@ -326,6 +326,26 @@
 							{/each}
 						</select>
 					</div>
+					{#if data.showBranches}
+						<div>
+							<label for="branchId" class="text-sm font-medium">Branch</label>
+							<select
+								id="branchId"
+								name="branchId"
+								class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+							>
+								<option value="">— No branch —</option>
+								{#each data.branches as br (br.id)}
+									<option value={br.id} selected={br.id === employee.branchId}
+										>{br.name}{br.status === 'CLOSED' ? ' (closed)' : ''}</option
+									>
+								{/each}
+							</select>
+							<p class="mt-1 text-xs text-muted-foreground">
+								Which store this employee works out of.
+							</p>
+						</div>
+					{/if}
 					<div>
 						<label for="rateType" class="text-sm font-medium">Rate Basis</label>
 						<select
