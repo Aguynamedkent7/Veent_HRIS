@@ -1,4 +1,3 @@
-import { redirect } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
 import { paginate } from '$lib/server/pagination'
 import { payslipVisibleRunFilter } from '$lib/server/services/payroll/runs'
@@ -11,8 +10,11 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		where: { userId: user.id }
 	})
 
+	// Accounts without a linked employee record (e.g. approver, verifier, CEO)
+	// have no payslips of their own — show the empty state rather than bouncing
+	// them to the dashboard.
 	if (!myEmployee) {
-		redirect(302, '/dashboard')
+		return { payslips: [], pagination: paginate(url, 0) }
 	}
 
 	const where = {
