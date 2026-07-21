@@ -184,3 +184,40 @@ later slash commands stay consistent with each other automatically.
 | Slash commands not showing                                      | Bot invited without the `applications.commands` scope — re-invite with it. |
 | Announcement not posted                                         | Bot lacks **Send Messages** permission in that channel.                    |
 | `Couldn't read the time`                                        | Use a form like `9:00`, `13:30`, or `1:30pm`.                              |
+
+---
+
+# Scheduled jobs (droplet crontab)
+
+The app has **no scheduler** — nothing inside SvelteKit runs on a timer. Recurring jobs are
+one-shot scripts under `scripts/`, invoked by cron on the droplet.
+
+`scripts/` is baked into the production image and `tsx` survives `pnpm prune --prod`, so any
+script here runs in prod unchanged.
+
+> **These crontab entries live outside the repo.** `deploy.yml` does `git reset --hard
+origin/main`, which will **not** create them — they must be installed once, by hand, on the
+> droplet (`crontab -e`). They are recorded here so they are recoverable if the box is rebuilt.
+
+## Automatic regularization — `promote-probationary.ts`
+
+PH probation caps at 6 months. This flips ACTIVE `PROBATIONARY` employees to `FULL_TIME` once
+6 whole calendar months of service have elapsed, writes the same audit entry a manual HR edit
+would (so it shows in the 201 file's Employment History), and notifies that org's HR.
+
+```
+0 1 * * *  cd ~/repos/Veent_HRIS && docker compose run --rm app pnpm exec tsx scripts/promote-probationary.ts >> /var/log/veent-regularize.log 2>&1
+```
+
+Runs 01:00 droplet time. `docker compose run --rm` costs no idle RAM on the 512MB droplet — the
+same pattern the compose header documents for seeding.
+
+Dry run first when testing (lists who _would_ be promoted, writes nothing):
+
+```bash
+docker compose run --rm app pnpm exec tsx scripts/promote-probationary.ts --dry-run
+```
+
+Idempotent — the query only matches `PROBATIONARY`, so re-running the same night is a no-op.
+It requires the seeded `system@veent.ph` user (`AuditLog.actorId` is a non-nullable FK, so an
+automated actor is mandatory); the script exits 1 with a clear message if it is missing.

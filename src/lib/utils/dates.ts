@@ -98,3 +98,39 @@ export function manilaWeekStart(date: Date): Date {
 export function manilaWeekEnd(date: Date): Date {
 	return new Date(manilaWeekStart(date).getTime() + 7 * 24 * 60 * 60 * 1000 - 1)
 }
+
+// ─── Tenure (#136) ───────────────────────────────────────────────────────────
+// Length of service, in whole calendar months. Both ends are bucketed through the
+// PHT helpers above before comparing: mixing local and UTC parts is the same
+// off-by-one-day bug class documented on computeWorkingDays, and here it would let
+// an employee's displayed tenure disagree with the 6-month regularization gate.
+
+/**
+ * Whole calendar months from `startDate` to `endDate` (default: now). The month only
+ * counts once the day-of-month is reached, so 11 months + 30 days is still 11.
+ * Never negative — a future start date reads as 0.
+ */
+export function monthsOfService(startDate: Date, endDate: Date = new Date()): number {
+	const [sy, sm, sd] = manilaDayKey(startDate).split('-').map(Number)
+	const [ey, em, ed] = manilaDayKey(endDate).split('-').map(Number)
+	let months = (ey - sy) * 12 + (em - sm)
+	// The anniversary day hasn't come round yet this month.
+	if (ed < sd) months--
+	return Math.max(0, months)
+}
+
+/**
+ * Human tenure, e.g. "2 years, 3 months" / "5 months" / "1 year". Anything under a
+ * month reads "less than a month" rather than "0 months". Pass `endDate` for
+ * offboarded staff so their tenure freezes at their last day.
+ */
+export function tenureLabel(startDate: Date, endDate?: Date): string {
+	const total = monthsOfService(startDate, endDate ?? new Date())
+	if (total < 1) return 'less than a month'
+	const years = Math.floor(total / 12)
+	const months = total % 12
+	const parts: string[] = []
+	if (years) parts.push(`${years} year${years === 1 ? '' : 's'}`)
+	if (months) parts.push(`${months} month${months === 1 ? '' : 's'}`)
+	return parts.join(', ')
+}

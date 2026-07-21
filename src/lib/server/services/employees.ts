@@ -153,6 +153,8 @@ export async function listEmployees(
 			employmentType: true,
 			employmentStatus: true,
 			startDate: true,
+			// #136: tenure freezes at endDate for offboarded staff.
+			endDate: true,
 			department: { select: { id: true, name: true } },
 			branch: { select: { id: true, name: true } },
 			user: { select: { email: true, role: true, isActive: true } }

@@ -295,6 +295,27 @@ export async function seedProd(db: PrismaClient) {
 		})
 	}
 
+	// --- System actor (#136) ---
+	// AuditLog.actorId is a non-nullable FK to User and actorRole is a required Role, so an
+	// automated job (the nightly regularization sweep) cannot write its audit row without a
+	// real user. This is that user — and it must never be able to log in:
+	//   • the password hash is of a random secret nobody holds, so bcrypt can never match, and
+	//   • isActive: false, which hooks.server.ts turns into an account_disabled redirect.
+	// HR_ADMIN (not SUPER_ADMIN) because regularization is an HR act and a service account
+	// should carry the least privilege that reads correctly in the audit trail.
+	const systemHash = await bcrypt.hash(`system-no-login-${crypto.randomUUID()}`, 12)
+	await db.user.upsert({
+		where: { email: 'system@veent.ph' },
+		update: { role: 'HR_ADMIN', isActive: false },
+		create: {
+			organizationId: org.id,
+			email: 'system@veent.ph',
+			passwordHash: systemHash,
+			role: 'HR_ADMIN',
+			isActive: false
+		}
+	})
+
 	// --- HR Admin (HR-level access) ---
 	const hrHash = await bcrypt.hash('Hr@1234', 12)
 	const hrUser = await db.user.upsert({

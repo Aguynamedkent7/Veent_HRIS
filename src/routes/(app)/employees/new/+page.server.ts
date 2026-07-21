@@ -60,7 +60,11 @@ const createSchema = z.object({
 	role: z.enum(['EMPLOYEE', 'MANAGER', 'HR_ADMIN']),
 	departmentId: z.string().min(1),
 	jobTitle: z.string().min(1),
-	employmentType: z.enum(['FULL_TIME', 'PROBATIONARY', 'CONTRACTUAL', 'PART_TIME']),
+	// New hires start probationary (#136) unless HR picks otherwise; regularization to
+	// FULL_TIME is automatic once 6 months of service have elapsed.
+	employmentType: z
+		.enum(['FULL_TIME', 'PROBATIONARY', 'CONTRACTUAL', 'PART_TIME'])
+		.default('PROBATIONARY'),
 	startDate: z.coerce.date(),
 	basicMonthlySalary: z.coerce.number().positive(),
 	// #120: how the amount above is read — a fixed monthly salary or a per-hour rate.

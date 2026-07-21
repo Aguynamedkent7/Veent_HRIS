@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
+	import { tenureLabel } from '$lib/utils/dates'
 	import { RATE_BASIS_OPTIONS, rateBasisCopy, type RateBasis } from '$lib/utils/rate-basis'
 	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
@@ -185,6 +186,8 @@
 				<dd>{employee.employmentType.replace('_', ' ')}</dd>
 				<dt class="text-muted-foreground">Start Date</dt>
 				<dd>{formatShortDate(employee.startDate)}</dd>
+				<dt class="text-muted-foreground">Tenure</dt>
+				<dd>{tenureLabel(employee.startDate, employee.endDate ?? undefined)}</dd>
 				{#if canManage}
 					<dt class="text-muted-foreground">Basic Salary</dt>
 					<dd class="font-medium">
