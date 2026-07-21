@@ -19,15 +19,15 @@
 	const statusClass = $derived(() => {
 		switch (employee.employmentStatus) {
 			case 'ACTIVE':
-				return 'bg-green-100 text-green-700'
+				return 'bg-green-500/15 text-green-400'
 			case 'OFFBOARDED':
-				return 'bg-gray-100 text-gray-600'
+				return 'bg-gray-500/15 text-gray-400'
 			case 'PROBATIONARY':
-				return 'bg-yellow-100 text-yellow-700'
+				return 'bg-yellow-500/15 text-yellow-400'
 			case 'RESIGNED':
-				return 'bg-red-100 text-red-700'
+				return 'bg-red-500/15 text-red-400'
 			default:
-				return 'bg-gray-100 text-gray-600'
+				return 'bg-gray-500/15 text-gray-400'
 		}
 	})
 </script>

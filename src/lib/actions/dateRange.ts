@@ -4,12 +4,13 @@
  * native picker, so a date range can be entered in one uninterrupted flow.
  *
  *   <input type="date" name="periodStart" use:advanceTo={'periodEnd'} />
- *   <input type="date" name="periodEnd" />
+ *   <input type="date" name="periodEnd" min={periodStart} />
  *
- * If the end input is empty or now earlier than the chosen start, it's primed to
- * the start date first. `showPicker()` needs transient user activation — the
- * `change` event provides it, but some browsers still throw, so we fall back to
- * a plain focus.
+ * The end input is NOT pre-filled with the start value (#115): the paired input
+ * already enforces `min={start}`, and copying the start into the end just looked
+ * like the start value had been typed into the wrong field while the picker stayed
+ * closed. `showPicker()` needs transient user activation — the `change` event
+ * provides it, but some browsers still throw, so we fall back to a plain focus.
  */
 export function advanceTo(node: HTMLInputElement, targetName: string) {
 	function onChange() {
@@ -17,12 +18,7 @@ export function advanceTo(node: HTMLInputElement, targetName: string) {
 		const target = node.form?.querySelector<HTMLInputElement>(`input[name="${targetName}"]`)
 		if (!target) return
 
-		if (!target.value || target.value < node.value) {
-			target.value = node.value
-			// Dispatch input so a Svelte `bind:value` on the end input stays in sync.
-			target.dispatchEvent(new Event('input', { bubbles: true }))
-		}
-
+		// Hand the user straight to the end-date picker; they choose the end themselves.
 		target.focus()
 		try {
 			target.showPicker?.()

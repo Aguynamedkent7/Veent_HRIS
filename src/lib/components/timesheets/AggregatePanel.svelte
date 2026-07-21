@@ -180,7 +180,7 @@
 
 			{#if preview.warnings.length}
 				<div class="rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-2 text-sm">
-					<p class="font-medium text-amber-700">
+					<p class="font-medium text-amber-600 dark:text-amber-400">
 						{preview.warnings.length} warning{preview.warnings.length === 1 ? '' : 's'}
 					</p>
 					<ul class="mt-1 list-disc space-y-0.5 pl-5 text-muted-foreground">

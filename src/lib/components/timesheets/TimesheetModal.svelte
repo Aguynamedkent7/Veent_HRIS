@@ -532,7 +532,7 @@
 							action="?/delete"
 							title="Delete timesheet?"
 							message="This permanently deletes the timesheet and all its entries."
-							triggerClass="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+							triggerClass="rounded-md border border-red-500/20 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-500/10"
 							disabled={busy}
 							submit={closeOnSuccess}
 						>
@@ -554,7 +554,7 @@
 							type="button"
 							disabled={busy}
 							onclick={() => (rejecting = true)}
-							class="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+							class="rounded-md border border-red-500/20 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-500/10 disabled:opacity-50"
 							>Reject…</button
 						>
 						<form method="POST" action="?/review" use:enhance={closeOnSuccess}>

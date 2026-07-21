@@ -3,7 +3,7 @@ import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import type { ApprovalDecision, ApprovalStage, Role } from '@prisma/client'
-import { applyApprovedRequest } from './requests/apply'
+import { applyApprovedRequest, type AppliedEffect } from './requests/apply'
 import { buildApprovalChain } from './requests/routing'
 import { notify } from './notifications'
 import type { AuditContext } from './types'
@@ -118,16 +118,31 @@ export async function decide(
 
 	const transition = nextState(req.currentStage, liveSteps.length, decision)
 
-	await db.$transaction([
-		db.approvalStep.update({
+	// The step/request flip AND the on-approval effect (leave-balance deduction /
+	// INFO_UPDATE write) must commit atomically (#101). Previously the effect ran in a
+	// separate call after the flip, so a failure or crash between them left the request
+	// permanently APPROVED with the balance never deducted — free leave, with no reversal
+	// path. Running the effect on the same `tx` rolls the approval back if it fails.
+	const applied = await db.$transaction(async (tx): Promise<AppliedEffect | null> => {
+		await tx.approvalStep.update({
 			where: { id: step.id },
 			data: { decision, actorId: ctx.actorId, note: note ?? null, decidedAt: new Date() }
-		}),
-		db.request.update({
+		})
+		await tx.request.update({
 			where: { id: req.id },
 			data: { status: transition.status, currentStage: transition.currentStage }
 		})
-	])
+		if (transition.status === 'APPROVED') {
+			return applyApprovedRequest(tx, {
+				id: req.id,
+				type: req.type,
+				employeeId: req.employeeId,
+				dateFrom: req.dateFrom,
+				payload: req.payload
+			})
+		}
+		return null
+	})
 
 	await writeAuditLog(ctx, {
 		action: 'UPDATE',
@@ -136,18 +151,18 @@ export async function decide(
 		newValue: { attempt, stage: step.stage, decision, status: transition.status }
 	})
 
-	// On full approval, apply the request to attendance/payroll state.
-	if (transition.status === 'APPROVED') {
-		await applyApprovedRequest(
-			{
-				id: req.id,
-				type: req.type,
-				employeeId: req.employeeId,
-				dateFrom: req.dateFrom,
-				payload: req.payload
-			},
-			ctx
-		)
+	// Audit the applied effect after commit — mirrors the request-decision log above and
+	// avoids an orphan entry if the transaction had rolled back.
+	if (applied) {
+		await writeAuditLog(ctx, {
+			action: 'UPDATE',
+			entityType: applied.kind === 'LEAVE' ? 'LeaveBalance' : 'Employee',
+			entityId: req.employeeId,
+			newValue:
+				applied.kind === 'LEAVE'
+					? { leaveTypeId: applied.leaveTypeId, deducted: applied.deducted, viaRequest: req.id }
+					: { [applied.column]: applied.value, viaRequest: req.id }
+		})
 	}
 
 	// Notify the requester of the outcome.
