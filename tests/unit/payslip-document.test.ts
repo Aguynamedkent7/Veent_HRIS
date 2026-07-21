@@ -224,4 +224,48 @@ describe('assemblePayslipDocument', () => {
 		expect(doc.period.periodLabel).toBe('5/11/22 to  5/25/22')
 		expect(doc.period.payDate).toBe('5/30/22')
 	})
+
+	// #139: the itemized detail lists every persisted line verbatim — no bucketing —
+	// so an employee can trace each summary column down to its components.
+	it('emits one detail row per earning and deduction line, uppercased', () => {
+		const doc = assemblePayslipDocument(
+			baseInput({
+				entry: {
+					...baseInput().entry,
+					earnings: [
+						{ code: 'BASIC', label: 'Basic pay', amount: 7020 },
+						{ code: 'ALLOWANCE_MEAL', label: 'Meal Allowance', amount: 800 },
+						{ code: 'ALLOWANCE_TRANSPORT', label: 'Transport', amount: 500 }
+					],
+					deductions: [
+						{ code: 'LOAN_SSS', label: 'SSS Salary Loan', amount: 800 },
+						{ code: 'LOAN_HDMF', label: 'Pag-IBIG MPL', amount: 200 }
+					]
+				}
+			})
+		)
+		// Every line appears individually (both allowances, both loans) — not collapsed.
+		expect(doc.detail.earnings).toEqual([
+			{ label: 'BASIC PAY', amount: '7,020.00' },
+			{ label: 'MEAL ALLOWANCE', amount: '800.00' },
+			{ label: 'TRANSPORT', amount: '500.00' }
+		])
+		expect(doc.detail.deductions).toEqual([
+			{ label: 'SSS SALARY LOAN', amount: '800.00' },
+			{ label: 'PAG-IBIG MPL', amount: '200.00' }
+		])
+	})
+
+	it('falls back to the line code when a detail line has no label', () => {
+		const doc = assemblePayslipDocument(
+			baseInput({
+				entry: {
+					...baseInput().entry,
+					earnings: [{ code: 'INCENTIVE', label: '', amount: 250 }],
+					deductions: []
+				}
+			})
+		)
+		expect(doc.detail.earnings).toEqual([{ label: 'INCENTIVE', amount: '250.00' }])
+	})
 })

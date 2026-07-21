@@ -11,6 +11,7 @@ import { emptyAttendance, round2, type EmployeeComp } from './types'
 import { buildAttendanceInput } from '../attendance/input'
 import { computeWorkingDays } from '$lib/utils/dates'
 import { isValidStandardPeriod, periodShareOf } from '$lib/utils/pay-periods'
+import { ensurePayrollApprovalChain } from '../approvals'
 import type { AuditContext } from '../types'
 
 function groupByEmployee<T extends { employeeId: string }>(rows: T[]): Map<string, T[]> {
@@ -323,6 +324,11 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		}
 	})
 
+	// Open (or reopen, after a return) the maker-checker chain (#134). The computing
+	// user is the maker; the chain enters at VERIFY. A recompute during an open review
+	// is a no-op here, so numbers can be re-derived without disturbing sign-offs.
+	await ensurePayrollApprovalChain(runId, ctx.actorId)
+
 	return db.payrollRun.findUnique({
 		where: { id: runId },
 		include: {
@@ -419,6 +425,12 @@ export async function getPayrollRun(id: string, organizationId: string) {
 					deductions: true
 				},
 				orderBy: { employee: { lastName: 'asc' } }
+			},
+			// Maker-checker chain (#134), append-only across attempts, with the acting
+			// user's email for attribution in the history view.
+			approvalSteps: {
+				include: { actor: { select: { email: true } } },
+				orderBy: [{ attempt: 'asc' }, { stageIndex: 'asc' }]
 			}
 		}
 	})

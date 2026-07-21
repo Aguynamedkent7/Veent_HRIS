@@ -9,9 +9,58 @@
 	const run = $derived(data.run)
 	let overrideEntryId = $state<string | null>(null)
 	let expandedEntryId = $state<string | null>(null)
+	let showReturn = $state(false)
 
 	// #108: a double-submitted recompute rebuilds every entry twice — expensive to unwind.
 	const compute = createSubmitGuard()
+	const decideGuard = createSubmitGuard()
+
+	// Maker-checker chain (#134): each attempt is MAKE → VERIFY → APPROVE. Group the
+	// append-only steps by attempt so a recomputed/refiled run shows its full history.
+	type Step = (typeof run.approvalSteps)[number]
+	const stageName: Record<string, string> = { MAKE: 'Make', VERIFY: 'Verify', APPROVE: 'Approve' }
+	const latestAttempt = $derived(Math.max(1, ...run.approvalSteps.map((s) => s.attempt)))
+	const attempts = $derived.by(() => {
+		const groups = new Map<number, Step[]>()
+		for (const s of run.approvalSteps) {
+			const list = groups.get(s.attempt) ?? []
+			list.push(s)
+			groups.set(s.attempt, list)
+		}
+		return [...groups.entries()]
+			.sort((a, b) => a[0] - b[0])
+			.map(([attempt, steps]) => ({
+				attempt,
+				steps: [...steps].sort((a, b) => a.stageIndex - b.stageIndex)
+			}))
+	})
+
+	function stepLabel(step: Step): string {
+		if (step.decision === 'APPROVED') {
+			return step.stage === 'MAKE' ? 'Prepared' : step.stage === 'VERIFY' ? 'Verified' : 'Approved'
+		}
+		if (step.decision === 'REJECTED') return 'Rejected'
+		if (step.decision === 'RETURNED') return 'Returned'
+		return stageName[step.stage] ?? 'Pending'
+	}
+
+	// The live stage is highlighted only while the run is open for review and the
+	// latest attempt hasn't been returned. `data.canAct` gates whether *this* user acts.
+	const haltedLatest = $derived(
+		run.approvalSteps.some(
+			(s) => s.attempt === latestAttempt && (s.decision === 'RETURNED' || s.decision === 'REJECTED')
+		)
+	)
+	function isActive(step: Step): boolean {
+		return (
+			run.status === 'COMPUTED' &&
+			!haltedLatest &&
+			step.attempt === latestAttempt &&
+			step.decision == null &&
+			data.liveStage === step.stage
+		)
+	}
+	const actVerb = $derived(data.liveStage === 'APPROVE' ? 'Approve' : 'Verify')
 
 	// #108: the override form is rendered inside an {#each}, so it gets a per-entry guard rather
 	// than a shared one. Memoised by entry id so the identity is stable across re-renders.
@@ -39,9 +88,9 @@
 		{#if run.hasOverride}
 			<span class="text-xs text-yellow-600 font-medium dark:text-yellow-500">Has overrides</span>
 		{/if}
-		{#if run.status === 'COMPUTED'}
+		{#if data.canManage && run.status === 'COMPUTED'}
 			<!-- Recompute rebuilds all entries from current data (e.g. after assigning
-			     recurring earnings/deductions). Disabled once approved. -->
+			     recurring earnings/deductions). Managers only; disabled once approved. -->
 			<form method="POST" action="?/compute" use:enhance={compute.enhance} class="ml-auto">
 				<button
 					type="submit"
@@ -127,7 +176,7 @@
 									onclick={() => (expandedEntryId = expandedEntryId === entry.id ? null : entry.id)}
 									class="btn-row">{expandedEntryId === entry.id ? 'Hide' : 'Breakdown'}</button
 								>
-								{#if run.status !== 'APPROVED'}
+								{#if data.canManage && run.status !== 'APPROVED'}
 									<button onclick={() => (overrideEntryId = entry.id)} class="btn-row"
 										>Override</button
 									>
@@ -234,5 +283,122 @@
 				{/each}
 			</tbody>
 		</table>
+	</div>
+
+	<!-- Maker-checker approval chain (#134) -->
+	<div class="space-y-3">
+		<div class="flex items-center justify-between">
+			<h2 class="text-lg font-semibold">Approval chain</h2>
+			<p class="text-xs text-muted-foreground">Maker → Verifier → Approver</p>
+		</div>
+
+		{#if run.approvalSteps.length === 0}
+			<p class="text-sm text-muted-foreground">
+				No approval chain yet — compute this run to start the maker-checker flow.
+			</p>
+		{/if}
+
+		{#each attempts as group (group.attempt)}
+			{#if attempts.length > 1}
+				<p class="pt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+					Attempt {group.attempt}
+				</p>
+			{/if}
+			<ol class="space-y-2">
+				{#each group.steps as step, i (step.id)}
+					{@const active = isActive(step)}
+					<li
+						class="flex items-start gap-3 rounded-lg border p-3 {active
+							? 'border-primary/50 bg-primary/5'
+							: ''}"
+					>
+						<div
+							class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium
+							{step.decision === 'APPROVED'
+								? 'bg-green-100 text-green-700'
+								: step.decision === 'REJECTED'
+									? 'bg-red-100 text-red-700'
+									: step.decision === 'RETURNED'
+										? 'bg-orange-100 text-orange-700'
+										: 'bg-muted text-muted-foreground'}"
+						>
+							{i + 1}
+						</div>
+						<div class="min-w-0 flex-1">
+							<p class="text-sm font-medium">
+								{stepLabel(step)}
+								<span class="font-normal text-muted-foreground"
+									>· {stageName[step.stage]} stage</span
+								>
+							</p>
+							<p class="text-xs text-muted-foreground">
+								{#if step.decision}
+									{#if step.actor}by {step.actor.email}{/if}{#if step.decidedAt}{' '}
+										· {formatShortDate(step.decidedAt)}{/if}
+								{:else if active}
+									Pending — awaiting {stageName[step.stage].toLowerCase()}
+								{:else}
+									Not yet reached
+								{/if}
+							</p>
+							{#if step.note}<p class="mt-1 text-xs text-muted-foreground">“{step.note}”</p>{/if}
+						</div>
+					</li>
+				{/each}
+			</ol>
+		{/each}
+
+		{#if data.canAct}
+			<div class="rounded-lg border bg-card p-4">
+				<p class="text-sm font-medium">
+					This run is awaiting your {data.liveStage === 'APPROVE' ? 'approval' : 'verification'}.
+				</p>
+				<div class="mt-3 flex flex-wrap items-center gap-2">
+					<form method="POST" action="?/decide" use:enhance={decideGuard.enhance}>
+						<input type="hidden" name="action" value="approve" />
+						<button
+							type="submit"
+							disabled={decideGuard.busy}
+							class="btn-row-positive disabled:pointer-events-none disabled:opacity-50"
+							>{decideGuard.busy ? 'Saving…' : actVerb}</button
+						>
+					</form>
+					<button type="button" onclick={() => (showReturn = !showReturn)} class="btn-row"
+						>Return to maker</button
+					>
+				</div>
+
+				{#if showReturn}
+					<form
+						method="POST"
+						action="?/decide"
+						use:enhance={decideGuard.enhance}
+						class="mt-3 flex items-end gap-3"
+					>
+						<input type="hidden" name="action" value="return" />
+						<div class="flex-1">
+							<label for="return-note" class="text-xs font-medium">Reason (required)</label>
+							<input
+								id="return-note"
+								name="note"
+								required
+								placeholder="What needs to be corrected before refiling?"
+								class="mt-1 flex h-8 w-full rounded border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+							/>
+						</div>
+						<button
+							type="submit"
+							disabled={decideGuard.busy}
+							class="rounded border px-3 py-1.5 text-xs hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+							>{decideGuard.busy ? 'Returning…' : 'Confirm return'}</button
+						>
+					</form>
+				{/if}
+			</div>
+		{:else if run.status === 'COMPUTED' && haltedLatest}
+			<p class="text-sm text-orange-600 dark:text-orange-500">
+				Returned to the maker — recompute this run to refile it for review.
+			</p>
+		{/if}
 	</div>
 </div>

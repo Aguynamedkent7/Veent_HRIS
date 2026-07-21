@@ -1,19 +1,27 @@
-import { fail, isHttpError } from '@sveltejs/kit'
-import { requireMinRole, requirePayrollManage } from '$lib/server/rbac'
+import { error, fail, isHttpError } from '@sveltejs/kit'
+import { requirePayrollManage } from '$lib/server/rbac'
+import { canAny } from '$lib/rbac'
 import {
 	listPayrollRuns,
 	createPayrollRun,
-	computePayroll,
-	approvePayroll
+	computePayroll
 } from '$lib/server/services/payroll/index'
 import { z } from 'zod'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
-	requirePayrollManage(locals.user!.role)
+	const user = locals.user!
+	const roles = user.roles?.length ? user.roles : [user.role]
+	// Managers run/override; the sign-off roles (Verifier/Approver) need the list to find
+	// a computed run and open it to sign off (#134). Sign-off roles get a read-only view —
+	// `canManage` gates the create/compute controls in the page.
+	const canManage = canAny(roles, 'MANAGE_PAYROLL')
+	const canSignOff = canAny(roles, 'VERIFY_REQUESTS') || canAny(roles, 'APPROVE_SIGNOFF')
+	if (!canManage && !canSignOff) error(403, 'Insufficient permissions')
+
 	// Stream the runs list so the page renders a skeleton while it loads.
-	const runs = listPayrollRuns(locals.user!.organizationId)
-	return { runs }
+	const runs = listPayrollRuns(user.organizationId)
+	return { runs, canManage }
 }
 
 const createSchema = z.object({
@@ -54,26 +62,6 @@ export const actions: Actions = {
 
 		try {
 			await computePayroll(id, user.organizationId, {
-				organizationId: user.organizationId,
-				actorId: user.id,
-				actorRole: user.role,
-				ipAddress: getClientAddress()
-			})
-		} catch (e: unknown) {
-			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
-			throw e
-		}
-	},
-
-	approve: async ({ request, locals, getClientAddress }) => {
-		const user = locals.user!
-		requireMinRole(user.role, 'SUPER_ADMIN')
-
-		const data = await request.formData()
-		const id = data.get('id') as string
-
-		try {
-			await approvePayroll(id, user.organizationId, {
 				organizationId: user.organizationId,
 				actorId: user.id,
 				actorRole: user.role,

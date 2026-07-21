@@ -6,7 +6,9 @@ export const USERS = {
 	employee: { email: 'employee@veent.ph', password: 'Employee@1234' },
 	// Maker-checker sign-off accounts (#134).
 	verifier: { email: 'verifier@veent.ph', password: 'Verifier@1234' },
-	approver: { email: 'approver@veent.ph', password: 'Approver@1234' }
+	approver: { email: 'approver@veent.ph', password: 'Approver@1234' },
+	// Cross-org CEO (#131/#132): member of Veent + JoJo Potato + Sweetleaf.
+	ceo: { email: 'ceo@veent.ph', password: 'Ceo@1234' }
 }
 
 // Deterministic Discord link for the punch → aggregate → approve E2E. `global-setup`
@@ -14,11 +16,29 @@ export const USERS = {
 // seed's Discord id and stays isolated from real Discord accounts.
 export const E2E_DISCORD_ID = 'e2e-punch-elena'
 
+/**
+ * Pick a tenant on the two-step Avipa login (#135) and wait for the credential form.
+ * Revealing the form is client-side, so the tenant click must land after hydration —
+ * retry the click until the Email field appears (same pattern as the timesheet review
+ * modal below), otherwise a pre-hydration click is silently dropped.
+ */
+export async function selectTenant(page: Page, org: string) {
+	const tenant = page.getByRole('button', { name: org, exact: true })
+	const email = page.getByLabel('Email')
+	await expect(async () => {
+		await tenant.click()
+		await expect(email).toBeVisible({ timeout: 1000 })
+	}).toPass({ timeout: 15000 })
+}
+
 /** Log in through the real login form and wait for the dashboard. */
-export async function login(page: Page, user: { email: string; password: string }) {
+export async function login(page: Page, user: { email: string; password: string }, org = 'Veent') {
 	// domcontentloaded (not the default 'load') so we don't block on external font/webfont
 	// requests that may never settle in sandboxed/offline runners.
 	await page.goto('/login', { waitUntil: 'domcontentloaded' })
+	// Two-step Avipa login (#135): pick the tenant to reveal the credential form. All
+	// seed test accounts live in `Veent`, so callers rarely override `org`.
+	await selectTenant(page, org)
 	await page.getByLabel('Email').fill(user.email)
 	await page.getByLabel('Password').fill(user.password)
 	await page.getByRole('button', { name: 'Sign In' }).click()

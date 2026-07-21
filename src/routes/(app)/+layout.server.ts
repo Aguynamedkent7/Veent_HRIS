@@ -10,7 +10,7 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 	}
 
 	const user = locals.user
-	const [notifications, pendingApprovals, memberships] = await Promise.all([
+	const [notifications, pendingApprovals, memberships, currentOrg] = await Promise.all([
 		listUnread(user.id),
 		countPendingApprovals({
 			id: user.id,
@@ -22,6 +22,12 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 			where: { userId: user.id },
 			select: { organization: { select: { id: true, name: true } } },
 			orderBy: { organization: { name: 'asc' } }
+		}),
+		// The active org (session currentOrgId already folded into user.organizationId
+		// by hooks) — drives the header logo/branding for the tenant in view.
+		db.organization.findUnique({
+			where: { id: user.organizationId },
+			select: { id: true, name: true, logoUrl: true, themePrimary: true }
 		})
 	])
 
@@ -29,6 +35,7 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 	const memberOrgs = memberships.map((m) => m.organization)
 
 	return {
+		org: currentOrg,
 		user: {
 			id: user.id,
 			email: user.email,

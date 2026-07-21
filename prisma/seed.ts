@@ -6,26 +6,51 @@ const db = new PrismaClient()
 async function main() {
 	const org = await db.organization.upsert({
 		where: { id: 'org_seed' },
-		update: { name: 'Veent' },
+		// Per-org branding (#135/#139): logo + brand colour. Veent keeps the red palette.
+		update: { name: 'Veent', logoUrl: '/veent-logo.png', themePrimary: '0 79% 45%' },
 		create: {
 			id: 'org_seed',
 			name: 'Veent',
+			logoUrl: '/veent-logo.png',
+			themePrimary: '0 79% 45%',
 			address: 'Makati City, Metro Manila, Philippines'
 		}
 	})
 
 	// Three-org rollout (#131). The primary tenant above keeps id `org_seed` for
-	// backwards-compat; JoJo and Sweetleaf are the two additional tenants. Managers
-	// and cross-org memberships for these are seeded in #132/#140.
-	await db.organization.upsert({
+	// backwards-compat; JoJo Potato and Sweetleaf are the two additional food-service
+	// tenants. Their on-branch Managers + reporting employees are seeded below (#140).
+	const jojo = await db.organization.upsert({
 		where: { id: 'org_jojo' },
-		update: { name: 'JoJo' },
-		create: { id: 'org_jojo', name: 'JoJo' }
+		update: {
+			name: 'JoJo Potato',
+			logoUrl: '/jojo-logo.svg',
+			themePrimary: '32 95% 44%', // amber
+			address: 'Quezon City, Metro Manila, Philippines'
+		},
+		create: {
+			id: 'org_jojo',
+			name: 'JoJo Potato',
+			logoUrl: '/jojo-logo.svg',
+			themePrimary: '32 95% 44%',
+			address: 'Quezon City, Metro Manila, Philippines'
+		}
 	})
-	await db.organization.upsert({
+	const sweetleaf = await db.organization.upsert({
 		where: { id: 'org_sweetleaf' },
-		update: { name: 'Sweetleaf' },
-		create: { id: 'org_sweetleaf', name: 'Sweetleaf' }
+		update: {
+			name: 'Sweetleaf',
+			logoUrl: '/sweetleaf-logo.svg',
+			themePrimary: '142 71% 42%', // green
+			address: 'Pasig City, Metro Manila, Philippines'
+		},
+		create: {
+			id: 'org_sweetleaf',
+			name: 'Sweetleaf',
+			logoUrl: '/sweetleaf-logo.svg',
+			themePrimary: '142 71% 42%',
+			address: 'Pasig City, Metro Manila, Philippines'
+		}
 	})
 
 	const dept = await db.department.upsert({
@@ -640,6 +665,149 @@ async function main() {
 		})
 	}
 
+	// --- Food-service branch orgs: on-branch Manager (their HR) + reporting staff (#140) ---
+	// JoJo Potato and Sweetleaf each get a "Head of Operations" Manager and a few crew
+	// reporting to them. The Manager is that branch's HR (promoted to HR-level in #133).
+	// Memberships + roles are backfilled by the loop below, same as the Veent users.
+	async function seedBranchOrg(
+		branch: { id: string; slug: string; empPrefix: string },
+		crew: { first: string; last: string; title: string }[]
+	) {
+		const branchDept = await db.department.upsert({
+			where: { organizationId_name: { organizationId: branch.id, name: 'Operations' } },
+			update: {},
+			create: { organizationId: branch.id, name: 'Operations' }
+		})
+		const mgrHash = await bcrypt.hash('Manager@1234', 12)
+		const mgrUser = await db.user.upsert({
+			where: { email: `manager@${branch.slug}.ph` },
+			update: { role: 'MANAGER' },
+			create: {
+				organizationId: branch.id,
+				email: `manager@${branch.slug}.ph`,
+				passwordHash: mgrHash,
+				role: 'MANAGER'
+			}
+		})
+		const mgrEmployee = await db.employee.upsert({
+			where: { userId: mgrUser.id },
+			update: {},
+			create: {
+				userId: mgrUser.id,
+				organizationId: branch.id,
+				employeeNumber: `${branch.empPrefix}-001`,
+				firstName: 'Head',
+				lastName: 'of Operations',
+				departmentId: branchDept.id,
+				jobTitle: 'Head of Operations',
+				employmentType: 'FULL_TIME',
+				startDate: new Date('2025-01-15'),
+				basicMonthlySalary: 40000,
+				rateType: 'MONTHLY'
+			}
+		})
+
+		// Branch sign-off accounts (#134) so the maker → verifier → approver chain works
+		// within this org, not just Veent. Pure sign-off, no Employee record. Membership +
+		// roles=[role] are backfilled by the loop at the end of the seed.
+		for (const [role, pw] of [
+			['VERIFIER', 'Verifier@1234'],
+			['APPROVER', 'Approver@1234']
+		] as const) {
+			const email = `${role.toLowerCase()}@${branch.slug}.ph`
+			const h = await bcrypt.hash(pw, 12)
+			await db.user.upsert({
+				where: { email },
+				update: { role },
+				create: { organizationId: branch.id, email, passwordHash: h, role }
+			})
+		}
+
+		let n = 2
+		for (const c of crew) {
+			const email = `${c.first.toLowerCase()}@${branch.slug}.ph`
+			const uHash = await bcrypt.hash('Employee@1234', 12)
+			const u = await db.user.upsert({
+				where: { email },
+				update: {},
+				create: { organizationId: branch.id, email, passwordHash: uHash, role: 'EMPLOYEE' }
+			})
+			await db.employee.upsert({
+				where: { userId: u.id },
+				update: { reportsToId: mgrEmployee.id },
+				create: {
+					userId: u.id,
+					organizationId: branch.id,
+					employeeNumber: `${branch.empPrefix}-00${n}`,
+					firstName: c.first,
+					lastName: c.last,
+					departmentId: branchDept.id,
+					jobTitle: c.title,
+					employmentType: 'FULL_TIME',
+					startDate: new Date('2025-03-01'),
+					basicMonthlySalary: 18000,
+					rateType: 'MONTHLY',
+					reportsToId: mgrEmployee.id
+				}
+			})
+			n++
+		}
+	}
+	await seedBranchOrg({ id: jojo.id, slug: 'jojo', empPrefix: 'JJ' }, [
+		{ first: 'Benjie', last: 'Fryer', title: 'Fry Cook' },
+		{ first: 'Carla', last: 'Server', title: 'Service Crew' },
+		{ first: 'Dino', last: 'Cashier', title: 'Cashier' }
+	])
+	await seedBranchOrg({ id: sweetleaf.id, slug: 'sweetleaf', empPrefix: 'SL' }, [
+		{ first: 'Ella', last: 'Barista', title: 'Barista' },
+		{ first: 'Fritz', last: 'Baker', title: 'Baker' }
+	])
+
+	// --- Payroll periods backfill: last 6 months, two rows/month per org (#140) ---
+	// The standard-periods UI (#129) lists these; a fresh install otherwise shows an
+	// empty /payroll/periods. Rows are OPEN with no linked runs. Computed inline (1–15
+	// and 16–EOM) so the seed has no SvelteKit-alias imports.
+	const MONTHS = [
+		'January',
+		'February',
+		'March',
+		'April',
+		'May',
+		'June',
+		'July',
+		'August',
+		'September',
+		'October',
+		'November',
+		'December'
+	]
+	const now = new Date()
+	for (const orgId of ['org_seed', 'org_jojo', 'org_sweetleaf']) {
+		for (let back = 6; back >= 1; back--) {
+			const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back, 1))
+			const y = d.getUTCFullYear()
+			const m0 = d.getUTCMonth()
+			const eom = new Date(Date.UTC(y, m0 + 1, 0)).getUTCDate()
+			const halves = [
+				{ name: `${MONTHS[m0]} ${y} · 1–15`, s: 1, e: 15, cutoff: 15 },
+				{ name: `${MONTHS[m0]} ${y} · 16–${eom}`, s: 16, e: eom, cutoff: eom }
+			]
+			for (const h of halves) {
+				const startDate = new Date(Date.UTC(y, m0, h.s))
+				const endDate = new Date(Date.UTC(y, m0, h.e))
+				// No unique key on (org, start, end); guard idempotency with a findFirst.
+				const existing = await db.payrollPeriod.findFirst({
+					where: { organizationId: orgId, startDate, endDate }
+				})
+				if (!existing) {
+					await db.payrollPeriod.create({
+						data: { organizationId: orgId, name: h.name, startDate, endDate, cutoff: h.cutoff }
+					})
+				}
+			}
+		}
+	}
+
 	// Backfill cross-org memberships (#131) and the multi-role set (#133): every user
 	// gets one membership mirroring their primary org, and `roles` seeded to [role] so
 	// single-role behaviour is unchanged. Both idempotent.
@@ -658,7 +826,7 @@ async function main() {
 	}
 
 	console.log('Seed complete. Logins:')
-	console.log('  CEO:             ceo@veent.ph / Ceo@1234  (Veent + JoJo + Sweetleaf)')
+	console.log('  CEO:             ceo@veent.ph / Ceo@1234  (Veent + JoJo Potato + Sweetleaf)')
 	console.log('  Super Admin:     admin@veent.ph / Admin@1234')
 	console.log('  Verifier:        verifier@veent.ph / Verifier@1234')
 	console.log('  Approver:        approver@veent.ph / Approver@1234')
@@ -666,6 +834,15 @@ async function main() {
 	console.log('  Employee:        employee@veent.ph / Employee@1234')
 	console.log('  Payroll Officer: payroll@veent.ph / Payroll@1234')
 	console.log('  Finance:         finance@veent.ph / Finance@1234')
+	console.log('  JoJo Potato HR:  manager@jojo.ph / Manager@1234  (Head of Operations)')
+	console.log('    · verifier@jojo.ph / Verifier@1234 · approver@jojo.ph / Approver@1234')
+	console.log('    · employees: benjie@ / carla@ / dino@jojo.ph / Employee@1234')
+	console.log('  Sweetleaf HR:    manager@sweetleaf.ph / Manager@1234  (Head of Operations)')
+	console.log('    · verifier@sweetleaf.ph / Verifier@1234 · approver@sweetleaf.ph / Approver@1234')
+	console.log('    · employees: ella@ / fritz@sweetleaf.ph / Employee@1234')
+	console.log('')
+	console.log('Login with the Avipa tenant selector — pick the company, then sign in.')
+	console.log('Payroll periods backfilled: last 6 months × two rows (1–15 / 16–EOM) per org.')
 	console.log('')
 	console.log('Time-log punches seeded for Elena Employee (EMP-003), aggregatable at /timesheets:')
 	console.log(
