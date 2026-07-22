@@ -20,7 +20,8 @@
 		"db:seed:e2e": "dotenv -e .env.dev -- tsx prisma/seed-e2e.ts",
 		"db:studio": "dotenv -e .env.dev -- prisma studio",
 		"prisma": "dotenv -e .env.dev -- prisma",
-		"bot": "dotenv -e .env.dev -- tsx scripts/discord-bot.ts"
+		"bot": "dotenv -e .env.dev -- tsx scripts/discord-bot.ts",
+		"prod-delete": "tsx scripts/prod-delete.ts"
 	},
 	"devDependencies": {
 		"@eslint/js": "^9.39.4",
