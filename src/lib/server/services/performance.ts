@@ -38,6 +38,15 @@ export async function createReviewCycle(
 
 // ── Performance Reviews (scoped by employee / reviewer) ──────────────────────
 
+// #179: the HR-authored parts of a review (manager comments + overall rating) are confidential
+// to the reviewer and HR. The reviewed employee must never receive them, so strip them before a
+// review is returned to a subject-only view (their list row or their detail page).
+export function redactHrAuthored<
+	T extends { managerComments: string | null; overallRating: number | null }
+>(review: T): T {
+	return { ...review, managerComments: null, overallRating: null }
+}
+
 export async function listReviewsForEmployee(employeeId: string) {
 	return db.performanceReview.findMany({
 		where: { employeeId },

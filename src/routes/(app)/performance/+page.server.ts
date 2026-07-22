@@ -4,6 +4,7 @@ import {
 	listGoalsForEmployee,
 	listReviewsForEmployee,
 	listReviewsForReviewer,
+	redactHrAuthored,
 	createGoal,
 	updateGoalProgress,
 	listReviewCycles,
@@ -45,7 +46,17 @@ export const load: PageServerLoad = async ({ locals }) => {
 		isManager ? listGoalsForManager(myEmployee.id) : Promise.resolve([])
 	])
 
-	return { myGoals, myReviews, reviewsToGive, teamGoals, isManager, isAdmin, cycles }
+	// #179: My Reviews are the viewer's own reviews as the subject — strip the HR-authored
+	// comments and rating so the confidential review never reaches the reviewed employee.
+	return {
+		myGoals,
+		myReviews: myReviews.map(redactHrAuthored),
+		reviewsToGive,
+		teamGoals,
+		isManager,
+		isAdmin,
+		cycles
+	}
 }
 
 function ctxOf(locals: App.Locals, ip: string) {
