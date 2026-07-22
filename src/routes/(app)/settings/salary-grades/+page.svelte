@@ -48,8 +48,11 @@
 		<div class="overflow-x-auto rounded-md border">
 			<table class="w-full min-w-max text-sm">
 				<thead class="border-b bg-muted/50">
+					<!-- The name column absorbs the slack (`w-full`) so the money and action
+					     columns stay hugged to their content instead of being stretched apart
+					     by the table's own `w-full` (#142). -->
 					<tr>
-						<th class="px-3 py-2 text-left font-medium text-muted-foreground">Grade</th>
+						<th class="w-full px-3 py-2 text-left font-medium text-muted-foreground">Grade</th>
 						<th class="px-3 py-2 text-right font-medium text-muted-foreground">Min</th>
 						<th class="px-3 py-2 text-right font-medium text-muted-foreground">Mid</th>
 						<th class="px-3 py-2 text-right font-medium text-muted-foreground">Max</th>
@@ -61,24 +64,22 @@
 						{@const toggle = toggleGradeGuard(g.id)}
 						<tr class="hover:bg-muted/30 {g.isActive ? '' : 'opacity-50'}">
 							<td class="px-3 py-2 font-medium">{g.name}</td>
-							<td class="px-3 py-2 text-right font-mono text-xs"
+							<td class="whitespace-nowrap px-3 py-2 text-right font-mono text-xs"
 								>{formatCurrency(Number(g.minSalary))}</td
 							>
-							<td class="px-3 py-2 text-right font-mono text-xs"
+							<td class="whitespace-nowrap px-3 py-2 text-right font-mono text-xs"
 								>{formatCurrency(Number(g.midSalary))}</td
 							>
-							<td class="px-3 py-2 text-right font-mono text-xs"
+							<td class="whitespace-nowrap px-3 py-2 text-right font-mono text-xs"
 								>{formatCurrency(Number(g.maxSalary))}</td
 							>
-							<td class="px-3 py-2 text-right">
+							<td class="whitespace-nowrap px-3 py-2 text-right">
 								<form method="POST" action="?/toggleGrade" use:enhance={toggle.enhance}>
 									<input type="hidden" name="id" value={g.id} />
 									<button
 										type="submit"
 										disabled={toggle.busy}
-										class="rounded-md border px-3 py-1 text-xs font-medium disabled:pointer-events-none disabled:opacity-50 {g.isActive
-											? 'border-red-500/20 text-red-600 hover:bg-red-500/10'
-											: 'border-green-500/20 text-green-600 hover:bg-green-500/10'}"
+										class={g.isActive ? 'btn-row-danger' : 'btn-row-positive'}
 										>{toggle.busy ? 'Saving…' : g.isActive ? 'Deactivate' : 'Activate'}</button
 									>
 								</form>
@@ -148,9 +149,11 @@
 			<div class="overflow-x-auto rounded-md border">
 				<table class="w-full min-w-max text-sm">
 					<thead class="border-b bg-muted/50">
+						<!-- Same column rule as the Grades table above: the title absorbs the
+						     slack, the grade picker is pinned right (#142). -->
 						<tr>
-							<th class="px-3 py-2 text-left font-medium text-muted-foreground">Position</th>
-							<th class="px-3 py-2 text-left font-medium text-muted-foreground">Grade</th>
+							<th class="w-full px-3 py-2 text-left font-medium text-muted-foreground">Position</th>
+							<th class="px-3 py-2 text-right font-medium text-muted-foreground">Grade</th>
 						</tr>
 					</thead>
 					<tbody class="divide-y">
@@ -158,12 +161,12 @@
 							{@const assign = assignGradeGuard(p.id)}
 							<tr class="hover:bg-muted/30">
 								<td class="px-3 py-2">{p.title}</td>
-								<td class="px-3 py-2">
+								<td class="whitespace-nowrap px-3 py-2">
 									<form
 										method="POST"
 										action="?/assignGrade"
 										use:enhance={assign.enhance}
-										class="flex items-center gap-2"
+										class="flex items-center justify-end gap-2"
 									>
 										<input type="hidden" name="positionId" value={p.id} />
 										<!-- No submit button: the select auto-submits via requestSubmit(), which
