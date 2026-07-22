@@ -168,7 +168,9 @@
 					<div class="rounded-md bg-muted/50 px-3 py-2 text-sm">
 						{Number(ts.totalHours).toFixed(1)} hrs · {ts.entries.length} entries
 					</div>
-					<p class="text-xs text-primary">Review →</p>
+					<div class="flex justify-end">
+						<span class="btn-row pointer-events-none">Review</span>
+					</div>
 				</div>
 			{/each}
 		</div>

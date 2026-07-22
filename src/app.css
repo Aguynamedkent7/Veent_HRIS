@@ -141,6 +141,16 @@
 		@apply flex h-9 w-full rounded-md border border-input bg-input px-3 py-1 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50;
 	}
 
+	/* A missing or invalid form control is flagged with a red border + focus ring.
+	   Pair with `aria-invalid={...}` on the control and a per-field message. (#142)
+	   Element+attribute selector outranks the inline `border-input` utility so the
+	   red border wins regardless of Tailwind's layer order. */
+	input[aria-invalid='true'],
+	select[aria-invalid='true'],
+	textarea[aria-invalid='true'] {
+		@apply border-destructive focus-visible:ring-destructive;
+	}
+
 	/* Button variants */
 	.btn {
 		@apply inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50;

@@ -107,7 +107,7 @@
 			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
 				Attendance Today
 			</p>
-			<a href="/attendance" class="text-xs text-primary hover:underline">Open attendance →</a>
+			<a href="/attendance" class="btn-row">Open attendance</a>
 		</div>
 		{#if metrics.attendance.derived > 0}
 			<div class="grid grid-cols-2 gap-4 sm:grid-cols-4">

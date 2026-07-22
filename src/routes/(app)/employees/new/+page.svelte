@@ -24,6 +24,12 @@
 		rateType = (form?.values?.rateType as RateBasis) ?? 'MONTHLY'
 	})
 	const rate = $derived(rateBasisCopy(rateType))
+
+	// Red-border the specific field(s) the server rejected (#142).
+	const invalid = (name: string) =>
+		(form as { fieldErrors?: Record<string, string[]> } | null)?.fieldErrors?.[name]
+			? true
+			: undefined
 </script>
 
 <svelte:head>
@@ -56,6 +62,7 @@
 					<input
 						id="firstName"
 						name="firstName"
+						aria-invalid={invalid('firstName')}
 						required
 						value={form?.values?.firstName ?? ''}
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -71,6 +78,7 @@
 					<input
 						id="lastName"
 						name="lastName"
+						aria-invalid={invalid('lastName')}
 						required
 						value={form?.values?.lastName ?? ''}
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -128,6 +136,7 @@
 					<input
 						id="email"
 						name="email"
+						aria-invalid={invalid('email')}
 						type="email"
 						required
 						value={form?.values?.email ?? ''}
@@ -169,6 +178,7 @@
 					<input
 						id="discordId"
 						name="discordId"
+						aria-invalid={invalid('discordId')}
 						value={form?.values?.discordId ?? ''}
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					/>
@@ -194,6 +204,7 @@
 					<select
 						id="departmentId"
 						name="departmentId"
+						aria-invalid={invalid('departmentId')}
 						required
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					>
@@ -213,6 +224,7 @@
 					<input
 						id="jobTitle"
 						name="jobTitle"
+						aria-invalid={invalid('jobTitle')}
 						required
 						value={form?.values?.jobTitle ?? ''}
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -248,6 +260,7 @@
 					<input
 						id="startDate"
 						name="startDate"
+						aria-invalid={invalid('startDate')}
 						type="date"
 						required
 						value={form?.values?.startDate ?? ''}

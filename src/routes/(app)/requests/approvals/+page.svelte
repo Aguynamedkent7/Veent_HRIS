@@ -345,10 +345,7 @@
 							<span class="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
 								>Stage: {currentStageLabel(req)}</span
 							>
-							<a
-								href="/requests/{req.id}?from=/requests/approvals"
-								class="text-xs text-primary hover:underline">View detail →</a
-							>
+							<a href="/requests/{req.id}?from=/requests/approvals" class="btn-row">View detail</a>
 						</div>
 					</div>
 					<!-- Approve posts directly; Return/Reject collect their required note in
