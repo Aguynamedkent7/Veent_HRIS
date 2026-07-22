@@ -1,5 +1,6 @@
 import { requireMinRole } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
+import { isFoodServiceOrg } from '$lib/orgs'
 import { autoDeriveFromPunches } from '$lib/server/services/attendance'
 import type { PageServerLoad } from './$types'
 
@@ -81,6 +82,8 @@ export const load: PageServerLoad = async ({ locals, url, getClientAddress }) =>
 		dates,
 		attendanceMap,
 		startDate: startISO,
-		endDate: endISO
+		endDate: endISO,
+		// Food-service tenants label this roster "Branches" (#182), so the heading follows suit.
+		isFoodService: isFoodServiceOrg(user.organizationId)
 	}
 }

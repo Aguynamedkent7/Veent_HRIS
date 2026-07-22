@@ -13,19 +13,21 @@ const row = (page: import('@playwright/test').Page, name: string) =>
 
 test.describe('Branches', () => {
 	test('is gated to the food-service tenants', async ({ page }) => {
-		// Veent is not a food-service tenant: no nav link, and the route itself refuses.
+		// Veent is not a food-service tenant: no store-registry nav link (labelled "Stores"
+		// there, #182), and the route itself refuses.
 		await login(page, USERS.admin)
-		await expect(page.getByRole('link', { name: 'Branches' })).toHaveCount(0)
+		await expect(page.getByRole('link', { name: 'Stores' })).toHaveCount(0)
 		await page.goto('/branches', { waitUntil: 'domcontentloaded' })
-		await expect(page.getByRole('heading', { name: 'Branches', level: 1 })).toHaveCount(0)
+		await expect(page.getByRole('heading', { name: 'Stores', level: 1 })).toHaveCount(0)
 	})
 
 	test('JoJo HR sees the stores and can filter by status', async ({ page }) => {
 		await login(page, USERS.jojoManager, 'JoJo Potato')
-		await expect(page.getByRole('link', { name: 'Branches' })).toBeVisible()
+		// The store registry reads "Stores"; the roster tab is the one now labelled "Branches".
+		await expect(page.getByRole('link', { name: 'Stores' })).toBeVisible()
 
 		await page.goto('/branches', { waitUntil: 'domcontentloaded' })
-		await expect(page.getByRole('heading', { name: 'Branches', level: 1 })).toBeVisible()
+		await expect(page.getByRole('heading', { name: 'Stores', level: 1 })).toBeVisible()
 		await expect(row(page, 'SM CDO Downtown Premier')).toBeVisible()
 		await expect(row(page, 'Limketkai Center')).toBeVisible()
 

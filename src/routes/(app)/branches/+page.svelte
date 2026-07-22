@@ -22,12 +22,12 @@
 </script>
 
 <svelte:head>
-	<title>Branches — Veent HRIS</title>
+	<title>Stores — Veent HRIS</title>
 </svelte:head>
 
 <div class="space-y-6">
 	<div>
-		<h1 class="text-2xl font-bold tracking-tight">Branches</h1>
+		<h1 class="text-2xl font-bold tracking-tight">Stores</h1>
 		<p class="text-sm text-muted-foreground">
 			Your physical stores — address, contact, branch manager, and who works out of each. Closing a
 			branch keeps its crew on record; it just stops accepting new assignments.
@@ -141,7 +141,7 @@
 
 	<!-- List -->
 	<section class="space-y-3 rounded-lg border bg-card p-4">
-		<h2 class="font-semibold">Branches ({data.branches.length})</h2>
+		<h2 class="font-semibold">Stores ({data.branches.length})</h2>
 		{#if data.branches.length === 0}
 			<p class="text-sm text-muted-foreground">
 				No branches match — add one above or adjust the filters.
