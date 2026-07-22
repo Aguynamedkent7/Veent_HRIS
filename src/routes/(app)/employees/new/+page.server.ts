@@ -44,7 +44,10 @@ export const load: PageServerLoad = async ({ locals }) => {
 		})
 	])
 
-	return { departments, employees, positions, workSchedules }
+	// orgId drives a {#key} remount of the form: switching tenants mid-onboard swaps the
+	// org-scoped selects (department, reports-to, position, schedule) under the live form,
+	// which would silently blank the required Department field and wedge the submit (#ceo-switch).
+	return { organizationId: orgId, departments, employees, positions, workSchedules }
 }
 
 const createSchema = z.object({

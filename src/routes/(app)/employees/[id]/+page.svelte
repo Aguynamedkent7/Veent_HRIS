@@ -553,33 +553,6 @@
 					>
 				</div>
 			</form>
-
-			<form
-				method="POST"
-				action="?/offboard"
-				use:enhance={offboard.enhance}
-				class="rounded-lg border border-destructive/50 p-6 space-y-4"
-			>
-				<h2 class="font-semibold text-destructive">Offboard Employee</h2>
-				<div class="flex items-end gap-4">
-					<div>
-						<label for="endDate" class="text-sm font-medium">Last Day</label>
-						<input
-							id="endDate"
-							name="endDate"
-							type="date"
-							required
-							class="mt-1 flex h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-						/>
-					</div>
-					<button
-						type="submit"
-						disabled={offboard.busy}
-						class="rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:pointer-events-none disabled:opacity-50"
-						>{offboard.busy ? 'Offboarding…' : 'Offboard'}</button
-					>
-				</div>
-			</form>
 		{/if}
 
 		<!-- Leave Balances (#137). Read-only: allocations come from the org's leave-type
@@ -1189,6 +1162,34 @@
 					<p class="text-xs text-muted-foreground">No recorded changes yet.</p>
 				{/if}
 			</section>
+		{/if}
+		{#if canManage && employee.employmentStatus === 'ACTIVE'}
+			<form
+				method="POST"
+				action="?/offboard"
+				use:enhance={offboard.enhance}
+				class="rounded-lg border border-destructive/50 p-6 space-y-4 lg:col-span-2"
+			>
+				<h2 class="font-semibold text-destructive">Offboard Employee</h2>
+				<div class="flex items-end gap-4">
+					<div>
+						<label for="endDate" class="text-sm font-medium">Last Day</label>
+						<input
+							id="endDate"
+							name="endDate"
+							type="date"
+							required
+							class="mt-1 flex h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+					</div>
+					<button
+						type="submit"
+						disabled={offboard.busy}
+						class="rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:pointer-events-none disabled:opacity-50"
+						>{offboard.busy ? 'Offboarding…' : 'Offboard'}</button
+					>
+				</div>
+			</form>
 		{/if}
 	</div>
 </div>
