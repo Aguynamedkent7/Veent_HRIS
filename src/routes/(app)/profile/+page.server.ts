@@ -1,5 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit'
 import { z } from 'zod'
+import { can } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { getEmployee, updateEmployee } from '$lib/server/services/employees'
 import { listEmployeeDocuments } from '$lib/server/services/documents'
@@ -53,7 +54,10 @@ export const load: PageServerLoad = async ({ locals }) => {
 		}))
 		.reverse()
 
-	return { employee, documents, benefits, punches, punchWindowDays: PUNCH_WINDOW_DAYS }
+	// Only HR may change employee details (#175); everyone else sees their profile read-only.
+	const canManage = can(user.role, 'MANAGE_HR')
+
+	return { employee, documents, benefits, punches, punchWindowDays: PUNCH_WINDOW_DAYS, canManage }
 }
 
 const updateSchema = z.object({
@@ -76,6 +80,12 @@ const updateSchema = z.object({
 export const actions: Actions = {
 	update: async ({ request, locals }) => {
 		const user = locals.user!
+
+		// Employee details are HR-managed (#175); block self-service edits even if the form is
+		// bypassed. HR edits any record (including their own) here or on /employees/[id].
+		if (!can(user.role, 'MANAGE_HR')) {
+			return fail(403, { error: 'Only HR can change employee details.' })
+		}
 
 		const employeeRecord = await db.employee.findFirst({
 			where: { userId: user.id, organizationId: user.organizationId },
