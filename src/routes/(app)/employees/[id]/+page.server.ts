@@ -1,5 +1,6 @@
 import { error, fail, isHttpError } from '@sveltejs/kit'
 import { can, requireMinRole, requireCapability } from '$lib/server/rbac'
+import { failFromError } from '$lib/server/form-fail'
 import {
 	getEmployee,
 	updateEmployee,
@@ -353,12 +354,16 @@ export const actions: Actions = {
 		const data = await request.formData()
 		const endDate = new Date(data.get('endDate') as string)
 
-		await offboardEmployee(params.id, user.organizationId, endDate, {
-			organizationId: user.organizationId,
-			actorId: user.id,
-			actorRole: user.role,
-			ipAddress: getClientAddress()
-		})
+		try {
+			await offboardEmployee(params.id, user.organizationId, endDate, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e) {
+			return failFromError(e)
+		}
 	},
 
 	addLoan: async ({ request, locals, params, getClientAddress }) => {
@@ -366,12 +371,16 @@ export const actions: Actions = {
 		const user = locals.user!
 		const parsed = loanSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid loan details' })
-		await createLoan(params.id, user.organizationId, parsed.data, {
-			organizationId: user.organizationId,
-			actorId: user.id,
-			actorRole: user.role,
-			ipAddress: getClientAddress()
-		})
+		try {
+			await createLoan(params.id, user.organizationId, parsed.data, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e) {
+			return failFromError(e)
+		}
 		return { success: true }
 	},
 
@@ -380,12 +389,16 @@ export const actions: Actions = {
 		const user = locals.user!
 		const parsed = cashAdvanceSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid cash-advance details' })
-		await createCashAdvance(params.id, user.organizationId, parsed.data, {
-			organizationId: user.organizationId,
-			actorId: user.id,
-			actorRole: user.role,
-			ipAddress: getClientAddress()
-		})
+		try {
+			await createCashAdvance(params.id, user.organizationId, parsed.data, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e) {
+			return failFromError(e)
+		}
 		return { success: true }
 	},
 
@@ -394,12 +407,16 @@ export const actions: Actions = {
 		const user = locals.user!
 		const parsed = earningSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid recurring earning details' })
-		await createEmployeeEarning(params.id, user.organizationId, parsed.data, {
-			organizationId: user.organizationId,
-			actorId: user.id,
-			actorRole: user.role,
-			ipAddress: getClientAddress()
-		})
+		try {
+			await createEmployeeEarning(params.id, user.organizationId, parsed.data, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e) {
+			return failFromError(e)
+		}
 		return { success: true }
 	},
 

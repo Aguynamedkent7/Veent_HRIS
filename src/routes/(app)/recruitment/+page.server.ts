@@ -1,5 +1,6 @@
 import { fail } from '@sveltejs/kit'
 import { requireMinRole } from '$lib/server/rbac'
+import { failFromError } from '$lib/server/form-fail'
 import { paginate } from '$lib/server/pagination'
 import {
 	countJobPostings,
@@ -48,12 +49,16 @@ export const actions: Actions = {
 		const parsed = createSchema.safeParse(raw)
 		if (!parsed.success) return fail(400, { error: 'Invalid input' })
 
-		await createJobPosting(user.organizationId, parsed.data, {
-			organizationId: user.organizationId,
-			actorId: user.id,
-			actorRole: user.role,
-			ipAddress: getClientAddress()
-		})
+		try {
+			await createJobPosting(user.organizationId, parsed.data, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e) {
+			return failFromError(e)
+		}
 		return { success: true, message: `Job posting “${parsed.data.title}” created as a draft.` }
 	},
 
@@ -64,12 +69,16 @@ export const actions: Actions = {
 		const data = await request.formData()
 		const id = data.get('id') as string
 
-		await publishJobPosting(id, user.organizationId, {
-			organizationId: user.organizationId,
-			actorId: user.id,
-			actorRole: user.role,
-			ipAddress: getClientAddress()
-		})
+		try {
+			await publishJobPosting(id, user.organizationId, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e) {
+			return failFromError(e)
+		}
 		return { success: true, message: 'Job posting published.' }
 	},
 
