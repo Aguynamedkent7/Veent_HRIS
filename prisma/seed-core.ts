@@ -25,6 +25,64 @@ async function backfillMembershipsAndRoles(db: PrismaClient) {
 	}
 }
 
+// Next free employee number in an org, e.g. EMP-003 → EMP-004. Scans existing rows rather
+// than hard-coding, so a profile added to an org that already carries hand-numbered demo
+// rows (or older data where the numbering drifted) never trips the unique
+// (organizationId, employeeNumber) constraint.
+async function nextEmployeeNumber(db: PrismaClient, organizationId: string, prefix = 'EMP') {
+	const rows = await db.employee.findMany({
+		where: { organizationId },
+		select: { employeeNumber: true }
+	})
+	// Ignore the reserved 900+ band (fixed numbers for exec/sign-off accounts) so those never
+	// push the roster's next free number into a value another fixed account already claims.
+	const max = rows.reduce((m, r) => {
+		const n = parseInt(r.employeeNumber.replace(/\D/g, ''), 10)
+		return Number.isNaN(n) || n >= 900 ? m : Math.max(m, n)
+	}, 0)
+	return `${prefix}-${String(max + 1).padStart(3, '0')}`
+}
+
+// Give a login account an Employee record if it has none. Several accounts historically had
+// no profile — the CEO, the sign-off Verifier/Approver, and HR (whose seeded EMP-002 collided
+// with the demo Manager on drifted data, so its create silently failed). Without a profile the
+// Profile page has nothing to load and bounces to the dashboard (#profile). Keyed on userId so
+// it is idempotent; `number` pins a fixed value for non-roster accounts (kept clear of the
+// demo range), otherwise the next free number is used so a fresh DB still gets tidy sequencing.
+async function ensureEmployeeProfile(
+	db: PrismaClient,
+	user: { id: string; organizationId: string },
+	data: {
+		firstName: string
+		lastName: string
+		jobTitle: string
+		departmentId: string
+		number?: string
+		basicMonthlySalary?: number
+	}
+) {
+	const existing = await db.employee.findUnique({
+		where: { userId: user.id },
+		select: { id: true }
+	})
+	if (existing) return existing
+	return db.employee.create({
+		data: {
+			userId: user.id,
+			organizationId: user.organizationId,
+			employeeNumber: data.number ?? (await nextEmployeeNumber(db, user.organizationId)),
+			firstName: data.firstName,
+			lastName: data.lastName,
+			departmentId: data.departmentId,
+			jobTitle: data.jobTitle,
+			employmentType: 'FULL_TIME',
+			startDate: new Date('2025-01-01'),
+			basicMonthlySalary: data.basicMonthlySalary ?? 30000,
+			rateType: 'MONTHLY'
+		}
+	})
+}
+
 // Standard PH leave policy (#137): VL/SL/SIL at 5 days each. Every tenant gets the same
 // set — without leave types an org has nothing to allocate, so its whole roster is locked
 // out of filing leave (which is how JoJo and Sweetleaf shipped before this).
@@ -150,17 +208,25 @@ async function seedFoodServiceOrg(
 	})
 
 	// Branch sign-off accounts (#134) so the maker → verifier → approver chain works within
-	// this org, not just Veent. Pure sign-off, no Employee record.
-	for (const [role, pw] of [
-		['VERIFIER', 'Verifier@1234'],
-		['APPROVER', 'Approver@1234']
+	// this org, not just Veent. Each also gets a profile (fixed high number, clear of the crew
+	// roster) so its Profile page resolves instead of bouncing to the dashboard (#profile).
+	for (const [role, pw, first, last, num] of [
+		['VERIFIER', 'Verifier@1234', 'Vera', 'Verifier', '901'],
+		['APPROVER', 'Approver@1234', 'Arno', 'Approver', '902']
 	] as const) {
 		const email = `${role.toLowerCase()}@${tenant.slug}.ph`
 		const h = await bcrypt.hash(pw, 12)
-		await db.user.upsert({
+		const signoffUser = await db.user.upsert({
 			where: { email },
 			update: { role },
 			create: { organizationId: tenant.id, email, passwordHash: h, role }
+		})
+		await ensureEmployeeProfile(db, signoffUser, {
+			firstName: first,
+			lastName: last,
+			jobTitle: `Sign-off ${role === 'VERIFIER' ? 'Verifier' : 'Approver'}`,
+			departmentId: branchDept.id,
+			number: `${tenant.empPrefix}-${num}`
 		})
 	}
 
@@ -373,6 +439,17 @@ export async function seedProd(db: PrismaClient) {
 			create: { userId: ceo.id, organizationId: orgId }
 		})
 	}
+	// The CEO gets a profile in its home org so the Profile page resolves (the page scopes the
+	// lookup to the active org, so it cleanly guards back to the dashboard in the other tenants).
+	// A fixed high number keeps it clear of the demo roster's EMP-001..004.
+	await ensureEmployeeProfile(db, ceo, {
+		firstName: 'Cielo',
+		lastName: 'Executive',
+		jobTitle: 'Chief Executive Officer',
+		departmentId: dept.id,
+		number: 'EMP-900',
+		basicMonthlySalary: 150000
+	})
 
 	// --- System actor (#136) ---
 	// AuditLog.actorId is a non-nullable FK to User and actorRole is a required Role, so an
@@ -407,22 +484,14 @@ export async function seedProd(db: PrismaClient) {
 			role: 'HR_ADMIN'
 		}
 	})
-	await db.employee.upsert({
-		where: { userId: hrUser.id },
-		update: {},
-		create: {
-			userId: hrUser.id,
-			organizationId: org.id,
-			employeeNumber: 'EMP-002',
-			firstName: 'Hannah',
-			lastName: 'HR',
-			departmentId: dept.id,
-			jobTitle: 'HR Administrator',
-			employmentType: 'FULL_TIME',
-			startDate: new Date('2025-01-01'),
-			basicMonthlySalary: 45000,
-			rateType: 'MONTHLY'
-		}
+	// Next free number, not a hard-coded EMP-002: on drifted data the demo Manager already
+	// holds EMP-002, and the old fixed create collided and left HR with no profile at all.
+	await ensureEmployeeProfile(db, hrUser, {
+		firstName: 'Hannah',
+		lastName: 'HR',
+		jobTitle: 'HR Administrator',
+		departmentId: dept.id,
+		basicMonthlySalary: 45000
 	})
 
 	// Leave types are org-level configuration, so every tenant gets the standard PH set —
@@ -558,7 +627,7 @@ export async function seedE2E(db: PrismaClient) {
 	// Verifier + Approver (#134): pure sign-off accounts for the maker→verifier→approver
 	// chain. No Employee record — they only check and approve, never file requests.
 	const verifierHash = await bcrypt.hash('Verifier@1234', 12)
-	await db.user.upsert({
+	const verifierUser = await db.user.upsert({
 		where: { email: 'verifier@veent.ph' },
 		update: { role: 'VERIFIER' },
 		create: {
@@ -569,7 +638,7 @@ export async function seedE2E(db: PrismaClient) {
 		}
 	})
 	const approverHash = await bcrypt.hash('Approver@1234', 12)
-	await db.user.upsert({
+	const approverUser = await db.user.upsert({
 		where: { email: 'approver@veent.ph' },
 		update: { role: 'APPROVER' },
 		create: {
@@ -578,6 +647,22 @@ export async function seedE2E(db: PrismaClient) {
 			passwordHash: approverHash,
 			role: 'APPROVER'
 		}
+	})
+	// Profiles so the sign-off accounts can open their own Profile page (#profile). Fixed high
+	// numbers keep them clear of the demo roster (EMP-001..004).
+	await ensureEmployeeProfile(db, verifierUser, {
+		firstName: 'Vince',
+		lastName: 'Verifier',
+		jobTitle: 'Sign-off Verifier',
+		departmentId: dept.id,
+		number: 'EMP-901'
+	})
+	await ensureEmployeeProfile(db, approverUser, {
+		firstName: 'Apple',
+		lastName: 'Approver',
+		jobTitle: 'Sign-off Approver',
+		departmentId: dept.id,
+		number: 'EMP-902'
 	})
 
 	// --- Manager (direct supervisor; approves the employee's timesheets in the E2E suite) ---

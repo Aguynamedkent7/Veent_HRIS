@@ -22,8 +22,11 @@ const PUNCH_LABELS: Record<string, string> = {
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!
 
-	const employeeRecord = await db.employee.findUnique({
-		where: { userId: user.id },
+	// Scope to the active org: a cross-org account (the CEO) carries one profile in its home
+	// tenant only, so in the others this finds nothing and we guard cleanly to the dashboard
+	// rather than letting getEmployee 404 on an org mismatch.
+	const employeeRecord = await db.employee.findFirst({
+		where: { userId: user.id, organizationId: user.organizationId },
 		select: { id: true }
 	})
 
@@ -74,8 +77,8 @@ export const actions: Actions = {
 	update: async ({ request, locals }) => {
 		const user = locals.user!
 
-		const employeeRecord = await db.employee.findUnique({
-			where: { userId: user.id },
+		const employeeRecord = await db.employee.findFirst({
+			where: { userId: user.id, organizationId: user.organizationId },
 			select: { id: true }
 		})
 
