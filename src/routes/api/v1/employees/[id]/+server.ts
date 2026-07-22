@@ -124,8 +124,9 @@ export const POST: RequestHandler = async ({ locals, params, request, url }) => 
 			)
 			return json({ data: result })
 		} catch (e: unknown) {
-			const err = e as { status?: number }
+			const err = e as { status?: number; body?: { message?: string } }
 			if (err?.status === 404) return apiError(404, 'Employee not found')
+			if (err?.status === 400) return apiError(400, err.body?.message ?? 'Bad request')
 			throw e
 		}
 	}

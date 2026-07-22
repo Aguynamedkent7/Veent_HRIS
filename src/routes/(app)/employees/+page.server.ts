@@ -1,4 +1,5 @@
 import { requireMinRole } from '$lib/server/rbac'
+import { failFromError } from '$lib/server/form-fail'
 import { paginate } from '$lib/server/pagination'
 import { countEmployees, listEmployees, offboardEmployee } from '$lib/server/services/employees'
 import { listAssignableBranches } from '$lib/server/services/branches'
@@ -43,11 +44,15 @@ export const actions: Actions = {
 		const id = data.get('id') as string
 		const endDate = new Date(data.get('endDate') as string)
 
-		await offboardEmployee(id, user.organizationId, endDate, {
-			organizationId: user.organizationId,
-			actorId: user.id,
-			actorRole: user.role,
-			ipAddress: getClientAddress()
-		})
+		try {
+			await offboardEmployee(id, user.organizationId, endDate, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e) {
+			return failFromError(e)
+		}
 	}
 }

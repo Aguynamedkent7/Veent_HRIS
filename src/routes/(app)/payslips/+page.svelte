@@ -53,12 +53,7 @@
 							</span>
 						</td>
 						<td class="px-4 py-3 text-right">
-							<a
-								href="/payslips/{payslip.id}"
-								class="text-xs font-medium text-primary hover:underline"
-							>
-								View
-							</a>
+							<a href="/payslips/{payslip.id}" class="btn-row"> View </a>
 						</td>
 					</tr>
 				{:else}

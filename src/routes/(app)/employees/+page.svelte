@@ -2,6 +2,7 @@
 	import { page } from '$app/stores'
 	import { goto } from '$app/navigation'
 	import { formatShortDate } from '$lib/utils/format'
+	import { tenureLabel } from '$lib/utils/dates'
 	import Pagination from '$lib/components/Pagination.svelte'
 	import TableSkeleton from '$lib/components/ui/TableSkeleton.svelte'
 	import type { PageData } from './$types'
@@ -67,6 +68,7 @@
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Type</th>
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Start Date</th>
+						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Tenure</th>
 					</tr>
 				</thead>
 				<tbody class="divide-y">
@@ -105,11 +107,15 @@
 								</span>
 							</td>
 							<td class="px-4 py-3 text-muted-foreground">{formatShortDate(emp.startDate)}</td>
+							<td class="px-4 py-3 text-muted-foreground"
+								>{tenureLabel(emp.startDate, emp.endDate ?? undefined)}</td
+							>
 						</tr>
 					{:else}
 						<tr>
-							<td colspan="6" class="px-4 py-8 text-center text-muted-foreground"
-								>No employees found</td
+							<td
+								colspan={data.showBranches ? 8 : 7}
+								class="px-4 py-8 text-center text-muted-foreground">No employees found</td
 							>
 						</tr>
 					{/each}

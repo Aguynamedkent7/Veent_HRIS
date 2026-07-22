@@ -1,6 +1,7 @@
 import { fail, isHttpError, redirect } from '@sveltejs/kit'
 import { z } from 'zod'
 import { requireCapability } from '$lib/server/rbac'
+import { failFromError } from '$lib/server/form-fail'
 import { db } from '$lib/server/db'
 import { advanceApplicant, convertApplicantToEmployee } from '$lib/server/services/recruitment'
 import { getPostingBoards, liveChannels, setChannel } from '$lib/server/services/job-boards'
@@ -80,13 +81,17 @@ export const actions: Actions = {
 			ipAddress: getClientAddress()
 		}
 
-		await advanceApplicant(
-			parsed.data.applicantId,
-			user.organizationId,
-			parsed.data.stage,
-			parsed.data.notes,
-			ctx
-		)
+		try {
+			await advanceApplicant(
+				parsed.data.applicantId,
+				user.organizationId,
+				parsed.data.stage,
+				parsed.data.notes,
+				ctx
+			)
+		} catch (e) {
+			return failFromError(e)
+		}
 	},
 
 	updateStatus: async ({ request, locals, params }) => {
@@ -109,14 +114,18 @@ export const actions: Actions = {
 			return fail(404, { error: 'Posting not found' })
 		}
 
-		await db.jobPosting.update({
-			where: { id: params.id },
-			data: {
-				status: status as 'OPEN' | 'CLOSED' | 'DRAFT',
-				...(status === 'OPEN' && !posting.postedAt ? { postedAt: new Date() } : {}),
-				...(status === 'CLOSED' ? { closedAt: new Date() } : {})
-			}
-		})
+		try {
+			await db.jobPosting.update({
+				where: { id: params.id },
+				data: {
+					status: status as 'OPEN' | 'CLOSED' | 'DRAFT',
+					...(status === 'OPEN' && !posting.postedAt ? { postedAt: new Date() } : {}),
+					...(status === 'CLOSED' ? { closedAt: new Date() } : {})
+				}
+			})
+		} catch (e) {
+			return failFromError(e)
+		}
 	},
 
 	setChannel: async ({ request, locals, params, getClientAddress }) => {

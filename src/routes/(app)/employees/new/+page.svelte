@@ -9,6 +9,14 @@
 	// #108: a double-click here would create a duplicate employee + user + welcome email.
 	const create = createSubmitGuard()
 
+	// PROBATIONARY first so it is the browser's default selection (#136).
+	const EMPLOYMENT_TYPES = [
+		['PROBATIONARY', 'Probationary'],
+		['FULL_TIME', 'Full Time'],
+		['CONTRACTUAL', 'Contractual'],
+		['PART_TIME', 'Part-time']
+	] as const
+
 	// #120: the amount field means different things per basis, so its label follows the selection.
 	// Re-seeded from `form` so a failed submit redisplays the basis HR actually chose.
 	let rateType = $state<RateBasis>('MONTHLY')
@@ -16,6 +24,12 @@
 		rateType = (form?.values?.rateType as RateBasis) ?? 'MONTHLY'
 	})
 	const rate = $derived(rateBasisCopy(rateType))
+
+	// Red-border the specific field(s) the server rejected (#142).
+	const invalid = (name: string) =>
+		(form as { fieldErrors?: Record<string, string[]> } | null)?.fieldErrors?.[name]
+			? true
+			: undefined
 </script>
 
 <svelte:head>
@@ -48,6 +62,7 @@
 					<input
 						id="firstName"
 						name="firstName"
+						aria-invalid={invalid('firstName')}
 						required
 						value={form?.values?.firstName ?? ''}
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -63,6 +78,7 @@
 					<input
 						id="lastName"
 						name="lastName"
+						aria-invalid={invalid('lastName')}
 						required
 						value={form?.values?.lastName ?? ''}
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -120,6 +136,7 @@
 					<input
 						id="email"
 						name="email"
+						aria-invalid={invalid('email')}
 						type="email"
 						required
 						value={form?.values?.email ?? ''}
@@ -161,6 +178,7 @@
 					<input
 						id="discordId"
 						name="discordId"
+						aria-invalid={invalid('discordId')}
 						value={form?.values?.discordId ?? ''}
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					/>
@@ -186,6 +204,7 @@
 					<select
 						id="departmentId"
 						name="departmentId"
+						aria-invalid={invalid('departmentId')}
 						required
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					>
@@ -205,6 +224,7 @@
 					<input
 						id="jobTitle"
 						name="jobTitle"
+						aria-invalid={invalid('jobTitle')}
 						required
 						value={form?.values?.jobTitle ?? ''}
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -222,10 +242,15 @@
 						name="employmentType"
 						class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 					>
-						<option value="FULL_TIME">Full Time</option>
-						<option value="PROBATIONARY">Probationary</option>
-						<option value="CONTRACTUAL">Contractual</option>
-						<option value="PART_TIME">Part-time</option>
+						<!-- New hires start probationary (#136); regularization is automatic at 6 months.
+						     `selected` also repopulates the choice after a failed submit, which the bare
+						     options did not do. -->
+						{#each EMPLOYMENT_TYPES as [val, label] (val)}
+							<option
+								value={val}
+								selected={(form?.values?.employmentType ?? 'PROBATIONARY') === val}>{label}</option
+							>
+						{/each}
 					</select>
 				</div>
 				<div>
@@ -235,6 +260,7 @@
 					<input
 						id="startDate"
 						name="startDate"
+						aria-invalid={invalid('startDate')}
 						type="date"
 						required
 						value={form?.values?.startDate ?? ''}

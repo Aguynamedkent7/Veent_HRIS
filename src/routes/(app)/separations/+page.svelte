@@ -11,6 +11,8 @@
 		(form as { fieldErrors?: Record<string, string[]> } | null)?.fieldErrors
 	)
 	const fe = (name: string) => fieldErrors?.[name]?.[0]
+	// Red-border the specific field(s) the server rejected (#142).
+	const invalid = (name: string) => (fe(name) ? true : undefined)
 
 	function statusClass(s: string) {
 		if (s === 'FINALIZED') return 'bg-gray-500/15 text-gray-400'
@@ -71,6 +73,7 @@
 					<select
 						id="employeeId"
 						name="employeeId"
+						aria-invalid={invalid('employeeId')}
 						required
 						class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 					>
@@ -88,6 +91,7 @@
 					<select
 						id="type"
 						name="type"
+						aria-invalid={invalid('type')}
 						required
 						class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 					>
@@ -102,6 +106,7 @@
 					<input
 						id="effectiveDate"
 						name="effectiveDate"
+						aria-invalid={invalid('effectiveDate')}
 						type="date"
 						required
 						class="h-9 rounded-md border border-input bg-background px-3 text-sm"
@@ -116,6 +121,7 @@
 				<textarea
 					id="reason"
 					name="reason"
+					aria-invalid={invalid('reason')}
 					rows="2"
 					class="rounded-md border border-input bg-background px-3 py-2 text-sm"
 				></textarea>
@@ -161,7 +167,7 @@
 							>
 						</td>
 						<td class="px-4 py-3 text-right">
-							<a href="/separations/{s.id}" class="text-xs text-primary hover:underline">Open</a>
+							<a href="/separations/{s.id}" class="btn-row">Open</a>
 						</td>
 					</tr>
 				{:else}

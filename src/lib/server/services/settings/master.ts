@@ -230,6 +230,8 @@ export interface LeaveTypeInput {
 	defaultDaysPerYear: number
 	allowCarryOver: boolean
 	maxCarryOverDays: number | null
+	// Whole calendar months of service required before this type may be filed (#137).
+	minMonthsOfService: number
 }
 
 export async function listLeaveTypes(organizationId: string) {
@@ -247,12 +249,15 @@ function normalizeLeaveType(input: LeaveTypeInput) {
 	const maxCarryOverDays = input.allowCarryOver ? (input.maxCarryOverDays ?? 0) : null
 	if (maxCarryOverDays != null && maxCarryOverDays < 0)
 		error(400, 'Max carry-over days cannot be negative')
+	const minMonthsOfService = Math.trunc(input.minMonthsOfService ?? 0)
+	if (minMonthsOfService < 0) error(400, 'Minimum months of service cannot be negative')
 	return {
 		name,
 		isPaid: input.isPaid,
 		defaultDaysPerYear: input.defaultDaysPerYear,
 		allowCarryOver: input.allowCarryOver,
-		maxCarryOverDays
+		maxCarryOverDays,
+		minMonthsOfService
 	}
 }
 

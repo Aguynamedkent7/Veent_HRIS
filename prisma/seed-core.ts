@@ -25,6 +25,82 @@ async function backfillMembershipsAndRoles(db: PrismaClient) {
 	}
 }
 
+// Standard PH leave policy (#137): VL/SL/SIL at 5 days each. Every tenant gets the same
+// set — without leave types an org has nothing to allocate, so its whole roster is locked
+// out of filing leave (which is how JoJo and Sweetleaf shipped before this).
+async function seedLeaveTypes(db: PrismaClient, organizationId: string) {
+	// The base set is only written when the org has none, so re-seeding never overwrites
+	// allocations HR has since tuned in Settings → Leave Types.
+	const existing = await db.leaveType.count({ where: { organizationId } })
+	if (existing === 0) {
+		await db.leaveType.createMany({
+			data: [
+				{
+					organizationId,
+					name: 'Vacation Leave',
+					isPaid: true,
+					defaultDaysPerYear: 5,
+					allowCarryOver: true,
+					maxCarryOverDays: 5
+				},
+				{ organizationId, name: 'Sick Leave', isPaid: true, defaultDaysPerYear: 5 },
+				{ organizationId, name: 'Emergency Leave', isPaid: true, defaultDaysPerYear: 3 },
+				{ organizationId, name: 'Maternity Leave', isPaid: true, defaultDaysPerYear: 105 },
+				{ organizationId, name: 'Paternity Leave', isPaid: true, defaultDaysPerYear: 7 }
+			]
+		})
+	}
+
+	// SIL is upserted outside that guard on purpose: orgs seeded before #137 already have
+	// leave types, so the block above skips them entirely and they would never gain the
+	// statutory entitlement. minMonthsOfService: 12 is the Labor Code 1-year rule, and is
+	// what the filing gate in services/requests/leave.ts reads.
+	await db.leaveType.upsert({
+		where: { organizationId_name: { organizationId, name: 'Service Incentive Leave' } },
+		update: { minMonthsOfService: 12 },
+		create: {
+			organizationId,
+			name: 'Service Incentive Leave',
+			isPaid: true,
+			defaultDaysPerYear: 5,
+			minMonthsOfService: 12
+		}
+	})
+}
+
+// Allocate the current year's entitlement to everyone in the org who is missing it (#137).
+// Mirrors ensureLeaveBalances() in services/leave.ts, which does the same at onboarding —
+// a missing row is read as a zero balance, so an unallocated employee cannot file at all.
+// Idempotent: existing rows are left untouched, so re-seeding never resets a used balance.
+async function seedLeaveBalances(db: PrismaClient, organizationId: string) {
+	const year = new Date().getFullYear()
+	const [types, employees] = await Promise.all([
+		db.leaveType.findMany({
+			where: { organizationId, isActive: true },
+			select: { id: true, defaultDaysPerYear: true }
+		}),
+		db.employee.findMany({
+			where: { organizationId },
+			select: { id: true, leaveBalances: { where: { year }, select: { leaveTypeId: true } } }
+		})
+	])
+
+	const rows = employees.flatMap((e) => {
+		const have = new Set(e.leaveBalances.map((b) => b.leaveTypeId))
+		return types
+			.filter((lt) => !have.has(lt.id))
+			.map((lt) => ({
+				employeeId: e.id,
+				leaveTypeId: lt.id,
+				year,
+				allocated: lt.defaultDaysPerYear,
+				used: 0,
+				remaining: lt.defaultDaysPerYear
+			}))
+	})
+	if (rows.length) await db.leaveBalance.createMany({ data: rows, skipDuplicates: true })
+}
+
 // Food-service tenant (#140): an "Operations" department, a "Head of Operations" Manager
 // (that tenant's HR), sign-off accounts, a few crew reporting to the Manager, and the
 // tenant's physical stores. Used by the cross-org tenancy E2E — "Head of Operations" exists
@@ -155,6 +231,9 @@ async function seedFoodServiceOrg(
 			})
 		}
 	}
+
+	// After the roster exists, so the whole crew gets this year's entitlement.
+	await seedLeaveBalances(db, tenant.id)
 }
 
 /**
@@ -295,6 +374,27 @@ export async function seedProd(db: PrismaClient) {
 		})
 	}
 
+	// --- System actor (#136) ---
+	// AuditLog.actorId is a non-nullable FK to User and actorRole is a required Role, so an
+	// automated job (the nightly regularization sweep) cannot write its audit row without a
+	// real user. This is that user — and it must never be able to log in:
+	//   • the password hash is of a random secret nobody holds, so bcrypt can never match, and
+	//   • isActive: false, which hooks.server.ts turns into an account_disabled redirect.
+	// HR_ADMIN (not SUPER_ADMIN) because regularization is an HR act and a service account
+	// should carry the least privilege that reads correctly in the audit trail.
+	const systemHash = await bcrypt.hash(`system-no-login-${crypto.randomUUID()}`, 12)
+	await db.user.upsert({
+		where: { email: 'system@veent.ph' },
+		update: { role: 'HR_ADMIN', isActive: false },
+		create: {
+			organizationId: org.id,
+			email: 'system@veent.ph',
+			passwordHash: systemHash,
+			role: 'HR_ADMIN',
+			isActive: false
+		}
+	})
+
 	// --- HR Admin (HR-level access) ---
 	const hrHash = await bcrypt.hash('Hr@1234', 12)
 	const hrUser = await db.user.upsert({
@@ -325,26 +425,11 @@ export async function seedProd(db: PrismaClient) {
 		}
 	})
 
-	// Idempotent: LeaveType has no unique constraint on (organizationId, name), so
-	// createMany would duplicate on every run. Only seed when none exist yet.
-	const existingLeaveTypes = await db.leaveType.count({ where: { organizationId: org.id } })
-	if (existingLeaveTypes === 0) {
-		await db.leaveType.createMany({
-			data: [
-				{
-					organizationId: org.id,
-					name: 'Vacation Leave',
-					isPaid: true,
-					defaultDaysPerYear: 15,
-					allowCarryOver: true,
-					maxCarryOverDays: 5
-				},
-				{ organizationId: org.id, name: 'Sick Leave', isPaid: true, defaultDaysPerYear: 15 },
-				{ organizationId: org.id, name: 'Emergency Leave', isPaid: true, defaultDaysPerYear: 3 },
-				{ organizationId: org.id, name: 'Maternity Leave', isPaid: true, defaultDaysPerYear: 105 },
-				{ organizationId: org.id, name: 'Paternity Leave', isPaid: true, defaultDaysPerYear: 7 }
-			]
-		})
+	// Leave types are org-level configuration, so every tenant gets the standard PH set —
+	// not just Veent (#137). An org with no leave types has nothing to allocate, so its
+	// entire roster is locked out of filing leave.
+	for (const orgId of ['org_seed', 'org_jojo', 'org_sweetleaf']) {
+		await seedLeaveTypes(db, orgId)
 	}
 
 	await db.payrollConfig.upsert({
@@ -453,6 +538,11 @@ export async function seedProd(db: PrismaClient) {
 
 	await backfillMembershipsAndRoles(db)
 
+	// Last, so it covers every employee this seed created. Also backfills orgs that predate
+	// #137: onboarding allocates balances now, but employees hired before it have none, and
+	// a missing row is read as a zero balance that blocks them from filing at all.
+	await seedLeaveBalances(db, org.id)
+
 	return { org, dept }
 }
 
@@ -533,7 +623,7 @@ export async function seedE2E(db: PrismaClient) {
 			role: 'EMPLOYEE'
 		}
 	})
-	const employee = await db.employee.upsert({
+	await db.employee.upsert({
 		where: { userId: employeeUser.id },
 		update: { reportsToId: managerEmployee.id, discordId: '123456789012345678' },
 		create: {
@@ -553,29 +643,10 @@ export async function seedE2E(db: PrismaClient) {
 		}
 	})
 
-	// --- Leave balances for the employee (current year) so leave-filing E2E validates ---
-	const balanceYear = new Date().getFullYear()
-	const employeeLeaveTypes = await db.leaveType.findMany({ where: { organizationId: org.id } })
-	for (const lt of employeeLeaveTypes) {
-		await db.leaveBalance.upsert({
-			where: {
-				employeeId_leaveTypeId_year: {
-					employeeId: employee.id,
-					leaveTypeId: lt.id,
-					year: balanceYear
-				}
-			},
-			update: {},
-			create: {
-				employeeId: employee.id,
-				leaveTypeId: lt.id,
-				year: balanceYear,
-				allocated: lt.defaultDaysPerYear,
-				used: 0,
-				remaining: lt.defaultDaysPerYear
-			}
-		})
-	}
+	// --- Leave balances (current year) so leave-filing E2E validates. Org-wide rather than
+	// just Elena (#137): HR and the Manager file leave in the request specs too, and a
+	// missing balance row reads as zero, which would block them. ---
+	await seedLeaveBalances(db, org.id)
 
 	// Onboarding checklist (#116): the derived defaults + one manual example for Veent so
 	// the Settings editor and the 201-file manual toggles are populated. Keys must match

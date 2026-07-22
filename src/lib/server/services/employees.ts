@@ -4,6 +4,7 @@ import { ROLE_HIERARCHY } from '$lib/server/rbac'
 import { error } from '@sveltejs/kit'
 import bcrypt from 'bcrypt'
 import { Prisma } from '@prisma/client'
+import { ensureLeaveBalances } from './leave'
 import type { AuditContext } from './types'
 import type { EmploymentType, EmploymentStatus, RateType, Gender, Role } from '@prisma/client'
 
@@ -153,6 +154,8 @@ export async function listEmployees(
 			employmentType: true,
 			employmentStatus: true,
 			startDate: true,
+			// #136: tenure freezes at endDate for offboarded staff.
+			endDate: true,
 			department: { select: { id: true, name: true } },
 			branch: { select: { id: true, name: true } },
 			user: { select: { email: true, role: true, isActive: true } }
@@ -218,7 +221,7 @@ export async function createEmployee(
 			}
 		})
 
-		return tx.employee.create({
+		const created = await tx.employee.create({
 			data: {
 				userId: user.id,
 				organizationId,
@@ -257,6 +260,14 @@ export async function createEmployee(
 			},
 			include: { department: true, user: { select: { email: true, role: true } } }
 		})
+
+		// Allocate this year's leave entitlement from the org's leave-type defaults (#137).
+		// Inside the transaction so a new hire is never left half-onboarded with no ledger —
+		// `assertLeaveBalance` reads a missing row as zero, so that state blocks their first
+		// filing outright.
+		await ensureLeaveBalances(created.id, organizationId, input.startDate.getFullYear(), tx)
+
+		return created
 	})
 
 	await writeAuditLog(ctx, {
@@ -338,7 +349,15 @@ export async function offboardEmployee(
 	endDate: Date,
 	ctx: AuditContext
 ) {
-	await getEmployee(id, organizationId)
+	const target = await getEmployee(id, organizationId)
+
+	// Refuse self-offboarding: the transaction below deactivates the target's
+	// user account, so an admin offboarding their own record would be locked out
+	// on their next request (hooks.server.ts redirects inactive users to /login).
+	// Guarding here covers both the form action and the v1 API in one place.
+	if (target.userId === ctx.actorId) {
+		error(400, 'You cannot offboard your own employee record — ask another admin to do it.')
+	}
 
 	const [employee] = await db.$transaction([
 		db.employee.update({

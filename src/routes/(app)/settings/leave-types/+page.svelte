@@ -94,6 +94,22 @@
 					class="mt-1 {inputClass}"
 				/>
 			</div>
+			<div>
+				<label for="add-min-months" class="text-xs font-medium text-muted-foreground"
+					>Min. months of service</label
+				>
+				<input
+					id="add-min-months"
+					name="minMonthsOfService"
+					type="number"
+					min="0"
+					max="120"
+					step="1"
+					value="0"
+					class="mt-1 {inputClass}"
+				/>
+				<p class="mt-1 text-xs text-muted-foreground">0 = from day one. SIL is 12.</p>
+			</div>
 			<label class="flex items-center gap-2 text-sm">
 				<input type="checkbox" name="isPaid" checked class="align-middle" /> Paid
 			</label>
@@ -126,6 +142,9 @@
 							<th class="px-3 py-2 text-right font-medium text-muted-foreground">Days/yr</th>
 							<th class="px-3 py-2 text-center font-medium text-muted-foreground">Carry-over</th>
 							<th class="px-3 py-2 text-right font-medium text-muted-foreground">Max carry</th>
+							<th class="px-3 py-2 text-right font-medium text-muted-foreground"
+								>Min. months service</th
+							>
 							<th class="px-3 py-2"></th>
 							<th class="px-3 py-2"></th>
 						</tr>
@@ -183,6 +202,18 @@
 										max="365"
 										step="0.5"
 										value={lt.maxCarryOverDays == null ? '' : Number(lt.maxCarryOverDays)}
+										class="{inputClass} w-24 text-right"
+									/>
+								</td>
+								<td class="px-3 py-2 text-right">
+									<input
+										form="edit-{lt.id}"
+										name="minMonthsOfService"
+										type="number"
+										min="0"
+										max="120"
+										step="1"
+										value={lt.minMonthsOfService}
 										class="{inputClass} w-24 text-right"
 									/>
 								</td>

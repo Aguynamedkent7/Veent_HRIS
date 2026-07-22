@@ -90,7 +90,7 @@ test.describe('Back navigation', () => {
 		await page.goto('/requests/approvals', { waitUntil: 'domcontentloaded' })
 		await page.waitForLoadState('networkidle')
 
-		// The queue's "View detail →" link carries ?from=/requests/approvals.
+		// The queue's "View detail" link carries ?from=/requests/approvals.
 		await page.locator('a[href*="?from=/requests/approvals"]').first().click()
 		await page.waitForURL(/\/requests\/.+/)
 

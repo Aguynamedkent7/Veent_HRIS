@@ -10,6 +10,7 @@ import {
 	deleteRequest
 } from '$lib/server/services/requests'
 import { uploadsFromForm, saveRequestDocuments } from '$lib/server/services/requests/documents'
+import { meetsLeaveTenure } from '$lib/server/services/requests/leave'
 import { requestSchema } from '$lib/server/schemas/requests'
 import type { Actions, PageServerLoad } from './$types'
 
@@ -19,7 +20,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const user = locals.user!
 	const myEmployee = await db.employee.findUnique({
 		where: { userId: user.id },
-		select: { id: true }
+		select: { id: true, startDate: true }
 	})
 
 	// #64: one count + one page query.
@@ -36,11 +37,21 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		db.leaveType.findMany({
 			where: { organizationId: user.organizationId, isActive: true },
 			orderBy: { name: 'asc' },
-			select: { id: true, name: true }
+			select: { id: true, name: true, minMonthsOfService: true }
 		})
 	])
 
-	return { requests, leaveTypes, hasEmployee: Boolean(myEmployee), pagination }
+	return {
+		requests,
+		// Tenure-gated types are greyed out in the file form; createRequest is the real
+		// enforcement point (#137). Without an employee record nothing is filable anyway.
+		leaveTypes: leaveTypes.map((lt) => ({
+			...lt,
+			eligible: myEmployee ? meetsLeaveTenure(myEmployee.startDate, lt.minMonthsOfService) : false
+		})),
+		hasEmployee: Boolean(myEmployee),
+		pagination
+	}
 }
 
 // Build the type-specific raw payload from flat form fields, keyed by request type.

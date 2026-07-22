@@ -8,6 +8,10 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 	const req = $derived(data.request)
 
+	// Balances are per year, and the server loads the year the leave falls in — not today's,
+	// which differs for a December filing against January leave.
+	const leaveYear = $derived((req.dateFrom ? new Date(req.dateFrom) : new Date()).getFullYear())
+
 	// #108: double-submits here would double-upload attachments or fire duplicate verify/delete
 	// posts. The per-document forms sit in an `{#each}`, so each row gets its own guard — a shared
 	// one would disable every document's button at once.
@@ -156,6 +160,37 @@
 			<dd class="col-span-2">{formatDate(req.createdAt)}</dd>
 		</dl>
 	</div>
+
+	<!-- Leave ledger (#137): so a reviewer can see whether the days are actually there
+	     without opening the filer's 201 file. Balances deduct on final approval, so these
+	     are the numbers this request will draw against. -->
+	{#if data.leaveBalances.length}
+		<div class="rounded-lg border bg-card p-4 space-y-3">
+			<h2 class="text-sm font-semibold">
+				{req.employee.firstName}'s leave balances
+				<span class="font-normal text-muted-foreground">
+					({leaveYear}, days remaining)
+				</span>
+			</h2>
+			<div class="flex flex-wrap gap-2">
+				{#each data.leaveBalances as bal (bal.id)}
+					<div
+						class="min-w-[130px] rounded-md border p-3 {bal.isRequested
+							? 'border-primary bg-primary/5'
+							: 'bg-background'}"
+						data-leave-type={bal.name}
+					>
+						<p class="text-xs font-medium text-muted-foreground">{bal.name}</p>
+						<p class="mt-0.5 text-xl font-bold">{bal.remaining.toFixed(1)}</p>
+						<p class="text-xs text-muted-foreground">of {bal.allocated.toFixed(0)} allocated</p>
+						{#if bal.isRequested}
+							<p class="mt-1 text-xs font-medium text-primary">This request</p>
+						{/if}
+					</div>
+				{/each}
+			</div>
+		</div>
+	{/if}
 
 	<div class="space-y-3">
 		<h2 class="text-lg font-semibold">Supporting documents</h2>
