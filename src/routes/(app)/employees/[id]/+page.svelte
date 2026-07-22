@@ -595,6 +595,53 @@
 			{/if}
 		</section>
 
+		<!-- Benefits (#198): enrollments on the 201 file, read-only here. HR manages them under
+		     the Benefits section; this just surfaces them alongside the employee's record. -->
+		<section class="rounded-lg border bg-card p-6 space-y-4 lg:col-span-2">
+			<h2 class="font-semibold">Benefits</h2>
+			{#if data.benefits.length}
+				<div class="overflow-x-auto rounded-md border">
+					<table class="w-full text-sm">
+						<thead class="border-b bg-muted/50">
+							<tr>
+								<th class="px-3 py-2 text-left font-medium text-muted-foreground">Plan</th>
+								<th class="px-3 py-2 text-left font-medium text-muted-foreground">Type</th>
+								<th class="px-3 py-2 text-left font-medium text-muted-foreground">Coverage</th>
+								<th class="px-3 py-2 text-right font-medium text-muted-foreground">EE Cost</th>
+								<th class="px-3 py-2 text-left font-medium text-muted-foreground">Status</th>
+							</tr>
+						</thead>
+						<tbody class="divide-y">
+							{#each data.benefits as b (b.id)}
+								<tr class="hover:bg-muted/30 {b.status === 'ACTIVE' ? '' : 'opacity-60'}">
+									<td class="px-3 py-2 font-medium">{b.plan.name}</td>
+									<td class="px-3 py-2 text-muted-foreground">{b.plan.type.replace('_', ' ')}</td>
+									<td class="px-3 py-2 text-muted-foreground">{b.coverageLevel ?? '—'}</td>
+									<td class="px-3 py-2 text-right">
+										{b.plan.employeeCost != null ? formatCurrency(b.plan.employeeCost) : '—'}
+									</td>
+									<td class="px-3 py-2">
+										<span
+											class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {b.status ===
+											'ACTIVE'
+												? 'bg-green-500/15 text-green-400'
+												: b.status === 'WAIVED'
+													? 'bg-yellow-500/15 text-yellow-400'
+													: 'bg-gray-500/15 text-gray-400'}">{b.status}</span
+										>
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{:else}
+				<p class="text-xs text-muted-foreground">
+					No benefit enrollments. HR manages enrollments under Benefits.
+				</p>
+			{/if}
+		</section>
+
 		<!-- Emergency Contacts (visible to any viewer of the 201 file; HR manages) -->
 		<section class="rounded-lg border bg-card p-6 space-y-4 lg:col-span-2">
 			<h2 class="font-semibold">

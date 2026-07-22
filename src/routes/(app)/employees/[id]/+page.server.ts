@@ -9,6 +9,7 @@ import {
 } from '$lib/server/services/employees'
 import { listPositions } from '$lib/server/services/settings/org'
 import { getLeaveBalances } from '$lib/server/services/leave'
+import { listEnrollmentsForEmployee } from '$lib/server/services/benefits'
 import { getEmployeeOnboarding, setManualCompletion } from '$lib/server/services/onboarding'
 import { listAssignableBranches, selectableBranches } from '$lib/server/services/branches'
 import { isFoodServiceOrg } from '$lib/orgs'
@@ -94,7 +95,8 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		documents,
 		positions,
 		history,
-		leaveBalances
+		leaveBalances,
+		benefits
 	] = await Promise.all([
 		db.department.findMany({
 			where: { organizationId: locals.user!.organizationId },
@@ -122,7 +124,10 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		// Per-employee leave ledger (#137). A manager viewing a direct report sees it too —
 		// it carries no pay or government-ID data, and "how much leave do they have left" is
 		// exactly what a manager approving leave needs.
-		getLeaveBalances(params.id, new Date().getFullYear())
+		getLeaveBalances(params.id, new Date().getFullYear()),
+		// Benefits enrollments on the 201 file (#198). Carries no pay/government-ID data, so a
+		// manager viewing a direct report sees them like the leave ledger above.
+		listEnrollmentsForEmployee(params.id)
 	])
 	const schedules = canManage ? await listSchedules(locals.user!.organizationId) : []
 	// Branches only exist for the food-service tenants; elsewhere the picker is not rendered.
@@ -173,6 +178,16 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 			allocated: Number(b.allocated),
 			used: Number(b.used),
 			remaining: Number(b.remaining)
+		})),
+		benefits: benefits.map((b) => ({
+			id: b.id,
+			status: b.status,
+			coverageLevel: b.coverageLevel,
+			plan: {
+				name: b.plan.name,
+				type: b.plan.type,
+				employeeCost: b.plan.employeeCost != null ? Number(b.plan.employeeCost) : null
+			}
 		}))
 	}
 }
