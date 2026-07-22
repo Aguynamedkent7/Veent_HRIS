@@ -392,15 +392,84 @@ export async function correctDay(
 	ctx: AuditContext
 ) {
 	const day = await db.attendanceDay.findFirst({
-		where: { id, employee: { user: { organizationId } } }
+		where: { id, employee: { user: { organizationId } } },
+		include: { employee: { include: { workSchedule: { include: { days: true } } } } }
 	})
 	if (!day) error(404, 'Attendance day not found')
 	if (day.isLocked) error(409, 'This attendance day is locked and cannot be edited')
 
+	// When HR sets the times, the times are the source of truth: re-derive status, worked/
+	// regular/OT hours, night differential, and late/undertime from them (against the employee's
+	// schedule + the day's stored day type) rather than storing stale hand values. A status the
+	// HR user explicitly changed in the dropdown still wins over the derived one, so ON_LEAVE /
+	// HOLIDAY / ABSENT can be forced. Days edited without touching the times keep the old raw path.
+	const editingTimes = 'timeIn' in data || 'timeOut' in data
+	let write: Record<string, unknown> = { ...data }
+
+	if (editingTimes) {
+		const scheduleDays = day.employee.workSchedule
+			? day.employee.workSchedule.days
+			: await resolveDefaultScheduleDays(organizationId)
+		const weekday = day.date.getUTCDay()
+		const schedDay = scheduleDayFor(scheduleDays as never, weekday)
+
+		// Mirror deriveRange's OT gating: worked overtime only pays up to the approved hours.
+		const dayKey = day.date.toISOString().slice(0, 10)
+		const otReqs = await db.request.findMany({
+			where: {
+				employeeId: day.employeeId,
+				type: 'OVERTIME',
+				status: 'APPROVED',
+				dateFrom: {
+					gte: new Date(`${dayKey}T00:00:00Z`),
+					lte: new Date(`${dayKey}T23:59:59Z`)
+				}
+			},
+			select: { hours: true }
+		})
+		const approvedOtHours = otReqs.reduce((s, o) => s + Number(o.hours ?? 0), 0)
+
+		const punches = []
+		if (data.timeIn) punches.push({ punchType: 'IN' as AttPunchType, timestamp: data.timeIn })
+		if (data.timeOut) punches.push({ punchType: 'OUT' as AttPunchType, timestamp: data.timeOut })
+
+		const r = deriveAttendanceDay({
+			punches,
+			schedule: day.dayType === 'REGULAR' ? schedDay : null,
+			dayType: day.dayType as DayType,
+			approvedOtHours
+		})
+
+		// HR changing the dropdown to something other than the day's current status is an
+		// explicit override; otherwise the derived status stands.
+		const statusOverride = data.status && data.status !== day.status ? data.status : undefined
+
+		write = {
+			status: statusOverride ?? r.status,
+			timeIn: r.timeIn,
+			timeOut: r.timeOut,
+			workedHours: r.workedHours,
+			regularHours: r.regularHours,
+			overtimeHours: r.overtimeHours,
+			rawOvertimeHours: r.rawOvertimeHours,
+			nightDiffHours: r.nightDiffHours,
+			restDayHours: r.restDayHours,
+			restDayOtHours: r.restDayOtHours,
+			regularHolidayHours: r.regularHolidayHours,
+			regularHolidayOtHours: r.regularHolidayOtHours,
+			specialHolidayHours: r.specialHolidayHours,
+			specialHolidayOtHours: r.specialHolidayOtHours,
+			lateMinutes: r.lateMinutes,
+			undertimeMinutes: r.undertimeMinutes,
+			breakMinutes: r.breakMinutes,
+			...(data.note !== undefined ? { note: data.note } : {})
+		}
+	}
+
 	// Flag the day so a later re-derive (Refresh) won't overwrite this manual override.
 	const updated = await db.attendanceDay.update({
 		where: { id },
-		data: { ...data, manuallyEdited: true }
+		data: { ...write, manuallyEdited: true }
 	})
 	await writeAuditLog(ctx, {
 		action: 'UPDATE',
@@ -411,7 +480,7 @@ export async function correctDay(
 			overtimeHours: Number(day.overtimeHours),
 			status: day.status
 		},
-		newValue: data as Record<string, unknown>
+		newValue: write as Record<string, unknown>
 	})
 	return updated
 }
