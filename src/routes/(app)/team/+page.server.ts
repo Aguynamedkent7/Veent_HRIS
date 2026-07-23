@@ -1,6 +1,7 @@
 import { requireMinRole } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { autoDeriveFromPunches } from '$lib/server/services/attendance'
+import { listReportIdsFor } from '$lib/server/services/supervisors'
 import type { PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals, url, getClientAddress }) => {
@@ -27,11 +28,16 @@ export const load: PageServerLoad = async ({ locals, url, getClientAddress }) =>
 	const startISO = startDate.toISOString().slice(0, 10)
 	const endISO = endDate.toISOString().slice(0, 10)
 
-	// Get team members
+	// Get team members. A manager's team is everyone who reports to them as primary OR
+	// additional supervisor (#176); HR/Super Admin see the whole org.
+	let memberScope: { id?: { in: string[] } } = {}
+	if (!isAdmin && myEmployee) {
+		memberScope = { id: { in: await listReportIdsFor(myEmployee.id) } }
+	}
 	const members = await db.employee.findMany({
 		where: {
 			user: { organizationId: user.organizationId, isActive: true },
-			...(!isAdmin && myEmployee ? { reportsToId: myEmployee.id } : {})
+			...memberScope
 		},
 		select: { id: true, firstName: true, lastName: true }
 	})

@@ -459,6 +459,22 @@ model Employee {
   @@map("employees")
 }
 
+// Additional (secondary) supervisors (#176). An employee's primary manager stays on
+// Employee.reportsToId; this records the extra superiors they also report to, so team
+// rosters and manager views count someone under ANY of their supervisors. Plain employee-id
+// FKs (resolved in queries) keep it off the Employee relation graph.
+model EmployeeSupervisor {
+  id           String   @id @default(cuid())
+  employeeId   String
+  supervisorId String
+  createdAt    DateTime @default(now())
+
+  @@unique([employeeId, supervisorId])
+  @@index([supervisorId])
+  @@index([employeeId])
+  @@map("employee_supervisors")
+}
+
 // Emergency contact(s) on the 201 file (FR-047). An employee may have several.
 model EmergencyContact {
   id           String   @id @default(cuid())

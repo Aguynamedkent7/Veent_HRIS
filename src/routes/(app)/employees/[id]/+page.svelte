@@ -63,6 +63,7 @@
 	const revealDisbursement = createSubmitGuard()
 	const update = createSubmitGuard()
 	const offboard = createSubmitGuard()
+	const setSupervisors = createSubmitGuard()
 	const deleteEmergencyContact = createSubmitGuard()
 	const addEmergencyContact = createSubmitGuard()
 	const addLoan = createSubmitGuard()
@@ -269,6 +270,60 @@
 				</dl>
 			</div>
 		{/if}
+
+		<!-- Supervisors (#176): primary manager + additional superiors -->
+		<div class="rounded-lg border bg-card p-6 space-y-4">
+			<h2 class="font-semibold">Supervisors</h2>
+			<dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-sm">
+				<dt class="text-muted-foreground">Primary</dt>
+				<dd>
+					{employee.reportsTo
+						? `${employee.reportsTo.firstName} ${employee.reportsTo.lastName}`
+						: '—'}
+				</dd>
+				<dt class="text-muted-foreground">Also reports to</dt>
+				<dd>
+					{#if data.additionalSupervisors.length}
+						{data.additionalSupervisors.map((s) => s.name).join(', ')}
+					{:else}
+						<span class="text-muted-foreground">—</span>
+					{/if}
+				</dd>
+			</dl>
+			{#if data.canManage}
+				<form
+					method="POST"
+					action="?/setSupervisors"
+					use:enhance={setSupervisors.enhance}
+					class="space-y-2 border-t pt-3"
+				>
+					<label for="supervisorIds" class="text-xs font-medium text-muted-foreground"
+						>Additional supervisors (Ctrl/Cmd-click to select multiple)</label
+					>
+					<select
+						id="supervisorIds"
+						name="supervisorIds"
+						multiple
+						size="4"
+						class="w-full rounded-md border border-input bg-background px-2 py-1 text-sm"
+					>
+						{#each data.supervisorOptions as opt (opt.id)}
+							<option
+								value={opt.id}
+								selected={data.additionalSupervisors.some((s) => s.id === opt.id)}
+								>{opt.lastName}, {opt.firstName}</option
+							>
+						{/each}
+					</select>
+					<button
+						type="submit"
+						disabled={setSupervisors.busy}
+						class="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+						>{setSupervisors.busy ? 'Saving…' : 'Save supervisors'}</button
+					>
+				</form>
+			{/if}
+		</div>
 
 		<!-- Emergency Contact Card (visible to managers) -->
 		<div class="rounded-lg border bg-card p-6 space-y-4">
