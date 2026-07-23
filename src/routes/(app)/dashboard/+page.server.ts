@@ -5,7 +5,11 @@ import { manilaDayKey } from '$lib/utils/dates'
 import { can, requireCapability } from '$lib/server/rbac'
 import { listRecentAnnouncements, createAnnouncement } from '$lib/server/services/announcements'
 import { countPendingApprovals } from '$lib/server/services/approvals'
-import { listUpcomingRegularizations } from '$lib/server/services/dashboard'
+import {
+	listUpcomingRegularizations,
+	listTodaysBirthdays,
+	getMyEmploymentStatus
+} from '$lib/server/services/dashboard'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -64,7 +68,13 @@ export const load: PageServerLoad = async ({ locals }) => {
 		derived: attendanceGroups.reduce((s, g) => s + g._count._all, 0)
 	}
 
-	const announcements = await listRecentAnnouncements(orgId, 5)
+	const [announcements, birthdays, myStatus] = await Promise.all([
+		listRecentAnnouncements(orgId, 5),
+		// Today's birthday greeting, surfaced in the announcements feed (#167).
+		listTodaysBirthdays(orgId),
+		// The viewer's own employment standing for the status card (#167).
+		getMyEmploymentStatus(user.id)
+	])
 
 	// HR's advance warning of probationary staff coming up for regularization (#168).
 	const regularizations = canPost ? await listUpcomingRegularizations(orgId) : []
@@ -74,6 +84,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 		canViewPayroll,
 		announcements,
 		regularizations,
+		birthdays,
+		myStatus,
 		metrics: {
 			headcount,
 			onLeaveToday,
