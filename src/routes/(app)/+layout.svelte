@@ -100,8 +100,9 @@
 	// Payroll Officer manages payroll; Finance reads payroll reports only.
 	const isPayroll = $derived(canAny(roles, 'MANAGE_PAYROLL'))
 	const canViewReports = $derived(canAny(roles, 'VIEW_PAYROLL_REPORTS'))
-	// Sign-off roles (Verifier/Approver) reach Payroll read-only to verify/approve runs (#134).
-	const canSignOff = $derived(canAny(roles, 'VERIFY_REQUESTS') || canAny(roles, 'APPROVE_SIGNOFF'))
+	// Sign-off roles reach Payroll read-only to verify/approve runs (#134). Payroll is
+	// finance, so the approver is the CEO / Super Admin, not the generic Approver (#174).
+	const canSignOff = $derived(canAny(roles, 'VERIFY_REQUESTS') || canAny(roles, 'APPROVE_FINANCE'))
 	// Approvers (manager ladder + Payroll Officer + sign-off roles) get the dropdown.
 	const canApprove = $derived(canAny(roles, 'APPROVE_REQUESTS'))
 

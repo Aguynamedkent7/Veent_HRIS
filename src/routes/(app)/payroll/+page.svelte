@@ -94,11 +94,17 @@
 	{#await data.runs}
 		<TableSkeleton rows={5} cols={6} />
 	{:then runs}
+		<!-- A finance approver (CEO / Super Admin) sees runs from every tenant (#174); the
+		     Tenant column and per-row org label only appear once runs span more than one org. -->
+		{@const crossTenant = runs.some((r) => r.organizationId !== data.viewerOrg)}
 		<div class="overflow-x-auto rounded-lg border">
 			<table class="w-full text-sm">
 				<thead class="border-b bg-muted/50">
 					<tr>
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Period</th>
+						{#if crossTenant}
+							<th class="px-4 py-3 text-left font-medium text-muted-foreground">Tenant</th>
+						{/if}
 						<th class="px-4 py-3 text-right font-medium text-muted-foreground">Gross</th>
 						<th class="px-4 py-3 text-right font-medium text-muted-foreground">Deductions</th>
 						<th class="px-4 py-3 text-right font-medium text-muted-foreground">Net Pay</th>
@@ -112,6 +118,9 @@
 							<td class="px-4 py-3"
 								>{formatShortDate(run.periodStart)} – {formatShortDate(run.periodEnd)}</td
 							>
+							{#if crossTenant}
+								<td class="px-4 py-3 text-muted-foreground">{run.organization?.name ?? '—'}</td>
+							{/if}
 							<td class="px-4 py-3 text-right font-mono"
 								>{formatCurrency(Number(run.totalGross))}</td
 							>
@@ -139,7 +148,7 @@
 								<div class="flex items-center justify-end gap-2">
 									<!-- Creating a run computes it (#138), so a run only stays DRAFT when that
 									     compute failed — this button is the recovery path. -->
-									{#if data.canManage && run.status === 'DRAFT'}
+									{#if data.canManage && run.organizationId === data.viewerOrg && run.status === 'DRAFT'}
 										{@const computeG = guard(`${run.id}:compute`)}
 										<form method="POST" action="?/compute" use:enhance={computeG.enhance}>
 											<input type="hidden" name="id" value={run.id} />
@@ -151,7 +160,7 @@
 											>
 										</form>
 									{/if}
-									{#if data.canManage && run.status === 'COMPUTED'}
+									{#if data.canManage && run.organizationId === data.viewerOrg && run.status === 'COMPUTED'}
 										{@const recomputeG = guard(`${run.id}:compute`)}
 										<form method="POST" action="?/compute" use:enhance={recomputeG.enhance}>
 											<input type="hidden" name="id" value={run.id} />
@@ -172,8 +181,9 @@
 						</tr>
 					{:else}
 						<tr>
-							<td colspan="6" class="px-4 py-8 text-center text-muted-foreground"
-								>No payroll runs yet</td
+							<td
+								colspan={crossTenant ? 7 : 6}
+								class="px-4 py-8 text-center text-muted-foreground">No payroll runs yet</td
 							>
 						</tr>
 					{/each}

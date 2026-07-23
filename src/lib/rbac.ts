@@ -73,6 +73,13 @@ export const CAPABILITIES = {
 	VERIFY_REQUESTS: ['VERIFIER'],
 	/** Approver stage sign-off (#133) — the final gate of the approval chain. */
 	APPROVE_SIGNOFF: ['APPROVER'],
+	/**
+	 * Final sign-off on anything financial — payroll runs today, and any future
+	 * money movement (disbursements, cash advances, loans). The CEO and Super Admin
+	 * are the only approvers for finance (#174); the generic APPROVER handles HR
+	 * requests (leave, OT) but never signs off money.
+	 */
+	APPROVE_FINANCE: ['CEO', 'SUPER_ADMIN'],
 	/** Runs payroll: periods, runs, loans, cash advances, calculator. */
 	MANAGE_PAYROLL: ['MANAGER', 'SUPER_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER', 'CEO'],
 	/** Reads payroll reports — adds read-only Finance. */
