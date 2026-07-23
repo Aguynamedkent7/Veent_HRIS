@@ -359,7 +359,6 @@
 					<tr>
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Cycle</th>
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Reviewer</th>
-						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Rating</th>
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
 					</tr>
 				</thead>
@@ -375,7 +374,6 @@
 							<td class="px-4 py-3 text-muted-foreground">
 								{review.reviewer.lastName}, {review.reviewer.firstName}
 							</td>
-							<td class="px-4 py-3">{review.overallRating ?? '—'}</td>
 							<td class="px-4 py-3">
 								<span
 									class="rounded-full px-2 py-0.5 text-xs font-medium {reviewStatusClass(
@@ -388,7 +386,7 @@
 						</tr>
 					{:else}
 						<tr>
-							<td colspan="4" class="px-4 py-8 text-center text-muted-foreground">No reviews</td>
+							<td colspan="3" class="px-4 py-8 text-center text-muted-foreground">No reviews</td>
 						</tr>
 					{/each}
 				</tbody>

@@ -25,13 +25,15 @@
 </script>
 
 <svelte:head>
-	<title>Team — Veent HRIS</title>
+	<title>{data.isFoodService ? 'Branches' : 'Team'} — Veent HRIS</title>
 </svelte:head>
 
 <div class="space-y-6">
 	<div class="flex items-start justify-between gap-4">
 		<div>
-			<h1 class="text-2xl font-bold tracking-tight">Team Attendance</h1>
+			<h1 class="text-2xl font-bold tracking-tight">
+				{data.isFoodService ? 'Branch Attendance' : 'Team Attendance'}
+			</h1>
 			<p class="text-sm text-muted-foreground">
 				Multi-day overview — present, late, absent, incomplete, on leave, holiday, or rest day
 				across a date range.

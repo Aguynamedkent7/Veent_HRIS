@@ -123,77 +123,109 @@
 			</dl>
 		</section>
 
-		<!-- Personal & Contact (editable) -->
+		<!-- Personal & Contact — editable by HR only (#175); read-only for everyone else. -->
 		<section class="card space-y-5">
 			<h2 class="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
 				Personal &amp; Contact
 			</h2>
-			<form method="POST" action="?/update" use:enhance={update.enhance} class="space-y-4">
-				<div class="grid grid-cols-2 gap-4">
+			{#if !data.canManage}
+				<dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+					<div class="space-y-0.5">
+						<dt class="text-xs font-medium text-muted-foreground">First Name</dt>
+						<dd>{emp.firstName}</dd>
+					</div>
+					<div class="space-y-0.5">
+						<dt class="text-xs font-medium text-muted-foreground">Last Name</dt>
+						<dd>{emp.lastName}</dd>
+					</div>
+					<div class="space-y-0.5">
+						<dt class="text-xs font-medium text-muted-foreground">Phone</dt>
+						<dd>{emp.contactPhone ?? '—'}</dd>
+					</div>
+					<div class="space-y-0.5">
+						<dt class="text-xs font-medium text-muted-foreground">Date of Birth</dt>
+						<dd>
+							{emp.dateOfBirth ? new Date(emp.dateOfBirth).toISOString().slice(0, 10) : '—'}
+						</dd>
+					</div>
+					<div class="col-span-2 space-y-0.5">
+						<dt class="text-xs font-medium text-muted-foreground">Address</dt>
+						<dd class="whitespace-pre-wrap">{emp.contactAddress ?? '—'}</dd>
+					</div>
+				</dl>
+				<p class="text-xs text-muted-foreground">
+					Need a correction? Contact HR — employee details are HR-managed.
+				</p>
+			{:else}
+				<form method="POST" action="?/update" use:enhance={update.enhance} class="space-y-4">
+					<div class="grid grid-cols-2 gap-4">
+						<div class="space-y-1.5">
+							<label for="firstName" class="text-xs font-medium text-muted-foreground"
+								>First Name</label
+							>
+							<input
+								id="firstName"
+								name="firstName"
+								type="text"
+								value={emp.firstName}
+								class="input"
+							/>
+						</div>
+						<div class="space-y-1.5">
+							<label for="lastName" class="text-xs font-medium text-muted-foreground"
+								>Last Name</label
+							>
+							<input id="lastName" name="lastName" type="text" value={emp.lastName} class="input" />
+						</div>
+					</div>
+
 					<div class="space-y-1.5">
-						<label for="firstName" class="text-xs font-medium text-muted-foreground"
-							>First Name</label
+						<label for="contactPhone" class="text-xs font-medium text-muted-foreground">Phone</label
 						>
 						<input
-							id="firstName"
-							name="firstName"
-							type="text"
-							value={emp.firstName}
+							id="contactPhone"
+							name="contactPhone"
+							type="tel"
+							value={emp.contactPhone ?? ''}
 							class="input"
 						/>
 					</div>
+
 					<div class="space-y-1.5">
-						<label for="lastName" class="text-xs font-medium text-muted-foreground">Last Name</label
+						<label for="contactAddress" class="text-xs font-medium text-muted-foreground"
+							>Address</label
 						>
-						<input id="lastName" name="lastName" type="text" value={emp.lastName} class="input" />
+						<textarea
+							id="contactAddress"
+							name="contactAddress"
+							rows="2"
+							class="input h-auto resize-none py-2">{emp.contactAddress ?? ''}</textarea
+						>
 					</div>
-				</div>
 
-				<div class="space-y-1.5">
-					<label for="contactPhone" class="text-xs font-medium text-muted-foreground">Phone</label>
-					<input
-						id="contactPhone"
-						name="contactPhone"
-						type="tel"
-						value={emp.contactPhone ?? ''}
-						class="input"
-					/>
-				</div>
+					<div class="space-y-1.5">
+						<label for="dateOfBirth" class="text-xs font-medium text-muted-foreground"
+							>Date of Birth</label
+						>
+						<input
+							id="dateOfBirth"
+							name="dateOfBirth"
+							type="date"
+							value={emp.dateOfBirth ? new Date(emp.dateOfBirth).toISOString().slice(0, 10) : ''}
+							class="input"
+						/>
+					</div>
 
-				<div class="space-y-1.5">
-					<label for="contactAddress" class="text-xs font-medium text-muted-foreground"
-						>Address</label
-					>
-					<textarea
-						id="contactAddress"
-						name="contactAddress"
-						rows="2"
-						class="input h-auto resize-none py-2">{emp.contactAddress ?? ''}</textarea
-					>
-				</div>
-
-				<div class="space-y-1.5">
-					<label for="dateOfBirth" class="text-xs font-medium text-muted-foreground"
-						>Date of Birth</label
-					>
-					<input
-						id="dateOfBirth"
-						name="dateOfBirth"
-						type="date"
-						value={emp.dateOfBirth ? new Date(emp.dateOfBirth).toISOString().slice(0, 10) : ''}
-						class="input"
-					/>
-				</div>
-
-				<div class="pt-2">
-					<button
-						type="submit"
-						disabled={update.busy}
-						class="btn-primary disabled:pointer-events-none disabled:opacity-50"
-						>{update.busy ? 'Saving…' : 'Save Changes'}</button
-					>
-				</div>
-			</form>
+					<div class="pt-2">
+						<button
+							type="submit"
+							disabled={update.busy}
+							class="btn-primary disabled:pointer-events-none disabled:opacity-50"
+							>{update.busy ? 'Saving…' : 'Save Changes'}</button
+						>
+					</div>
+				</form>
+			{/if}
 		</section>
 	</div>
 

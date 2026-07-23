@@ -1,17 +1,15 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
-	import { formatShortDate } from '$lib/utils/format'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 	const r = $derived(data.review)
 
-	// #108: double-submitting these re-writes the review or re-runs the acknowledge transition.
+	// #108: double-submitting these re-writes the review.
 	const saveSelf = createSubmitGuard()
 	const submitReview = createSubmitGuard()
-	const acknowledge = createSubmitGuard()
 
 	function statusClass(s: string) {
 		if (s === 'ACKNOWLEDGED') return 'bg-green-500/15 text-green-400'
@@ -111,6 +109,9 @@
 					>{submitReview.busy ? 'Submitting…' : 'Submit review'}</button
 				>
 			</form>
+		{:else if data.isSubject}
+			<!-- #179: the reviewed employee never sees the HR-authored comments or rating. -->
+			<p class="text-sm text-muted-foreground">This review is confidential and managed by HR.</p>
 		{:else if r.managerComments || r.overallRating != null}
 			<p class="whitespace-pre-line text-sm text-muted-foreground">{r.managerComments ?? ''}</p>
 			{#if r.overallRating != null}<p class="text-sm font-medium">
@@ -120,20 +121,4 @@
 			<p class="text-sm text-muted-foreground">Awaiting manager review.</p>
 		{/if}
 	</section>
-
-	<!-- Acknowledge -->
-	{#if data.isSubject && r.status === 'COMPLETED'}
-		<form method="POST" action="?/acknowledge" use:enhance={acknowledge.enhance}>
-			<button
-				disabled={acknowledge.busy}
-				class="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:pointer-events-none disabled:opacity-50"
-				>{acknowledge.busy ? 'Acknowledging…' : 'Acknowledge review'}</button
-			>
-		</form>
-	{:else if r.status === 'ACKNOWLEDGED'}
-		<p class="text-sm text-green-600 dark:text-green-400">
-			✓ Acknowledged{#if r.acknowledgedAt}
-				on {formatShortDate(r.acknowledgedAt)}{/if}.
-		</p>
-	{/if}
 </div>

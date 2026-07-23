@@ -27,13 +27,13 @@ test.describe('Employee self-service', () => {
 		await expect(row.getByText('PENDING')).toBeVisible()
 	})
 
-	test('updates profile contact details', async ({ page }) => {
+	// #175: personal & contact details are HR-managed. An employee's profile is read-only —
+	// no editable form, just a "contact HR" note — so they can no longer self-edit.
+	test('profile is read-only for a non-HR employee', async ({ page }) => {
 		await login(page, USERS.employee)
 		await page.goto('/profile', { waitUntil: 'domcontentloaded' })
 
-		await page.getByLabel('Phone').fill('+63 917 555 0101')
-		await page.getByRole('button', { name: 'Save Changes' }).click()
-
-		await expect(page.getByText('Profile updated successfully.')).toBeVisible()
+		await expect(page.getByText('employee details are HR-managed')).toBeVisible()
+		await expect(page.getByRole('button', { name: 'Save Changes' })).toHaveCount(0)
 	})
 })
