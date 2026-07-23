@@ -89,10 +89,11 @@ test('happy path: compute (make) → verify → approve → APPROVED', async ({ 
 	expect(await decide(vPage, id, 'approve')).toBe(200)
 	await vCtx.close()
 
-	// APPROVE — the Approver commits the run.
+	// APPROVE — payroll is a finance sign-off, so the CEO / Super Admin commits the run
+	// (#174), not the generic Approver. The maker is the admin, so the CEO acts here.
 	const aCtx = await browser.newContext()
 	const aPage = await aCtx.newPage()
-	await login(aPage, USERS.approver)
+	await login(aPage, USERS.ceo)
 	expect(await decide(aPage, id, 'approve')).toBe(200)
 
 	await aPage.goto(`/payroll/${id}`, { waitUntil: 'domcontentloaded' })
@@ -124,13 +125,12 @@ test('reject at verify returns the run to the maker', async ({ browser }) => {
 	expect(text).toMatch(/headcount looks off/)
 	await vCtx.close()
 
-	// An Approver cannot then approve a returned run — the stage is closed until a
-	// recompute reopens it. The service blocks this with a fail(), which SvelteKit
-	// serialises as HTTP 200, so assert on the persisted state: the run is still
-	// returned (not APPROVED) after the attempt.
+	// The finance approver (CEO) cannot then approve a returned run — the stage is closed
+	// until a recompute reopens it. The service blocks this, so assert on the persisted
+	// state: the run is still returned (not APPROVED) after the attempt.
 	const aCtx = await browser.newContext()
 	const aPage = await aCtx.newPage()
-	await login(aPage, USERS.approver)
+	await login(aPage, USERS.ceo)
 	await decide(aPage, id, 'approve')
 	await aPage.goto(`/payroll/${id}`, { waitUntil: 'domcontentloaded' })
 	const after = await aPage.locator('body').innerText()
