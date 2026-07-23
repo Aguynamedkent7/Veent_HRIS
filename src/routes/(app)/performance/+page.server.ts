@@ -10,7 +10,9 @@ import {
 	createReviewCycle,
 	updateReviewCycleStatus,
 	openReviewsForCycle,
-	listGoalsForManager
+	listGoalsForManager,
+	suggestNextReviewCycle,
+	REVIEW_CADENCE_MONTHS
 } from '$lib/server/services/performance'
 import { db } from '$lib/server/db'
 import { z } from 'zod'
@@ -25,6 +27,19 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	const cycles = isAdmin ? await listReviewCycles(user.organizationId) : []
 
+	// Evaluations run on a fixed 2-month cadence (#178): suggest the next cycle HR should
+	// open (prefills the form) and whether the current period is already overdue for one.
+	const suggestion = isAdmin ? suggestNextReviewCycle(cycles[0]?.startDate ?? null) : null
+	const cycleSuggestion = suggestion
+		? {
+				name: suggestion.name,
+				startDate: suggestion.startDate.toISOString().slice(0, 10),
+				endDate: suggestion.endDate.toISOString().slice(0, 10),
+				due: suggestion.due
+			}
+		: null
+	const reviewCadenceMonths = REVIEW_CADENCE_MONTHS
+
 	const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
 	if (!myEmployee) {
 		return {
@@ -34,7 +49,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 			teamGoals: [],
 			isManager,
 			isAdmin,
-			cycles
+			cycles,
+			cycleSuggestion,
+			reviewCadenceMonths
 		}
 	}
 
@@ -45,7 +62,17 @@ export const load: PageServerLoad = async ({ locals }) => {
 		isManager ? listGoalsForManager(myEmployee.id) : Promise.resolve([])
 	])
 
-	return { myGoals, myReviews, reviewsToGive, teamGoals, isManager, isAdmin, cycles }
+	return {
+		myGoals,
+		myReviews,
+		reviewsToGive,
+		teamGoals,
+		isManager,
+		isAdmin,
+		cycles,
+		cycleSuggestion,
+		reviewCadenceMonths
+	}
 }
 
 function ctxOf(locals: App.Locals, ip: string) {

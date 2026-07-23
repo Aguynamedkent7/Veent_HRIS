@@ -7,8 +7,23 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 	let showGoal = $state(false)
+	let cycleName = $state('')
 	let cycleStart = $state('')
 	let cycleEnd = $state('')
+
+	// Prefill the create-cycle form with the suggested next bi-monthly window (#178), and
+	// re-seed whenever the server suggests a different one (e.g. after a cycle is created),
+	// while leaving mid-edit values alone until the suggestion actually changes.
+	let seededFor = $state('')
+	$effect(() => {
+		const s = data.cycleSuggestion
+		if (s && s.name !== seededFor) {
+			seededFor = s.name
+			cycleName = s.name
+			cycleStart = s.startDate
+			cycleEnd = s.endDate
+		}
+	})
 
 	// #108: a double-click would create a duplicate goal / cycle, or re-run a status transition.
 	const createGoal = createSubmitGuard()
@@ -222,7 +237,22 @@
 	<!-- Review Cycles (HR) -->
 	{#if data.isAdmin}
 		<section class="space-y-3">
-			<h2 class="text-lg font-semibold">Review Cycles</h2>
+			<div class="flex flex-wrap items-baseline justify-between gap-2">
+				<h2 class="text-lg font-semibold">Review Cycles</h2>
+				{#if data.cycleSuggestion}
+					<p class="text-xs text-muted-foreground">
+						Evaluations run every {data.reviewCadenceMonths} months. Next: <span
+							class="font-medium text-foreground">{data.cycleSuggestion.name}</span
+						>
+						{#if data.cycleSuggestion.due}
+							<span
+								class="ml-1 rounded-full bg-amber-500/15 px-2 py-0.5 font-medium text-amber-500"
+								>due now</span
+							>
+						{/if}
+					</p>
+				{/if}
+			</div>
 			<form
 				method="POST"
 				action="?/createCycle"
@@ -234,6 +264,7 @@
 					aria-label="Cycle name"
 					placeholder="e.g. 2026 Mid-Year"
 					required
+					bind:value={cycleName}
 					class="h-9 w-44 rounded-md border border-input bg-background px-2 text-sm"
 				/>
 				<input

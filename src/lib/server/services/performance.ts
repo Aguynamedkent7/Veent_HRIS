@@ -3,6 +3,87 @@ import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import type { AuditContext } from './types'
 
+// ── Review cadence (#178) ────────────────────────────────────────────────────
+// Performance evaluations run every 2 months, anchored to fixed calendar bi-months
+// (Jan–Feb, Mar–Apr, … Nov–Dec) so the cadence is predictable no matter when a cycle is
+// actually opened. The helper below suggests the next cycle HR should open and whether the
+// current period is already overdue for one — pure, so it is unit-tested directly.
+
+export const REVIEW_CADENCE_MONTHS = 2
+
+const MONTHS = [
+	'Jan',
+	'Feb',
+	'Mar',
+	'Apr',
+	'May',
+	'Jun',
+	'Jul',
+	'Aug',
+	'Sep',
+	'Oct',
+	'Nov',
+	'Dec'
+]
+
+// The calendar bi-month window (start, inclusive end) for pair 0–5 of `year`.
+function biMonthWindow(year: number, pair: number) {
+	const startMonth = pair * 2
+	return {
+		start: new Date(Date.UTC(year, startMonth, 1)),
+		end: new Date(Date.UTC(year, startMonth + 2, 0)) // day 0 of the next month = last day
+	}
+}
+
+export interface CycleSuggestion {
+	name: string
+	startDate: Date
+	endDate: Date
+	/** True when the current bi-month period has no cycle yet — HR is due to open one. */
+	due: boolean
+}
+
+/**
+ * The next evaluation cycle HR should open, given the most recent cycle's start date (or
+ * null when there are none). Suggests the current bi-month period when it isn't covered
+ * yet (`due: true`), otherwise the period after the latest cycle.
+ */
+export function suggestNextReviewCycle(
+	latestCycleStart: Date | null,
+	asOf: Date = new Date()
+): CycleSuggestion {
+	const curYear = asOf.getUTCFullYear()
+	const curPair = Math.floor(asOf.getUTCMonth() / 2)
+
+	let year = curYear
+	let pair = curPair
+	let due = true
+
+	if (latestCycleStart) {
+		const lYear = latestCycleStart.getUTCFullYear()
+		const lPair = Math.floor(latestCycleStart.getUTCMonth() / 2)
+		const coversCurrent = lYear > curYear || (lYear === curYear && lPair >= curPair)
+		if (coversCurrent) {
+			// The current period already has a cycle — suggest the one after the latest.
+			year = lYear
+			pair = lPair + 1
+			if (pair > 5) {
+				pair = 0
+				year += 1
+			}
+			due = false
+		}
+	}
+
+	const { start, end } = biMonthWindow(year, pair)
+	return {
+		name: `${MONTHS[pair * 2]}–${MONTHS[pair * 2 + 1]} ${year}`,
+		startDate: start,
+		endDate: end,
+		due
+	}
+}
+
 // ── Review Cycles (org-scoped) ──────────────────────────────────────────────
 
 export async function listReviewCycles(organizationId: string) {
