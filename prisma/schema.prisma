@@ -271,6 +271,9 @@ model Organization {
   // be injected straight into the `--primary`/`--ring` CSS variables. Null → default palette.
   themePrimary String?
   address      String?
+  // Company Discord server invite link (#186). When set, onboarding emails new hires an
+  // invitation; null (most tenants) skips it. Only Veent has adopted Discord so far.
+  discordInviteUrl String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -394,6 +397,9 @@ model Employee {
   jobTitle                 String
   employmentType           EmploymentType
   employmentStatus         EmploymentStatus @default(ACTIVE)
+  // Company email (#186). Real provisioning is deferred, so onboarding seeds this with the
+  // hire's working email; HR updates it to the real company address once provisioned.
+  companyEmail             String?
   startDate                DateTime
   endDate                  DateTime?
   reportsToId              String?

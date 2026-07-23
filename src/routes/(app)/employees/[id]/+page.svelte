@@ -431,6 +431,21 @@
 						<p class="mt-1 text-xs text-muted-foreground">{rate.hint}</p>
 					</div>
 					<div class="sm:col-span-3">
+						<label for="companyEmail" class="text-sm font-medium">Company Email</label>
+						<input
+							id="companyEmail"
+							name="companyEmail"
+							type="email"
+							value={employee.companyEmail ?? ''}
+							placeholder="e.g. first.last@company.ph"
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+						<p class="mt-1 text-xs text-muted-foreground">
+							Seeded with the hire's working email at onboarding — update it once the real company
+							address is provisioned.
+						</p>
+					</div>
+					<div class="sm:col-span-3">
 						<label for="discordId" class="text-sm font-medium">Discord ID</label>
 						<input
 							id="discordId"

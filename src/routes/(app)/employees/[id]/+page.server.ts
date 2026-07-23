@@ -226,6 +226,12 @@ const updateSchema = z.object({
 	departmentId: z.string().optional(),
 	contactPhone: z.string().optional(),
 	contactAddress: z.string().optional(),
+	// Company email (#186) — HR sets the real address once provisioned. Empty clears it.
+	companyEmail: z
+		.string()
+		.trim()
+		.optional()
+		.transform((v) => (v ? v : null)),
 	basicMonthlySalary: z.coerce.number().positive().optional(),
 	rateType: z.enum(['MONTHLY', 'HOURLY']).optional(),
 	// Empty string clears the link; a value sets it (unique per employee).

@@ -9,7 +9,7 @@ import type { AuditContext } from '../types'
 export async function getCompanyInfo(organizationId: string) {
 	const org = await db.organization.findUnique({
 		where: { id: organizationId },
-		select: { id: true, name: true, address: true, logoUrl: true }
+		select: { id: true, name: true, address: true, logoUrl: true, discordInviteUrl: true }
 	})
 	if (!org) error(404, 'Organization not found')
 	return org
@@ -17,7 +17,12 @@ export async function getCompanyInfo(organizationId: string) {
 
 export async function updateCompanyInfo(
 	organizationId: string,
-	input: { name: string; address?: string | null; logoUrl?: string | null },
+	input: {
+		name: string
+		address?: string | null
+		logoUrl?: string | null
+		discordInviteUrl?: string | null
+	},
 	ctx: AuditContext
 ) {
 	const updated = await db.organization.update({
@@ -25,9 +30,10 @@ export async function updateCompanyInfo(
 		data: {
 			name: input.name.trim(),
 			address: input.address ?? null,
-			logoUrl: input.logoUrl ?? null
+			logoUrl: input.logoUrl ?? null,
+			discordInviteUrl: input.discordInviteUrl ?? null
 		},
-		select: { id: true, name: true, address: true, logoUrl: true }
+		select: { id: true, name: true, address: true, logoUrl: true, discordInviteUrl: true }
 	})
 	await writeAuditLog(ctx, {
 		action: 'UPDATE',

@@ -8,6 +8,36 @@ export function sendWelcomeEmail(email: string, _tempPassword: string): void {
 	console.log('[NOTIFY] Welcome email queued for', email)
 }
 
+// ─── Onboarding Discord invitation (#186) ─────────────────────────────────────
+// New hires are emailed an invitation to the company's Discord server. Sent to their
+// working email (company-email provisioning is deferred). Body assembled here so a real
+// mailer only delivers subject/body, and the wording is unit-tested.
+export function buildDiscordInvite(d: {
+	firstName: string
+	orgName: string
+	inviteUrl: string
+}): { subject: string; body: string } {
+	return {
+		subject: `Join the ${d.orgName} Discord server`,
+		body: [
+			`Hi ${d.firstName},`,
+			'',
+			`Welcome to ${d.orgName}! Join our Discord server to connect with the team:`,
+			d.inviteUrl,
+			'',
+			'See you there!'
+		].join('\n')
+	}
+}
+
+export function sendDiscordInviteEmail(
+	recipient: string,
+	details: { firstName: string; orgName: string; inviteUrl: string }
+): void {
+	const { subject } = buildDiscordInvite(details)
+	console.log(`[NOTIFY] Discord invitation queued for <${recipient}>: ${subject}`)
+}
+
 export function sendTimesheetStatusEmail(email: string, status: string): void {
 	console.log('[NOTIFY] Timesheet', status, 'for', email)
 }
