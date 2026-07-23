@@ -20,6 +20,10 @@ function isHttpUrl(v: string): boolean {
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const user = locals.user!
+	// Recruitment is HR-only (the list page and every action on this page already require
+	// it); the load was missing the gate, so any signed-in employee could read a posting's
+	// applicant pipeline by id. Match the actions' capability.
+	requireCapability(user.role, 'MANAGE_HR')
 
 	const posting = await db.jobPosting.findFirst({
 		where: { id: params.id, organizationId: user.organizationId },
