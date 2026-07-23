@@ -1,7 +1,8 @@
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
-import { Prisma } from '@prisma/client'
+import { Prisma, type Role } from '@prisma/client'
+import { canAny } from '$lib/rbac'
 import { computeEmployeeResult } from './calculator'
 import { ratesFromRule } from './rates'
 import { type AmortItem } from './deductions'
@@ -404,16 +405,24 @@ export async function overridePayrollEntry(
 	return updated
 }
 
-export async function listPayrollRuns(organizationId: string) {
+// Finance approvers (CEO / Super Admin) are the company-wide finance authority and reach
+// every tenant's payroll to sign it off (#174); everyone else is scoped to their own org.
+// Passing no roles keeps the strict org filter — callers opt into the wider scope.
+export function payrollOrgFilter(organizationId: string, roles?: Role[]) {
+	return roles && canAny(roles, 'APPROVE_FINANCE') ? {} : { organizationId }
+}
+
+export async function listPayrollRuns(organizationId: string, roles?: Role[]) {
 	return db.payrollRun.findMany({
-		where: { organizationId },
-		orderBy: { periodStart: 'desc' }
+		where: payrollOrgFilter(organizationId, roles),
+		orderBy: { periodStart: 'desc' },
+		include: { organization: { select: { name: true } } }
 	})
 }
 
-export async function getPayrollRun(id: string, organizationId: string) {
+export async function getPayrollRun(id: string, organizationId: string, roles?: Role[]) {
 	const run = await db.payrollRun.findFirst({
-		where: { id, organizationId },
+		where: { id, ...payrollOrgFilter(organizationId, roles) },
 		include: {
 			entries: {
 				include: {

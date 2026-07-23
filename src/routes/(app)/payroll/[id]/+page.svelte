@@ -289,7 +289,7 @@
 	<div class="space-y-3">
 		<div class="flex items-center justify-between">
 			<h2 class="text-lg font-semibold">Approval chain</h2>
-			<p class="text-xs text-muted-foreground">Maker → Verifier → Approver</p>
+			<p class="text-xs text-muted-foreground">Maker → Verifier → Approver (CEO / Super Admin)</p>
 		</div>
 
 		{#if run.approvalSteps.length === 0}

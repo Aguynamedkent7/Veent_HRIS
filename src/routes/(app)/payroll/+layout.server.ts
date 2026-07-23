@@ -13,7 +13,8 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 	const user = locals.user!
 	const roles = user.roles?.length ? user.roles : [user.role]
 	const canManage = canAny(roles, 'MANAGE_PAYROLL')
-	const canSignOff = canAny(roles, 'VERIFY_REQUESTS') || canAny(roles, 'APPROVE_SIGNOFF')
+	// Payroll sign-off is finance: Verifier verifies, CEO / Super Admin approve (#174).
+	const canSignOff = canAny(roles, 'VERIFY_REQUESTS') || canAny(roles, 'APPROVE_FINANCE')
 	if (!canManage && !canSignOff) error(403, 'Insufficient permissions')
 
 	return canManage
