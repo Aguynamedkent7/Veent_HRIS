@@ -101,6 +101,55 @@
 		{/if}
 	</div>
 
+	<!-- Upcoming regularizations — HR's advance warning (#168) -->
+	{#if data.canPost && data.regularizations.length}
+		<div class="card space-y-3 border-amber-500/30 bg-amber-500/5">
+			<div class="flex items-center gap-2">
+				<svg
+					class="h-4 w-4 text-amber-500"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.7"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<path
+						d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+					/>
+				</svg>
+				<p class="text-xs font-semibold uppercase tracking-widest text-amber-500">
+					Upcoming Regularizations
+				</p>
+			</div>
+			<p class="text-xs text-muted-foreground">
+				Probationary staff becoming regular within the next three weeks — decide before the date
+				lands.
+			</p>
+			<ul class="divide-y divide-border/60">
+				{#each data.regularizations as r (r.id)}
+					<li class="flex items-center justify-between gap-3 py-2">
+						<div class="min-w-0">
+							<a href="/employees/{r.id}" class="font-medium hover:underline">{r.name}</a>
+							<p class="truncate text-xs text-muted-foreground">{r.jobTitle} · {r.department}</p>
+						</div>
+						<div class="shrink-0 text-right">
+							<p class="text-sm">{formatShortDate(r.regularizationDate)}</p>
+							<p class="text-xs font-medium {r.overdue ? 'text-red-400' : 'text-amber-500'}">
+								{r.overdue
+									? `Overdue by ${-r.daysUntil} day${r.daysUntil === -1 ? '' : 's'}`
+									: r.daysUntil === 0
+										? 'Regularizes today'
+										: `in ${r.daysUntil} day${r.daysUntil === 1 ? '' : 's'}`}
+							</p>
+						</div>
+					</li>
+				{/each}
+			</ul>
+		</div>
+	{/if}
+
 	<!-- Attendance summary (today) -->
 	<div class="card space-y-3">
 		<div class="flex items-center justify-between">

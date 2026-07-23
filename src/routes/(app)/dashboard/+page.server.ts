@@ -5,6 +5,7 @@ import { manilaDayKey } from '$lib/utils/dates'
 import { can, requireCapability } from '$lib/server/rbac'
 import { listRecentAnnouncements, createAnnouncement } from '$lib/server/services/announcements'
 import { countPendingApprovals } from '$lib/server/services/approvals'
+import { listUpcomingRegularizations } from '$lib/server/services/dashboard'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -65,10 +66,14 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	const announcements = await listRecentAnnouncements(orgId, 5)
 
+	// HR's advance warning of probationary staff coming up for regularization (#168).
+	const regularizations = canPost ? await listUpcomingRegularizations(orgId) : []
+
 	return {
 		canPost,
 		canViewPayroll,
 		announcements,
+		regularizations,
 		metrics: {
 			headcount,
 			onLeaveToday,
