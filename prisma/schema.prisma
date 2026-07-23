@@ -607,6 +607,22 @@ model OnboardingCompletion {
 // the department that signs it off; opening a separation copies the active items into that
 // case's ClearanceItem rows, and the transition notice email (#185) lists them. An org
 // that has never configured one falls back to the built-in defaults.
+// Employee award / recognition (#180). HR grants these; they announce on the dashboard
+// feed and notify the recipient. Plain org/employee id FKs (resolved in queries) keep it
+// off the Employee relation graph.
+model Award {
+  id             String   @id @default(cuid())
+  organizationId String
+  employeeId     String
+  title          String
+  note           String?
+  awardedById    String
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId])
+  @@map("awards")
+}
+
 model OffboardingChecklistItem {
   id             String   @id @default(cuid())
   organizationId String

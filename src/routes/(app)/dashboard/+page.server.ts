@@ -6,6 +6,7 @@ import { can, requireCapability } from '$lib/server/rbac'
 import { listRecentAnnouncements, createAnnouncement } from '$lib/server/services/announcements'
 import { countPendingApprovals } from '$lib/server/services/approvals'
 import { listRecent } from '$lib/server/services/notifications'
+import { grantAward, listRecentAwards } from '$lib/server/services/awards'
 import {
 	listUpcomingRegularizations,
 	listTodaysBirthdays,
@@ -74,13 +75,24 @@ export const load: PageServerLoad = async ({ locals }) => {
 		derived: attendanceGroups.reduce((s, g) => s + g._count._all, 0)
 	}
 
-	const [announcements, birthdays, myStatus] = await Promise.all([
+	const [announcements, birthdays, myStatus, awards] = await Promise.all([
 		listRecentAnnouncements(orgId, 5),
 		// Today's birthday greeting, surfaced in the announcements feed (#167).
 		listTodaysBirthdays(orgId),
 		// The viewer's own employment standing for the status card (#167).
-		getMyEmploymentStatus(user.id)
+		getMyEmploymentStatus(user.id),
+		// Recent employee awards, announced in the feed (#180).
+		listRecentAwards(orgId)
 	])
+
+	// HR grants awards from the dashboard — roster for the recipient picker.
+	const awardEmployees = canPost
+		? await db.employee.findMany({
+				where: { user: { organizationId: orgId }, employmentStatus: 'ACTIVE' },
+				select: { id: true, firstName: true, lastName: true },
+				orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }]
+			})
+		: []
 
 	// HR's advance warning of probationary staff coming up for regularization (#168).
 	const regularizations = canPost ? await listUpcomingRegularizations(orgId) : []
@@ -105,6 +117,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 		regularizations,
 		birthdays,
 		myStatus,
+		awards,
+		awardEmployees,
 		postingsToApprove,
 		recentActivity,
 		metrics: {
@@ -176,5 +190,32 @@ export const actions: Actions = {
 			throw e
 		}
 		return { postingDecided: true }
+	},
+
+	// HR grants an employee award, announced on the dashboard feed (#180).
+	giveAward: async ({ request, locals, getClientAddress }) => {
+		const user = locals.user!
+		requireCapability(user.role, 'MANAGE_HR')
+		const data = await request.formData()
+		const employeeId = data.get('employeeId') as string
+		const title = (data.get('title') as string) ?? ''
+		const note = (data.get('note') as string) || undefined
+		if (!employeeId || !title.trim()) return fail(422, { error: 'Pick an employee and a title.' })
+		try {
+			await grantAward(
+				user.organizationId,
+				{ employeeId, title, note },
+				{
+					organizationId: user.organizationId,
+					actorId: user.id,
+					actorRole: user.role,
+					ipAddress: getClientAddress()
+				}
+			)
+		} catch (e) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
+		}
+		return { awarded: true }
 	}
 }

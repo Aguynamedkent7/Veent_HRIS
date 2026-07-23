@@ -28,7 +28,9 @@
 				: `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
 		return `${list} ${verb} their birthday today. Wishing you the best!`
 	})
-	const hasFeed = $derived(data.announcements.length > 0 || data.birthdays.length > 0)
+	const hasFeed = $derived(
+		data.announcements.length > 0 || data.birthdays.length > 0 || data.awards.length > 0
+	)
 
 	// The viewer's own employment standing for the status card (#167).
 	const status = $derived(data.myStatus)
@@ -41,6 +43,12 @@
 	const postAnnouncement = createSubmitGuard(() => async ({ update }) => {
 		await update()
 		showPost = false
+	})
+	// Give-award form (#180).
+	let showAward = $state(false)
+	const giveAward = createSubmitGuard(() => async ({ update }) => {
+		await update()
+		showAward = false
 	})
 	let showNewTimesheet = $state(false)
 </script>
@@ -365,12 +373,20 @@
 				Announcements
 			</p>
 			{#if data.canPost}
-				<button
-					type="button"
-					onclick={() => (showPost = !showPost)}
-					class="rounded-md border border-primary/40 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/10"
-					>{showPost ? 'Cancel' : 'Post'}</button
-				>
+				<div class="flex items-center gap-2">
+					<button
+						type="button"
+						onclick={() => (showAward = !showAward)}
+						class="rounded-md border border-amber-500/40 px-3 py-1 text-xs font-medium text-amber-500 hover:bg-amber-500/10"
+						>{showAward ? 'Cancel' : 'Give award'}</button
+					>
+					<button
+						type="button"
+						onclick={() => (showPost = !showPost)}
+						class="rounded-md border border-primary/40 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/10"
+						>{showPost ? 'Cancel' : 'Post'}</button
+					>
+				</div>
 			{/if}
 		</div>
 
@@ -380,6 +396,40 @@
 			>
 				Announcement posted.
 			</div>
+		{/if}
+		{#if form?.awarded}
+			<div
+				class="rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-500"
+			>
+				Award given.
+			</div>
+		{/if}
+
+		{#if showAward && data.canPost}
+			<form
+				method="POST"
+				action="?/giveAward"
+				use:enhance={giveAward.enhance}
+				class="space-y-2 rounded-md border p-3"
+			>
+				{#if form?.error}<p class="text-xs text-red-400">{form.error}</p>{/if}
+				<div class="grid gap-2 sm:grid-cols-2">
+					<select name="employeeId" required class="input h-9">
+						<option value="">Select employee…</option>
+						{#each data.awardEmployees as e (e.id)}
+							<option value={e.id}>{e.lastName}, {e.firstName}</option>
+						{/each}
+					</select>
+					<input name="title" placeholder="Award (e.g. Employee of the Month)" required class="input h-9" />
+				</div>
+				<input name="note" placeholder="Note (optional)" class="input h-9" />
+				<button
+					type="submit"
+					disabled={giveAward.busy}
+					class="btn-primary text-sm disabled:pointer-events-none disabled:opacity-50"
+					>{giveAward.busy ? 'Giving…' : 'Give award'}</button
+				>
+			</form>
 		{/if}
 
 		{#if showPost && data.canPost}
@@ -412,6 +462,14 @@
 				{#if data.birthdays.length}
 					<AnnouncementItem variant="birthday" title="Happy Birthday!" body={birthdayBody} />
 				{/if}
+				{#each data.awards as aw (aw.id)}
+					<AnnouncementItem
+						variant="award"
+						title={`${aw.employeeName} — ${aw.title}`}
+						body={aw.note ?? undefined}
+						timestamp={aw.createdAt}
+					/>
+				{/each}
 				{#each data.announcements as a (a.id)}
 					<AnnouncementItem title={a.title} body={a.body} timestamp={a.createdAt} />
 				{/each}
