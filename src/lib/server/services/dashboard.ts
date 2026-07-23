@@ -1,4 +1,60 @@
 import { db } from '$lib/server/db'
+import {
+	REGULARIZATION_MONTHS,
+	regularizationStatus
+} from '$lib/utils/dates'
+
+// How far ahead HR is warned of an upcoming regularization (#168). "2–3 weeks before"
+// → a 21-day look-ahead; still-probationary staff already past due are surfaced too.
+export const REGULARIZATION_NOTICE_DAYS = 21
+
+/**
+ * Probationary employees due to regularize within the notice window — plus any already
+ * past due but still marked probationary, which is HR's to fix. Ordered soonest first so
+ * overdue rows lead. Kept a DB-side filter by translating the regularization ceiling
+ * (asOf + notice window) back to a start-date bound, so Postgres does the filtering
+ * instead of loading every probationary row.
+ */
+export async function listUpcomingRegularizations(organizationId: string, asOf: Date = new Date()) {
+	const ceiling = new Date(asOf)
+	ceiling.setUTCDate(ceiling.getUTCDate() + REGULARIZATION_NOTICE_DAYS)
+	// regularization = startDate + 6mo ≤ ceiling  ⇔  startDate ≤ ceiling − 6mo.
+	const startCeiling = new Date(ceiling)
+	startCeiling.setUTCMonth(startCeiling.getUTCMonth() - REGULARIZATION_MONTHS)
+
+	const employees = await db.employee.findMany({
+		where: {
+			user: { organizationId },
+			employmentType: 'PROBATIONARY',
+			employmentStatus: 'ACTIVE',
+			startDate: { lte: startCeiling }
+		},
+		select: {
+			id: true,
+			firstName: true,
+			lastName: true,
+			jobTitle: true,
+			startDate: true,
+			department: { select: { name: true } }
+		}
+	})
+
+	return employees
+		.map((e) => {
+			const { date, daysUntil, overdue } = regularizationStatus(e.startDate, asOf)
+			return {
+				id: e.id,
+				name: `${e.firstName} ${e.lastName}`,
+				jobTitle: e.jobTitle,
+				department: e.department.name,
+				startDate: e.startDate,
+				regularizationDate: date,
+				daysUntil,
+				overdue
+			}
+		})
+		.sort((a, b) => a.daysUntil - b.daysUntil)
+}
 
 export async function getEmployeeMetrics(userId: string, organizationId: string) {
 	const employee = await db.employee.findFirst({
