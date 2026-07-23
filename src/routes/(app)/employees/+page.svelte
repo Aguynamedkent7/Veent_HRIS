@@ -9,6 +9,17 @@
 
 	let { data }: { data: PageData } = $props()
 	let search = $state($page.url.searchParams.get('search') ?? '')
+
+	// Active / Offboarded tab links (#184) — keep the search and branch filters, switch the
+	// status, and drop the page so a tab always opens on its first page.
+	function tabHref(status: 'active' | 'offboarded') {
+		const params = new URLSearchParams($page.url.searchParams)
+		if (status === 'active') params.delete('status')
+		else params.set('status', status)
+		params.delete('page')
+		const qs = params.toString()
+		return qs ? `${$page.url.pathname}?${qs}` : $page.url.pathname
+	}
 </script>
 
 <svelte:head>
@@ -50,6 +61,26 @@
 		<button type="submit" class="rounded-md border px-3 py-1 text-sm hover:bg-accent">Search</button
 		>
 	</form>
+
+	<!-- Active / Offboarded tabs (#184) -->
+	<div class="flex gap-1 border-b">
+		<a
+			href={tabHref('active')}
+			class="border-b-2 px-4 py-2 text-sm font-medium transition-colors {data.tab === 'active'
+				? 'border-primary text-foreground'
+				: 'border-transparent text-muted-foreground hover:text-foreground'}"
+		>
+			Active <span class="text-xs text-muted-foreground">({data.activeCount})</span>
+		</a>
+		<a
+			href={tabHref('offboarded')}
+			class="border-b-2 px-4 py-2 text-sm font-medium transition-colors {data.tab === 'offboarded'
+				? 'border-primary text-foreground'
+				: 'border-transparent text-muted-foreground hover:text-foreground'}"
+		>
+			Offboarded <span class="text-xs text-muted-foreground">({data.offboardedCount})</span>
+		</a>
+	</div>
 
 	<!-- Table -->
 	{#await data.employees}
@@ -101,10 +132,17 @@
 									class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {emp.employmentStatus ===
 									'ACTIVE'
 										? 'bg-green-500/15 text-green-400'
-										: 'bg-gray-500/15 text-gray-400'}"
+										: emp.employmentStatus === 'ON_LEAVE'
+											? 'bg-yellow-500/15 text-yellow-400'
+											: 'bg-gray-500/15 text-gray-400'}"
 								>
-									{emp.employmentStatus}
+									{emp.employmentStatus.replace('_', ' ')}
 								</span>
+								{#if emp.employmentStatus === 'OFFBOARDED' && emp.endDate}
+									<div class="mt-0.5 text-xs text-muted-foreground">
+										left {formatShortDate(emp.endDate)}
+									</div>
+								{/if}
 							</td>
 							<td class="px-4 py-3 text-muted-foreground">{formatShortDate(emp.startDate)}</td>
 							<td class="px-4 py-3 text-muted-foreground"
@@ -115,7 +153,10 @@
 						<tr>
 							<td
 								colspan={data.showBranches ? 8 : 7}
-								class="px-4 py-8 text-center text-muted-foreground">No employees found</td
+								class="px-4 py-8 text-center text-muted-foreground"
+								>{data.tab === 'offboarded'
+									? 'No offboarded employees'
+									: 'No employees found'}</td
 							>
 						</tr>
 					{/each}
