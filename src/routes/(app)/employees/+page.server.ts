@@ -19,18 +19,37 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const showBranches = isFoodServiceOrg(organizationId)
 	const branchId = showBranches ? (url.searchParams.get('branch') ?? undefined) : undefined
 
-	// #64: one count + one page query; the count is awaited (pagination meta needs
-	// it) while the page of rows still streams so the skeleton renders immediately.
-	const filters = { search, departmentId, branchId }
-	const total = await countEmployees(organizationId, filters)
+	// Offboarded staff are kept, not deleted (#184), so the roster splits into two tabs:
+	// the active workforce (default) and a dedicated Offboarded section. Both counts feed
+	// the tab labels; only the selected tab's page of rows is queried.
+	const tab = url.searchParams.get('status') === 'offboarded' ? 'offboarded' : 'active'
+	const baseFilters = { search, departmentId, branchId }
+
+	// #64: counts are awaited (pagination meta + tab labels need them) while the page of
+	// rows still streams so the skeleton renders immediately.
+	const [activeCount, offboardedCount] = await Promise.all([
+		countEmployees(organizationId, { ...baseFilters, offboarded: false }),
+		countEmployees(organizationId, { ...baseFilters, offboarded: true })
+	])
+	const total = tab === 'offboarded' ? offboardedCount : activeCount
 	const pagination = paginate(url, total)
-	const employees = listEmployees(organizationId, filters, {
-		skip: pagination.skip,
-		take: pagination.take
-	})
+	const employees = listEmployees(
+		organizationId,
+		{ ...baseFilters, offboarded: tab === 'offboarded' },
+		{ skip: pagination.skip, take: pagination.take }
+	)
 	const branches = showBranches ? await listAssignableBranches(organizationId) : []
 
-	return { employees, pagination, branches, showBranches, branchFilter: branchId ?? '' }
+	return {
+		employees,
+		pagination,
+		branches,
+		showBranches,
+		branchFilter: branchId ?? '',
+		tab,
+		activeCount,
+		offboardedCount
+	}
 }
 
 export const actions: Actions = {

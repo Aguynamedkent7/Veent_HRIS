@@ -105,9 +105,21 @@ const HISTORY_LABELS: Record<(typeof HISTORY_FIELDS)[number], string> = {
 
 interface EmployeeListFilters {
 	status?: EmploymentStatus
+	// Split the roster into the active workforce and offboarded records (#184): `true`
+	// returns only OFFBOARDED, `false` everyone still on the books (ACTIVE / ON_LEAVE),
+	// `undefined` leaves the status unfiltered. Ignored when an exact `status` is given.
+	offboarded?: boolean
 	departmentId?: string
 	branchId?: string
 	search?: string
+}
+
+// The active roster is everyone still on the books (ACTIVE / ON_LEAVE); the offboarded
+// section is exactly OFFBOARDED. Exported for the roster-split test (#184).
+export function offboardedFilter(
+	offboarded: boolean
+): Prisma.EmployeeWhereInput['employmentStatus'] {
+	return offboarded ? 'OFFBOARDED' : { not: 'OFFBOARDED' }
 }
 
 function employeeListWhere(
@@ -116,7 +128,11 @@ function employeeListWhere(
 ): Prisma.EmployeeWhereInput {
 	return {
 		user: { organizationId },
-		...(filters?.status && { employmentStatus: filters.status }),
+		...(filters?.status
+			? { employmentStatus: filters.status }
+			: filters?.offboarded !== undefined && {
+					employmentStatus: offboardedFilter(filters.offboarded)
+				}),
 		...(filters?.departmentId && { departmentId: filters.departmentId }),
 		...(filters?.branchId && { branchId: filters.branchId }),
 		...(filters?.search && {
