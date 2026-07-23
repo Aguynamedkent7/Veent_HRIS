@@ -126,6 +126,29 @@ async function seedLeaveTypes(db: PrismaClient, organizationId: string) {
 	})
 }
 
+// Company departments per organization (#181). Idempotent via the (organizationId, name)
+// unique key; a node's `children` are seeded as sub-departments beneath it through the
+// self-referential hierarchy. Appending a department never disturbs existing employee
+// assignments — an existing department just upserts to itself.
+type DeptSeed = { name: string; children?: string[] }
+
+async function ensureDepartments(db: PrismaClient, organizationId: string, tree: DeptSeed[]) {
+	for (const node of tree) {
+		const parent = await db.department.upsert({
+			where: { organizationId_name: { organizationId, name: node.name } },
+			update: {},
+			create: { organizationId, name: node.name }
+		})
+		for (const child of node.children ?? []) {
+			await db.department.upsert({
+				where: { organizationId_name: { organizationId, name: child } },
+				update: { parentDepartmentId: parent.id },
+				create: { organizationId, name: child, parentDepartmentId: parent.id }
+			})
+		}
+	}
+}
+
 // Allocate the current year's entitlement to everyone in the org who is missing it (#137).
 // Mirrors ensureLeaveBalances() in services/leave.ts, which does the same at onboarding —
 // a missing row is read as a zero balance, so an unallocated employee cannot file at all.
@@ -356,6 +379,21 @@ export async function seedProd(db: PrismaClient) {
 		}
 	})
 
+	// Company departments per organization (#181). Veent runs on HR, sales and engineering;
+	// the food-service tenants group their back office under Admin (Finance, Accounting,
+	// Marketing). The demo Operations department (seedFoodServiceOrg) is left untouched.
+	await ensureDepartments(db, 'org_seed', [
+		{ name: 'Human Resources' },
+		{ name: 'Sales & Business Development' },
+		{ name: 'Software Developers' }
+	])
+	for (const foodOrgId of ['org_jojo', 'org_sweetleaf']) {
+		await ensureDepartments(db, foodOrgId, [
+			{ name: 'Admin', children: ['Finance', 'Accounting', 'Marketing'] }
+		])
+	}
+
+	// Human Resources (seeded just above) is the home department for Veent's admin accounts.
 	const dept = await db.department.upsert({
 		where: { organizationId_name: { organizationId: org.id, name: 'Human Resources' } },
 		update: {},
