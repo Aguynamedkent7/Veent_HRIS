@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
 import { apiError } from '$lib/server/api-error'
 import { isPayslipVisible } from '$lib/server/services/payroll/runs'
+import { canAny } from '$lib/rbac'
 import type { RequestHandler } from './$types'
 
 export const GET: RequestHandler = async ({ locals, params }) => {
@@ -41,10 +42,15 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 
 	if (!entry) return apiError(404, 'Payslip not found')
 
-	// Ownership check for EMPLOYEE role
-	if (user.role === 'EMPLOYEE') {
+	// Only payroll-report viewers may read someone else's payslip; everyone else is limited
+	// to their own. Previously this checked EMPLOYEE only, so any other non-owner role in the
+	// org — VERIFIER, APPROVER, a plain MANAGER — could read any employee's full payslip
+	// (gross pay, SSS, PhilHealth, …) by id. Gate on the payroll-view capability instead.
+	const roles = user.roles?.length ? user.roles : [user.role]
+	if (!canAny(roles, 'VIEW_PAYROLL_REPORTS')) {
 		const myEmployee = await db.employee.findFirst({
-			where: { userId: user.id }
+			where: { userId: user.id },
+			select: { id: true }
 		})
 
 		if (!myEmployee || entry.employeeId !== myEmployee.id) {

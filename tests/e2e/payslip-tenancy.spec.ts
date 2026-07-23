@@ -161,3 +161,18 @@ test('an in-org payslip is still readable — the scope did not over-block', asy
 	const response = await page.request.get(`/api/v1/payroll/payslips/${ownEntryId}`)
 	expect(response.status()).toBe(200)
 })
+
+// IDOR: the ownership branch used to run for EMPLOYEE only, so an in-org, non-owner role
+// without payroll-view access (a pure sign-off Verifier) could read someone else's payslip.
+// It must now be denied — only payroll-report viewers see payslips they don't own.
+test('an in-org non-owner without payroll access cannot read another employee’s payslip', async ({
+	page
+}) => {
+	await login(page, USERS.verifier)
+	const response = await page.request.get(`/api/v1/payroll/payslips/${ownEntryId}`)
+	expect(response.status()).toBe(403)
+
+	const body = await response.text()
+	expect(body).not.toContain('philhealthEe')
+	expect(body).not.toContain('grossPay')
+})
