@@ -4,17 +4,8 @@ import { error } from '@sveltejs/kit'
 import { Prisma } from '@prisma/client'
 import type { SeparationType } from '@prisma/client'
 import type { AuditContext } from './types'
-
-// Standard clearance checklist seeded on every new case. HR can sign each off
-// (and add notes) before the separation can be finalized.
-const DEFAULT_CLEARANCE_ITEMS: { label: string; department: string }[] = [
-	{ label: 'Return company equipment (laptop, phone, peripherals)', department: 'IT' },
-	{ label: 'Revoke systems & email access', department: 'IT' },
-	{ label: 'Settle outstanding loans & cash advances', department: 'Finance' },
-	{ label: 'Return ID, access cards & keys', department: 'Admin' },
-	{ label: 'Knowledge transfer & handover complete', department: 'Immediate Supervisor' },
-	{ label: '201 file & exit documents complete', department: 'HR' }
-]
+import { clearanceTemplateForOrg } from './offboarding'
+import { sendOffboardingNoticeEmail } from '$lib/server/notifications'
 
 // Average paid working days per month — used to convert a monthly salary to a
 // daily rate for unused-leave conversion. A deliberate, adjustable simplification;
@@ -35,7 +26,13 @@ export async function createSeparation(
 ) {
 	const employee = await db.employee.findFirst({
 		where: { id: input.employeeId, organizationId },
-		select: { id: true, employmentStatus: true, firstName: true, lastName: true }
+		select: {
+			id: true,
+			employmentStatus: true,
+			firstName: true,
+			lastName: true,
+			user: { select: { email: true } }
+		}
 	})
 	if (!employee) error(404, 'Employee not found')
 	if (employee.employmentStatus === 'OFFBOARDED') error(409, 'Employee is already offboarded')
@@ -46,6 +43,10 @@ export async function createSeparation(
 	})
 	if (existing) error(409, 'An open separation case already exists for this employee')
 
+	// Seed the case's clearance items from the org's editable offboarding checklist (#192),
+	// falling back to the built-in defaults when none are configured.
+	const clearance = await clearanceTemplateForOrg(organizationId)
+
 	const record = await db.separationRecord.create({
 		data: {
 			organizationId,
@@ -53,7 +54,7 @@ export async function createSeparation(
 			type: input.type,
 			effectiveDate: input.effectiveDate,
 			reason: input.reason || null,
-			clearanceItems: { create: DEFAULT_CLEARANCE_ITEMS }
+			clearanceItems: { create: clearance }
 		}
 	})
 
@@ -63,6 +64,19 @@ export async function createSeparation(
 		entityId: record.id,
 		newValue: { employeeId: input.employeeId, type: input.type, effectiveDate: input.effectiveDate }
 	})
+
+	// Email the departing employee a due-diligence / transition-period notice with their
+	// effective date and the clearance checklist (#185). Best-effort: a notifier failure
+	// must not roll back an opened case.
+	try {
+		sendOffboardingNoticeEmail(employee.user.email, {
+			employeeName: `${employee.firstName} ${employee.lastName}`,
+			effectiveDate: input.effectiveDate,
+			checklist: clearance
+		})
+	} catch (e) {
+		console.error('[NOTIFY] Failed to email offboarding notice for', record.id, e)
+	}
 
 	return record
 }

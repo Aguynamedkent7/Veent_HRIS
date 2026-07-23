@@ -5,6 +5,8 @@ import { error } from '@sveltejs/kit'
 import bcrypt from 'bcrypt'
 import { Prisma } from '@prisma/client'
 import { ensureLeaveBalances } from './leave'
+import { sendDiscordInviteEmail } from '$lib/server/notifications'
+import { notify } from './notifications'
 import type { AuditContext } from './types'
 import type { EmploymentType, EmploymentStatus, RateType, Gender, Role } from '@prisma/client'
 
@@ -55,6 +57,7 @@ interface UpdateEmployeeInput {
 	employmentType?: EmploymentType
 	employmentStatus?: EmploymentStatus
 	endDate?: Date
+	companyEmail?: string | null
 	basicMonthlySalary?: number
 	rateType?: RateType
 	sssNumber?: string | null
@@ -105,9 +108,21 @@ const HISTORY_LABELS: Record<(typeof HISTORY_FIELDS)[number], string> = {
 
 interface EmployeeListFilters {
 	status?: EmploymentStatus
+	// Split the roster into the active workforce and offboarded records (#184): `true`
+	// returns only OFFBOARDED, `false` everyone still on the books (ACTIVE / ON_LEAVE),
+	// `undefined` leaves the status unfiltered. Ignored when an exact `status` is given.
+	offboarded?: boolean
 	departmentId?: string
 	branchId?: string
 	search?: string
+}
+
+// The active roster is everyone still on the books (ACTIVE / ON_LEAVE); the offboarded
+// section is exactly OFFBOARDED. Exported for the roster-split test (#184).
+export function offboardedFilter(
+	offboarded: boolean
+): Prisma.EmployeeWhereInput['employmentStatus'] {
+	return offboarded ? 'OFFBOARDED' : { not: 'OFFBOARDED' }
 }
 
 function employeeListWhere(
@@ -116,7 +131,11 @@ function employeeListWhere(
 ): Prisma.EmployeeWhereInput {
 	return {
 		user: { organizationId },
-		...(filters?.status && { employmentStatus: filters.status }),
+		...(filters?.status
+			? { employmentStatus: filters.status }
+			: filters?.offboarded !== undefined && {
+					employmentStatus: offboardedFilter(filters.offboarded)
+				}),
 		...(filters?.departmentId && { departmentId: filters.departmentId }),
 		...(filters?.branchId && { branchId: filters.branchId }),
 		...(filters?.search && {
@@ -252,6 +271,9 @@ export async function createEmployee(
 				gcashNumber: input.gcashNumber,
 				reportsToId: input.reportsToId,
 				discordId: input.discordId,
+				// #186: company-email provisioning is deferred, so seed it with the hire's working
+				// email; HR updates it once the real address exists.
+				companyEmail: input.email,
 				// Onboarding sets the work schedule (attendance derivation depends on it) and the
 				// position; both are optional. Coerce empty string → null (an empty <select> posts
 				// "", which is not a valid FK) so we don't hit a foreign-key violation.
@@ -276,6 +298,30 @@ export async function createEmployee(
 		entityId: employee.id,
 		newValue: { employeeNumber, email: input.email }
 	})
+
+	// On onboarding, invite the new hire to the company Discord server (#186) — only when
+	// the org has configured an invite link (currently just Veent). Sent to their working
+	// email since company-email provisioning is deferred. Best-effort: never block a hire.
+	try {
+		const org = await db.organization.findUnique({
+			where: { id: organizationId },
+			select: { name: true, discordInviteUrl: true }
+		})
+		if (org?.discordInviteUrl) {
+			sendDiscordInviteEmail(input.email, {
+				firstName: input.firstName,
+				orgName: org.name,
+				inviteUrl: org.discordInviteUrl
+			})
+			await notify(
+				employee.userId,
+				`You've been invited to the ${org.name} Discord server — check your email.`,
+				'/dashboard'
+			)
+		}
+	} catch (e) {
+		console.error('[NOTIFY] Failed to send Discord invite for', employee.id, e)
+	}
 
 	return employee
 }

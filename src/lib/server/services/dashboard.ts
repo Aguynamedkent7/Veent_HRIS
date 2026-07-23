@@ -1,4 +1,86 @@
 import { db } from '$lib/server/db'
+import { manilaDayKey, REGULARIZATION_MONTHS, regularizationStatus } from '$lib/utils/dates'
+
+// How far ahead HR is warned of an upcoming regularization (#168). "2–3 weeks before"
+// → a 21-day look-ahead; still-probationary staff already past due are surfaced too.
+export const REGULARIZATION_NOTICE_DAYS = 21
+
+/**
+ * Probationary employees due to regularize within the notice window — plus any already
+ * past due but still marked probationary, which is HR's to fix. Ordered soonest first so
+ * overdue rows lead. Kept a DB-side filter by translating the regularization ceiling
+ * (asOf + notice window) back to a start-date bound, so Postgres does the filtering
+ * instead of loading every probationary row.
+ */
+export async function listUpcomingRegularizations(organizationId: string, asOf: Date = new Date()) {
+	const ceiling = new Date(asOf)
+	ceiling.setUTCDate(ceiling.getUTCDate() + REGULARIZATION_NOTICE_DAYS)
+	// regularization = startDate + 6mo ≤ ceiling  ⇔  startDate ≤ ceiling − 6mo.
+	const startCeiling = new Date(ceiling)
+	startCeiling.setUTCMonth(startCeiling.getUTCMonth() - REGULARIZATION_MONTHS)
+
+	const employees = await db.employee.findMany({
+		where: {
+			user: { organizationId },
+			employmentType: 'PROBATIONARY',
+			employmentStatus: 'ACTIVE',
+			startDate: { lte: startCeiling }
+		},
+		select: {
+			id: true,
+			firstName: true,
+			lastName: true,
+			jobTitle: true,
+			startDate: true,
+			department: { select: { name: true } }
+		}
+	})
+
+	return employees
+		.map((e) => {
+			const { date, daysUntil, overdue } = regularizationStatus(e.startDate, asOf)
+			return {
+				id: e.id,
+				name: `${e.firstName} ${e.lastName}`,
+				jobTitle: e.jobTitle,
+				department: e.department.name,
+				startDate: e.startDate,
+				regularizationDate: date,
+				daysUntil,
+				overdue
+			}
+		})
+		.sort((a, b) => a.daysUntil - b.daysUntil)
+}
+
+// Active employees whose birthday (month + day) is `today` in PHT (#167). Dates of birth
+// are stored at UTC midnight, so their UTC month/day already read as the PHT calendar day.
+// Filtered in the database with EXTRACT so we never load the whole roster for a greeting.
+export async function listTodaysBirthdays(organizationId: string, today: Date = new Date()) {
+	const [, mm, dd] = manilaDayKey(today).split('-').map(Number)
+	const rows = await db.$queryRaw<{ firstName: string; lastName: string }[]>`
+		SELECT e."firstName", e."lastName"
+		FROM employees e
+		JOIN users u ON u.id = e."userId"
+		WHERE u."organizationId" = ${organizationId}
+			AND e."employmentStatus" = 'ACTIVE'
+			AND e."dateOfBirth" IS NOT NULL
+			AND EXTRACT(MONTH FROM e."dateOfBirth") = ${mm}
+			AND EXTRACT(DAY FROM e."dateOfBirth") = ${dd}
+		ORDER BY e."firstName", e."lastName"
+	`
+	return rows.map((r) => `${r.firstName} ${r.lastName}`)
+}
+
+// The viewer's own employment standing for the dashboard status card (#167): type, start
+// date (for tenure) and contract end date (for a contractual's renewal). Null when the
+// user has no employee profile (e.g. a bare admin account).
+export async function getMyEmploymentStatus(userId: string) {
+	return db.employee.findUnique({
+		where: { userId },
+		select: { employmentType: true, startDate: true, endDate: true }
+	})
+}
 
 export async function getEmployeeMetrics(userId: string, organizationId: string) {
 	const employee = await db.employee.findFirst({

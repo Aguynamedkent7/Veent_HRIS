@@ -149,3 +149,40 @@ export function tenureLabel(startDate: Date, endDate?: Date): string {
 	if (months) parts.push(`${months} month${months === 1 ? '' : 's'}`)
 	return parts.join(', ')
 }
+
+// ─── Regularization (#168) ─────────────────────────────────────────────────────
+// A probationary employee becomes regular after 6 months of service. HR needs advance
+// warning to decide before the date lands, so the dashboard surfaces anyone due within
+// REGULARIZATION_NOTICE_DAYS (as well as any still-probationary staff already past due).
+
+/** Months of service after which a probationary employee becomes regular. */
+export const REGULARIZATION_MONTHS = 6
+
+/**
+ * The date a probationary employee becomes regular: their start date + 6 months.
+ * Computed in UTC to keep the day-of-month stable against the UTC-midnight start dates
+ * we store (local-time month math would drift a day for PHT).
+ */
+export function regularizationDate(startDate: Date): Date {
+	const d = new Date(startDate)
+	d.setUTCMonth(d.getUTCMonth() + REGULARIZATION_MONTHS)
+	return d
+}
+
+/** Whole days between two dates, counting calendar days in UTC (positive if `to` is later). */
+export function daysBetween(from: Date, to: Date): number {
+	const a = Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate())
+	const b = Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate())
+	return Math.round((b - a) / 86_400_000)
+}
+
+/**
+ * Regularization standing for a probationary employee as of `asOf` (default: now):
+ * the date they regularize, whole days until then (negative once past due), and whether
+ * that date has already passed.
+ */
+export function regularizationStatus(startDate: Date, asOf: Date = new Date()) {
+	const date = regularizationDate(startDate)
+	const daysUntil = daysBetween(asOf, date)
+	return { date, daysUntil, overdue: daysUntil < 0 }
+}

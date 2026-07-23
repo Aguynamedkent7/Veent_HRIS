@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
 	canActOnStage,
+	canActOnPayrollStage,
 	nextState,
 	livePayrollStage,
 	type PayrollChainStep
@@ -48,6 +49,32 @@ describe('canActOnStage', () => {
 		expect(canActOnStage('MAKE', roles, 'actor', 'owner')).toBe(true)
 		expect(canActOnStage('VERIFY', roles, 'actor', 'owner')).toBe(true)
 		expect(canActOnStage('APPROVE', roles, 'actor', 'owner')).toBe(false)
+	})
+})
+
+// #174 — payroll runs are finance sign-offs: the final APPROVE routes to the CEO / Super
+// Admin, not the generic Approver. VERIFY stays the Verifier; MAKE is the payroll preparer.
+describe('canActOnPayrollStage (#174)', () => {
+	it('APPROVE requires a finance approver — CEO or Super Admin only', () => {
+		for (const role of ['CEO', 'SUPER_ADMIN'] as Role[]) {
+			expect(canActOnPayrollStage('APPROVE', [role])).toBe(true)
+		}
+		// The generic Approver signs off HR requests but never payroll.
+		for (const role of ['APPROVER', 'VERIFIER', 'HR_ADMIN', 'MANAGER', 'FINANCE'] as Role[]) {
+			expect(canActOnPayrollStage('APPROVE', [role])).toBe(false)
+		}
+	})
+
+	it('VERIFY is still the Verifier', () => {
+		expect(canActOnPayrollStage('VERIFY', ['VERIFIER'])).toBe(true)
+		for (const role of ['CEO', 'SUPER_ADMIN', 'APPROVER'] as Role[]) {
+			expect(canActOnPayrollStage('VERIFY', [role])).toBe(false)
+		}
+	})
+
+	it('leaves the generic request chain untouched — Approver still signs off requests', () => {
+		expect(canActOnStage('APPROVE', ['APPROVER'], 'actor', 'owner')).toBe(true)
+		expect(canActOnStage('APPROVE', ['CEO'], 'actor', 'owner')).toBe(false)
 	})
 })
 

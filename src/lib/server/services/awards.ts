@@ -1,0 +1,71 @@
+import { db } from '$lib/server/db'
+import { error } from '@sveltejs/kit'
+import { writeAuditLog } from '$lib/server/audit'
+import { notify } from './notifications'
+import type { AuditContext } from './types'
+
+// ─── Employee awards (#180) ───────────────────────────────────────────────────
+// HR recognises an employee; the award announces on the dashboard feed and pings the
+// recipient. Recent awards (last few weeks) surface in the feed.
+
+const RECENT_AWARD_DAYS = 30
+
+export async function grantAward(
+	organizationId: string,
+	input: { employeeId: string; title: string; note?: string },
+	ctx: AuditContext
+) {
+	const title = input.title.trim()
+	if (!title) error(400, 'An award title is required')
+	const employee = await db.employee.findFirst({
+		where: { id: input.employeeId, user: { organizationId } },
+		select: { id: true, userId: true, firstName: true, lastName: true }
+	})
+	if (!employee) error(404, 'Employee not found')
+
+	const award = await db.award.create({
+		data: {
+			organizationId,
+			employeeId: employee.id,
+			title,
+			note: input.note?.trim() || null,
+			awardedById: ctx.actorId
+		}
+	})
+
+	await writeAuditLog(ctx, {
+		action: 'CREATE',
+		entityType: 'Award',
+		entityId: award.id,
+		newValue: { employeeId: employee.id, title }
+	})
+
+	await notify(employee.userId, `You received an award: ${title}. Congratulations!`, '/dashboard')
+	return award
+}
+
+// Recent awards for the dashboard feed, newest first, with the recipient's name resolved.
+export async function listRecentAwards(organizationId: string, asOf: Date = new Date()) {
+	const since = new Date(asOf)
+	since.setUTCDate(since.getUTCDate() - RECENT_AWARD_DAYS)
+	const awards = await db.award.findMany({
+		where: { organizationId, createdAt: { gte: since } },
+		orderBy: { createdAt: 'desc' },
+		take: 5
+	})
+	if (!awards.length) return []
+
+	const employees = await db.employee.findMany({
+		where: { id: { in: awards.map((a) => a.employeeId) } },
+		select: { id: true, firstName: true, lastName: true }
+	})
+	const nameById = new Map(employees.map((e) => [e.id, `${e.firstName} ${e.lastName}`]))
+
+	return awards.map((a) => ({
+		id: a.id,
+		title: a.title,
+		note: a.note,
+		employeeName: nameById.get(a.employeeId) ?? 'An employee',
+		createdAt: a.createdAt
+	}))
+}

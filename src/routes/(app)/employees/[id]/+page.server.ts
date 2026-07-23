@@ -36,6 +36,11 @@ import {
 	deleteEmployeeDocument
 } from '$lib/server/services/documents'
 import { addEmergencyContact, deleteEmergencyContact } from '$lib/server/services/emergencyContacts'
+import {
+	listAdditionalSupervisors,
+	setAdditionalSupervisors,
+	listReportIdsFor
+} from '$lib/server/services/supervisors'
 import { writeAuditLog } from '$lib/server/audit'
 import { maskAccountNumber } from '$lib/utils/format'
 import { db } from '$lib/server/db'
@@ -80,7 +85,9 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 			where: { userId: locals.user!.id },
 			select: { id: true }
 		})
-		if (!self || employee.reportsToId !== self.id) {
+		// A manager may open anyone who reports to them as primary OR additional supervisor (#176).
+		const reportIds = self ? await listReportIdsFor(self.id) : []
+		if (!self || !reportIds.includes(employee.id)) {
 			error(403, 'You can only view your own team members.')
 		}
 	}
@@ -150,7 +157,24 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	// obtainable through the audited ?/revealDisbursement action below.
 	const canRevealDisbursement = can(locals.user!.role, 'MANAGE_HR')
 
+	// Additional supervisors (#176) — shown to everyone, editable by HR. The picker offers
+	// every other active employee in the org (minus the primary manager, handled server-side).
+	const additionalSupervisors = await listAdditionalSupervisors(params.id)
+	const supervisorOptions = canManage
+		? await db.employee.findMany({
+				where: {
+					user: { organizationId: locals.user!.organizationId },
+					employmentStatus: 'ACTIVE',
+					id: { not: params.id }
+				},
+				select: { id: true, firstName: true, lastName: true },
+				orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }]
+			})
+		: []
+
 	return {
+		additionalSupervisors,
+		supervisorOptions,
 		employee: {
 			...employee,
 			bankAccountNumber: maskAccountNumber(employee.bankAccountNumber),
@@ -217,6 +241,12 @@ const updateSchema = z.object({
 	departmentId: z.string().optional(),
 	contactPhone: z.string().optional(),
 	contactAddress: z.string().optional(),
+	// Company email (#186) — HR sets the real address once provisioned. Empty clears it.
+	companyEmail: z
+		.string()
+		.trim()
+		.optional()
+		.transform((v) => (v ? v : null)),
 	basicMonthlySalary: z.coerce.number().positive().optional(),
 	rateType: z.enum(['MONTHLY', 'HOURLY']).optional(),
 	// Empty string clears the link; a value sets it (unique per employee).
@@ -295,6 +325,23 @@ const emergencyContactSchema = z.object({
 })
 
 export const actions: Actions = {
+	// Set the employee's additional supervisors (#176). HR-only.
+	setSupervisors: async ({ request, locals, params, getClientAddress }) => {
+		requireCapability(locals.user!.role, 'MANAGE_HR')
+		const ids = (await request.formData()).getAll('supervisorIds').map(String).filter(Boolean)
+		try {
+			await setAdditionalSupervisors(
+				locals.user!.organizationId,
+				params.id, // the 201 file's subject
+				ids,
+				ctxOf(locals, getClientAddress())
+			)
+		} catch (e) {
+			return failFromError(e)
+		}
+		return { success: true }
+	},
+
 	update: async ({ request, locals, params, getClientAddress }) => {
 		requireMinRole(locals.user!.role, 'HR_ADMIN')
 		const user = locals.user!

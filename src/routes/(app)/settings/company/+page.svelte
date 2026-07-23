@@ -19,6 +19,8 @@
 	let addressValue = $state(data.company.address ?? '')
 	// svelte-ignore state_referenced_locally
 	let logoUrlValue = $state(data.company.logoUrl ?? '')
+	// svelte-ignore state_referenced_locally
+	let discordInviteValue = $state(data.company.discordInviteUrl ?? '')
 
 	// After a save the server returns the persisted row; re-sync local state so
 	// the inputs show what actually got written (in case anything was normalized).
@@ -26,6 +28,7 @@
 		nameValue = data.company.name
 		addressValue = data.company.address ?? ''
 		logoUrlValue = data.company.logoUrl ?? ''
+		discordInviteValue = data.company.discordInviteUrl ?? ''
 	})
 </script>
 
@@ -103,6 +106,22 @@
 					class="mt-2 h-12 w-auto rounded border object-contain"
 				/>
 			{/if}
+		</div>
+		<div class="grid gap-1.5">
+			<label for="discordInviteUrl" class="text-sm font-medium"
+				>Discord invite URL <span class="text-muted-foreground">(optional)</span></label
+			>
+			<input
+				id="discordInviteUrl"
+				name="discordInviteUrl"
+				type="url"
+				bind:value={discordInviteValue}
+				placeholder="https://discord.gg/…"
+				class="h-9 rounded-md border border-input bg-background px-3 text-sm"
+			/>
+			<p class="text-xs text-muted-foreground">
+				When set, new hires are emailed an invitation to this Discord server during onboarding.
+			</p>
 		</div>
 		<button
 			type="submit"

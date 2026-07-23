@@ -4,8 +4,12 @@ import { error } from '@sveltejs/kit'
 import { Prisma } from '@prisma/client'
 import { createEmployee } from './employees'
 import { generateTempPassword } from '$lib/server/password'
+import { sendInterviewScheduledEmail } from '$lib/server/notifications'
+import { notify } from './notifications'
+import { resolvePostingApproverId } from './posting-approvers'
+import { canAny } from '$lib/rbac'
 import type { AuditContext } from './types'
-import type { JobPostingStatus, ApplicantStage, InterviewMode } from '@prisma/client'
+import type { JobPostingStatus, ApplicantStage, InterviewMode, Role } from '@prisma/client'
 
 export async function countJobPostings(organizationId: string, status?: JobPostingStatus) {
 	return db.jobPosting.count({ where: { organizationId, ...(status && { status }) } })
@@ -61,24 +65,143 @@ export async function createJobPosting(
 	return jp
 }
 
-export async function publishJobPosting(id: string, organizationId: string, ctx: AuditContext) {
+// A posting must be approved before it goes OPEN (#195). Submitting sends a DRAFT to
+// PENDING_APPROVAL and pings the department's approver (or HR when none is mapped).
+export async function submitJobPostingForApproval(
+	id: string,
+	organizationId: string,
+	ctx: AuditContext
+) {
 	const jp = await db.jobPosting.findFirst({ where: { id, organizationId } })
 	if (!jp) error(404, 'Job posting not found')
-	if (jp.status !== 'DRAFT') error(400, 'Only draft postings can be published')
+	if (jp.status !== 'DRAFT') error(400, 'Only draft postings can be submitted for approval')
 
 	const updated = await db.jobPosting.update({
 		where: { id },
-		data: { status: 'OPEN', postedAt: new Date() }
+		data: { status: 'PENDING_APPROVAL', submittedById: ctx.actorId, rejectionReason: null }
 	})
 
 	await writeAuditLog(ctx, {
 		action: 'UPDATE',
 		entityType: 'JobPosting',
 		entityId: id,
-		newValue: { status: 'OPEN' }
+		newValue: { status: 'PENDING_APPROVAL' }
 	})
 
+	// Notify the resolved approver so it lands on their dashboard; HR-fallback postings are
+	// picked up by any HR admin from their own pending-approvals view.
+	const approverEmployeeId = await resolvePostingApproverId(organizationId, jp.departmentId)
+	if (approverEmployeeId) {
+		const approver = await db.employee.findUnique({
+			where: { id: approverEmployeeId },
+			select: { userId: true }
+		})
+		if (approver) {
+			await notify(
+				approver.userId,
+				`A job posting “${jp.title}” is awaiting your approval.`,
+				'/dashboard'
+			)
+		}
+	}
+
 	return updated
+}
+
+// Whether `actor` may decide the posting: the department's designated approver, or any HR
+// admin (the fallback, and an override for HR-mapped or unmapped departments).
+export function canApprovePosting(
+	resolvedApproverEmployeeId: string | null,
+	actorEmployeeId: string | null,
+	actorRoles: Role[]
+): boolean {
+	if (resolvedApproverEmployeeId && actorEmployeeId === resolvedApproverEmployeeId) return true
+	// No approver mapped, or an HR override.
+	if (!resolvedApproverEmployeeId && canAny(actorRoles, 'MANAGE_HR')) return true
+	return canAny(actorRoles, 'MANAGE_HR')
+}
+
+// Approve (→ OPEN) or reject (→ back to DRAFT with a reason) a pending posting. `actor`
+// carries the deciding user's employee id + roles for the authorization check.
+export async function decideJobPosting(
+	id: string,
+	organizationId: string,
+	decision: { approve: boolean; note?: string },
+	actor: { employeeId: string | null; roles: Role[] },
+	ctx: AuditContext
+) {
+	const jp = await db.jobPosting.findFirst({ where: { id, organizationId } })
+	if (!jp) error(404, 'Job posting not found')
+	if (jp.status !== 'PENDING_APPROVAL') error(400, 'This posting is not awaiting approval')
+
+	const approverEmployeeId = await resolvePostingApproverId(organizationId, jp.departmentId)
+	if (!canApprovePosting(approverEmployeeId, actor.employeeId, actor.roles)) {
+		error(403, 'You are not the approver for this posting')
+	}
+	if (!decision.approve && !decision.note?.trim()) {
+		error(400, 'A reason is required to send a posting back to draft')
+	}
+
+	const updated = await db.jobPosting.update({
+		where: { id },
+		data: decision.approve
+			? { status: 'OPEN', postedAt: new Date(), approvedById: ctx.actorId, rejectionReason: null }
+			: { status: 'DRAFT', rejectionReason: decision.note!.trim() }
+	})
+
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'JobPosting',
+		entityId: id,
+		newValue: { status: updated.status, ...(decision.approve ? {} : { rejected: true }) }
+	})
+
+	// Tell whoever submitted it the outcome.
+	if (jp.submittedById) {
+		await notify(
+			jp.submittedById,
+			decision.approve
+				? `Your job posting “${jp.title}” was approved and is now open.`
+				: `Your job posting “${jp.title}” was sent back to draft: ${decision.note!.trim()}`,
+			'/recruitment'
+		)
+	}
+
+	return updated
+}
+
+// Pending postings this user may act on — the departments they're the approver for, plus
+// (for HR) any posting whose department has no approver mapped. Feeds the dashboard card.
+export async function listPostingsAwaitingApprover(
+	organizationId: string,
+	actorEmployeeId: string | null,
+	actorRoles: Role[]
+) {
+	const pending = await db.jobPosting.findMany({
+		where: { organizationId, status: 'PENDING_APPROVAL' },
+		include: { department: { select: { name: true } } },
+		orderBy: { updatedAt: 'asc' }
+	})
+	if (!pending.length) return []
+
+	const mappings = await db.postingApprover.findMany({
+		where: { organizationId },
+		select: { departmentId: true, approverId: true }
+	})
+	const approverByDept = new Map(mappings.map((m) => [m.departmentId, m.approverId]))
+	const isHr = canAny(actorRoles, 'MANAGE_HR')
+
+	return pending
+		.filter((p) => {
+			const approver = approverByDept.get(p.departmentId) ?? null
+			return canApprovePosting(approver, actorEmployeeId, actorRoles) && (approver != null || isHr)
+		})
+		.map((p) => ({
+			id: p.id,
+			title: p.title,
+			department: p.department.name,
+			submittedAt: p.updatedAt
+		}))
 }
 
 export async function applyToPosting(
@@ -203,6 +326,41 @@ export async function scheduleInterview(
 		entityId: interview.id,
 		newValue: { applicantId, scheduledAt: input.scheduledAt.toISOString(), mode: input.mode }
 	})
+
+	// Email the details to the applicant and to HR (#196). The applicant row carries their
+	// name/email; HR is every active HR admin in the org. Best-effort: a notifier hiccup must
+	// not roll back a booked interview, so failures are logged, not thrown.
+	try {
+		const [jobPosting, hrUsers] = await Promise.all([
+			db.jobPosting.findUnique({
+				where: { id: applicant.jobPostingId },
+				select: { title: true }
+			}),
+			db.user.findMany({
+				where: {
+					organizationId,
+					isActive: true,
+					OR: [{ role: 'HR_ADMIN' }, { roles: { has: 'HR_ADMIN' } }]
+				},
+				select: { email: true }
+			})
+		])
+
+		const details = {
+			applicantName: `${applicant.firstName} ${applicant.lastName}`,
+			jobTitle: jobPosting?.title ?? 'the role',
+			scheduledAt: input.scheduledAt,
+			mode: input.mode,
+			interviewer: input.interviewer,
+			location: input.location ?? null
+		}
+
+		sendInterviewScheduledEmail(applicant.email, 'applicant', details)
+		for (const hr of hrUsers) sendInterviewScheduledEmail(hr.email, 'hr', details)
+	} catch (e) {
+		console.error('[NOTIFY] Failed to email interview details for', interview.id, e)
+	}
+
 	return interview
 }
 

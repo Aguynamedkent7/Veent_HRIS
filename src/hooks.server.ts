@@ -1,5 +1,6 @@
 import { lucia } from '$lib/server/auth'
 import { redirect } from '@sveltejs/kit'
+import { isSessionBlocked } from '$lib/server/access-guard'
 import type { Handle } from '@sveltejs/kit'
 
 export const handle: Handle = async ({ event, resolve }) => {
@@ -38,7 +39,9 @@ export const handle: Handle = async ({ event, resolve }) => {
 			: user
 	event.locals.session = session
 
-	if (user && !user.isActive) {
+	// #193: an offboarded employee's login is deactivated, so any session they still hold
+	// is blocked here and bounced to the disabled-account screen.
+	if (isSessionBlocked(user)) {
 		redirect(302, '/login?error=account_disabled')
 	}
 

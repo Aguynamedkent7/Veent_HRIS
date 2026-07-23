@@ -145,6 +145,7 @@ enum LoanStatus {
 
 enum JobPostingStatus {
   DRAFT
+  PENDING_APPROVAL
   OPEN
   CLOSED
 }
@@ -270,6 +271,9 @@ model Organization {
   // be injected straight into the `--primary`/`--ring` CSS variables. Null → default palette.
   themePrimary String?
   address      String?
+  // Company Discord server invite link (#186). When set, onboarding emails new hires an
+  // invitation; null (most tenants) skips it. Only Veent has adopted Discord so far.
+  discordInviteUrl String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -293,6 +297,8 @@ model Organization {
   salaryGrades             SalaryGrade[]
   announcements            Announcement[]
   onboardingChecklistItems OnboardingChecklistItem[]
+  offboardingChecklistItems OffboardingChecklistItem[]
+  postingApprovers         PostingApprover[]
   jobBoards                JobBoard[]
   inventoryItems           InventoryItem[]
   branches                 Branch[]
@@ -391,6 +397,9 @@ model Employee {
   jobTitle                 String
   employmentType           EmploymentType
   employmentStatus         EmploymentStatus @default(ACTIVE)
+  // Company email (#186). Real provisioning is deferred, so onboarding seeds this with the
+  // hire's working email; HR updates it to the real company address once provisioned.
+  companyEmail             String?
   startDate                DateTime
   endDate                  DateTime?
   reportsToId              String?
@@ -454,6 +463,22 @@ model Employee {
   @@unique([organizationId, employeeNumber])
   @@index([organizationId, branchId])
   @@map("employees")
+}
+
+// Additional (secondary) supervisors (#176). An employee's primary manager stays on
+// Employee.reportsToId; this records the extra superiors they also report to, so team
+// rosters and manager views count someone under ANY of their supervisors. Plain employee-id
+// FKs (resolved in queries) keep it off the Employee relation graph.
+model EmployeeSupervisor {
+  id           String   @id @default(cuid())
+  employeeId   String
+  supervisorId String
+  createdAt    DateTime @default(now())
+
+  @@unique([employeeId, supervisorId])
+  @@index([supervisorId])
+  @@index([employeeId])
+  @@map("employee_supervisors")
 }
 
 // Emergency contact(s) on the 201 file (FR-047). An employee may have several.
@@ -597,6 +622,43 @@ model OnboardingCompletion {
   @@unique([itemId, employeeId])
   @@index([employeeId])
   @@map("onboarding_completions")
+}
+
+// Offboarding checklist template (#192). Org-scoped, ordered list HR configures in
+// Settings, the mirror of the onboarding checklist. Each item names a clearance task and
+// the department that signs it off; opening a separation copies the active items into that
+// case's ClearanceItem rows, and the transition notice email (#185) lists them. An org
+// that has never configured one falls back to the built-in defaults.
+// Employee award / recognition (#180). HR grants these; they announce on the dashboard
+// feed and notify the recipient. Plain org/employee id FKs (resolved in queries) keep it
+// off the Employee relation graph.
+model Award {
+  id             String   @id @default(cuid())
+  organizationId String
+  employeeId     String
+  title          String
+  note           String?
+  awardedById    String
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId])
+  @@map("awards")
+}
+
+model OffboardingChecklistItem {
+  id             String   @id @default(cuid())
+  organizationId String
+  label          String
+  department     String
+  order          Int
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@map("offboarding_checklist_items")
 }
 
 model LeaveRequest {
@@ -932,6 +994,11 @@ model JobPosting {
   postedAt       DateTime?
   closedAt       DateTime?
   createdById    String
+  // Approval trail (#195): who submitted for approval, who approved, and the reason a
+  // posting was sent back to draft. All null on a fresh draft.
+  submittedById  String?
+  approvedById   String?
+  rejectionReason String?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
@@ -941,6 +1008,26 @@ model JobPosting {
   channels     JobPostingChannel[]
 
   @@map("job_postings")
+}
+
+// Per-department posting approver (#195). A job posting must be approved before it goes
+// OPEN; this maps each department to the employee who signs off its postings (e.g. the
+// Senior Developer for Software Developers). Departments with no mapping fall back to HR
+// in the service. A plain employee-id FK (resolved in queries) keeps the config table off
+// the Employee/Department relation graph.
+model PostingApprover {
+  id             String   @id @default(cuid())
+  organizationId String
+  departmentId   String
+  approverId     String // Employee.id who approves this department's postings
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, departmentId])
+  @@index([organizationId])
+  @@map("posting_approvers")
 }
 
 // Where a posting was published (#117). A manual tracking checklist — NOT an API
