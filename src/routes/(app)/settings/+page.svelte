@@ -48,6 +48,12 @@
 			super: false
 		},
 		{
+			href: '/settings/offboarding',
+			title: 'Offboarding Checklist',
+			desc: 'Clearance steps for separations',
+			super: false
+		},
+		{
 			href: '/settings/job-boards',
 			title: 'Job Boards',
 			desc: 'Where postings can be published',
