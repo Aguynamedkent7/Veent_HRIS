@@ -5,6 +5,7 @@ import { manilaDayKey } from '$lib/utils/dates'
 import { can, requireCapability } from '$lib/server/rbac'
 import { listRecentAnnouncements, createAnnouncement } from '$lib/server/services/announcements'
 import { countPendingApprovals } from '$lib/server/services/approvals'
+import { listRecent } from '$lib/server/services/notifications'
 import {
 	listUpcomingRegularizations,
 	listTodaysBirthdays,
@@ -93,6 +94,10 @@ export const load: PageServerLoad = async ({ locals }) => {
 	})
 	const postingsToApprove = await listPostingsAwaitingApprover(orgId, myEmployee?.id ?? null, roles)
 
+	// Recent activity — payslip releases, request outcomes, etc. (#169) persisted after the
+	// toast is gone.
+	const recentActivity = await listRecent(user.id, 8)
+
 	return {
 		canPost,
 		canViewPayroll,
@@ -101,6 +106,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		birthdays,
 		myStatus,
 		postingsToApprove,
+		recentActivity,
 		metrics: {
 			headcount,
 			onLeaveToday,

@@ -24,6 +24,17 @@ export async function listUnread(userId: string, limit = 10) {
 	})
 }
 
+// Recent notifications regardless of read state (#169) — the dashboard "Recent activity"
+// panel persists them after the toast has been dismissed and marked read.
+export async function listRecent(userId: string, limit = 8) {
+	return db.notification.findMany({
+		where: { userId },
+		orderBy: { createdAt: 'desc' },
+		take: limit,
+		select: { id: true, message: true, link: true, createdAt: true, readAt: true }
+	})
+}
+
 export async function markRead(userId: string, ids: string[]) {
 	if (ids.length === 0) return
 	await db.notification.updateMany({

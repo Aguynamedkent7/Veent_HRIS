@@ -294,6 +294,33 @@
 		</div>
 	{/if}
 
+	<!-- Recent activity — payslips, request outcomes, etc. (#169) -->
+	{#if data.recentActivity.length}
+		<div class="card space-y-3">
+			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+				Recent Activity
+			</p>
+			<ul class="divide-y divide-border/60">
+				{#each data.recentActivity as n (n.id)}
+					<li class="flex items-center justify-between gap-3 py-2">
+						<div class="flex min-w-0 items-center gap-2">
+							{#if !n.readAt}
+								<span class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-label="unread"
+								></span>
+							{/if}
+							{#if n.link}
+								<a href={n.link} class="truncate text-sm hover:underline">{n.message}</a>
+							{:else}
+								<span class="truncate text-sm">{n.message}</span>
+							{/if}
+						</div>
+						<span class="shrink-0 text-xs text-muted-foreground">{formatShortDate(n.createdAt)}</span>
+					</li>
+				{/each}
+			</ul>
+		</div>
+	{/if}
+
 	<!-- Attendance summary (today) -->
 	<div class="card space-y-3">
 		<div class="flex items-center justify-between">
