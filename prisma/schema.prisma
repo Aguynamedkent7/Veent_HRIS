@@ -145,6 +145,7 @@ enum LoanStatus {
 
 enum JobPostingStatus {
   DRAFT
+  PENDING_APPROVAL
   OPEN
   CLOSED
 }
@@ -294,6 +295,7 @@ model Organization {
   announcements            Announcement[]
   onboardingChecklistItems OnboardingChecklistItem[]
   offboardingChecklistItems OffboardingChecklistItem[]
+  postingApprovers         PostingApprover[]
   jobBoards                JobBoard[]
   inventoryItems           InventoryItem[]
   branches                 Branch[]
@@ -954,6 +956,11 @@ model JobPosting {
   postedAt       DateTime?
   closedAt       DateTime?
   createdById    String
+  // Approval trail (#195): who submitted for approval, who approved, and the reason a
+  // posting was sent back to draft. All null on a fresh draft.
+  submittedById  String?
+  approvedById   String?
+  rejectionReason String?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
@@ -963,6 +970,26 @@ model JobPosting {
   channels     JobPostingChannel[]
 
   @@map("job_postings")
+}
+
+// Per-department posting approver (#195). A job posting must be approved before it goes
+// OPEN; this maps each department to the employee who signs off its postings (e.g. the
+// Senior Developer for Software Developers). Departments with no mapping fall back to HR
+// in the service. A plain employee-id FK (resolved in queries) keeps the config table off
+// the Employee/Department relation graph.
+model PostingApprover {
+  id             String   @id @default(cuid())
+  organizationId String
+  departmentId   String
+  approverId     String // Employee.id who approves this department's postings
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, departmentId])
+  @@index([organizationId])
+  @@map("posting_approvers")
 }
 
 // Where a posting was published (#117). A manual tracking checklist — NOT an API

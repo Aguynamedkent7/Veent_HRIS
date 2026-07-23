@@ -12,6 +12,11 @@
 	const metrics = $derived(data.metrics)
 	let showPost = $state(false)
 
+	// Per-posting guards + a reject-note toggle for the approval card (#195).
+	const decideGuards: Record<string, ReturnType<typeof createSubmitGuard>> = {}
+	const decideGuard = (id: string) => (decideGuards[id] ??= createSubmitGuard())
+	let rejectingId = $state<string | null>(null)
+
 	// Today's birthday greeting, rendered at the top of the announcements feed (#167).
 	const birthdayBody = $derived.by(() => {
 		const names = data.birthdays
@@ -220,6 +225,69 @@
 										: `in ${r.daysUntil} day${r.daysUntil === 1 ? '' : 's'}`}
 							</p>
 						</div>
+					</li>
+				{/each}
+			</ul>
+		</div>
+	{/if}
+
+	<!-- Job postings awaiting your approval (#195) -->
+	{#if data.postingsToApprove.length}
+		<div class="card space-y-3 border-blue-500/30 bg-blue-500/5">
+			<p class="text-xs font-semibold uppercase tracking-widest text-blue-400">
+				Postings awaiting your approval
+			</p>
+			<ul class="divide-y divide-border/60">
+				{#each data.postingsToApprove as p (p.id)}
+					{@const g = decideGuard(p.id)}
+					<li class="space-y-2 py-2">
+						<div class="flex items-center justify-between gap-3">
+							<div class="min-w-0">
+								<p class="font-medium">{p.title}</p>
+								<p class="truncate text-xs text-muted-foreground">{p.department}</p>
+							</div>
+							<div class="flex shrink-0 items-center gap-2">
+								<form method="POST" action="?/decidePosting" use:enhance={g.enhance}>
+									<input type="hidden" name="id" value={p.id} />
+									<input type="hidden" name="action" value="approve" />
+									<button
+										type="submit"
+										disabled={g.busy}
+										class="rounded-md border border-green-500/30 px-3 py-1 text-xs font-medium text-green-400 hover:bg-green-500/10 disabled:pointer-events-none disabled:opacity-50"
+										>{g.busy ? '…' : 'Approve'}</button
+									>
+								</form>
+								<button
+									type="button"
+									onclick={() => (rejectingId = rejectingId === p.id ? null : p.id)}
+									class="rounded-md border px-3 py-1 text-xs font-medium hover:bg-accent"
+									>Send back</button
+								>
+							</div>
+						</div>
+						{#if rejectingId === p.id}
+							<form
+								method="POST"
+								action="?/decidePosting"
+								use:enhance={g.enhance}
+								class="flex items-center gap-2"
+							>
+								<input type="hidden" name="id" value={p.id} />
+								<input type="hidden" name="action" value="reject" />
+								<input
+									name="note"
+									required
+									placeholder="Reason to send back to draft…"
+									class="h-8 flex-1 rounded border border-input bg-background px-2 text-xs"
+								/>
+								<button
+									type="submit"
+									disabled={g.busy}
+									class="rounded-md border px-3 py-1 text-xs font-medium hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+									>Confirm</button
+								>
+							</form>
+						{/if}
 					</li>
 				{/each}
 			</ul>

@@ -1,0 +1,84 @@
+<script lang="ts">
+	import { enhance } from '$app/forms'
+	import BackButton from '$lib/components/ui/BackButton.svelte'
+	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
+	import type { PageData, ActionData } from './$types'
+
+	let { data, form }: { data: PageData; form: ActionData } = $props()
+
+	const guards: Record<string, ReturnType<typeof createSubmitGuard>> = {}
+	const guard = (id: string) => (guards[id] ??= createSubmitGuard())
+</script>
+
+<svelte:head>
+	<title>Posting Approvers — Veent HRIS</title>
+</svelte:head>
+
+<div class="mx-auto max-w-3xl space-y-6">
+	<div>
+		<BackButton fallback="/settings" label="Settings" preferFallback />
+		<h1 class="mt-1 text-2xl font-bold tracking-tight">Posting Approvers</h1>
+		<p class="text-sm text-muted-foreground">
+			Job postings must be approved before they go live. Choose who signs off each
+			department's postings (for example, the Senior Developer for Software Developers).
+			Departments left unset fall back to HR.
+		</p>
+	</div>
+
+	{#if form?.error}
+		<div
+			class="rounded-md border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-600 dark:text-red-400"
+		>
+			{form.error}
+		</div>
+	{/if}
+
+	<div class="overflow-x-auto rounded-lg border">
+		<table class="w-full text-sm">
+			<thead class="border-b bg-muted/50">
+				<tr>
+					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Department</th>
+					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Approver</th>
+					<th class="px-4 py-3"></th>
+				</tr>
+			</thead>
+			<tbody class="divide-y">
+				{#each data.rows as row (row.departmentId)}
+					{@const g = guard(row.departmentId)}
+					<tr>
+						<td class="px-4 py-3 font-medium">{row.departmentName}</td>
+						<td class="px-4 py-3" colspan="2">
+							<form
+								method="POST"
+								action="?/set"
+								use:enhance={g.enhance}
+								class="flex items-center gap-2"
+							>
+								<input type="hidden" name="departmentId" value={row.departmentId} />
+								<select
+									name="approverId"
+									class="h-9 flex-1 rounded-md border border-input bg-background px-2 text-sm"
+								>
+									<option value="">— HR (fallback) —</option>
+									{#each data.employees as e (e.id)}
+										<option value={e.id} selected={e.id === row.approverId}
+											>{e.lastName}, {e.firstName} · {e.jobTitle}</option
+										>
+									{/each}
+								</select>
+								<button
+									type="submit"
+									disabled={g.busy}
+									class="h-9 rounded-md border px-3 text-xs font-medium hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+									>{g.busy ? 'Saving…' : 'Save'}</button
+								>
+							</form>
+						</td>
+					</tr>
+				{:else}
+					<tr><td colspan="3" class="px-4 py-8 text-center text-muted-foreground">No departments yet</td></tr>
+				{/each}
+			</tbody>
+		</table>
+	</div>
+</div>

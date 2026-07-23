@@ -54,6 +54,12 @@
 			super: false
 		},
 		{
+			href: '/settings/posting-approvers',
+			title: 'Posting Approvers',
+			desc: 'Who approves each department’s job postings',
+			super: false
+		},
+		{
 			href: '/settings/job-boards',
 			title: 'Job Boards',
 			desc: 'Where postings can be published',
