@@ -4,6 +4,7 @@ import { error } from '@sveltejs/kit'
 import { Prisma } from '@prisma/client'
 import { createEmployee } from './employees'
 import { generateTempPassword } from '$lib/server/password'
+import { sendInterviewScheduledEmail } from '$lib/server/notifications'
 import type { AuditContext } from './types'
 import type { JobPostingStatus, ApplicantStage, InterviewMode } from '@prisma/client'
 
@@ -203,6 +204,41 @@ export async function scheduleInterview(
 		entityId: interview.id,
 		newValue: { applicantId, scheduledAt: input.scheduledAt.toISOString(), mode: input.mode }
 	})
+
+	// Email the details to the applicant and to HR (#196). The applicant row carries their
+	// name/email; HR is every active HR admin in the org. Best-effort: a notifier hiccup must
+	// not roll back a booked interview, so failures are logged, not thrown.
+	try {
+		const [jobPosting, hrUsers] = await Promise.all([
+			db.jobPosting.findUnique({
+				where: { id: applicant.jobPostingId },
+				select: { title: true }
+			}),
+			db.user.findMany({
+				where: {
+					organizationId,
+					isActive: true,
+					OR: [{ role: 'HR_ADMIN' }, { roles: { has: 'HR_ADMIN' } }]
+				},
+				select: { email: true }
+			})
+		])
+
+		const details = {
+			applicantName: `${applicant.firstName} ${applicant.lastName}`,
+			jobTitle: jobPosting?.title ?? 'the role',
+			scheduledAt: input.scheduledAt,
+			mode: input.mode,
+			interviewer: input.interviewer,
+			location: input.location ?? null
+		}
+
+		sendInterviewScheduledEmail(applicant.email, 'applicant', details)
+		for (const hr of hrUsers) sendInterviewScheduledEmail(hr.email, 'hr', details)
+	} catch (e) {
+		console.error('[NOTIFY] Failed to email interview details for', interview.id, e)
+	}
+
 	return interview
 }
 
