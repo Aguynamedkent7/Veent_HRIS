@@ -1,13 +1,37 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
+	import { tenureLabel } from '$lib/utils/dates'
+	import { employmentTypeLabel, contractRenewalStatus } from '$lib/utils/employment'
 	import NewTimesheetDialog from '$lib/components/timesheets/NewTimesheetDialog.svelte'
+	import AnnouncementItem from '$lib/components/dashboard/AnnouncementItem.svelte'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 	const metrics = $derived(data.metrics)
 	let showPost = $state(false)
+
+	// Today's birthday greeting, rendered at the top of the announcements feed (#167).
+	const birthdayBody = $derived.by(() => {
+		const names = data.birthdays
+		if (!names.length) return ''
+		const verb = names.length === 1 ? 'celebrates' : 'celebrate'
+		const list =
+			names.length === 1
+				? names[0]
+				: `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+		return `${list} ${verb} their birthday today. Wishing you the best!`
+	})
+	const hasFeed = $derived(data.announcements.length > 0 || data.birthdays.length > 0)
+
+	// The viewer's own employment standing for the status card (#167).
+	const status = $derived(data.myStatus)
+	const renewal = $derived(
+		status?.employmentType === 'CONTRACTUAL' && status.endDate
+			? contractRenewalStatus(new Date(status.endDate))
+			: null
+	)
 	// #108: a double-click posts the announcement twice to the whole organisation.
 	const postAnnouncement = createSubmitGuard(() => async ({ update }) => {
 		await update()
@@ -101,6 +125,58 @@
 		{/if}
 	</div>
 
+	<!-- Employee's own status: type, tenure, and renewal for contractual (#167) -->
+	{#if status}
+		<div class="card space-y-3">
+			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+				My Status
+			</p>
+			<div class="flex flex-wrap items-center gap-x-8 gap-y-3">
+				<div>
+					<p class="text-xs text-muted-foreground">Employment</p>
+					<span
+						class="mt-1 inline-block rounded-full px-2.5 py-0.5 text-sm font-medium {status.employmentType ===
+						'FULL_TIME'
+							? 'bg-green-500/15 text-green-400'
+							: status.employmentType === 'PROBATIONARY'
+								? 'bg-yellow-500/15 text-yellow-400'
+								: status.employmentType === 'CONTRACTUAL'
+									? 'bg-blue-500/15 text-blue-400'
+									: 'bg-gray-500/15 text-gray-300'}"
+					>
+						{employmentTypeLabel(status.employmentType)}
+					</span>
+				</div>
+				<div>
+					<p class="text-xs text-muted-foreground">Tenure</p>
+					<p class="mt-1 text-sm font-medium">{tenureLabel(new Date(status.startDate))}</p>
+					<p class="text-xs text-muted-foreground">since {formatShortDate(status.startDate)}</p>
+				</div>
+				{#if renewal}
+					<div>
+						<p class="text-xs text-muted-foreground">Contract renewal</p>
+						<p
+							class="mt-1 text-sm font-medium {renewal.expired
+								? 'text-red-400'
+								: renewal.dueForRenewal
+									? 'text-amber-500'
+									: 'text-foreground'}"
+						>
+							{renewal.expired
+								? `Expired ${formatShortDate(status.endDate!)}`
+								: renewal.dueForRenewal
+									? `Up for renewal — in ${renewal.daysUntil} day${renewal.daysUntil === 1 ? '' : 's'}`
+									: `Ends ${formatShortDate(status.endDate!)}`}
+						</p>
+						{#if !renewal.expired && !renewal.dueForRenewal}
+							<p class="text-xs text-muted-foreground">in {renewal.daysUntil} days</p>
+						{/if}
+					</div>
+				{/if}
+			</div>
+		</div>
+	{/if}
+
 	<!-- Attendance summary (today) -->
 	<div class="card space-y-3">
 		<div class="flex items-center justify-between">
@@ -187,18 +263,13 @@
 			</form>
 		{/if}
 
-		{#if data.announcements.length}
+		{#if hasFeed}
 			<ul class="divide-y">
+				{#if data.birthdays.length}
+					<AnnouncementItem variant="birthday" title="Happy Birthday!" body={birthdayBody} />
+				{/if}
 				{#each data.announcements as a (a.id)}
-					<li class="py-2.5">
-						<div class="flex items-baseline justify-between gap-3">
-							<p class="text-sm font-medium text-foreground">{a.title}</p>
-							<span class="shrink-0 text-xs text-muted-foreground"
-								>{formatShortDate(a.createdAt)}</span
-							>
-						</div>
-						<p class="mt-0.5 whitespace-pre-line text-sm text-muted-foreground">{a.body}</p>
-					</li>
+					<AnnouncementItem title={a.title} body={a.body} timestamp={a.createdAt} />
 				{/each}
 			</ul>
 		{:else}

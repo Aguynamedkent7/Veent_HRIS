@@ -1,4 +1,34 @@
 import { db } from '$lib/server/db'
+import { manilaDayKey } from '$lib/utils/dates'
+
+// Active employees whose birthday (month + day) is `today` in PHT (#167). Dates of birth
+// are stored at UTC midnight, so their UTC month/day already read as the PHT calendar day.
+// Filtered in the database with EXTRACT so we never load the whole roster for a greeting.
+export async function listTodaysBirthdays(organizationId: string, today: Date = new Date()) {
+	const [, mm, dd] = manilaDayKey(today).split('-').map(Number)
+	const rows = await db.$queryRaw<{ firstName: string; lastName: string }[]>`
+		SELECT e."firstName", e."lastName"
+		FROM employees e
+		JOIN users u ON u.id = e."userId"
+		WHERE u."organizationId" = ${organizationId}
+			AND e."employmentStatus" = 'ACTIVE'
+			AND e."dateOfBirth" IS NOT NULL
+			AND EXTRACT(MONTH FROM e."dateOfBirth") = ${mm}
+			AND EXTRACT(DAY FROM e."dateOfBirth") = ${dd}
+		ORDER BY e."firstName", e."lastName"
+	`
+	return rows.map((r) => `${r.firstName} ${r.lastName}`)
+}
+
+// The viewer's own employment standing for the dashboard status card (#167): type, start
+// date (for tenure) and contract end date (for a contractual's renewal). Null when the
+// user has no employee profile (e.g. a bare admin account).
+export async function getMyEmploymentStatus(userId: string) {
+	return db.employee.findUnique({
+		where: { userId },
+		select: { employmentType: true, startDate: true, endDate: true }
+	})
+}
 
 export async function getEmployeeMetrics(userId: string, organizationId: string) {
 	const employee = await db.employee.findFirst({
