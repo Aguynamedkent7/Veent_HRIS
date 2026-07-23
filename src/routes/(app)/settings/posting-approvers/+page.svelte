@@ -19,9 +19,9 @@
 		<BackButton fallback="/settings" label="Settings" preferFallback />
 		<h1 class="mt-1 text-2xl font-bold tracking-tight">Posting Approvers</h1>
 		<p class="text-sm text-muted-foreground">
-			Job postings must be approved before they go live. Choose who signs off each
-			department's postings (for example, the Senior Developer for Software Developers).
-			Departments left unset fall back to HR.
+			Job postings must be approved before they go live. Choose who signs off each department's
+			postings (for example, the Senior Developer for Software Developers). Departments left unset
+			fall back to HR.
 		</p>
 	</div>
 
@@ -76,7 +76,11 @@
 						</td>
 					</tr>
 				{:else}
-					<tr><td colspan="3" class="px-4 py-8 text-center text-muted-foreground">No departments yet</td></tr>
+					<tr
+						><td colspan="3" class="px-4 py-8 text-center text-muted-foreground"
+							>No departments yet</td
+						></tr
+					>
 				{/each}
 			</tbody>
 		</table>

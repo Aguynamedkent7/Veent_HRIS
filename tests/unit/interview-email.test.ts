@@ -40,7 +40,11 @@ describe('buildInterviewEmail (#196)', () => {
 		expect(video.body).toContain('Mode: Video call')
 		expect(video.body).toContain('Meeting link: https://meet.example/abc')
 
-		const phone = buildInterviewEmail('applicant', { ...base, mode: 'PHONE', location: '+63 900 000' })
+		const phone = buildInterviewEmail('applicant', {
+			...base,
+			mode: 'PHONE',
+			location: '+63 900 000'
+		})
 		expect(phone.body).toContain('Mode: Phone call')
 		expect(phone.body).toContain('Phone number: +63 900 000')
 	})

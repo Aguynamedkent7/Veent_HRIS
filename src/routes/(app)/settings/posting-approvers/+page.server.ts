@@ -40,7 +40,11 @@ export const actions: Actions = {
 		// An empty approver clears the mapping (falls back to HR).
 		try {
 			if (!approverId) {
-				await clearPostingApprover(locals.user!.organizationId, departmentId, ctxOf(locals, getClientAddress()))
+				await clearPostingApprover(
+					locals.user!.organizationId,
+					departmentId,
+					ctxOf(locals, getClientAddress())
+				)
 			} else {
 				await setPostingApprover(
 					locals.user!.organizationId,

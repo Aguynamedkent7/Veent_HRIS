@@ -68,7 +68,8 @@ export async function setAdditionalSupervisors(
 			where: { id: { in: clean }, user: { organizationId } },
 			select: { id: true }
 		})
-		if (valid.length !== clean.length) error(400, 'A selected supervisor is not in this organization')
+		if (valid.length !== clean.length)
+			error(400, 'A selected supervisor is not in this organization')
 	}
 
 	await db.$transaction([

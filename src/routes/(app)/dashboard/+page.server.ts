@@ -12,10 +12,7 @@ import {
 	listTodaysBirthdays,
 	getMyEmploymentStatus
 } from '$lib/server/services/dashboard'
-import {
-	listPostingsAwaitingApprover,
-	decideJobPosting
-} from '$lib/server/services/recruitment'
+import { listPostingsAwaitingApprover, decideJobPosting } from '$lib/server/services/recruitment'
 import { isHttpError } from '@sveltejs/kit'
 import type { Actions, PageServerLoad } from './$types'
 

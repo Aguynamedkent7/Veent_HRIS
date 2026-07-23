@@ -12,11 +12,10 @@ export function sendWelcomeEmail(email: string, _tempPassword: string): void {
 // New hires are emailed an invitation to the company's Discord server. Sent to their
 // working email (company-email provisioning is deferred). Body assembled here so a real
 // mailer only delivers subject/body, and the wording is unit-tested.
-export function buildDiscordInvite(d: {
-	firstName: string
-	orgName: string
-	inviteUrl: string
-}): { subject: string; body: string } {
+export function buildDiscordInvite(d: { firstName: string; orgName: string; inviteUrl: string }): {
+	subject: string
+	body: string
+} {
 	return {
 		subject: `Join the ${d.orgName} Discord server`,
 		body: [
@@ -111,11 +110,9 @@ export function buildInterviewEmail(
 	}
 	return {
 		subject: `Interview scheduled — ${d.applicantName} (${d.jobTitle})`,
-		body: [
-			`An interview with ${d.applicantName} has been scheduled. Details:`,
-			'',
-			...lines
-		].join('\n')
+		body: [`An interview with ${d.applicantName} has been scheduled. Details:`, '', ...lines].join(
+			'\n'
+		)
 	}
 }
 

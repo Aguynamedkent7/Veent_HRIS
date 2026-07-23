@@ -60,7 +60,9 @@
 						disabled={publishing}
 						class="rounded-md border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
 					>
-						{publishing ? 'Submitting…' : `Submit selected for approval (${selectedDraftIds.length})`}
+						{publishing
+							? 'Submitting…'
+							: `Submit selected for approval (${selectedDraftIds.length})`}
 					</button>
 				</form>
 			{/if}

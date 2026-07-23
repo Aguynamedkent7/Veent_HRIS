@@ -28,9 +28,9 @@
 		<BackButton fallback="/settings" label="Settings" preferFallback />
 		<h1 class="mt-1 text-2xl font-bold tracking-tight">Offboarding Checklist</h1>
 		<p class="text-sm text-muted-foreground">
-			The clearance steps every separation case starts with. Each names a task and the
-			department that signs it off. Opening a separation copies the active steps into the case,
-			and the departing employee is emailed a transition notice listing them.
+			The clearance steps every separation case starts with. Each names a task and the department
+			that signs it off. Opening a separation copies the active steps into the case, and the
+			departing employee is emailed a transition notice listing them.
 		</p>
 	</div>
 

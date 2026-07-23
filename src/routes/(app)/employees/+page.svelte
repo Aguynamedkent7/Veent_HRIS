@@ -154,9 +154,7 @@
 							<td
 								colspan={data.showBranches ? 8 : 7}
 								class="px-4 py-8 text-center text-muted-foreground"
-								>{data.tab === 'offboarded'
-									? 'No offboarded employees'
-									: 'No employees found'}</td
+								>{data.tab === 'offboarded' ? 'No offboarded employees' : 'No employees found'}</td
 							>
 						</tr>
 					{/each}

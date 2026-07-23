@@ -141,9 +141,7 @@
 	<!-- Employee's own status: type, tenure, and renewal for contractual (#167) -->
 	{#if status}
 		<div class="card space-y-3">
-			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-				My Status
-			</p>
+			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">My Status</p>
 			<div class="flex flex-wrap items-center gap-x-8 gap-y-3">
 				<div>
 					<p class="text-xs text-muted-foreground">Employment</p>
@@ -322,7 +320,9 @@
 								<span class="truncate text-sm">{n.message}</span>
 							{/if}
 						</div>
-						<span class="shrink-0 text-xs text-muted-foreground">{formatShortDate(n.createdAt)}</span>
+						<span class="shrink-0 text-xs text-muted-foreground"
+							>{formatShortDate(n.createdAt)}</span
+						>
 					</li>
 				{/each}
 			</ul>
@@ -420,7 +420,12 @@
 							<option value={e.id}>{e.lastName}, {e.firstName}</option>
 						{/each}
 					</select>
-					<input name="title" placeholder="Award (e.g. Employee of the Month)" required class="input h-9" />
+					<input
+						name="title"
+						placeholder="Award (e.g. Employee of the Month)"
+						required
+						class="input h-9"
+					/>
 				</div>
 				<input name="note" placeholder="Note (optional)" class="input h-9" />
 				<button

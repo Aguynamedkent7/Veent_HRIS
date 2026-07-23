@@ -181,9 +181,8 @@
 						</tr>
 					{:else}
 						<tr>
-							<td
-								colspan={crossTenant ? 7 : 6}
-								class="px-4 py-8 text-center text-muted-foreground">No payroll runs yet</td
+							<td colspan={crossTenant ? 7 : 6} class="px-4 py-8 text-center text-muted-foreground"
+								>No payroll runs yet</td
 							>
 						</tr>
 					{/each}
