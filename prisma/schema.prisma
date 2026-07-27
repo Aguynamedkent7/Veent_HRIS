@@ -274,6 +274,10 @@ model Organization {
   // Company Discord server invite link (#186). When set, onboarding emails new hires an
   // invitation; null (most tenants) skips it. Only Veent has adopted Discord so far.
   discordInviteUrl String?
+  // Prefix for generated employee numbers ("EMP" → EMP-015). Per-org because the branches
+  // number their staff separately: JoJo Potato uses JJ, Sweetleaf SL. The default backfills
+  // existing rows and keeps Veent on EMP.
+  employeeNumberPrefix String @default("EMP") @db.VarChar(8)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

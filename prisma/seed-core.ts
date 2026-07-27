@@ -348,18 +348,22 @@ export async function seedProd(db: PrismaClient) {
 	// backwards-compat; JoJo Potato and Sweetleaf are the two additional food-service tenants.
 	await db.organization.upsert({
 		where: { id: 'org_jojo' },
+		// employeeNumberPrefix is in `update` too, so a re-seed corrects an existing database
+		// that took the 'EMP' column default when the column was added.
 		update: {
 			name: 'JoJo Potato',
 			logoUrl: '/jojo-logo.png',
 			themePrimary: '32 95% 44%', // amber
-			address: 'Quezon City, Metro Manila, Philippines'
+			address: 'Quezon City, Metro Manila, Philippines',
+			employeeNumberPrefix: 'JJ'
 		},
 		create: {
 			id: 'org_jojo',
 			name: 'JoJo Potato',
 			logoUrl: '/jojo-logo.png',
 			themePrimary: '32 95% 44%',
-			address: 'Quezon City, Metro Manila, Philippines'
+			address: 'Quezon City, Metro Manila, Philippines',
+			employeeNumberPrefix: 'JJ'
 		}
 	})
 	await db.organization.upsert({
@@ -368,14 +372,16 @@ export async function seedProd(db: PrismaClient) {
 			name: 'Sweetleaf',
 			logoUrl: '/sweetleaf-logo.png',
 			themePrimary: '142 71% 42%', // green
-			address: 'Pasig City, Metro Manila, Philippines'
+			address: 'Pasig City, Metro Manila, Philippines',
+			employeeNumberPrefix: 'SL'
 		},
 		create: {
 			id: 'org_sweetleaf',
 			name: 'Sweetleaf',
 			logoUrl: '/sweetleaf-logo.png',
 			themePrimary: '142 71% 42%',
-			address: 'Pasig City, Metro Manila, Philippines'
+			address: 'Pasig City, Metro Manila, Philippines',
+			employeeNumberPrefix: 'SL'
 		}
 	})
 

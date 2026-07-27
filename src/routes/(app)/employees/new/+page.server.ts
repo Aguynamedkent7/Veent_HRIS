@@ -148,12 +148,26 @@ export const actions: Actions = {
 					values: raw as Record<string, string>
 				})
 			}
-			// Unique constraint on Employee.discordId
+			// Employee has three unique constraints (userId, discordId, and
+			// organizationId+employeeNumber), so a bare P2002 says nothing about which one fired.
+			// Read meta.target — reporting a number clash as a Discord ID problem sends the user
+			// off to edit a field that was never the issue.
 			if (e && typeof e === 'object' && 'code' in e && (e as { code?: string }).code === 'P2002') {
-				return fail(409, {
-					error: 'That Discord ID is already linked to another employee.',
-					values: raw as Record<string, string>
-				})
+				const target = (e as { meta?: { target?: unknown } }).meta?.target
+				const fields = Array.isArray(target) ? (target as string[]) : []
+				if (fields.includes('discordId')) {
+					return fail(409, {
+						error: 'That Discord ID is already linked to another employee.',
+						values: raw as Record<string, string>
+					})
+				}
+				if (fields.includes('employeeNumber')) {
+					// createEmployee retries a lost race, so reaching here means it lost repeatedly.
+					return fail(409, {
+						error: 'Could not allocate an employee number just now. Please try again.',
+						values: raw as Record<string, string>
+					})
+				}
 			}
 			throw e
 		}
