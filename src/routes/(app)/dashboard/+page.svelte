@@ -474,7 +474,12 @@
 					/>
 				{/each}
 				{#each data.announcements as a (a.id)}
-					<AnnouncementItem title={a.title} body={a.body} timestamp={a.createdAt} />
+					<AnnouncementItem
+						title={a.title}
+						body={a.body}
+						timestamp={a.createdAt}
+						author={a.authorName}
+					/>
 				{/each}
 			</ul>
 		{:else}

@@ -8,11 +8,15 @@
 		title,
 		body,
 		timestamp,
+		author = null,
 		variant = 'default'
 	}: {
 		title: string
 		body?: string
 		timestamp?: Date | string
+		/** Byline for HR-posted announcements (#141). Null for birthdays and awards, which
+		 *  are generated rather than written by anyone. */
+		author?: string | null
 		variant?: 'default' | 'birthday' | 'award'
 	} = $props()
 
@@ -51,6 +55,11 @@
 		</div>
 		{#if body}
 			<p class="mt-0.5 whitespace-pre-line text-sm text-muted-foreground">{body}</p>
+		{/if}
+		<!-- Omitted rather than rendered blank: authorId is optional, so a seeded or imported
+		     announcement can genuinely have no author (#141). -->
+		{#if author}
+			<p class="mt-1 text-xs text-muted-foreground">— {author}</p>
 		{/if}
 	</div>
 </li>
