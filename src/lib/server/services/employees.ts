@@ -197,9 +197,10 @@ export async function getEmployee(id: string, organizationId: string, viewerRole
 	})
 	if (!employee) error(404, 'Employee not found')
 
-	// Compensation, government IDs, and disbursement details are HR-only. A MANAGER
-	// may view a report's record but must not see salary, tax/government identifiers,
-	// or bank/GCash details.
+	// Compensation, government IDs, and disbursement details are HR-only: below the HR_ADMIN
+	// rank they come back null. Note MANAGER is *not* below it — #133 made MANAGER on-branch HR
+	// and ranks it level with HR_ADMIN, so a manager does see these. (An earlier comment here
+	// claimed the opposite; it predated #133.)
 	if (viewerRole && ROLE_HIERARCHY[viewerRole] < ROLE_HIERARCHY.HR_ADMIN) {
 		return {
 			...employee,
