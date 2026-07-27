@@ -8,7 +8,8 @@ import {
 	submitTimesheet,
 	updateTimesheetEntries,
 	deleteTimesheet,
-	submitDraftByHr
+	submitDraftByHr,
+	assertCanModifyTimesheet
 } from '$lib/server/services/timesheets'
 import { paginate } from '$lib/server/pagination'
 import {
@@ -277,6 +278,10 @@ export const actions: Actions = {
 		const ctx = ctxOf(event)
 		try {
 			const ts = await getTimesheet(id, org)
+			// Authorize before deriving: updateTimesheetEntries is what checks the caller, and
+			// autoDeriveFromPunches writes AttendanceDay rows — running it first meant a caller
+			// who was about to be refused still triggered the write.
+			await assertCanModifyTimesheet(ctx, ts)
 			await autoDeriveFromPunches(
 				org,
 				{ from: ts.periodStart, to: ts.periodEnd, employeeId: ts.employeeId },
