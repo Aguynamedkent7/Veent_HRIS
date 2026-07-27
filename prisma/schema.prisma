@@ -56,10 +56,15 @@ enum EmploymentStatus {
   OFFBOARDED
 }
 
-// Client-confirmed (#122): employees are either on a fixed monthly salary or paid hourly.
-// There is no daily rate — DAILY was removed rather than left as an enum value the UI hides.
+// #122 removed DAILY on the basis that staff are either salaried or hourly; #189 reverses that
+// and restores it. Adding an enum value is something `db push` handles on its own — unlike the
+// FULL_TIME → REGULAR rename, no migration script is needed.
+//
+// HOURLY is restricted to PART_TIME and ON_CALL staff (#189); the rate/type pairing is enforced
+// in `$lib/utils/rate-basis`, which the create form, the edit form and the API all validate with.
 enum RateType {
   MONTHLY
+  DAILY
   HOURLY
 }
 

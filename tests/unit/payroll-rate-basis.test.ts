@@ -213,3 +213,65 @@ describe('#120 — the hourly rate is used as entered, never divided', () => {
 		expect(monthlyBasisOf(hourly).toNumber()).toBeCloseTo(SALARY, 2)
 	})
 })
+
+/**
+ * #189 restored DAILY (removed by #122). It is paid for time actually worked, like HOURLY, but
+ * its stored figure is a per-DAY rate — so it converts through the day length, not the month.
+ *
+ * ₱1,600/day over an 8h day is the same ₱200/hr as the two employees above, which makes every
+ * expected peso figure below directly comparable to the MONTHLY and HOURLY cases.
+ */
+const DAILY_RATE = 1600 // 200/hr × 8h
+const daily: EmployeeComp = { basicMonthlySalary: DAILY_RATE, rateType: 'DAILY' }
+
+describe('#189 — DAILY', () => {
+	it('converts the daily rate through the day length, not the month', () => {
+		// The trap: dividing ₱1,600 by the 176 monthly hours yields ₱9.09/hr and underpays 22×.
+		expect(hourlyRateOf(daily).toNumber()).toBeCloseTo(HR, 2)
+	})
+
+	it('projects to a monthly basis by working days, for statutory brackets', () => {
+		// SSS/PhilHealth brackets are defined on a monthly salary credit, so a daily rate has to
+		// be projected before lookup or the employee lands in the lowest bracket.
+		expect(monthlyBasisOf(daily).toNumber()).toBeCloseTo(SALARY, 2)
+	})
+
+	it('pays exactly the daily rate for a full day, and half for a half day', () => {
+		const oneDay = computeEmployeeResult(daily, att({ regularHours: 8 }), {}, cfg())
+		const halfDay = computeEmployeeResult(daily, att({ regularHours: 4 }), {}, cfg())
+		expect(earning(oneDay, 'BASIC')).toBeCloseTo(DAILY_RATE, 2)
+		expect(earning(halfDay, 'BASIC')).toBeCloseTo(DAILY_RATE / 2, 2)
+	})
+
+	it('matches the MONTHLY employee’s basic over a full period', () => {
+		// Same effective rate, same hours → same basic, whichever way the rate was entered.
+		const asDaily = computeEmployeeResult(daily, att({ regularHours: PERIOD_HOURS }), {}, cfg())
+		const asHourly = computeEmployeeResult(hourly, att({ regularHours: PERIOD_HOURS }), {}, cfg())
+		expect(earning(asDaily, 'BASIC')).toBeCloseTo(earning(asHourly, 'BASIC'), 2)
+	})
+
+	it('charges no TARDINESS or ABSENCE — unworked time is already unpaid (#121)', () => {
+		// The double-deduction guard has to cover DAILY too: regularHours is already net of
+		// lateness, so an hours-derived basic plus a TARDINESS line docks the same minutes twice.
+		const short = computeEmployeeResult(
+			daily,
+			att({ regularHours: 80, lateMinutes: 120 }),
+			{},
+			cfg()
+		)
+		expect(deduction(short, 'TARDINESS')).toBe(0)
+		expect(deduction(short, 'ABSENCE')).toBe(0)
+		expect(attendanceCost(short, DAILY_RATE * 11)).toBeCloseTo(HR * 8, 2)
+	})
+
+	it('prices overtime off the converted hourly rate', () => {
+		const shift = att({ regularHours: PERIOD_HOURS, overtimeHours: 2 })
+		const asDaily = computeEmployeeResult(daily, shift, {}, cfg())
+		const asHourly = computeEmployeeResult(hourly, shift, {}, cfg())
+		// Asserted against the equivalent hourly employee rather than a hardcoded multiplier:
+		// the claim is that OT keys off the converted ₱200/hr, not the raw ₱1,600 stored figure,
+		// and that holds whatever the premium happens to be.
+		expect(earning(asDaily, 'OT')).toBeGreaterThan(0)
+		expect(earning(asDaily, 'OT')).toBeCloseTo(earning(asHourly, 'OT'), 2)
+	})
+})

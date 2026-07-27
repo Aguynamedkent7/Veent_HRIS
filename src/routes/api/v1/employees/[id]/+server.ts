@@ -20,7 +20,7 @@ const updateSchema = z.object({
 		.optional(),
 	employmentStatus: z.enum(['ACTIVE', 'ON_LEAVE', 'OFFBOARDED']).optional(),
 	basicMonthlySalary: z.coerce.number().positive().optional(),
-	rateType: z.enum(['MONTHLY', 'HOURLY']).optional(),
+	rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
 	// #191: a PATCH only carries the fields the caller intends to change, so anything sent
 	// here is by definition new and is format-checked and stored canonically.
 	sssNumber: govIdSchema('sssNumber'),

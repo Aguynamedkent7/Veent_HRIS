@@ -238,3 +238,79 @@ test.describe('Employment types', () => {
 		}
 	})
 })
+
+// #189: DAILY is back (it was removed by #122), and HOURLY is limited to part-time and on-call.
+test.describe('Rate basis', () => {
+	test.describe.configure({ mode: 'serial' })
+
+	test('hourly is offered only for part-time and on-call', async ({ page }) => {
+		await login(page, USERS.admin)
+		await page.goto('/employees/new', { waitUntil: 'domcontentloaded' })
+		await page.waitForLoadState('networkidle')
+
+		const type = page.locator('select[name="employmentType"]')
+		const basis = page.locator('select[name="rateType"]')
+		const values = () =>
+			basis.locator('option').evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value))
+
+		// Probationary is the default (#188) and cannot be hourly.
+		expect(await values()).toEqual(['MONTHLY', 'DAILY'])
+
+		await type.selectOption('PART_TIME')
+		expect(await values()).toEqual(['MONTHLY', 'DAILY', 'HOURLY'])
+
+		await type.selectOption('ON_CALL')
+		expect(await values()).toEqual(['MONTHLY', 'DAILY', 'HOURLY'])
+
+		// Picking hourly and then moving to a type that cannot be hourly must not leave the
+		// invalid pairing selected — the server would reject it on save.
+		await basis.selectOption('HOURLY')
+		await type.selectOption('REGULAR')
+		await expect(basis).toHaveValue('MONTHLY')
+	})
+
+	test('the server refuses an hourly regular employee even if the form is bypassed', async ({
+		page
+	}) => {
+		await login(page, USERS.admin)
+		const stamp = Date.now()
+
+		const setup = new PrismaClient()
+		let departmentId: string
+		try {
+			const dept = await setup.department.findFirstOrThrow({
+				where: { name: 'Human Resources' },
+				select: { id: true }
+			})
+			departmentId = dept.id
+		} finally {
+			await setup.$disconnect()
+		}
+
+		const res = await page.request.post('/employees/new?/create', {
+			form: {
+				firstName: 'Testcase',
+				lastName: `Rate${stamp}`,
+				email: `e2e_rate_${stamp}@veent.ph`,
+				role: 'EMPLOYEE',
+				departmentId,
+				jobTitle: 'QA',
+				employmentType: 'REGULAR',
+				rateType: 'HOURLY',
+				startDate: '2026-03-02',
+				basicMonthlySalary: '200'
+			},
+			headers: { origin: new URL(page.url()).origin }
+		})
+		// The pairing is refined on the whole object, so it is rejected regardless of how the
+		// request was constructed.
+		expect(await res.text()).toContain('only to part-time and on-call')
+
+		const db = new PrismaClient()
+		try {
+			expect(await db.user.count({ where: { email: `e2e_rate_${stamp}@veent.ph` } })).toBe(0)
+		} finally {
+			await db.$disconnect()
+		}
+	})
+})

@@ -71,9 +71,9 @@ export interface EmployeeLike {
 	employeeNumber: string
 	jobTitle: string
 	employmentType: string
-	/** Interpreted per `rateType` (#120) — a monthly salary, or a per-hour rate. */
+	/** Interpreted per `rateType` (#120/#189) — a monthly salary, a per-day or a per-hour rate. */
 	basicMonthlySalary: number
-	rateType: 'MONTHLY' | 'HOURLY'
+	rateType: 'MONTHLY' | 'DAILY' | 'HOURLY'
 }
 
 export interface OrgLike {
@@ -175,12 +175,15 @@ function sumBy<T>(rows: T[], pick: (r: T) => number): number {
 export function assemblePayslipDocument(input: HydrateInput): PayslipDocument {
 	const { entry, employee, organization, run, attendance } = input
 	const workingDays = input.monthlyWorkingDays ?? 22
-	// #120: for hourly staff the stored figure is a per-hour rate, so the daily rate is built up
-	// from it rather than divided out of it — dividing would understate it by ~176×.
+	// #120/#189: the stored figure means something different per basis, so the daily rate shown
+	// on the payslip is reached three different ways. Dividing an hourly rate by the working days
+	// would understate it ~176×; dividing a daily rate would understate it 22×.
 	const dailyRate =
 		employee.rateType === 'HOURLY'
 			? employee.basicMonthlySalary * (input.dailyWorkingHours ?? 8)
-			: employee.basicMonthlySalary / workingDays
+			: employee.rateType === 'DAILY'
+				? employee.basicMonthlySalary
+				: employee.basicMonthlySalary / workingDays
 
 	// Overtime: split by code, with a REGULAR fallback so a row always shows.
 	// Hours come from the attendance bucket that pairs with each earnings code.

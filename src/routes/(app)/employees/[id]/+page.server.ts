@@ -249,7 +249,7 @@ const updateSchema = z.object({
 		.optional()
 		.transform((v) => (v ? v : null)),
 	basicMonthlySalary: z.coerce.number().positive().optional(),
-	rateType: z.enum(['MONTHLY', 'HOURLY']).optional(),
+	rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
 	// Empty string clears the link; a value sets it (unique per employee).
 	discordId: z
 		.string()

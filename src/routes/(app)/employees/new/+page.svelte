@@ -1,7 +1,12 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
-	import { RATE_BASIS_OPTIONS, rateBasisCopy, type RateBasis } from '$lib/utils/rate-basis'
+	import {
+		rateBasisOptionsFor,
+		rateBasisCopy,
+		isRateBasisAllowed,
+		type RateBasis
+	} from '$lib/utils/rate-basis'
 	// Placeholders come from the same table the server validates against, so the example HR
 	// sees can never disagree with what is accepted (#191).
 	import { GOV_ID_FORMATS } from '$lib/utils/gov-ids'
@@ -35,6 +40,21 @@
 		(form as { fieldErrors?: Record<string, string[]> } | null)?.fieldErrors?.[name]
 			? true
 			: undefined
+
+	// #188: new hires start on probation.
+	let employmentType = $state('PROBATIONARY')
+	$effect(() => {
+		employmentType = (form?.values?.employmentType as string) ?? 'PROBATIONARY'
+	})
+
+	// #189: hourly applies only to part-time and on-call, so the list follows the employment
+	// type. The server refuses the pairing too — this only keeps HR from picking a combination
+	// that would bounce back.
+	const rateOptions = $derived(rateBasisOptionsFor(employmentType))
+	// Switching to a type that cannot be hourly must not leave a now-invalid basis selected.
+	$effect(() => {
+		if (!isRateBasisAllowed(rateType, employmentType)) rateType = 'MONTHLY'
+	})
 </script>
 
 <svelte:head>
@@ -249,6 +269,7 @@
 						<select
 							id="employmentType"
 							name="employmentType"
+							bind:value={employmentType}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						>
 							<!-- New hires start probationary (#136); regularization is automatic at 6 months.
@@ -290,10 +311,13 @@
 							bind:value={rateType}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						>
-							{#each RATE_BASIS_OPTIONS as opt (opt.value)}
+							{#each rateOptions as opt (opt.value)}
 								<option value={opt.value}>{opt.label}</option>
 							{/each}
 						</select>
+						{#if form?.fieldErrors?.rateType}
+							<p class="mt-1 text-xs text-destructive">{form.fieldErrors.rateType[0]}</p>
+						{/if}
 					</div>
 					<div>
 						<label for="basicMonthlySalary" class="text-sm font-medium"
