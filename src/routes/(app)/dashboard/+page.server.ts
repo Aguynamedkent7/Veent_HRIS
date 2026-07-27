@@ -10,6 +10,7 @@ import { grantAward, listRecentAwards } from '$lib/server/services/awards'
 import {
 	listUpcomingRegularizations,
 	listTodaysBirthdays,
+	listUpcomingEvents,
 	getMyEmploymentStatus
 } from '$lib/server/services/dashboard'
 import { listPostingsAwaitingApprover, decideJobPosting } from '$lib/server/services/recruitment'
@@ -75,14 +76,17 @@ export const load: PageServerLoad = async ({ locals }) => {
 		derived: attendanceGroups.reduce((s, g) => s + g._count._all, 0)
 	}
 
-	const [announcements, birthdays, myStatus, awards] = await Promise.all([
+	const [announcements, birthdays, myStatus, awards, upcomingEvents] = await Promise.all([
 		listRecentAnnouncements(orgId, 5),
 		// Today's birthday greeting, surfaced in the announcements feed (#167).
 		listTodaysBirthdays(orgId),
 		// The viewer's own employment standing for the status card (#167).
 		getMyEmploymentStatus(user.id),
 		// Recent employee awards, announced in the feed (#180).
-		listRecentAwards(orgId)
+		listRecentAwards(orgId),
+		// Side panel. Employment matters (probation reviews, contract ends, other people's
+		// leave) go only to the HR ladder; everyone still sees their own.
+		listUpcomingEvents(orgId, { userId: user.id, canSeeSensitive: canPost })
 	])
 
 	// HR grants awards from the dashboard — roster for the recipient picker.
@@ -122,6 +126,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		awardEmployees,
 		postingsToApprove,
 		recentActivity,
+		upcomingEvents,
 		metrics: {
 			headcount,
 			onLeaveToday,

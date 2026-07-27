@@ -8,6 +8,37 @@
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
+
+	// Upcoming Events: the day keys arrive as YYYY-MM-DD already resolved to PHT, so they are
+	// split rather than parsed — `new Date('2026-08-21')` then formatted locally would shift the
+	// day for anyone west of UTC.
+	const MONTHS = [
+		'JAN',
+		'FEB',
+		'MAR',
+		'APR',
+		'MAY',
+		'JUN',
+		'JUL',
+		'AUG',
+		'SEP',
+		'OCT',
+		'NOV',
+		'DEC'
+	]
+	const monthOf = (key: string) => MONTHS[Number(key.slice(5, 7)) - 1]
+	const dayOf = (key: string) => String(Number(key.slice(8, 10)))
+	// Categorical, not decorative: the dot is how you tell a holiday from a contract ending at a
+	// glance. Fixed hues rather than the tenant accent, which is red, amber or green per org.
+	const EVENT_DOT: Record<string, string> = {
+		holiday: 'bg-blue-400',
+		birthday: 'bg-pink-400',
+		anniversary: 'bg-violet-400',
+		regularization: 'bg-amber-400',
+		contract: 'bg-orange-400',
+		payroll: 'bg-emerald-400',
+		leave: 'bg-sky-400'
+	}
 	const metrics = $derived(data.metrics)
 	let showPost = $state(false)
 
@@ -55,7 +86,7 @@
 	<title>Dashboard — Veent HRIS</title>
 </svelte:head>
 
-<div class="space-y-8">
+<div class="flex flex-1 flex-col gap-6">
 	<div class="page-header">
 		<h1 class="page-title">Dashboard</h1>
 	</div>
@@ -164,11 +195,40 @@
 			</div>
 		</div>
 
-		<!-- TODO(upcoming-events): sources pending confirmation. -->
+		<!-- Next 14 days: holidays, birthdays and anniversaries for everyone; probation reviews,
+		     contract ends and other people's leave only for the HR ladder, which the server
+		     enforces rather than this template hiding rows. -->
 		<div class="card flex h-full flex-col gap-3">
 			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
 				Upcoming Events
 			</p>
+			{#if data.upcomingEvents.length}
+				<ul class="divide-y divide-border/40">
+					{#each data.upcomingEvents as event (event.kind + event.date + event.title)}
+						<li class="flex items-start gap-3 py-2">
+							<div class="w-11 shrink-0 text-center">
+								<p class="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+									{monthOf(event.date)}
+								</p>
+								<p class="text-base font-semibold leading-none">{dayOf(event.date)}</p>
+							</div>
+							<div class="min-w-0 flex-1">
+								<p class="truncate text-sm {event.mine ? 'font-medium text-foreground' : ''}">
+									{event.title}
+								</p>
+								{#if event.detail}
+									<p class="flex items-center gap-1.5 text-xs text-muted-foreground">
+										<span class="h-1.5 w-1.5 shrink-0 rounded-full {EVENT_DOT[event.kind]}"></span>
+										{event.detail}
+									</p>
+								{/if}
+							</div>
+						</li>
+					{/each}
+				</ul>
+			{:else}
+				<p class="py-6 text-center text-sm text-muted-foreground">Nothing in the next 14 days.</p>
+			{/if}
 		</div>
 	</div>
 
@@ -176,7 +236,7 @@
 	     not a task, so they read side by side and none of them pushes the others below the
 	     fold. They collapse to a single column below lg, and the row simply carries fewer
 	     cards when a viewer has no activity yet or no employee record. -->
-	<div class="grid items-start gap-4 lg:grid-cols-3">
+	<div class="grid flex-1 gap-4 lg:grid-cols-3">
 		<!-- Recent activity — payslips, request outcomes, etc. (#169) -->
 		{#if data.recentActivity.length}
 			<div class="card space-y-3">
