@@ -3,7 +3,6 @@
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
 	import { tenureLabel } from '$lib/utils/dates'
 	import { employmentTypeLabel, contractRenewalStatus } from '$lib/utils/employment'
-	import NewTimesheetDialog from '$lib/components/timesheets/NewTimesheetDialog.svelte'
 	import AnnouncementItem from '$lib/components/dashboard/AnnouncementItem.svelte'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
@@ -50,7 +49,6 @@
 		await update()
 		showAward = false
 	})
-	let showNewTimesheet = $state(false)
 </script>
 
 <svelte:head>
@@ -514,34 +512,37 @@
 			</div>
 		</a>
 
-		<button
-			type="button"
-			onclick={() => (showNewTimesheet = true)}
-			class="card group flex items-center gap-4 text-left transition-colors hover:border-primary/40 hover:bg-card/80"
-		>
-			<div
-				class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-400 group-hover:bg-blue-500/20"
+		<!-- Links rather than opening the dialog: creating a sheet now names its employee, and
+		     the picker's roster is loaded by /timesheets, not here. -->
+		{#if data.canCreateTimesheet}
+			<a
+				href="/timesheets"
+				class="card group flex items-center gap-4 transition-colors hover:border-primary/40 hover:bg-card/80"
 			>
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					class="h-5 w-5"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke="currentColor"
-					stroke-width="1.5"
+				<div
+					class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-400 group-hover:bg-blue-500/20"
 				>
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
-					/>
-				</svg>
-			</div>
-			<div>
-				<p class="text-sm font-medium text-foreground">Log Timesheet</p>
-				<p class="text-xs text-muted-foreground">Submit this week's hours</p>
-			</div>
-		</button>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						class="h-5 w-5"
+						fill="none"
+						viewBox="0 0 24 24"
+						stroke="currentColor"
+						stroke-width="1.5"
+					>
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+						/>
+					</svg>
+				</div>
+				<div>
+					<p class="text-sm font-medium text-foreground">New Timesheet</p>
+					<p class="text-xs text-muted-foreground">Create a sheet for an employee</p>
+				</div>
+			</a>
+		{/if}
 
 		<a
 			href="/leave/new"
@@ -572,5 +573,3 @@
 		</a>
 	</div>
 </div>
-
-<NewTimesheetDialog bind:open={showNewTimesheet} />

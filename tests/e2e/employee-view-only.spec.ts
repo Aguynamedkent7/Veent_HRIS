@@ -95,6 +95,14 @@ test('employee sees their own timesheets but no create or bulk controls', async 
 	await expect(page.getByRole('heading', { name: 'Team Timesheets' })).toHaveCount(0)
 })
 
+test('employee has no New Timesheet quick action on the dashboard', async ({ page }) => {
+	// The quick action used to be ungated, so after #165 an employee could still click
+	// through to a 403 from the dashboard even though /timesheets hid the button.
+	await login(page, USERS.employee)
+	await expect(page.getByRole('link', { name: /New Timesheet/ })).toHaveCount(0)
+	await expect(page.getByRole('button', { name: /Timesheet/ })).toHaveCount(0)
+})
+
 test('employee timesheet modal is read-only', async ({ page }) => {
 	await login(page, USERS.employee)
 	await page.goto('/timesheets', { waitUntil: 'domcontentloaded' })
@@ -119,8 +127,10 @@ test('forged timesheet mutations by an employee are rejected with 403', async ({
 	const origin = new URL(page.url()).origin
 
 	// Same-origin header so this exercises the role gate, not SvelteKit's CSRF rejection.
+	// ?/create names its employee since the picker landed — pointing it at the caller's own
+	// record proves the gate is the role, not a scope check they could satisfy.
 	const posts = {
-		'?/create': { periodStart: '2099-02-01', periodEnd: '2099-02-15' },
+		'?/create': { employeeId, periodStart: '2099-02-01', periodEnd: '2099-02-15' },
 		'?/submit': { id: timesheetId },
 		'?/delete': { id: timesheetId },
 		'?/syncAttendance': { id: timesheetId },

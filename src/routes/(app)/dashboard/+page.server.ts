@@ -22,6 +22,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 	const canPost = can(user.role, 'MANAGE_HR')
 	// The "Last Payroll" tile is payroll-report data, not general dashboard info (#132).
 	const canViewPayroll = can(user.role, 'VIEW_PAYROLL_REPORTS')
+	// Since #165 employees don't create timesheets, so the quick action would only send them
+	// to a 403. Same capability the /timesheets create action enforces.
+	const canCreateTimesheet = can(user.role, 'MANAGE_HR')
 
 	// Today's PHT day, stored as the UTC-midnight date key used by AttendanceDay.
 	const todayKey = manilaDayKey(new Date())
@@ -110,6 +113,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	return {
 		canPost,
 		canViewPayroll,
+		canCreateTimesheet,
 		announcements,
 		regularizations,
 		birthdays,

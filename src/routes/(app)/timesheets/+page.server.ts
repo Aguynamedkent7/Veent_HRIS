@@ -28,6 +28,10 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	// but creating/submitting/deleting is the manager ladder's (HR aggregates from punches
 	// and submits drafts on their behalf). Mirrors the `requireModify` gate on the actions.
 	const canModify = isManager
+	// Creating a sheet now names its employee explicitly, which makes it HR work rather than
+	// self-service. Deliberately not `canModify && myEmployee` — the picker supplies the
+	// target, so an HR user with no Employee record of their own (the CEO) can still create.
+	const canCreate = isHrAdmin
 
 	const status = url.searchParams.get('status') ?? undefined
 
@@ -56,7 +60,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		? listTimesheets(teamParams, { skip: teamPagination.skip, take: teamPagination.take })
 		: Promise.resolve([])
 
-	// HR gets the "Aggregate from time logs" panel, which needs an employee picker.
+	// HR gets the "Aggregate from time logs" panel and the New Timesheet dialog, both of
+	// which pick an employee from this list.
 	const employees = isHrAdmin
 		? await db.employee.findMany({
 				where: { user: { organizationId: user.organizationId }, employmentStatus: 'ACTIVE' },
@@ -74,6 +79,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		isManager,
 		isHrAdmin,
 		canModify,
+		canCreate,
 		employees
 	}
 }
@@ -101,6 +107,7 @@ function toFail(e: unknown) {
 
 const createSchema = z
 	.object({
+		employeeId: z.string().min(1),
 		periodStart: z.coerce.date(),
 		periodEnd: z.coerce.date()
 	})
@@ -218,38 +225,41 @@ export const actions: Actions = {
 		}
 	},
 
-	// Period-range create (shared NewTimesheetDialog): reflect the employee's punches for
-	// the period, seed a DRAFT from the derived attendance (no punches → empty draft), then
+	// Period-range create (NewTimesheetDialog): reflect the named employee's punches for the
+	// period, seed a DRAFT from the derived attendance (no punches → empty draft), then
 	// redirect to /timesheets so the new row is visible. Submission happens separately.
+	//
+	// HR-only: the dialog names its employee, so this is HR acting for someone rather than
+	// self-service. It is also the one creation surface that tolerates a punch-free period —
+	// the aggregate panel needs punches, and /attendance "Save as timesheet" rejects an empty
+	// range outright (#214).
 	create: async (event) => {
 		requireModify(event)
 		const user = event.locals.user!
-		const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
-		if (!myEmployee) return fail(400, { error: 'No employee profile found' })
+		requireCapability(user.role, 'MANAGE_HR')
 
 		const parsed = createSchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success)
 			return fail(400, { error: parsed.error.errors[0]?.message ?? 'Invalid dates' })
 
+		// createTimesheet takes the id on trust — it checks the period shape and the duplicate
+		// constraint but never the org — so the tenancy check has to happen here.
+		const target = await resolveOrgEmployee(parsed.data.employeeId, user.organizationId)
+		if (!target) return fail(404, { error: 'Employee not found' })
+
 		const ctx = ctxOf(event)
 		try {
 			await autoDeriveFromPunches(
 				user.organizationId,
-				{ from: parsed.data.periodStart, to: parsed.data.periodEnd, employeeId: myEmployee.id },
+				{ from: parsed.data.periodStart, to: parsed.data.periodEnd, employeeId: target.id },
 				ctx
 			)
 			const entries = await attendanceEntriesForRange(
-				myEmployee.id,
+				target.id,
 				parsed.data.periodStart,
 				parsed.data.periodEnd
 			)
-			await createTimesheet(
-				myEmployee.id,
-				parsed.data.periodStart,
-				parsed.data.periodEnd,
-				entries,
-				ctx
-			)
+			await createTimesheet(target.id, parsed.data.periodStart, parsed.data.periodEnd, entries, ctx)
 		} catch (e) {
 			return toFail(e)
 		}
