@@ -38,7 +38,7 @@ test.beforeAll(async () => {
 			})
 			await db.employee.upsert({
 				where: { userId: user.id },
-				update: { employmentStatus: 'OFFBOARDED' },
+				update: {},
 				create: {
 					userId: user.id,
 					organizationId: admin.organizationId,
@@ -47,12 +47,10 @@ test.beforeAll(async () => {
 					lastName: SURNAME,
 					departmentId: department.id,
 					jobTitle: 'Pagination Fixture',
-					// OFFBOARDED so payroll compute — which runs over every ACTIVE employee in the
-					// org from another spec, in parallel, against this same database — never picks
-					// these up. Otherwise it attaches payroll entries to them (blocking teardown on
-					// a RESTRICT FK) and can 500 when teardown deletes a row mid-compute. The list
-					// under test filters by search term, not status, so they still paginate.
-					employmentStatus: 'OFFBOARDED',
+					// Deliberately ACTIVE: /employees defaults to the active tab, so offboarding these
+					// would hide them from the very list this test paginates. Payroll compute in
+					// another spec does sweep them in and attach entries, which is why teardown
+					// clears those first and is best-effort.
 					employmentType: 'REGULAR',
 					startDate: new Date('2026-01-05'),
 					basicMonthlySalary: 10000,

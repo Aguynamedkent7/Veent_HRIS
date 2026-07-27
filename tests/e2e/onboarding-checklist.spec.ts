@@ -10,6 +10,26 @@ test.describe.configure({ mode: 'serial' })
 const row = (page: import('@playwright/test').Page, label: string) =>
 	page.locator(`li[data-label="${label}"]`)
 
+// The spec adds a manual step and removes it again. If the removal never runs — which is what
+// happens the moment an assertion fails — the leftover makes the next run's locator match two
+// rows, so it fails earlier and leaves another behind. Clearing first and last makes the run
+// independent of how the previous one ended.
+const MANUAL_LABEL = 'E2E equipment issued'
+async function clearManualStep() {
+	const { PrismaClient } = await import('@prisma/client')
+	const db = new PrismaClient()
+	try {
+		await db.onboardingChecklistItem.deleteMany({ where: { label: MANUAL_LABEL } })
+	} catch {
+		// Best-effort: a completion row may reference it. The assertion below still reports.
+	} finally {
+		await db.$disconnect()
+	}
+}
+
+test.beforeAll(clearManualStep)
+test.afterAll(clearManualStep)
+
 test.describe('Onboarding checklist settings (#116)', () => {
 	test('HR sees derived + manual steps and can add then remove a manual step', async ({ page }) => {
 		await login(page, USERS.admin)

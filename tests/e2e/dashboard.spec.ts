@@ -56,14 +56,16 @@ test.describe('Announcement author', () => {
 		await page.locator('textarea[name="body"]').fill('Byline check.')
 		await page.getByRole('button', { name: 'Post announcement' }).click()
 
-		const item = page.locator('li', { hasText: TITLE })
+		// Scoped by the body as well as the title: staging's notification feed renders the same
+		// announcement title in its own <li>, so filtering on the title alone matches two.
+		const item = page.locator('li', { hasText: TITLE }).filter({ hasText: 'Byline check.' })
 		await expect(item).toBeVisible()
 		await expect(item).toContainText('— Hannah HR')
 	})
 
 	test('the byline survives a reload — it is read back, not just echoed', async ({ page }) => {
 		await login(page, USERS.employee) // any role can read the dashboard
-		const item = page.locator('li', { hasText: TITLE })
+		const item = page.locator('li', { hasText: TITLE }).filter({ hasText: 'Byline check.' })
 		await expect(item).toContainText('— Hannah HR')
 	})
 })

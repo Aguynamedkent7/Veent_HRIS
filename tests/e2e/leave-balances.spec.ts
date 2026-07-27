@@ -77,7 +77,10 @@ test.describe('Leave balances', () => {
 		await login(page, USERS.admin)
 		await page.goto('/leave/balances?search=EMP-004', { waitUntil: 'domcontentloaded' })
 		await page.locator('tbody tr[data-employee="EMP-004"]').click()
-		await page.waitForURL(/\/employees\/[^/]+$/)
+		// domcontentloaded, not waitForURL's default 'load': helpers.ts documents that external
+		// font requests never settle in a sandboxed runner, so 'load' times out on a navigation
+		// that already happened. Passes in isolation, hangs under a loaded parallel run.
+		await page.waitForURL(/\/employees\/[^/]+$/, { waitUntil: 'domcontentloaded' })
 
 		const panel = page.locator('section', { hasText: 'Leave Balances' }).first()
 		await expect(panel).toBeVisible()

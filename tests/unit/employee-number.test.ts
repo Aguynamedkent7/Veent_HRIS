@@ -17,6 +17,11 @@ const { dbMock } = vi.hoisted(() => ({
 		user: { findUnique: vi.fn(), create: vi.fn() },
 		employee: { create: vi.fn(), findMany: vi.fn() },
 		organization: { findUniqueOrThrow: vi.fn() },
+		// createEmployee allocates the new hire's leave entitlement inside the same transaction
+		// (#137), so the transaction client has to answer these too. Left empty: this file is
+		// about number allocation, and an org with no leave types simply allocates nothing.
+		leaveType: { findMany: vi.fn() },
+		leaveBalance: { findMany: vi.fn(), createMany: vi.fn() },
 		$transaction: vi.fn()
 	}
 }))
@@ -65,6 +70,9 @@ beforeEach(() => {
 	dbMock.user.create.mockResolvedValue({ id: 'user-new' })
 	dbMock.organization.findUniqueOrThrow.mockResolvedValue({ employeeNumberPrefix: 'EMP' })
 	dbMock.employee.findMany.mockResolvedValue([])
+	dbMock.leaveType.findMany.mockResolvedValue([])
+	dbMock.leaveBalance.findMany.mockResolvedValue([])
+	dbMock.leaveBalance.createMany.mockResolvedValue({ count: 0 })
 	dbMock.employee.create.mockResolvedValue({ id: 'emp-new', employeeNumber: 'EMP-001' })
 })
 
