@@ -153,6 +153,10 @@
 						     slack, the grade picker is pinned right (#142). -->
 						<tr>
 							<th class="w-full px-3 py-2 text-left font-medium text-muted-foreground">Position</th>
+							<!-- Right-aligned so the picker sits against the table edge rather than floating
+							     mid-row (#142). Alignment and slack only: this table is min-w-max, under
+							     which per-column percentage widths (w-[1%]) collapse every column to zero —
+							     verified by screenshot, so size columns here with care. -->
 							<th class="px-3 py-2 text-right font-medium text-muted-foreground">Grade</th>
 						</tr>
 					</thead>

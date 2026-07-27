@@ -53,6 +53,8 @@
 							</span>
 						</td>
 						<td class="px-4 py-3 text-right">
+							<!-- btn-row, not a coloured hyperlink: a row action should read as an action
+							     (#68/#76). The class is theme-aware; text-primary was not. -->
 							<a href="/payslips/{payslip.id}" class="btn-row"> View </a>
 						</td>
 					</tr>
