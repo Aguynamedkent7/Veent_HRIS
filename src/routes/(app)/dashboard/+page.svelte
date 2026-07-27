@@ -4,6 +4,7 @@
 	import { regularizationStatus, tenureLabel } from '$lib/utils/dates'
 	import { employmentTypeLabel, contractRenewalStatus } from '$lib/utils/employment'
 	import AnnouncementItem from '$lib/components/dashboard/AnnouncementItem.svelte'
+	import ActivityIcon from '$lib/components/dashboard/ActivityIcon.svelte'
 	import EmptyState from '$lib/components/ui/EmptyState.svelte'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
@@ -270,23 +271,30 @@
 				<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
 					Recent Activity
 				</p>
-				<ul class="divide-y divide-border/60">
+				<!-- One card per item rather than a divided list: the icon needs room beside the text,
+				     and a hairline rule between two-line rows reads as clutter where a tile edge
+				     reads as grouping. Unread rows carry the accent ring, so "new" survives without
+				     a separate dot competing with the icon. -->
+				<ul class="space-y-2">
 					{#each data.recentActivity as n (n.id)}
-						<li class="flex items-center justify-between gap-3 py-2">
-							<div class="flex min-w-0 items-center gap-2">
-								{#if !n.readAt}
-									<span class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-label="unread"
-									></span>
-								{/if}
-								{#if n.link}
-									<a href={n.link} class="truncate text-sm hover:underline">{n.message}</a>
-								{:else}
-									<span class="truncate text-sm">{n.message}</span>
-								{/if}
-							</div>
-							<span class="shrink-0 text-xs text-muted-foreground"
-								>{formatShortDate(n.createdAt)}</span
+						{@const unread = !n.readAt}
+						<li>
+							<svelte:element
+								this={n.link ? 'a' : 'div'}
+								href={n.link ?? undefined}
+								class="flex items-start gap-3 rounded-lg border p-3 transition-colors {unread
+									? 'border-primary/30 bg-primary/[0.04]'
+									: 'border-border/60 bg-muted/30'} {n.link ? 'hover:bg-accent/40' : ''}"
 							>
+								<ActivityIcon kind={n.kind} />
+								<div class="min-w-0 flex-1">
+									<p class="text-sm leading-snug text-foreground">{n.message}</p>
+									<p class="mt-0.5 text-xs text-muted-foreground">
+										{formatShortDate(n.createdAt)}
+										{#if unread}<span class="text-primary">· New</span>{/if}
+									</p>
+								</div>
+							</svelte:element>
 						</li>
 					{/each}
 				</ul>

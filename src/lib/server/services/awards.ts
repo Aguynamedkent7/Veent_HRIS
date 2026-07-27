@@ -40,7 +40,12 @@ export async function grantAward(
 		newValue: { employeeId: employee.id, title }
 	})
 
-	await notify(employee.userId, `You received an award: ${title}. Congratulations!`, '/dashboard')
+	await notify(
+		employee.userId,
+		`You received an award: ${title}. Congratulations!`,
+		'/dashboard',
+		'AWARD'
+	)
 	return award
 }
 

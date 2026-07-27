@@ -100,7 +100,8 @@ export async function submitJobPostingForApproval(
 			await notify(
 				approver.userId,
 				`A job posting “${jp.title}” is awaiting your approval.`,
-				'/dashboard'
+				'/dashboard',
+				'RECRUITMENT'
 			)
 		}
 	}
@@ -163,7 +164,8 @@ export async function decideJobPosting(
 			decision.approve
 				? `Your job posting “${jp.title}” was approved and is now open.`
 				: `Your job posting “${jp.title}” was sent back to draft: ${decision.note!.trim()}`,
-			'/recruitment'
+			'/recruitment',
+			'RECRUITMENT'
 		)
 	}
 

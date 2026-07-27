@@ -64,8 +64,9 @@ export async function createAnnouncement(
 	})
 	await notifyMany(
 		users.map((u) => u.id),
-		`📢 ${created.title}`,
-		'/dashboard'
+		created.title,
+		'/dashboard',
+		'ANNOUNCEMENT'
 	)
 
 	await writeAuditLog(ctx, {

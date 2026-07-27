@@ -893,14 +893,27 @@ model Announcement {
   @@map("announcements")
 }
 
+// What a notification is about, so the activity feed can label it with an icon rather than
+// smuggling one into the message text as an emoji. GENERAL is the fallback for rows written
+// before this existed and for events that fit no bucket.
+enum NotificationKind {
+  GENERAL
+  ANNOUNCEMENT
+  AWARD
+  PAYSLIP
+  REQUEST
+  RECRUITMENT
+}
+
 // Per-user in-app notification. Surfaced as a toast on next load; readAt set once seen.
 model Notification {
-  id        String    @id @default(cuid())
+  id        String           @id @default(cuid())
   userId    String
   message   String
+  kind      NotificationKind @default(GENERAL)
   link      String?
   readAt    DateTime?
-  createdAt DateTime  @default(now())
+  createdAt DateTime         @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
