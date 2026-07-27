@@ -1,5 +1,5 @@
 import { fail, isHttpError, redirect } from '@sveltejs/kit'
-import { can, requireMinRole } from '$lib/server/rbac'
+import { can, requireCapability, requireMinRole } from '$lib/server/rbac'
 import {
 	countTimesheets,
 	listTimesheets,
@@ -24,6 +24,10 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const user = locals.user!
 	const isManager = can(user.role, 'VIEW_TEAM')
 	const isHrAdmin = can(user.role, 'MANAGE_HR')
+	// #165: /timesheets is view-only for the Employee role — they read their own sheets,
+	// but creating/submitting/deleting is the manager ladder's (HR aggregates from punches
+	// and submits drafts on their behalf). Mirrors the `requireModify` gate on the actions.
+	const canModify = isManager
 
 	const status = url.searchParams.get('status') ?? undefined
 
@@ -69,8 +73,14 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		myEmployeeId: myEmployee?.id,
 		isManager,
 		isHrAdmin,
+		canModify,
 		employees
 	}
+}
+
+/** #165: every mutating action on this page is closed to the Employee role. */
+function requireModify(event: RequestEvent) {
+	requireCapability(event.locals.user!.role, 'VIEW_TEAM')
 }
 
 function ctxOf(event: RequestEvent) {
@@ -212,6 +222,7 @@ export const actions: Actions = {
 	// the period, seed a DRAFT from the derived attendance (no punches → empty draft), then
 	// redirect to /timesheets so the new row is visible. Submission happens separately.
 	create: async (event) => {
+		requireModify(event)
 		const user = event.locals.user!
 		const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
 		if (!myEmployee) return fail(400, { error: 'No employee profile found' })
@@ -248,6 +259,7 @@ export const actions: Actions = {
 	// Repopulate a draft's entries from the period's attendance (re-derives punches first).
 	// Authorized in updateTimesheetEntries: the owner may sync their own draft; managers/HR too.
 	syncAttendance: async (event) => {
+		requireModify(event)
 		const org = event.locals.user!.organizationId
 		const id = (await event.request.formData()).get('id') as string
 		if (!id) return fail(400, { error: 'Missing timesheet id' })
@@ -271,6 +283,7 @@ export const actions: Actions = {
 	},
 
 	submit: async (event) => {
+		requireModify(event)
 		const user = event.locals.user!
 		const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
 		if (!myEmployee) return fail(400, { error: 'No employee profile found' })
@@ -308,9 +321,10 @@ export const actions: Actions = {
 		}
 	},
 
-	// Authorization is in deleteTimesheet: the owner may delete their own DRAFT/REJECTED; managers
-	// (direct reports) and HR/super act more broadly. No hard role gate here.
+	// Past the #165 role gate, per-record authorization is still deleteTimesheet's: the owner may
+	// delete their own DRAFT/REJECTED, while HR/super act across their scope.
 	delete: async (event) => {
+		requireModify(event)
 		const id = (await event.request.formData()).get('id') as string
 		try {
 			await deleteTimesheet(id, event.locals.user!.organizationId, ctxOf(event))
@@ -322,6 +336,7 @@ export const actions: Actions = {
 
 	// Submit each selected (draft) timesheet the current user owns; others are skipped.
 	submitMany: async (event) => {
+		requireModify(event)
 		const user = event.locals.user!
 		const myEmployee = await db.employee.findUnique({
 			where: { userId: user.id },
@@ -354,6 +369,7 @@ export const actions: Actions = {
 	// Items the caller can't delete — not owned, or submitted/approved on a select-all — throw
 	// and are counted as skipped rather than aborting the batch.
 	deleteMany: async (event) => {
+		requireModify(event)
 		const ids = String((await event.request.formData()).get('ids') ?? '')
 			.split(',')
 			.map((s) => s.trim())
