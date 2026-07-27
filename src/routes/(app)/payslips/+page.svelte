@@ -1,9 +1,25 @@
 <script lang="ts">
 	import Pagination from '$lib/components/Pagination.svelte'
+	import PageHeader from '$lib/components/ui/PageHeader.svelte'
+	import Table from '$lib/components/ui/Table.svelte'
+	import type { Column } from '$lib/components/ui/table'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
 	import type { PageData } from './$types'
 
 	let { data }: { data: PageData } = $props()
+
+	type Payslip = PageData['payslips'][number]
+
+	// Money and status size to their content so the period column takes the slack; without that
+	// the four numeric columns share it equally and the figures drift from their headers.
+	const columns: Column[] = [
+		{ key: 'period', label: 'Period' },
+		{ key: 'gross', label: 'Gross Pay', align: 'right', width: 'min' },
+		{ key: 'deductions', label: 'Deductions', align: 'right', width: 'min' },
+		{ key: 'net', label: 'Net Pay', align: 'right', width: 'min' },
+		{ key: 'status', label: 'Status', width: 'min' },
+		{ key: 'actions', label: '', width: 'min' }
+	]
 </script>
 
 <svelte:head>
@@ -11,63 +27,38 @@
 </svelte:head>
 
 <div class="space-y-6">
-	<div>
-		<h1 class="text-2xl font-bold tracking-tight">My Payslips</h1>
-		<p class="mt-1 text-sm text-muted-foreground">View and download your approved payslips.</p>
-	</div>
+	<PageHeader title="My Payslips" description="View and download your approved payslips." />
 
-	<div class="overflow-x-auto rounded-md border">
-		<table class="w-full text-sm">
-			<thead class="border-b bg-muted/50">
-				<tr>
-					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Period</th>
-					<th class="px-4 py-3 text-right font-medium text-muted-foreground">Gross Pay</th>
-					<th class="px-4 py-3 text-right font-medium text-muted-foreground">Deductions</th>
-					<th class="px-4 py-3 text-right font-medium text-muted-foreground">Net Pay</th>
-					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
-					<th class="px-4 py-3"></th>
-				</tr>
-			</thead>
-			<tbody class="divide-y">
-				{#each data.payslips as payslip (payslip.id)}
-					<tr class="hover:bg-muted/30">
-						<td class="px-4 py-3">
-							{formatShortDate(payslip.payrollRun.periodStart)} &ndash; {formatShortDate(
-								payslip.payrollRun.periodEnd
-							)}
-						</td>
-						<td class="px-4 py-3 text-right font-mono"
-							>{formatCurrency(Number(payslip.grossPay))}</td
-						>
-						<td class="px-4 py-3 text-right font-mono text-muted-foreground">
-							{formatCurrency(Number(payslip.totalDeductions))}
-						</td>
-						<td class="px-4 py-3 text-right font-mono font-medium">
-							{formatCurrency(Number(payslip.netPay))}
-						</td>
-						<td class="px-4 py-3">
-							<span
-								class="rounded-full bg-green-500/15 px-2 py-0.5 text-xs font-medium text-green-400"
-							>
-								{payslip.payrollRun.status}
-							</span>
-						</td>
-						<td class="px-4 py-3 text-right">
-							<!-- btn-row, not a coloured hyperlink: a row action should read as an action
-							     (#68/#76). The class is theme-aware; text-primary was not. -->
-							<a href="/payslips/{payslip.id}" class="btn-row"> View </a>
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="6" class="px-4 py-10 text-center text-muted-foreground">
-							No approved payslips yet.
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+	<Table
+		{columns}
+		rows={data.payslips}
+		getKey={(p: Payslip) => p.id}
+		caption="Approved payslips"
+		emptyTitle="No payslips yet"
+		emptyDescription="Approved payroll runs appear here. Once a run covering you is released, its payslip becomes available to view and download."
+	>
+		{#snippet cell(payslip: Payslip, column: Column)}
+			{#if column.key === 'period'}
+				{formatShortDate(payslip.payrollRun.periodStart)} – {formatShortDate(
+					payslip.payrollRun.periodEnd
+				)}
+			{:else if column.key === 'gross'}
+				<span class="font-mono tabular-nums">{formatCurrency(Number(payslip.grossPay))}</span>
+			{:else if column.key === 'deductions'}
+				<span class="font-mono tabular-nums text-muted-foreground"
+					>{formatCurrency(Number(payslip.totalDeductions))}</span
+				>
+			{:else if column.key === 'net'}
+				<span class="font-mono font-medium tabular-nums"
+					>{formatCurrency(Number(payslip.netPay))}</span
+				>
+			{:else if column.key === 'status'}
+				<span class="badge-green">{payslip.payrollRun.status}</span>
+			{:else if column.key === 'actions'}
+				<a href="/payslips/{payslip.id}" class="btn-row">View</a>
+			{/if}
+		{/snippet}
+	</Table>
 
 	<Pagination meta={data.pagination} />
 </div>
