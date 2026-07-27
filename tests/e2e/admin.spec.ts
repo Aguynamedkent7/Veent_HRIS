@@ -176,3 +176,65 @@ test.describe('Government ID validation', () => {
 		}
 	})
 })
+
+// #188 / #187 / #172: probation is the default for a new hire, and the type list carries the
+// renamed REGULAR plus the two branch types.
+test.describe('Employment types', () => {
+	test('the onboarding form defaults to Probationary and offers the full list', async ({
+		page
+	}) => {
+		await login(page, USERS.admin)
+		await page.goto('/employees/new', { waitUntil: 'domcontentloaded' })
+		await page.waitForLoadState('networkidle')
+
+		const select = page.locator('select[name="employmentType"]')
+		// Read before touching it: a new hire is on probation until confirmed, so that is what
+		// gets saved if HR never opens the dropdown.
+		await expect(select).toHaveValue('PROBATIONARY')
+
+		const values = await select
+			.locator('option')
+			.evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value))
+		expect(values).toEqual([
+			'PROBATIONARY',
+			'REGULAR',
+			'CONTRACTUAL',
+			'PART_TIME',
+			'ON_CALL',
+			'INTERN'
+		])
+		// FULL_TIME is gone, not merely relabelled.
+		expect(values).not.toContain('FULL_TIME')
+	})
+
+	test('a new hire is stored as PROBATIONARY when the type is left alone', async ({ page }) => {
+		test.slow()
+		await login(page, USERS.admin)
+		await page.goto('/employees/new', { waitUntil: 'domcontentloaded' })
+		await page.waitForLoadState('networkidle')
+
+		const stamp = Date.now()
+		const email = `e2e_prob_${stamp}@veent.ph`
+		created.push(email)
+		await page.getByLabel('First Name').fill('Testcase')
+		await page.getByLabel('Last Name').fill(`Prob${stamp}`)
+		await page.getByLabel('Email').fill(email)
+		await page.getByLabel('Department').selectOption({ label: 'Human Resources' })
+		await page.getByLabel('Job Title').fill('QA Engineer')
+		await page.getByLabel('Start Date').fill('2026-03-02')
+		await page.getByLabel('Basic Monthly Salary').fill('28000')
+		await page.getByRole('button', { name: 'Create Employee' }).click()
+		await page.waitForURL(/\/employees\/c[a-z0-9]{10,}$/)
+
+		const db = new PrismaClient()
+		try {
+			const emp = await db.employee.findFirstOrThrow({
+				where: { user: { email } },
+				select: { employmentType: true }
+			})
+			expect(emp.employmentType).toBe('PROBATIONARY')
+		} finally {
+			await db.$disconnect()
+		}
+	})
+})

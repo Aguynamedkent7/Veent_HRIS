@@ -37,10 +37,17 @@ enum Role {
 }
 
 enum EmploymentType {
-  FULL_TIME
+  // FULL_TIME was renamed to REGULAR (#172) — payslips already printed it as "REGULAR", so the
+  // data model now matches the document. Renaming a Postgres enum value is NOT something
+  // `prisma db push` can do without dropping the type, so any existing database must run
+  // `pnpm tsx scripts/migrate-employment-type-regular.ts` BEFORE the push.
+  REGULAR
   PART_TIME
   CONTRACTUAL
   PROBATIONARY
+  // #187: branch crew who work called shifts, and interns.
+  ON_CALL
+  INTERN
 }
 
 enum EmploymentStatus {

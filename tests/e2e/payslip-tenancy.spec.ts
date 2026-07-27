@@ -48,7 +48,7 @@ test.beforeAll(async () => {
 				lastName: 'Employee',
 				departmentId: dept.id,
 				jobTitle: 'Analyst',
-				employmentType: 'FULL_TIME',
+				employmentType: 'REGULAR',
 				startDate: new Date('2025-01-01'),
 				basicMonthlySalary: 99999
 			}

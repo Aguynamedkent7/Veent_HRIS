@@ -8,8 +8,8 @@ import {
 // #167 — the dashboard status card reads employment wording and contract-renewal standing
 // from these shared helpers.
 describe('employmentTypeLabel (#167)', () => {
-	it('reads FULL_TIME as "Regular"', () => {
-		expect(employmentTypeLabel('FULL_TIME')).toBe('Regular')
+	it('reads REGULAR as "Regular"', () => {
+		expect(employmentTypeLabel('REGULAR')).toBe('Regular')
 	})
 	it('labels the other types', () => {
 		expect(employmentTypeLabel('PROBATIONARY')).toBe('Probationary')

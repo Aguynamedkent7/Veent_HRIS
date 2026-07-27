@@ -15,9 +15,11 @@
 	// PROBATIONARY first so it is the browser's default selection (#136).
 	const EMPLOYMENT_TYPES = [
 		['PROBATIONARY', 'Probationary'],
-		['FULL_TIME', 'Full Time'],
+		['REGULAR', 'Regular'],
 		['CONTRACTUAL', 'Contractual'],
-		['PART_TIME', 'Part-time']
+		['PART_TIME', 'Part-time'],
+		['ON_CALL', 'On-call'],
+		['INTERN', 'Intern']
 	] as const
 
 	// #120: the amount field means different things per basis, so its label follows the selection.

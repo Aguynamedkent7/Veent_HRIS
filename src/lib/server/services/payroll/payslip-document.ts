@@ -137,11 +137,15 @@ const TARDINESS_CODE = 'TARDINESS'
 const ABSENCE_CODE = 'ABSENCE'
 const LOAN_PREFIX = 'LOAN'
 
+// The payslip printed FULL_TIME as "REGULAR" long before the enum was renamed to match
+// (#172); the mapping now differs only where the payslip spells a value without its underscore.
 const EMPLOYMENT_STATUS_LABEL: Record<string, string> = {
-	FULL_TIME: 'REGULAR',
+	REGULAR: 'REGULAR',
 	PROBATIONARY: 'PROBATIONARY',
 	CONTRACTUAL: 'CONTRACTUAL',
-	PART_TIME: 'PART TIME'
+	PART_TIME: 'PART TIME',
+	ON_CALL: 'ON CALL',
+	INTERN: 'INTERN'
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

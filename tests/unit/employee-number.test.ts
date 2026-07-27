@@ -42,7 +42,7 @@ const input = {
 	lastName: 'Hire',
 	departmentId: 'dept1',
 	jobTitle: 'Analyst',
-	employmentType: 'FULL_TIME' as const,
+	employmentType: 'REGULAR' as const,
 	startDate: new Date('2026-01-01'),
 	basicMonthlySalary: 30000
 }

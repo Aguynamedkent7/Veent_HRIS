@@ -145,7 +145,7 @@
 					<p class="text-xs text-muted-foreground">Employment</p>
 					<span
 						class="mt-1 inline-block rounded-full px-2.5 py-0.5 text-sm font-medium {status.employmentType ===
-						'FULL_TIME'
+						'REGULAR'
 							? 'bg-green-500/15 text-green-400'
 							: status.employmentType === 'PROBATIONARY'
 								? 'bg-yellow-500/15 text-yellow-400'

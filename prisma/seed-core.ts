@@ -75,7 +75,7 @@ async function ensureEmployeeProfile(
 			lastName: data.lastName,
 			departmentId: data.departmentId,
 			jobTitle: data.jobTitle,
-			employmentType: 'FULL_TIME',
+			employmentType: 'REGULAR',
 			startDate: new Date('2025-01-01'),
 			basicMonthlySalary: data.basicMonthlySalary ?? 30000,
 			rateType: 'MONTHLY'
@@ -223,7 +223,7 @@ async function seedFoodServiceOrg(
 			lastName: 'of Operations',
 			departmentId: branchDept.id,
 			jobTitle: 'Head of Operations',
-			employmentType: 'FULL_TIME',
+			employmentType: 'REGULAR',
 			startDate: new Date('2025-01-15'),
 			basicMonthlySalary: 40000,
 			rateType: 'MONTHLY'
@@ -273,7 +273,7 @@ async function seedFoodServiceOrg(
 				lastName: c.last,
 				departmentId: branchDept.id,
 				jobTitle: c.title,
-				employmentType: 'FULL_TIME',
+				employmentType: 'REGULAR',
 				startDate: new Date('2025-03-01'),
 				basicMonthlySalary: 18000,
 				rateType: 'MONTHLY',
@@ -456,7 +456,7 @@ export async function seedProd(db: PrismaClient) {
 			lastName: 'Admin',
 			departmentId: dept.id,
 			jobTitle: 'HR System Administrator',
-			employmentType: 'FULL_TIME',
+			employmentType: 'REGULAR',
 			startDate: new Date('2025-01-01'),
 			basicMonthlySalary: 50000,
 			rateType: 'MONTHLY'
@@ -732,7 +732,7 @@ export async function seedE2E(db: PrismaClient) {
 			lastName: 'Manager',
 			departmentId: dept.id,
 			jobTitle: 'People Operations Manager',
-			employmentType: 'FULL_TIME',
+			employmentType: 'REGULAR',
 			startDate: new Date('2025-01-15'),
 			basicMonthlySalary: 45000,
 			rateType: 'MONTHLY'
@@ -763,7 +763,7 @@ export async function seedE2E(db: PrismaClient) {
 			lastName: 'Employee',
 			departmentId: dept.id,
 			jobTitle: 'Software Engineer',
-			employmentType: 'FULL_TIME',
+			employmentType: 'REGULAR',
 			startDate: new Date('2025-02-01'),
 			basicMonthlySalary: 30000,
 			rateType: 'MONTHLY',

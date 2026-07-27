@@ -1,5 +1,5 @@
 // Automatic regularization (#136). PH probation caps at 6 months; this flips ACTIVE
-// PROBATIONARY employees to FULL_TIME once 6 whole calendar months of service have
+// PROBATIONARY employees to REGULAR once 6 whole calendar months of service have
 // elapsed, and notifies that org's HR.
 //
 //   pnpm tsx scripts/promote-probationary.ts --dry-run   # list who would be promoted
@@ -98,7 +98,7 @@ async function main() {
 		const done: typeof employees = []
 		for (const e of employees) {
 			try {
-				await updateEmployee(e.id, organizationId, { employmentType: 'FULL_TIME' }, ctx)
+				await updateEmployee(e.id, organizationId, { employmentType: 'REGULAR' }, ctx)
 				done.push(e)
 				promoted++
 			} catch (err) {

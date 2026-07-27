@@ -19,5 +19,6 @@
 
 - No Redis — removed. Dashboard and reports query DB directly.
 - Prisma `Decimal` fields must not be returned raw to the client — the transport hook in `src/hooks.ts` handles serialization globally.
-- Prisma enums: `EmploymentType` values are `FULL_TIME`, `PART_TIME`, `CONTRACTUAL`, `PROBATIONARY` (not `REGULAR`). `EmploymentStatus` values are `ACTIVE`, `ON_LEAVE`, `OFFBOARDED` only.
+- Prisma enums: `EmploymentType` values are `REGULAR`, `PART_TIME`, `CONTRACTUAL`, `PROBATIONARY`, `ON_CALL`, `INTERN`. (`FULL_TIME` was renamed to `REGULAR` in #172 — payslips already printed it that way. New hires default to `PROBATIONARY`.) `EmploymentStatus` values are `ACTIVE`, `ON_LEAVE`, `OFFBOARDED` only.
+- Renaming a Prisma enum value is not something `db push` can do — it drops and recreates the type. Any existing database needs a `scripts/migrate-*.ts` running `ALTER TYPE … RENAME VALUE` **before** the push; see `scripts/migrate-employment-type-regular.ts`.
 - `{@const}` must be an immediate child of a block tag (`{#if}`, `{#each}`, `{#snippet}`, etc.) — never inside a plain HTML element.
