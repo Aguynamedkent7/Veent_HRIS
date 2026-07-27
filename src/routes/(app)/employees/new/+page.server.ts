@@ -4,6 +4,7 @@ import { db } from '$lib/server/db'
 import { requireCapability } from '$lib/server/rbac'
 import { createEmployee } from '$lib/server/services/employees'
 import { sendWelcomeEmail } from '$lib/server/notifications'
+import { govIdSchema } from '$lib/utils/gov-ids'
 import type { Actions, PageServerLoad } from './$types'
 
 function generateTempPassword(): string {
@@ -72,17 +73,19 @@ const createSchema = z.object({
 	basicMonthlySalary: z.coerce.number().positive(),
 	// #120: how the amount above is read — a fixed monthly salary or a per-hour rate.
 	rateType: z.enum(['MONTHLY', 'HOURLY']).default('MONTHLY'),
-	sssNumber: z.string().optional(),
-	philhealthNumber: z.string().optional(),
-	pagibigNumber: z.string().optional(),
-	tinNumber: z.string().optional(),
+	// #191: format-checked and stored canonically. Every value here is new, so unlike the
+	// edit form there is nothing legacy to grandfather.
+	sssNumber: govIdSchema('sssNumber'),
+	philhealthNumber: govIdSchema('philhealthNumber'),
+	pagibigNumber: govIdSchema('pagibigNumber'),
+	tinNumber: govIdSchema('tinNumber'),
 	emergencyContactName: z.string().optional(),
 	emergencyContactRelation: z.string().optional(),
 	emergencyContactPhone: z.string().optional(),
 	bankName: z.string().optional(),
 	bankAccountName: z.string().optional(),
-	bankAccountNumber: z.string().optional(),
-	gcashNumber: z.string().optional(),
+	bankAccountNumber: govIdSchema('bankAccountNumber'),
+	gcashNumber: govIdSchema('gcashNumber'),
 	reportsToId: z
 		.string()
 		.optional()

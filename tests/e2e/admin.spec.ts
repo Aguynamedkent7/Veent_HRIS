@@ -14,10 +14,19 @@ const created: string[] = []
 test.afterAll(async () => {
 	if (!created.length) return
 	const db = new PrismaClient()
+	const byEmail = { user: { email: { in: created } } }
 	try {
-		// Employee has a required FK to User, so it goes first.
-		await db.employee.deleteMany({ where: { user: { email: { in: created } } } })
+		// Payroll compute in the other specs sweeps every ACTIVE employee in the org, so these
+		// rows pick up payroll entries while the suite runs. That FK is RESTRICT, so the entries
+		// have to go first — deleting the employee straight away fails outright.
+		await db.payrollEntry.deleteMany({ where: { employee: byEmail } })
+		// Employee has a required FK to User, so it goes before the user.
+		await db.employee.deleteMany({ where: byEmail })
 		await db.user.deleteMany({ where: { email: { in: created } } })
+	} catch {
+		// Best-effort. A payroll compute running concurrently can attach a new entry between the
+		// deletes above; leaving a stray row behind is better than failing the suite in teardown,
+		// and employee numbers no longer depend on the roster staying clean.
 	} finally {
 		await db.$disconnect()
 	}
@@ -94,5 +103,76 @@ test.describe('HR Admin', () => {
 		await expect(page.getByRole('heading', { name: 'Audit Log' })).toBeVisible()
 		// Login events are always recorded, so at least one row exists.
 		await expect(page.locator('tbody tr').first()).toBeVisible()
+	})
+})
+
+// #191: statutory IDs and disbursement credentials are format-checked on entry and stored in
+// one canonical shape, so the same ID cannot appear in three forms across records.
+test.describe('Government ID validation', () => {
+	test.describe.configure({ mode: 'serial' })
+
+	test('a malformed SSS is rejected with the expected format', async ({ page }) => {
+		await login(page, USERS.admin)
+		await page.goto('/employees/new', { waitUntil: 'domcontentloaded' })
+		await page.waitForLoadState('networkidle')
+
+		const stamp = Date.now()
+		await page.getByLabel('First Name').fill('Testcase')
+		await page.getByLabel('Last Name').fill(`Bad${stamp}`)
+		await page.getByLabel('Email').fill(`e2e_bad_${stamp}@veent.ph`)
+		await page.getByLabel('Department').selectOption({ label: 'Human Resources' })
+		await page.getByLabel('Job Title').fill('QA Engineer')
+		await page.getByLabel('Start Date').fill('2026-03-02')
+		await page.getByLabel('Basic Monthly Salary').fill('28000')
+		await page.getByLabel('SSS Number').fill('1234') // 4 digits, not 10
+		await page.getByRole('button', { name: 'Create Employee' }).click()
+
+		await expect(page.getByText('SSS must be 10 digits (e.g. 34-1234567-8)')).toBeVisible()
+		// The rejection must be total — no half-created account left behind.
+		const db = new PrismaClient()
+		try {
+			expect(await db.user.count({ where: { email: `e2e_bad_${stamp}@veent.ph` } })).toBe(0)
+		} finally {
+			await db.$disconnect()
+		}
+	})
+
+	test('separators are accepted and the stored value is canonical', async ({ page }) => {
+		test.slow()
+		await login(page, USERS.admin)
+		await page.goto('/employees/new', { waitUntil: 'domcontentloaded' })
+		await page.waitForLoadState('networkidle')
+
+		const stamp = Date.now()
+		const email = `e2e_ids_${stamp}@veent.ph`
+		created.push(email)
+		await page.getByLabel('First Name').fill('Testcase')
+		await page.getByLabel('Last Name').fill(`Ids${stamp}`)
+		await page.getByLabel('Email').fill(email)
+		await page.getByLabel('Department').selectOption({ label: 'Human Resources' })
+		await page.getByLabel('Job Title').fill('QA Engineer')
+		await page.getByLabel('Start Date').fill('2026-03-02')
+		await page.getByLabel('Basic Monthly Salary').fill('28000')
+		// Typed three different ways; all three should land normalised.
+		await page.getByLabel('SSS Number').fill('34 1234567 8')
+		await page.getByLabel('PhilHealth Number').fill('123456789012')
+		await page.getByLabel('TIN').fill('123-456-789')
+		await page.getByRole('button', { name: 'Create Employee' }).click()
+		await page.waitForURL(/\/employees\/c[a-z0-9]{10,}$/)
+
+		const db = new PrismaClient()
+		try {
+			const emp = await db.employee.findFirstOrThrow({
+				where: { user: { email } },
+				select: { sssNumber: true, philhealthNumber: true, tinNumber: true, pagibigNumber: true }
+			})
+			expect(emp.sssNumber).toBe('34-1234567-8')
+			expect(emp.philhealthNumber).toBe('12-345678901-2')
+			expect(emp.tinNumber).toBe('123-456-789')
+			// Left blank — stored as absent, not an empty string.
+			expect(emp.pagibigNumber).toBeNull()
+		} finally {
+			await db.$disconnect()
+		}
 	})
 })

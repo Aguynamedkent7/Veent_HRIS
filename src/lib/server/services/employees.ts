@@ -27,10 +27,12 @@ interface CreateEmployeeInput {
 	startDate: Date
 	basicMonthlySalary: number
 	rateType?: RateType
-	sssNumber?: string
-	philhealthNumber?: string
-	pagibigNumber?: string
-	tinNumber?: string
+	// Nullable, not just optional: the #191 validators normalise an empty field to null, and
+	// Prisma reads null as "no value" for these optional columns.
+	sssNumber?: string | null
+	philhealthNumber?: string | null
+	pagibigNumber?: string | null
+	tinNumber?: string | null
 	reportsToId?: string
 	discordId?: string | null
 	workScheduleId?: string | null
@@ -40,8 +42,8 @@ interface CreateEmployeeInput {
 	emergencyContactPhone?: string
 	bankName?: string
 	bankAccountName?: string
-	bankAccountNumber?: string
-	gcashNumber?: string
+	bankAccountNumber?: string | null
+	gcashNumber?: string | null
 }
 
 interface UpdateEmployeeInput {

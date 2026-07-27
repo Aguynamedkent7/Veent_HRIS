@@ -2,6 +2,9 @@
 	import { enhance } from '$app/forms'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import { RATE_BASIS_OPTIONS, rateBasisCopy, type RateBasis } from '$lib/utils/rate-basis'
+	// Placeholders come from the same table the server validates against, so the example HR
+	// sees can never disagree with what is accepted (#191).
+	import { GOV_ID_FORMATS } from '$lib/utils/gov-ids'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -371,36 +374,56 @@
 						<input
 							id="sssNumber"
 							name="sssNumber"
+							aria-invalid={invalid('sssNumber')}
 							value={form?.values?.sssNumber ?? ''}
+							placeholder={GOV_ID_FORMATS.sssNumber.example}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
+						{#if form?.fieldErrors?.sssNumber}
+							<p class="mt-1 text-xs text-red-400">{form.fieldErrors.sssNumber[0]}</p>
+						{/if}
 					</div>
 					<div>
 						<label for="philhealthNumber" class="text-sm font-medium">PhilHealth Number</label>
 						<input
 							id="philhealthNumber"
 							name="philhealthNumber"
+							aria-invalid={invalid('philhealthNumber')}
 							value={form?.values?.philhealthNumber ?? ''}
+							placeholder={GOV_ID_FORMATS.philhealthNumber.example}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
+						{#if form?.fieldErrors?.philhealthNumber}
+							<p class="mt-1 text-xs text-red-400">{form.fieldErrors.philhealthNumber[0]}</p>
+						{/if}
 					</div>
 					<div>
 						<label for="pagibigNumber" class="text-sm font-medium">Pag-IBIG Number</label>
 						<input
 							id="pagibigNumber"
 							name="pagibigNumber"
+							aria-invalid={invalid('pagibigNumber')}
 							value={form?.values?.pagibigNumber ?? ''}
+							placeholder={GOV_ID_FORMATS.pagibigNumber.example}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
+						{#if form?.fieldErrors?.pagibigNumber}
+							<p class="mt-1 text-xs text-red-400">{form.fieldErrors.pagibigNumber[0]}</p>
+						{/if}
 					</div>
 					<div>
 						<label for="tinNumber" class="text-sm font-medium">TIN Number</label>
 						<input
 							id="tinNumber"
 							name="tinNumber"
+							aria-invalid={invalid('tinNumber')}
 							value={form?.values?.tinNumber ?? ''}
+							placeholder={GOV_ID_FORMATS.tinNumber.example}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
+						{#if form?.fieldErrors?.tinNumber}
+							<p class="mt-1 text-xs text-red-400">{form.fieldErrors.tinNumber[0]}</p>
+						{/if}
 					</div>
 				</div>
 			</fieldset>
@@ -468,19 +491,28 @@
 						<input
 							id="bankAccountNumber"
 							name="bankAccountNumber"
+							aria-invalid={invalid('bankAccountNumber')}
 							value={form?.values?.bankAccountNumber ?? ''}
+							placeholder={GOV_ID_FORMATS.bankAccountNumber.example}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
+						{#if form?.fieldErrors?.bankAccountNumber}
+							<p class="mt-1 text-xs text-destructive">{form.fieldErrors.bankAccountNumber[0]}</p>
+						{/if}
 					</div>
 					<div>
 						<label for="gcashNumber" class="text-sm font-medium">GCash Number</label>
 						<input
 							id="gcashNumber"
 							name="gcashNumber"
+							aria-invalid={invalid('gcashNumber')}
 							value={form?.values?.gcashNumber ?? ''}
-							placeholder="e.g. 0917xxxxxxx"
+							placeholder={GOV_ID_FORMATS.gcashNumber.example}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
+						{#if form?.fieldErrors?.gcashNumber}
+							<p class="mt-1 text-xs text-destructive">{form.fieldErrors.gcashNumber[0]}</p>
+						{/if}
 					</div>
 				</div>
 			</fieldset>

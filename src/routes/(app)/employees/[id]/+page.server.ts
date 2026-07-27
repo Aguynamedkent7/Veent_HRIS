@@ -13,6 +13,7 @@ import { listEnrollmentsForEmployee } from '$lib/server/services/benefits'
 import { getEmployeeOnboarding, setManualCompletion } from '$lib/server/services/onboarding'
 import { listAssignableBranches, selectableBranches } from '$lib/server/services/branches'
 import { isFoodServiceOrg } from '$lib/orgs'
+import { govIdError, govIdSchema, normalizeGovId } from '$lib/utils/gov-ids'
 import {
 	listLoans,
 	listCashAdvances,
@@ -306,16 +307,10 @@ const updateSchema = z.object({
 		.trim()
 		.optional()
 		.transform((v) => (v ? v : null)),
-	bankAccountNumber: z
-		.string()
-		.trim()
-		.optional()
-		.transform((v) => (v ? v : null)),
-	gcashNumber: z
-		.string()
-		.trim()
-		.optional()
-		.transform((v) => (v ? v : null))
+	// #54 leaves these blank in the form, so empty means "unchanged"; any value typed is new
+	// and therefore always format-checked (#191).
+	bankAccountNumber: govIdSchema('bankAccountNumber'),
+	gcashNumber: govIdSchema('gcashNumber')
 })
 
 const emergencyContactSchema = z.object({
@@ -348,7 +343,39 @@ export const actions: Actions = {
 
 		const raw = Object.fromEntries(await request.formData())
 		const parsed = updateSchema.safeParse(raw)
-		if (!parsed.success) return fail(400, { error: 'Invalid input' })
+		if (!parsed.success) {
+			// Surface the field messages (the disbursement formats validate in the schema);
+			// fall back to the generic text when zod produced none.
+			const messages = parsed.error.errors.map((e) => e.message).filter(Boolean)
+			return fail(400, { error: messages.length ? messages.join(' · ') : 'Invalid input' })
+		}
+
+		// #191: the four statutory IDs are prefilled from the record, so the form re-posts them
+		// on every save. Validate only the ones whose value actually changed — otherwise a
+		// malformed ID entered before this validation existed would block unrelated edits
+		// (a phone number, an address) until someone fixed it. The employee page flags those
+		// legacy values instead, so they stay visible without being a roadblock.
+		const statutory = ['sssNumber', 'philhealthNumber', 'pagibigNumber', 'tinNumber'] as const
+		const stored = await db.employee.findFirst({
+			where: { id: params.id, user: { organizationId: user.organizationId } },
+			select: { sssNumber: true, philhealthNumber: true, pagibigNumber: true, tinNumber: true }
+		})
+		if (!stored) return fail(404, { error: 'Employee not found' })
+
+		const normalized: Partial<Record<(typeof statutory)[number], string | null>> = {}
+		const rejected: string[] = []
+		for (const field of statutory) {
+			const submitted = parsed.data[field]
+			if (submitted === stored[field]) continue // untouched — left exactly as it is
+			if (submitted === null) {
+				normalized[field] = null // cleared
+				continue
+			}
+			const canonical = normalizeGovId(field, submitted)
+			if (canonical === null) rejected.push(govIdError(field))
+			else normalized[field] = canonical
+		}
+		if (rejected.length) return fail(400, { error: rejected.join(' · ') })
 
 		// #54: the form never prefills the stored disbursement numbers (they render as
 		// placeholders), so an empty submission means "leave unchanged", not "clear".
@@ -356,6 +383,7 @@ export const actions: Actions = {
 		const { bankAccountNumber, gcashNumber, branchId, ...rest } = parsed.data
 		const input = {
 			...rest,
+			...normalized,
 			...(bankAccountNumber !== null && { bankAccountNumber }),
 			...(gcashNumber !== null && { gcashNumber }),
 			// Branches only exist for the food-service tenants; ignore a posted branchId

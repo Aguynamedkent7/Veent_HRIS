@@ -4,11 +4,21 @@
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
 	import { tenureLabel, tenureRequirement, monthsOfService } from '$lib/utils/dates'
 	import { RATE_BASIS_OPTIONS, rateBasisCopy, type RateBasis } from '$lib/utils/rate-basis'
+	import { isValidGovId, govIdError, type GovIdField } from '$lib/utils/gov-ids'
 	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
+
+	// Label + field pairs for the Government IDs card, so the display and its format warning
+	// stay in step with the validator's field names.
+	const GOV_ID_ROWS: { field: GovIdField; label: string }[] = [
+		{ field: 'sssNumber', label: 'SSS Number' },
+		{ field: 'philhealthNumber', label: 'PhilHealth No.' },
+		{ field: 'pagibigNumber', label: 'Pag-IBIG No.' },
+		{ field: 'tinNumber', label: 'TIN' }
+	]
 	// Reactive: after a form action re-runs `load`, these must reflect the fresh data
 	// (a plain destructure would stay stale until a full page refresh).
 	const employee = $derived(data.employee)
@@ -221,14 +231,21 @@
 			<div class="rounded-lg border bg-card p-6 space-y-4">
 				<h2 class="font-semibold">Government IDs</h2>
 				<dl class="grid grid-cols-1 gap-3 sm:grid-cols-2 text-sm">
-					<dt class="text-muted-foreground">SSS Number</dt>
-					<dd>{employee.sssNumber ?? '—'}</dd>
-					<dt class="text-muted-foreground">PhilHealth No.</dt>
-					<dd>{employee.philhealthNumber ?? '—'}</dd>
-					<dt class="text-muted-foreground">Pag-IBIG No.</dt>
-					<dd>{employee.pagibigNumber ?? '—'}</dd>
-					<dt class="text-muted-foreground">TIN</dt>
-					<dd>{employee.tinNumber ?? '—'}</dd>
+					{#each GOV_ID_ROWS as row (row.field)}
+						<dt class="text-muted-foreground">{row.label}</dt>
+						<dd>
+							{employee[row.field] ?? '—'}
+							<!-- #191 validates on entry, but values stored before it can be malformed.
+							     Flagged rather than blocked: an unchanged bad ID must not stop HR saving
+							     an unrelated edit, so it is surfaced here until someone corrects it. -->
+							{#if !isValidGovId(row.field, employee[row.field])}
+								<span
+									class="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-400"
+									title={govIdError(row.field)}>check format</span
+								>
+							{/if}
+						</dd>
+					{/each}
 				</dl>
 			</div>
 
