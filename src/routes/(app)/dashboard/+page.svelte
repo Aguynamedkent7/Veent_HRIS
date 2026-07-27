@@ -283,8 +283,8 @@
 								this={n.link ? 'a' : 'div'}
 								href={n.link ?? undefined}
 								class="flex items-start gap-3 rounded-lg border p-3 transition-colors {unread
-									? 'border-primary/30 bg-primary/[0.04]'
-									: 'border-border/60 bg-muted/30'} {n.link ? 'hover:bg-accent/40' : ''}"
+									? 'border-primary/60 bg-primary/[0.04]'
+									: 'border-foreground/15 bg-muted/30'} {n.link ? 'hover:bg-accent/40' : ''}"
 							>
 								<ActivityIcon kind={n.kind} />
 								<div class="min-w-0 flex-1">

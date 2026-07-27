@@ -202,8 +202,12 @@
 	/* Card — separated by tone and elevation rather than a hard outline. The hairline ring
 	   keeps definition where tone alone is too subtle (light theme, overlapping surfaces);
 	   it is an order of magnitude softer than the old border. */
+	/* The card edge carries the grouping, so it has to be visible. On light the page is 98% and
+	   the card 100% — two percent of tone, which the ring alone has to make up for; a 5% black
+	   ring did not. Dark separates on tone as well as the ring, so it needs less, but the old
+	   6% was still under the threshold where an edge registers. */
 	.card {
-		@apply rounded-lg bg-card p-5 shadow-sm ring-1 ring-black/5 dark:shadow-none dark:ring-white/[0.06];
+		@apply rounded-lg bg-card p-5 shadow-sm ring-1 ring-black/[0.12] dark:shadow-none dark:ring-white/10;
 	}
 
 	/* Data table */
