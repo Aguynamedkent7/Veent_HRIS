@@ -60,131 +60,327 @@
 		<h1 class="page-title">Dashboard</h1>
 	</div>
 
-	<!-- Metric cards — each one drills down to its module page (#53) -->
-	<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-		<a
-			href="/employees"
-			class="card flex flex-col gap-3 transition-colors hover:border-primary/40 hover:bg-card/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-		>
-			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-				Active Employees
-			</p>
-			<p class="text-4xl font-bold text-foreground">{metrics.headcount}</p>
-			<p class="text-xs text-muted-foreground">across your organisation</p>
-		</a>
-
-		<a
-			href="/leave"
-			class="card flex flex-col gap-3 transition-colors hover:border-primary/40 hover:bg-card/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-		>
-			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-				On Leave Today
-			</p>
-			<p
-				class="text-4xl font-bold {metrics.onLeaveToday > 0
-					? 'text-yellow-400'
-					: 'text-foreground'}"
-			>
-				{metrics.onLeaveToday}
-			</p>
-			<p class="text-xs text-muted-foreground">employees on approved leave</p>
-		</a>
-
-		<a
-			href="/requests"
-			class="card flex flex-col gap-3 transition-colors hover:border-primary/40 hover:bg-card/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-		>
-			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-				Pending Approvals
-			</p>
-			<p
-				class="text-4xl font-bold {metrics.pendingApprovals > 0
-					? 'text-blue-400'
-					: 'text-foreground'}"
-			>
-				{metrics.pendingApprovals}
-			</p>
-			<p class="text-xs text-muted-foreground">
-				{metrics.pendingRequests} requests · {metrics.pendingTimesheets} timesheets · {metrics.pendingPayrollRuns}
-				payroll
-			</p>
-		</a>
-
-		{#if data.canViewPayroll}
-			<a
-				href="/payroll"
-				class="card flex flex-col gap-3 transition-colors hover:border-primary/40 hover:bg-card/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-			>
-				<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-					Last Payroll
-				</p>
-				{#if metrics.lastPayrollRun}
-					<p class="text-3xl font-bold text-foreground">
-						{formatCurrency(Number(metrics.lastPayrollRun.totalNet))}
+	<!-- Attendance and the metric cards stack in the left two thirds; Upcoming Events fills the
+	     right third across both of their rows. Keeping attendance narrower than full width stops
+	     four short numbers from spanning the whole page. -->
+	<div class="grid gap-4 lg:grid-cols-3">
+		<div class="space-y-4 lg:col-span-2">
+			<!-- Attendance summary (today) -->
+			<div class="card space-y-3">
+				<div class="flex items-center justify-between">
+					<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+						Attendance Today
 					</p>
-					<p class="flex items-center gap-2 text-xs text-muted-foreground">
-						<span>{formatShortDate(metrics.lastPayrollRun.periodEnd)}</span>
-						<span class="badge-{metrics.lastPayrollRun.status === 'APPROVED' ? 'green' : 'yellow'}">
-							{metrics.lastPayrollRun.status}
-						</span>
-					</p>
-				{:else}
-					<p class="text-2xl font-semibold text-muted-foreground/60">—</p>
-					<p class="text-xs text-muted-foreground">no payroll runs yet</p>
-				{/if}
-			</a>
-		{/if}
-	</div>
-
-	<!-- Employee's own status: type, tenure, and renewal for contractual (#167) -->
-	{#if status}
-		<div class="card space-y-3">
-			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">My Status</p>
-			<div class="flex flex-wrap items-center gap-x-8 gap-y-3">
-				<div>
-					<p class="text-xs text-muted-foreground">Employment</p>
-					<span
-						class="mt-1 inline-block rounded-full px-2.5 py-0.5 text-sm font-medium {status.employmentType ===
-						'REGULAR'
-							? 'bg-green-500/15 text-green-400'
-							: status.employmentType === 'PROBATIONARY'
-								? 'bg-yellow-500/15 text-yellow-400'
-								: status.employmentType === 'CONTRACTUAL'
-									? 'bg-blue-500/15 text-blue-400'
-									: 'bg-gray-500/15 text-gray-300'}"
-					>
-						{employmentTypeLabel(status.employmentType)}
-					</span>
+					<a href="/attendance" class="btn-row">Open attendance</a>
 				</div>
-				<div>
-					<p class="text-xs text-muted-foreground">Tenure</p>
-					<p class="mt-1 text-sm font-medium">{tenureLabel(new Date(status.startDate))}</p>
-					<p class="text-xs text-muted-foreground">since {formatShortDate(status.startDate)}</p>
-				</div>
-				{#if renewal}
-					<div>
-						<p class="text-xs text-muted-foreground">Contract renewal</p>
-						<p
-							class="mt-1 text-sm font-medium {renewal.expired
-								? 'text-red-400'
-								: renewal.dueForRenewal
-									? 'text-amber-500'
-									: 'text-foreground'}"
-						>
-							{renewal.expired
-								? `Expired ${formatShortDate(status.endDate!)}`
-								: renewal.dueForRenewal
-									? `Up for renewal — in ${renewal.daysUntil} day${renewal.daysUntil === 1 ? '' : 's'}`
-									: `Ends ${formatShortDate(status.endDate!)}`}
-						</p>
-						{#if !renewal.expired && !renewal.dueForRenewal}
-							<p class="text-xs text-muted-foreground">in {renewal.daysUntil} days</p>
-						{/if}
+				{#if metrics.attendance.derived > 0}
+					<div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+						<div>
+							<p class="text-3xl font-bold text-green-500">{metrics.attendance.present}</p>
+							<p class="text-xs text-muted-foreground">Present</p>
+						</div>
+						<div>
+							<p class="text-3xl font-bold text-yellow-400">{metrics.attendance.late}</p>
+							<p class="text-xs text-muted-foreground">Late</p>
+						</div>
+						<div>
+							<p class="text-3xl font-bold text-red-400">{metrics.attendance.absent}</p>
+							<p class="text-xs text-muted-foreground">Absent</p>
+						</div>
+						<div>
+							<p class="text-3xl font-bold text-blue-400">{metrics.attendance.onLeave}</p>
+							<p class="text-xs text-muted-foreground">On Leave</p>
+						</div>
 					</div>
+				{:else}
+					<p class="text-sm text-muted-foreground">
+						No attendance derived for today yet. Derive it from the <a
+							href="/attendance"
+							class="text-primary hover:underline">Attendance</a
+						> page.
+					</p>
+				{/if}
+			</div>
+
+			<!-- Metric cards — each one drills down to its module page (#53) -->
+			<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+				<a
+					href="/employees"
+					class="card flex flex-col gap-3 transition-colors hover:border-primary/40 hover:bg-card/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+				>
+					<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+						Active Employees
+					</p>
+					<p class="text-4xl font-bold text-foreground">{metrics.headcount}</p>
+					<p class="text-xs text-muted-foreground">across your organisation</p>
+				</a>
+
+				<a
+					href="/requests"
+					class="card flex flex-col gap-3 transition-colors hover:border-primary/40 hover:bg-card/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+				>
+					<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+						Pending Approvals
+					</p>
+					<p
+						class="text-4xl font-bold {metrics.pendingApprovals > 0
+							? 'text-blue-400'
+							: 'text-foreground'}"
+					>
+						{metrics.pendingApprovals}
+					</p>
+					<p class="text-xs text-muted-foreground">
+						{metrics.pendingRequests} requests · {metrics.pendingTimesheets} timesheets · {metrics.pendingPayrollRuns}
+						payroll
+					</p>
+				</a>
+
+				{#if data.canViewPayroll}
+					<a
+						href="/payroll"
+						class="card flex flex-col gap-3 transition-colors hover:border-primary/40 hover:bg-card/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					>
+						<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+							Last Payroll
+						</p>
+						{#if metrics.lastPayrollRun}
+							<p class="text-3xl font-bold text-foreground">
+								{formatCurrency(Number(metrics.lastPayrollRun.totalNet))}
+							</p>
+							<p class="flex items-center gap-2 text-xs text-muted-foreground">
+								<span>{formatShortDate(metrics.lastPayrollRun.periodEnd)}</span>
+								<span
+									class="badge-{metrics.lastPayrollRun.status === 'APPROVED' ? 'green' : 'yellow'}"
+								>
+									{metrics.lastPayrollRun.status}
+								</span>
+							</p>
+						{:else}
+							<p class="text-2xl font-semibold text-muted-foreground/60">—</p>
+							<p class="text-xs text-muted-foreground">no payroll runs yet</p>
+						{/if}
+					</a>
 				{/if}
 			</div>
 		</div>
-	{/if}
+
+		<!-- TODO(upcoming-events): sources pending confirmation. -->
+		<div class="card flex h-full flex-col gap-3">
+			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+				Upcoming Events
+			</p>
+		</div>
+	</div>
+
+	<!-- Recent activity, announcements and personal status sit in one row: each is a glance,
+	     not a task, so they read side by side and none of them pushes the others below the
+	     fold. They collapse to a single column below lg, and the row simply carries fewer
+	     cards when a viewer has no activity yet or no employee record. -->
+	<div class="grid items-start gap-4 lg:grid-cols-3">
+		<!-- Recent activity — payslips, request outcomes, etc. (#169) -->
+		{#if data.recentActivity.length}
+			<div class="card space-y-3">
+				<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+					Recent Activity
+				</p>
+				<ul class="divide-y divide-border/60">
+					{#each data.recentActivity as n (n.id)}
+						<li class="flex items-center justify-between gap-3 py-2">
+							<div class="flex min-w-0 items-center gap-2">
+								{#if !n.readAt}
+									<span class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-label="unread"
+									></span>
+								{/if}
+								{#if n.link}
+									<a href={n.link} class="truncate text-sm hover:underline">{n.message}</a>
+								{:else}
+									<span class="truncate text-sm">{n.message}</span>
+								{/if}
+							</div>
+							<span class="shrink-0 text-xs text-muted-foreground"
+								>{formatShortDate(n.createdAt)}</span
+							>
+						</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
+
+		<!-- Announcements -->
+		<div class="card space-y-3">
+			<div class="flex items-center justify-between">
+				<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+					Announcements
+				</p>
+				{#if data.canPost}
+					<div class="flex items-center gap-2">
+						<button
+							type="button"
+							onclick={() => (showAward = !showAward)}
+							class="rounded-md border border-amber-500/40 px-3 py-1 text-xs font-medium text-amber-500 hover:bg-amber-500/10"
+							>{showAward ? 'Cancel' : 'Give award'}</button
+						>
+						<button
+							type="button"
+							onclick={() => (showPost = !showPost)}
+							class="rounded-md border border-primary/40 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/10"
+							>{showPost ? 'Cancel' : 'Post'}</button
+						>
+					</div>
+				{/if}
+			</div>
+
+			{#if form?.posted}
+				<div
+					class="rounded-md border border-green-500/20 bg-green-500/10 px-3 py-2 text-xs text-green-400"
+				>
+					Announcement posted.
+				</div>
+			{/if}
+			{#if form?.awarded}
+				<div
+					class="rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-500"
+				>
+					Award given.
+				</div>
+			{/if}
+
+			{#if showAward && data.canPost}
+				<form
+					method="POST"
+					action="?/giveAward"
+					use:enhance={giveAward.enhance}
+					class="space-y-2 rounded-md border p-3"
+				>
+					{#if form?.error}<p class="text-xs text-red-400">{form.error}</p>{/if}
+					<div class="grid gap-2 sm:grid-cols-2">
+						<select name="employeeId" required class="input h-9">
+							<option value="">Select employee…</option>
+							{#each data.awardEmployees as e (e.id)}
+								<option value={e.id}>{e.lastName}, {e.firstName}</option>
+							{/each}
+						</select>
+						<input
+							name="title"
+							placeholder="Award (e.g. Employee of the Month)"
+							required
+							class="input h-9"
+						/>
+					</div>
+					<input name="note" placeholder="Note (optional)" class="input h-9" />
+					<button
+						type="submit"
+						disabled={giveAward.busy}
+						class="btn-primary text-sm disabled:pointer-events-none disabled:opacity-50"
+						>{giveAward.busy ? 'Giving…' : 'Give award'}</button
+					>
+				</form>
+			{/if}
+
+			{#if showPost && data.canPost}
+				<form
+					method="POST"
+					action="?/postAnnouncement"
+					use:enhance={postAnnouncement.enhance}
+					class="space-y-2 rounded-md border p-3"
+				>
+					{#if form?.error}<p class="text-xs text-red-400">{form.error}</p>{/if}
+					<input name="title" placeholder="Title" required class="input h-9" />
+					<textarea
+						name="body"
+						rows="2"
+						placeholder="Message to the whole organisation…"
+						required
+						class="input h-auto resize-none py-2"
+					></textarea>
+					<button
+						type="submit"
+						disabled={postAnnouncement.busy}
+						class="btn-primary text-sm disabled:pointer-events-none disabled:opacity-50"
+						>{postAnnouncement.busy ? 'Posting…' : 'Post announcement'}</button
+					>
+				</form>
+			{/if}
+
+			{#if hasFeed}
+				<ul class="divide-y">
+					{#if data.birthdays.length}
+						<AnnouncementItem variant="birthday" title="Happy Birthday!" body={birthdayBody} />
+					{/if}
+					{#each data.awards as aw (aw.id)}
+						<AnnouncementItem
+							variant="award"
+							title={`${aw.employeeName} — ${aw.title}`}
+							body={aw.note ?? undefined}
+							timestamp={aw.createdAt}
+						/>
+					{/each}
+					{#each data.announcements as a (a.id)}
+						<AnnouncementItem
+							title={a.title}
+							body={a.body}
+							timestamp={a.createdAt}
+							author={a.authorName}
+						/>
+					{/each}
+				</ul>
+			{:else}
+				<p class="text-sm text-muted-foreground">No announcements yet.</p>
+			{/if}
+		</div>
+
+		<!-- Employee's own status: type, tenure, and renewal for contractual (#167) -->
+		{#if status}
+			<div class="card space-y-3">
+				<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+					My Status
+				</p>
+				<div class="flex flex-wrap items-center gap-x-8 gap-y-3">
+					<div>
+						<p class="text-xs text-muted-foreground">Employment</p>
+						<span
+							class="mt-1 inline-block rounded-full px-2.5 py-0.5 text-sm font-medium {status.employmentType ===
+							'REGULAR'
+								? 'bg-green-500/15 text-green-400'
+								: status.employmentType === 'PROBATIONARY'
+									? 'bg-yellow-500/15 text-yellow-400'
+									: status.employmentType === 'CONTRACTUAL'
+										? 'bg-blue-500/15 text-blue-400'
+										: 'bg-gray-500/15 text-gray-300'}"
+						>
+							{employmentTypeLabel(status.employmentType)}
+						</span>
+					</div>
+					<div>
+						<p class="text-xs text-muted-foreground">Tenure</p>
+						<p class="mt-1 text-sm font-medium">{tenureLabel(new Date(status.startDate))}</p>
+						<p class="text-xs text-muted-foreground">since {formatShortDate(status.startDate)}</p>
+					</div>
+					{#if renewal}
+						<div>
+							<p class="text-xs text-muted-foreground">Contract renewal</p>
+							<p
+								class="mt-1 text-sm font-medium {renewal.expired
+									? 'text-red-400'
+									: renewal.dueForRenewal
+										? 'text-amber-500'
+										: 'text-foreground'}"
+							>
+								{renewal.expired
+									? `Expired ${formatShortDate(status.endDate!)}`
+									: renewal.dueForRenewal
+										? `Up for renewal — in ${renewal.daysUntil} day${renewal.daysUntil === 1 ? '' : 's'}`
+										: `Ends ${formatShortDate(status.endDate!)}`}
+							</p>
+							{#if !renewal.expired && !renewal.dueForRenewal}
+								<p class="text-xs text-muted-foreground">in {renewal.daysUntil} days</p>
+							{/if}
+						</div>
+					{/if}
+				</div>
+			</div>
+		{/if}
+	</div>
 
 	<!-- Upcoming regularizations — HR's advance warning (#168) -->
 	{#if data.canPost && data.regularizations.length}
@@ -297,195 +493,6 @@
 			</ul>
 		</div>
 	{/if}
-
-	<!-- Recent activity — payslips, request outcomes, etc. (#169) -->
-	{#if data.recentActivity.length}
-		<div class="card space-y-3">
-			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-				Recent Activity
-			</p>
-			<ul class="divide-y divide-border/60">
-				{#each data.recentActivity as n (n.id)}
-					<li class="flex items-center justify-between gap-3 py-2">
-						<div class="flex min-w-0 items-center gap-2">
-							{#if !n.readAt}
-								<span class="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-label="unread"
-								></span>
-							{/if}
-							{#if n.link}
-								<a href={n.link} class="truncate text-sm hover:underline">{n.message}</a>
-							{:else}
-								<span class="truncate text-sm">{n.message}</span>
-							{/if}
-						</div>
-						<span class="shrink-0 text-xs text-muted-foreground"
-							>{formatShortDate(n.createdAt)}</span
-						>
-					</li>
-				{/each}
-			</ul>
-		</div>
-	{/if}
-
-	<!-- Attendance summary (today) -->
-	<div class="card space-y-3">
-		<div class="flex items-center justify-between">
-			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-				Attendance Today
-			</p>
-			<a href="/attendance" class="btn-row">Open attendance</a>
-		</div>
-		{#if metrics.attendance.derived > 0}
-			<div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
-				<div>
-					<p class="text-3xl font-bold text-green-500">{metrics.attendance.present}</p>
-					<p class="text-xs text-muted-foreground">Present</p>
-				</div>
-				<div>
-					<p class="text-3xl font-bold text-yellow-400">{metrics.attendance.late}</p>
-					<p class="text-xs text-muted-foreground">Late</p>
-				</div>
-				<div>
-					<p class="text-3xl font-bold text-red-400">{metrics.attendance.absent}</p>
-					<p class="text-xs text-muted-foreground">Absent</p>
-				</div>
-				<div>
-					<p class="text-3xl font-bold text-blue-400">{metrics.attendance.onLeave}</p>
-					<p class="text-xs text-muted-foreground">On Leave</p>
-				</div>
-			</div>
-		{:else}
-			<p class="text-sm text-muted-foreground">
-				No attendance derived for today yet. Derive it from the <a
-					href="/attendance"
-					class="text-primary hover:underline">Attendance</a
-				> page.
-			</p>
-		{/if}
-	</div>
-
-	<!-- Announcements -->
-	<div class="card space-y-3">
-		<div class="flex items-center justify-between">
-			<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-				Announcements
-			</p>
-			{#if data.canPost}
-				<div class="flex items-center gap-2">
-					<button
-						type="button"
-						onclick={() => (showAward = !showAward)}
-						class="rounded-md border border-amber-500/40 px-3 py-1 text-xs font-medium text-amber-500 hover:bg-amber-500/10"
-						>{showAward ? 'Cancel' : 'Give award'}</button
-					>
-					<button
-						type="button"
-						onclick={() => (showPost = !showPost)}
-						class="rounded-md border border-primary/40 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/10"
-						>{showPost ? 'Cancel' : 'Post'}</button
-					>
-				</div>
-			{/if}
-		</div>
-
-		{#if form?.posted}
-			<div
-				class="rounded-md border border-green-500/20 bg-green-500/10 px-3 py-2 text-xs text-green-400"
-			>
-				Announcement posted.
-			</div>
-		{/if}
-		{#if form?.awarded}
-			<div
-				class="rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-500"
-			>
-				Award given.
-			</div>
-		{/if}
-
-		{#if showAward && data.canPost}
-			<form
-				method="POST"
-				action="?/giveAward"
-				use:enhance={giveAward.enhance}
-				class="space-y-2 rounded-md border p-3"
-			>
-				{#if form?.error}<p class="text-xs text-red-400">{form.error}</p>{/if}
-				<div class="grid gap-2 sm:grid-cols-2">
-					<select name="employeeId" required class="input h-9">
-						<option value="">Select employee…</option>
-						{#each data.awardEmployees as e (e.id)}
-							<option value={e.id}>{e.lastName}, {e.firstName}</option>
-						{/each}
-					</select>
-					<input
-						name="title"
-						placeholder="Award (e.g. Employee of the Month)"
-						required
-						class="input h-9"
-					/>
-				</div>
-				<input name="note" placeholder="Note (optional)" class="input h-9" />
-				<button
-					type="submit"
-					disabled={giveAward.busy}
-					class="btn-primary text-sm disabled:pointer-events-none disabled:opacity-50"
-					>{giveAward.busy ? 'Giving…' : 'Give award'}</button
-				>
-			</form>
-		{/if}
-
-		{#if showPost && data.canPost}
-			<form
-				method="POST"
-				action="?/postAnnouncement"
-				use:enhance={postAnnouncement.enhance}
-				class="space-y-2 rounded-md border p-3"
-			>
-				{#if form?.error}<p class="text-xs text-red-400">{form.error}</p>{/if}
-				<input name="title" placeholder="Title" required class="input h-9" />
-				<textarea
-					name="body"
-					rows="2"
-					placeholder="Message to the whole organisation…"
-					required
-					class="input h-auto resize-none py-2"
-				></textarea>
-				<button
-					type="submit"
-					disabled={postAnnouncement.busy}
-					class="btn-primary text-sm disabled:pointer-events-none disabled:opacity-50"
-					>{postAnnouncement.busy ? 'Posting…' : 'Post announcement'}</button
-				>
-			</form>
-		{/if}
-
-		{#if hasFeed}
-			<ul class="divide-y">
-				{#if data.birthdays.length}
-					<AnnouncementItem variant="birthday" title="Happy Birthday!" body={birthdayBody} />
-				{/if}
-				{#each data.awards as aw (aw.id)}
-					<AnnouncementItem
-						variant="award"
-						title={`${aw.employeeName} — ${aw.title}`}
-						body={aw.note ?? undefined}
-						timestamp={aw.createdAt}
-					/>
-				{/each}
-				{#each data.announcements as a (a.id)}
-					<AnnouncementItem
-						title={a.title}
-						body={a.body}
-						timestamp={a.createdAt}
-						author={a.authorName}
-					/>
-				{/each}
-			</ul>
-		{:else}
-			<p class="text-sm text-muted-foreground">No announcements yet.</p>
-		{/if}
-	</div>
 
 	<!-- Quick actions -->
 	<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

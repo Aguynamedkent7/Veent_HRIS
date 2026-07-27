@@ -2,10 +2,11 @@ import { test, expect } from '@playwright/test'
 import { login, USERS } from './helpers'
 
 // #53: each dashboard metric card is a one-click drill-down to its module page.
+// "On Leave Today" was removed from the metric row when Upcoming Events took the right column;
+// the figure is still reachable from /leave itself.
 test.describe('Dashboard metric cards navigate', () => {
 	const cards = [
 		{ label: 'Active Employees', target: '/employees' },
-		{ label: 'On Leave Today', target: '/leave' },
 		// The unified approvals inbox lives at /requests (/approvals 308-redirects there).
 		{ label: 'Pending Approvals', target: '/requests' },
 		{ label: 'Last Payroll', target: '/payroll' }
