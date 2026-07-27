@@ -10,13 +10,19 @@ import { login, USERS } from './helpers'
  * same-origin POST straight at the action still returns 403 — a hidden button is a UX
  * decision, the role gate is the boundary.
  *
- * The timesheet fixture is a DRAFT in a long-past period (2020 first half) so it can't
- * collide with the current-week rows the punch/approval specs build, and it never reaches
- * the SUBMITTED review queue those specs read.
+ * The timesheet fixture is a DRAFT in a far-future period (2099 first half) so it can't
+ * collide with the rows the punch/approval specs build, it never reaches the SUBMITTED
+ * review queue those specs read, and `periodStart desc` keeps it on page 1 of My
+ * Timesheets however many rows the rest of the suite adds.
+ *
+ * Serial — beforeAll runs once per worker under fullyParallel, so a parallel file would
+ * have several workers racing to create the one fixture (and tearing it down under each
+ * other). The upsert additionally makes the fixture survive a previous crashed run.
  */
+test.describe.configure({ mode: 'serial' })
 
-const PERIOD_START = new Date('2020-01-01T00:00:00.000Z')
-const PERIOD_END = new Date('2020-01-15T00:00:00.000Z')
+const PERIOD_START = new Date('2099-01-01T00:00:00.000Z')
+const PERIOD_END = new Date('2099-01-15T00:00:00.000Z')
 
 let employeeId: string
 let timesheetId: string
@@ -29,23 +35,28 @@ test.beforeAll(async () => {
 			select: { id: true }
 		})
 		employeeId = employee.id
-		const ts = await db.timesheet.create({
-			data: {
+		const entry = {
+			date: PERIOD_START,
+			hoursWorked: 8,
+			otHours: 0,
+			notes: 'e2e view-only fixture'
+		}
+		const ts = await db.timesheet.upsert({
+			where: { employeeId_periodStart: { employeeId, periodStart: PERIOD_START } },
+			create: {
 				employeeId,
 				periodStart: PERIOD_START,
 				periodEnd: PERIOD_END,
 				status: 'DRAFT',
 				totalHours: 8,
-				entries: {
-					create: [
-						{
-							date: PERIOD_START,
-							hoursWorked: 8,
-							otHours: 0,
-							notes: 'e2e view-only fixture'
-						}
-					]
-				}
+				entries: { create: [entry] }
+			},
+			// Reset a leftover from a crashed run back to the state the tests expect.
+			update: {
+				periodEnd: PERIOD_END,
+				status: 'DRAFT',
+				totalHours: 8,
+				entries: { deleteMany: {}, create: [entry] }
 			},
 			select: { id: true }
 		})
@@ -56,6 +67,9 @@ test.beforeAll(async () => {
 })
 
 test.afterAll(async () => {
+	// Guarded: if beforeAll failed there is nothing to remove, and throwing here would
+	// bury the real setup error under a Prisma validation one.
+	if (!timesheetId) return
 	const db = new PrismaClient()
 	try {
 		await db.timesheet.delete({ where: { id: timesheetId } })
@@ -72,7 +86,7 @@ test('employee sees their own timesheets but no create or bulk controls', async 
 
 	await expect(page.getByRole('heading', { name: 'My Timesheets' })).toBeVisible()
 	// Their own row is readable…
-	await expect(page.getByRole('cell', { name: /Jan 1, 2020/ })).toBeVisible()
+	await expect(page.getByRole('cell', { name: /Jan 1, 2099/ })).toBeVisible()
 	// …while every mutation affordance is gone.
 	await expect(page.getByRole('button', { name: 'New Timesheet' })).toHaveCount(0)
 	await expect(page.getByLabel('Select all')).toHaveCount(0)
@@ -85,7 +99,7 @@ test('employee timesheet modal is read-only', async ({ page }) => {
 	await login(page, USERS.employee)
 	await page.goto('/timesheets', { waitUntil: 'domcontentloaded' })
 
-	const row = page.getByRole('row', { name: /Jan 1, 2020/ })
+	const row = page.getByRole('row', { name: /Jan 1, 2099/ })
 	const dialog = page.getByRole('dialog', { name: 'Timesheet review' })
 	// Retry the click until the dialog opens — a pre-hydration click is silently dropped.
 	await expect(async () => {
@@ -106,7 +120,7 @@ test('forged timesheet mutations by an employee are rejected with 403', async ({
 
 	// Same-origin header so this exercises the role gate, not SvelteKit's CSRF rejection.
 	const posts = {
-		'?/create': { periodStart: '2020-02-01', periodEnd: '2020-02-15' },
+		'?/create': { periodStart: '2099-02-01', periodEnd: '2099-02-15' },
 		'?/submit': { id: timesheetId },
 		'?/delete': { id: timesheetId },
 		'?/syncAttendance': { id: timesheetId },

@@ -9,6 +9,11 @@ import { login, USERS } from './helpers'
 //
 // The seed ships a single org, so this spec builds a second one to have something
 // genuinely foreign to reach for, and removes it afterwards.
+//
+// Serial — beforeAll runs once per worker under fullyParallel, so without this the file's
+// tests land on different workers and race to create the same hard-coded FOREIGN org id
+// (Prisma unique-constraint failure in setup). Same reason pii/timesheet-punch are serial.
+test.describe.configure({ mode: 'serial' })
 
 const FOREIGN = 'e2e-tenancy-97'
 // Distinct period so it can't collide with @@unique([organizationId, periodStart, periodEnd]).
