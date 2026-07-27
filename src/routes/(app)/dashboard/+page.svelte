@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
-	import { tenureLabel } from '$lib/utils/dates'
+	import { regularizationStatus, tenureLabel } from '$lib/utils/dates'
 	import { employmentTypeLabel, contractRenewalStatus } from '$lib/utils/employment'
 	import AnnouncementItem from '$lib/components/dashboard/AnnouncementItem.svelte'
+	import EmptyState from '$lib/components/ui/EmptyState.svelte'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
@@ -69,6 +70,20 @@
 			? contractRenewalStatus(new Date(status.endDate))
 			: null
 	)
+	// Probation as elapsed-of-six-months. Clamped at both ends: a start date in the future
+	// (a pre-dated hire) would otherwise give a negative bar, and an overdue review a bar
+	// past 100%.
+	const probation = $derived.by(() => {
+		if (status?.employmentType !== 'PROBATIONARY') return null
+		const start = new Date(status.startDate)
+		const s = regularizationStatus(start)
+		const total = (s.date.getTime() - start.getTime()) / 86_400_000
+		const elapsed = total - s.daysUntil
+		return {
+			...s,
+			percent: Math.round(Math.min(100, Math.max(0, (elapsed / total) * 100)))
+		}
+	})
 	// #108: a double-click posts the announcement twice to the whole organisation.
 	const postAnnouncement = createSubmitGuard(() => async ({ update }) => {
 		await update()
@@ -93,8 +108,13 @@
 
 	<!-- Attendance and the metric cards stack in the left two thirds; Upcoming Events fills the
 	     right third across both of their rows. Keeping attendance narrower than full width stops
-	     four short numbers from spanning the whole page. -->
-	<div class="grid gap-4 lg:grid-cols-3">
+	     four short numbers from spanning the whole page.
+
+	     `grid-cols-1` is load-bearing, not decoration: without an explicit template the single
+	     column is sized `auto`, so a `truncate`d line (whitespace-nowrap) sets a min-content
+	     floor and the whole card pushes past a 390px viewport. Tailwind's numbered variants
+	     emit `minmax(0, 1fr)`, which lets the column shrink and the text ellipsize as intended. -->
+	<div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
 		<div class="space-y-4 lg:col-span-2">
 			<!-- Attendance summary (today) -->
 			<div class="card space-y-3">
@@ -134,7 +154,7 @@
 			</div>
 
 			<!-- Metric cards — each one drills down to its module page (#53) -->
-			<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
 				<a
 					href="/employees"
 					class="card flex flex-col gap-3 transition-colors hover:border-primary/40 hover:bg-card/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -227,7 +247,14 @@
 					{/each}
 				</ul>
 			{:else}
-				<p class="py-6 text-center text-sm text-muted-foreground">Nothing in the next 14 days.</p>
+				<!-- The card spans two rows, so an empty one is a tall void. A centred empty state
+				     fills it deliberately instead of leaving a lone sentence at the top. -->
+				<div class="flex flex-1 items-center justify-center">
+					<EmptyState
+						title="Nothing in the next 14 days"
+						description="Holidays, birthdays and work anniversaries appear here as they approach."
+					/>
+				</div>
 			{/if}
 		</div>
 	</div>
@@ -236,7 +263,7 @@
 	     not a task, so they read side by side and none of them pushes the others below the
 	     fold. They collapse to a single column below lg, and the row simply carries fewer
 	     cards when a viewer has no activity yet or no employee record. -->
-	<div class="grid flex-1 gap-4 lg:grid-cols-3">
+	<div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
 		<!-- Recent activity — payslips, request outcomes, etc. (#169) -->
 		{#if data.recentActivity.length}
 			<div class="card space-y-3">
@@ -267,7 +294,7 @@
 		{/if}
 
 		<!-- Announcements -->
-		<div class="card space-y-3">
+		<div class="card flex h-full flex-col gap-3">
 			<div class="flex items-center justify-between">
 				<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
 					Announcements
@@ -385,59 +412,160 @@
 					{/each}
 				</ul>
 			{:else}
-				<p class="text-sm text-muted-foreground">No announcements yet.</p>
+				<div class="flex flex-1 items-center justify-center">
+					<EmptyState
+						title="No announcements yet"
+						description={data.canPost
+							? 'Post one to reach everyone in your organisation.'
+							: 'Company-wide notices from HR show up here.'}
+					/>
+				</div>
 			{/if}
 		</div>
 
-		<!-- Employee's own status: type, tenure, and renewal for contractual (#167) -->
+		<!-- Employee's own status: employment, leave left, open items, work setup (#167) -->
 		{#if status}
-			<div class="card space-y-3">
+			<div class="card space-y-4">
 				<p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
 					My Status
 				</p>
-				<div class="flex flex-wrap items-center gap-x-8 gap-y-3">
-					<div>
-						<p class="text-xs text-muted-foreground">Employment</p>
+
+				<div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+					<span
+						class="inline-block rounded-full px-2.5 py-0.5 text-sm font-medium {status.employmentType ===
+						'REGULAR'
+							? 'bg-green-500/15 text-green-400'
+							: status.employmentType === 'PROBATIONARY'
+								? 'bg-yellow-500/15 text-yellow-400'
+								: status.employmentType === 'CONTRACTUAL'
+									? 'bg-blue-500/15 text-blue-400'
+									: 'bg-gray-500/15 text-gray-300'}"
+					>
+						{employmentTypeLabel(status.employmentType)}
+					</span>
+					<span class="text-xs text-muted-foreground">
+						{tenureLabel(new Date(status.startDate))} · since {formatShortDate(status.startDate)}
+					</span>
+				</div>
+
+				<!-- Probation runs from a known start to a known date, so it reads as progress; a
+				     contract's end has no comparable origin to measure from, so it stays a date. -->
+				{#if probation}
+					<div class="space-y-1.5">
+						<div class="flex items-baseline justify-between gap-2 text-xs">
+							<span class="text-muted-foreground">Probation</span>
+							<span
+								class={probation.overdue ? 'font-medium text-amber-500' : 'text-muted-foreground'}
+							>
+								{probation.overdue
+									? 'Review overdue'
+									: `${probation.daysUntil} day${probation.daysUntil === 1 ? '' : 's'} left`}
+							</span>
+						</div>
+						<div class="h-1.5 overflow-hidden rounded-full bg-muted">
+							<div
+								class="h-full rounded-full {probation.overdue ? 'bg-amber-500' : 'bg-primary'}"
+								style="width: {probation.percent}%"
+							></div>
+						</div>
+						<p class="text-xs text-muted-foreground">
+							Regularizes {formatShortDate(probation.date)}
+						</p>
+					</div>
+				{:else if renewal}
+					<div class="flex items-baseline justify-between gap-2 text-xs">
+						<span class="text-muted-foreground">Contract</span>
 						<span
-							class="mt-1 inline-block rounded-full px-2.5 py-0.5 text-sm font-medium {status.employmentType ===
-							'REGULAR'
-								? 'bg-green-500/15 text-green-400'
-								: status.employmentType === 'PROBATIONARY'
-									? 'bg-yellow-500/15 text-yellow-400'
-									: status.employmentType === 'CONTRACTUAL'
-										? 'bg-blue-500/15 text-blue-400'
-										: 'bg-gray-500/15 text-gray-300'}"
+							class="font-medium {renewal.expired
+								? 'text-red-400'
+								: renewal.dueForRenewal
+									? 'text-amber-500'
+									: 'text-foreground'}"
 						>
-							{employmentTypeLabel(status.employmentType)}
+							{renewal.expired
+								? `Expired ${formatShortDate(status.endDate!)}`
+								: `Ends ${formatShortDate(status.endDate!)} · ${renewal.daysUntil} day${renewal.daysUntil === 1 ? '' : 's'}`}
 						</span>
 					</div>
-					<div>
-						<p class="text-xs text-muted-foreground">Tenure</p>
-						<p class="mt-1 text-sm font-medium">{tenureLabel(new Date(status.startDate))}</p>
-						<p class="text-xs text-muted-foreground">since {formatShortDate(status.startDate)}</p>
+				{/if}
+
+				{#if status.leave.length}
+					<div class="space-y-1.5 border-t border-border/60 pt-3">
+						<p class="text-xs text-muted-foreground">Leave left this year</p>
+						{#each status.leave as bal (bal.name)}
+							<div class="flex items-baseline justify-between gap-3 text-sm">
+								<span class="min-w-0 truncate text-muted-foreground">{bal.name}</span>
+								<span class="shrink-0 tabular-nums">
+									<span class={bal.remaining <= 0 ? 'text-muted-foreground' : 'font-medium'}
+										>{bal.remaining}</span
+									>
+									<span class="text-xs text-muted-foreground">/ {bal.allocated}</span>
+								</span>
+							</div>
+						{/each}
 					</div>
-					{#if renewal}
-						<div>
-							<p class="text-xs text-muted-foreground">Contract renewal</p>
-							<p
-								class="mt-1 text-sm font-medium {renewal.expired
-									? 'text-red-400'
-									: renewal.dueForRenewal
-										? 'text-amber-500'
-										: 'text-foreground'}"
+				{/if}
+
+				<!-- Only the viewer's own open items, and only when there are any: a row reading
+				     "0 pending" is noise on a card whose job is to say what needs doing. -->
+				{#if status.pendingRequests || status.openTimesheets}
+					<div class="space-y-1 border-t border-border/60 pt-3">
+						{#if status.pendingRequests}
+							<a
+								href="/requests"
+								class="flex items-center justify-between gap-3 text-sm transition-colors hover:text-primary"
 							>
-								{renewal.expired
-									? `Expired ${formatShortDate(status.endDate!)}`
-									: renewal.dueForRenewal
-										? `Up for renewal — in ${renewal.daysUntil} day${renewal.daysUntil === 1 ? '' : 's'}`
-										: `Ends ${formatShortDate(status.endDate!)}`}
-							</p>
-							{#if !renewal.expired && !renewal.dueForRenewal}
-								<p class="text-xs text-muted-foreground">in {renewal.daysUntil} days</p>
-							{/if}
-						</div>
-					{/if}
-				</div>
+								<span
+									>{status.pendingRequests} request{status.pendingRequests === 1 ? '' : 's'} awaiting
+									approval</span
+								>
+								<span aria-hidden="true" class="text-muted-foreground">→</span>
+							</a>
+						{/if}
+						{#if status.openTimesheets}
+							<a
+								href="/timesheets"
+								class="flex items-center justify-between gap-3 text-sm transition-colors hover:text-primary"
+							>
+								<span
+									>{status.openTimesheets} timesheet{status.openTimesheets === 1 ? '' : 's'} not submitted</span
+								>
+								<span aria-hidden="true" class="text-muted-foreground">→</span>
+							</a>
+						{/if}
+					</div>
+				{/if}
+
+				{#if status.schedule || status.managerName || status.departmentName}
+					<dl class="space-y-1.5 border-t border-border/60 pt-3 text-sm">
+						{#if status.schedule}
+							<div class="flex items-baseline justify-between gap-3">
+								<dt class="shrink-0 text-muted-foreground">Schedule</dt>
+								<dd class="min-w-0 text-right">
+									{#if status.schedule.daysLabel && status.schedule.hoursLabel}
+										{status.schedule.daysLabel}, {status.schedule.hoursLabel}
+									{:else if status.schedule.daysLabel}
+										{status.schedule.daysLabel} · {status.schedule.name}
+									{:else}
+										{status.schedule.name}
+									{/if}
+								</dd>
+							</div>
+						{/if}
+						{#if status.managerName}
+							<div class="flex items-baseline justify-between gap-3">
+								<dt class="shrink-0 text-muted-foreground">Reports to</dt>
+								<dd class="min-w-0 truncate text-right">{status.managerName}</dd>
+							</div>
+						{/if}
+						{#if status.departmentName}
+							<div class="flex items-baseline justify-between gap-3">
+								<dt class="shrink-0 text-muted-foreground">Department</dt>
+								<dd class="min-w-0 truncate text-right">{status.departmentName}</dd>
+							</div>
+						{/if}
+					</dl>
+				{/if}
 			</div>
 		{/if}
 	</div>
@@ -554,8 +682,10 @@
 		</div>
 	{/if}
 
-	<!-- Quick actions -->
-	<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+	<!-- Quick actions. `mt-auto` rather than stretching the feed row: the buttons still land at
+	     the bottom of a tall screen, but the slack becomes page background instead of empty card
+	     interiors — a short card reads as fine, a hollow one reads as broken. -->
+	<div class="mt-auto grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
 		<a
 			href="/employees/new"
 			class="card group flex items-center gap-4 transition-colors hover:border-primary/40 hover:bg-card/80"

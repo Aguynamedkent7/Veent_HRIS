@@ -72,14 +72,128 @@ export async function listTodaysBirthdays(organizationId: string, today: Date = 
 	return rows.map((r) => `${r.firstName} ${r.lastName}`)
 }
 
-// The viewer's own employment standing for the dashboard status card (#167): type, start
-// date (for tenure) and contract end date (for a contractual's renewal). Null when the
-// user has no employee profile (e.g. a bare admin account).
-export async function getMyEmploymentStatus(userId: string) {
-	return db.employee.findUnique({
+const WEEKDAY_LABEL = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/** Minutes from PHT midnight → "8:00 AM". */
+function clockLabel(minutes: number): string {
+	const h24 = Math.floor(minutes / 60)
+	const mm = String(minutes % 60).padStart(2, '0')
+	const h12 = h24 % 12 === 0 ? 12 : h24 % 12
+	return `${h12}:${mm} ${h24 < 12 ? 'AM' : 'PM'}`
+}
+
+/**
+ * "Mon–Fri" rather than "Mon, Tue, Wed, Thu, Fri" — contiguous runs of three or more are
+ * collapsed, which is how a schedule is actually spoken. Weekdays arrive 0 = Sunday.
+ */
+function weekdaysLabel(weekdays: number[]): string {
+	const sorted = [...weekdays].sort((a, b) => a - b)
+	const parts: string[] = []
+	for (let i = 0; i < sorted.length;) {
+		let j = i
+		while (j + 1 < sorted.length && sorted[j + 1] === sorted[j] + 1) j++
+		const run = j - i + 1
+		if (run >= 3) parts.push(`${WEEKDAY_LABEL[sorted[i]]}–${WEEKDAY_LABEL[sorted[j]]}`)
+		else for (let k = i; k <= j; k++) parts.push(WEEKDAY_LABEL[sorted[k]])
+		i = j + 1
+	}
+	return parts.join(', ')
+}
+
+/**
+ * The viewer's own standing for the dashboard status card (#167): employment type, start
+ * date (for tenure), contract end date (for a contractual's renewal), leave left, the
+ * items waiting on them, and their work setup. Null when the user has no employee profile
+ * (e.g. a bare admin account), which is what makes the card conditional.
+ *
+ * All of it is the viewer's own data, so nothing here is capability-gated.
+ */
+export async function getMyStatus(userId: string, asOf: Date = new Date()) {
+	const employee = await db.employee.findUnique({
 		where: { userId },
-		select: { employmentType: true, startDate: true, endDate: true }
+		select: {
+			id: true,
+			organizationId: true,
+			employmentType: true,
+			startDate: true,
+			endDate: true,
+			department: { select: { name: true } },
+			reportsTo: { select: { firstName: true, lastName: true } },
+			workSchedule: {
+				select: {
+					name: true,
+					days: { select: { weekday: true, startMinutes: true, endMinutes: true } }
+				}
+			}
+		}
 	})
+	if (!employee) return null
+
+	// An employee with no schedule of their own works the org default — showing nothing
+	// would read as "no schedule set" when in fact the org-wide one applies.
+	const schedule =
+		employee.workSchedule ??
+		(await db.workSchedule.findFirst({
+			where: { organizationId: employee.organizationId, isDefault: true },
+			select: {
+				name: true,
+				days: { select: { weekday: true, startMinutes: true, endMinutes: true } }
+			}
+		}))
+
+	const [balances, pendingRequests, openTimesheets] = await Promise.all([
+		db.leaveBalance.findMany({
+			where: { employeeId: employee.id, year: asOf.getFullYear() },
+			select: {
+				allocated: true,
+				remaining: true,
+				leaveType: { select: { name: true } }
+			},
+			orderBy: { leaveType: { name: 'asc' } }
+		}),
+		// Filed and still undecided — the viewer's own, not things awaiting their approval,
+		// which the Pending Approvals tile already counts.
+		db.request.count({ where: { employeeId: employee.id, status: 'PENDING' } }),
+		// Not yet out of the viewer's hands: never submitted, or sent back to them.
+		db.timesheet.count({
+			where: { employeeId: employee.id, status: { in: ['DRAFT', 'REJECTED'] } }
+		})
+	])
+
+	const days = schedule?.days ?? []
+	// One start/end across every working day is the common case; a schedule that varies by
+	// day cannot be summarised in a line, so it says so rather than picking one day's hours.
+	const uniform =
+		days.length > 0 &&
+		days.every(
+			(d) => d.startMinutes === days[0].startMinutes && d.endMinutes === days[0].endMinutes
+		)
+
+	return {
+		employmentType: employee.employmentType,
+		startDate: employee.startDate,
+		endDate: employee.endDate,
+		departmentName: employee.department?.name ?? null,
+		managerName: employee.reportsTo
+			? `${employee.reportsTo.firstName} ${employee.reportsTo.lastName}`
+			: null,
+		schedule: schedule
+			? {
+					name: schedule.name,
+					daysLabel: days.length ? weekdaysLabel(days.map((d) => d.weekday)) : null,
+					hoursLabel: uniform
+						? `${clockLabel(days[0].startMinutes)} – ${clockLabel(days[0].endMinutes)}`
+						: null
+				}
+			: null,
+		leave: balances.map((b) => ({
+			name: b.leaveType.name,
+			remaining: Number(b.remaining),
+			allocated: Number(b.allocated)
+		})),
+		pendingRequests,
+		openTimesheets
+	}
 }
 
 export async function getEmployeeMetrics(userId: string, organizationId: string) {

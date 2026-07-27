@@ -11,7 +11,7 @@ import {
 	listUpcomingRegularizations,
 	listTodaysBirthdays,
 	listUpcomingEvents,
-	getMyEmploymentStatus
+	getMyStatus
 } from '$lib/server/services/dashboard'
 import { listPostingsAwaitingApprover, decideJobPosting } from '$lib/server/services/recruitment'
 import { isHttpError } from '@sveltejs/kit'
@@ -80,8 +80,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 		listRecentAnnouncements(orgId, 5),
 		// Today's birthday greeting, surfaced in the announcements feed (#167).
 		listTodaysBirthdays(orgId),
-		// The viewer's own employment standing for the status card (#167).
-		getMyEmploymentStatus(user.id),
+		// The viewer's own standing for the status card (#167) — employment, leave left,
+		// what's waiting on them, and their work setup. All their own data, so ungated.
+		getMyStatus(user.id),
 		// Recent employee awards, announced in the feed (#180).
 		listRecentAwards(orgId),
 		// Side panel. Employment matters (probation reviews, contract ends, other people's
