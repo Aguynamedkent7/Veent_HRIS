@@ -85,7 +85,7 @@ the page background showing through.
 ## Phase 4 — Polish & cross-cutting
 
 - [x] UIC-023 Per-PR validation gate: `pnpm check && pnpm test && pnpm test:e2e` on each of the three branches before requesting review.
-- [ ] UIC-024 PR descriptions: reference the plan (`specs/001-hris-platform/plan-ui-consistency.md`) and close their issues (`Closes #67` / `Closes #68` / `Closes #69`).
+- [x] UIC-024 PR descriptions: reference the plan (`specs/001-hris-platform/plan-ui-consistency.md`) and close their issues (`Closes #67` / `Closes #68` / `Closes #69`).
 
 ---
 

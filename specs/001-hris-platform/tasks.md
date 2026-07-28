@@ -257,7 +257,7 @@ routes are deferred and enumerated below. `[X]` = done this pass, `[ ]` = follow
 - [x] T127 Add models `TimeLog`, `BenefitPlan`, `BenefitEnrollment`, `ReviewCycle`, `PerformanceReview`, `Goal`, `Position`; add `Employee.discordId` (unique) + `Employee.positionId` + back-relations; `Position ↔ Department` relation; apply via `prisma db push` + `generate`
 - [x] T128 [P] Update `data-model.md` (expansion entities + state-machine rows) and `spec.md` (FR-034–FR-046)
 - [x] T129 [P] Author contracts `contracts/{benefits,performance,settings,timelog}.md` and extend `contracts/timesheets.md`
-- [ ] T130 [P] Seed sample data: one `BenefitPlan`, one `ReviewCycle`, a few `Position` rows, and a `discordId` on the demo employee (`prisma/seed.ts`) ([#1](https://github.com/Aguynamedkent7/Veent_HRIS/issues/1))
+- [x] T130 [P] Seed sample data: one `BenefitPlan`, one `ReviewCycle`, a few `Position` rows, and a `discordId` on the demo employee (`prisma/seed.ts`) ([#1](https://github.com/Aguynamedkent7/Veent_HRIS/issues/1))
 
 ### 10.2 Discord time tracking
 
@@ -267,8 +267,8 @@ routes are deferred and enumerated below. `[X]` = done this pass, `[ ]` = follow
 - [x] T134 HMAC-authed `POST src/routes/api/v1/timesheets/log/+server.ts`
 - [x] T135 [P] Standalone `scripts/discord-bot.ts` (persistent Clock In/Out buttons) + `scripts/README.md` + `.env.example` + `package.json` `bot` script + `discord.js` dependency
 - [x] T136 [P] Unit tests `tests/unit/hmac.test.ts`, `tests/unit/timelog-aggregate.test.ts`
-- [ ] T137 `GET /api/v1/timesheets/[employeeId]/punches` route (list raw punches; owner/manager/HR) ([#2](https://github.com/Aguynamedkent7/Veent_HRIS/issues/2))
-- [ ] T138 `POST /api/v1/timesheets/aggregate` route wrapping `aggregateTimeLogsToTimesheet` (HR_ADMIN+) ([#3](https://github.com/Aguynamedkent7/Veent_HRIS/issues/3))
+- [x] T137 `GET /api/v1/timesheets/[employeeId]/punches` route (list raw punches; owner/manager/HR) ([#2](https://github.com/Aguynamedkent7/Veent_HRIS/issues/2))
+- [x] T138 `POST /api/v1/timesheets/aggregate` route wrapping `aggregateTimeLogsToTimesheet` (HR_ADMIN+) ([#3](https://github.com/Aguynamedkent7/Veent_HRIS/issues/3))
 - [x] T139 HR "Time Logs → Timesheet" review UI on `(app)/timesheets` — per-PHT-day punch table with computed hours + warnings, an "Aggregate week" action, inline edit of `TimesheetEntry.hoursWorked`, then Approve via existing flow ([#4](https://github.com/Aguynamedkent7/Veent_HRIS/issues/4))
 - [x] T140 [P] Employee read-only punch view + `discordId` field in the employee profile / onboarding forms ([#5](https://github.com/Aguynamedkent7/Veent_HRIS/issues/5))
 - [x] T141 [P] Bot production hardening (pm2/systemd unit) and optional slash-command fallback — docs only for now ([#6](https://github.com/Aguynamedkent7/Veent_HRIS/issues/6))
@@ -296,10 +296,10 @@ routes are deferred and enumerated below. `[X]` = done this pass, `[ ]` = follow
 
 - [x] T155 Service `src/lib/server/services/settings/org.ts` (positions, org chart, `setUserRole` with guardrails, audited)
 - [x] T156 Scaffold `(app)/settings/org/+page.*` (positions + org list; HR_ADMIN+) and `(app)/settings/roles/+page.*` (role management; SUPER_ADMIN) + nav entries
-- [ ] T157 REST routes under `src/routes/api/v1/settings/` (positions, org-chart, users/role) ([#16](https://github.com/Aguynamedkent7/Veent_HRIS/issues/16))
-- [ ] T158 Interactive org-chart visualization (tree with reporting lines) rather than the flat list ([#17](https://github.com/Aguynamedkent7/Veent_HRIS/issues/17))
-- [ ] T159 [P] Position edit UI + employee ↔ position assignment (in employee detail/onboarding) ([#18](https://github.com/Aguynamedkent7/Veent_HRIS/issues/18))
-- [ ] T160 [P] Last-super-admin guardrail on role changes; optional per-user permission overrides ([#19](https://github.com/Aguynamedkent7/Veent_HRIS/issues/19))
+- [x] T157 REST routes under `src/routes/api/v1/settings/` (positions, org-chart, users/role) ([#16](https://github.com/Aguynamedkent7/Veent_HRIS/issues/16))
+- [x] T158 Interactive org-chart visualization (tree with reporting lines) rather than the flat list ([#17](https://github.com/Aguynamedkent7/Veent_HRIS/issues/17))
+- [x] T159 [P] Position edit UI + employee ↔ position assignment (in employee detail/onboarding) ([#18](https://github.com/Aguynamedkent7/Veent_HRIS/issues/18))
+- [x] T160 [P] Last-super-admin guardrail on role changes; optional per-user permission overrides ([#19](https://github.com/Aguynamedkent7/Veent_HRIS/issues/19))
 
 ---
 
