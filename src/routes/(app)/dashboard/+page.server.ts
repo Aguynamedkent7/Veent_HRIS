@@ -10,7 +10,8 @@ import { grantAward, listRecentAwards } from '$lib/server/services/awards'
 import {
 	listUpcomingRegularizations,
 	listTodaysBirthdays,
-	getMyEmploymentStatus
+	listUpcomingEvents,
+	getMyStatus
 } from '$lib/server/services/dashboard'
 import { listPostingsAwaitingApprover, decideJobPosting } from '$lib/server/services/recruitment'
 import { isHttpError } from '@sveltejs/kit'
@@ -22,6 +23,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 	const canPost = can(user.role, 'MANAGE_HR')
 	// The "Last Payroll" tile is payroll-report data, not general dashboard info (#132).
 	const canViewPayroll = can(user.role, 'VIEW_PAYROLL_REPORTS')
+	// Since #165 employees don't create timesheets, so the quick action would only send them
+	// to a 403. Same capability the /timesheets create action enforces.
+	const canCreateTimesheet = can(user.role, 'MANAGE_HR')
 
 	// Today's PHT day, stored as the UTC-midnight date key used by AttendanceDay.
 	const todayKey = manilaDayKey(new Date())
@@ -72,14 +76,18 @@ export const load: PageServerLoad = async ({ locals }) => {
 		derived: attendanceGroups.reduce((s, g) => s + g._count._all, 0)
 	}
 
-	const [announcements, birthdays, myStatus, awards] = await Promise.all([
+	const [announcements, birthdays, myStatus, awards, upcomingEvents] = await Promise.all([
 		listRecentAnnouncements(orgId, 5),
 		// Today's birthday greeting, surfaced in the announcements feed (#167).
 		listTodaysBirthdays(orgId),
-		// The viewer's own employment standing for the status card (#167).
-		getMyEmploymentStatus(user.id),
+		// The viewer's own standing for the status card (#167) — employment, leave left,
+		// what's waiting on them, and their work setup. All their own data, so ungated.
+		getMyStatus(user.id),
 		// Recent employee awards, announced in the feed (#180).
-		listRecentAwards(orgId)
+		listRecentAwards(orgId),
+		// Side panel. Employment matters (probation reviews, contract ends, other people's
+		// leave) go only to the HR ladder; everyone still sees their own.
+		listUpcomingEvents(orgId, { userId: user.id, canSeeSensitive: canPost })
 	])
 
 	// HR grants awards from the dashboard — roster for the recipient picker.
@@ -110,6 +118,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	return {
 		canPost,
 		canViewPayroll,
+		canCreateTimesheet,
 		announcements,
 		regularizations,
 		birthdays,
@@ -118,6 +127,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		awardEmployees,
 		postingsToApprove,
 		recentActivity,
+		upcomingEvents,
 		metrics: {
 			headcount,
 			onLeaveToday,

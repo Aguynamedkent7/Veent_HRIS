@@ -689,7 +689,7 @@
 	<!-- Main content — offset by sidebar on lg+, cleared by the mobile top bar below lg.
 	     min-w-0 lets this flex child shrink below its content so inner overflow-x-auto works. -->
 	<div class="flex min-w-0 flex-1 flex-col lg:pl-60">
-		<main class="flex-1 p-4 pt-20 lg:p-8 lg:pt-8">
+		<main class="flex flex-1 flex-col p-4 pt-20 lg:p-8 lg:pt-8">
 			{@render children()}
 		</main>
 	</div>

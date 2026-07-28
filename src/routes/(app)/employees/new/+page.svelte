@@ -1,7 +1,15 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
-	import { RATE_BASIS_OPTIONS, rateBasisCopy, type RateBasis } from '$lib/utils/rate-basis'
+	import {
+		rateBasisOptionsFor,
+		rateBasisCopy,
+		isRateBasisAllowed,
+		type RateBasis
+	} from '$lib/utils/rate-basis'
+	// Placeholders come from the same table the server validates against, so the example HR
+	// sees can never disagree with what is accepted (#191).
+	import { GOV_ID_FORMATS } from '$lib/utils/gov-ids'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -12,9 +20,11 @@
 	// PROBATIONARY first so it is the browser's default selection (#136).
 	const EMPLOYMENT_TYPES = [
 		['PROBATIONARY', 'Probationary'],
-		['FULL_TIME', 'Full Time'],
+		['REGULAR', 'Regular'],
 		['CONTRACTUAL', 'Contractual'],
-		['PART_TIME', 'Part-time']
+		['PART_TIME', 'Part-time'],
+		['ON_CALL', 'On-call'],
+		['INTERN', 'Intern']
 	] as const
 
 	// #120: the amount field means different things per basis, so its label follows the selection.
@@ -30,6 +40,21 @@
 		(form as { fieldErrors?: Record<string, string[]> } | null)?.fieldErrors?.[name]
 			? true
 			: undefined
+
+	// #188: new hires start on probation.
+	let employmentType = $state('PROBATIONARY')
+	$effect(() => {
+		employmentType = (form?.values?.employmentType as string) ?? 'PROBATIONARY'
+	})
+
+	// #189: hourly applies only to part-time and on-call, so the list follows the employment
+	// type. The server refuses the pairing too — this only keeps HR from picking a combination
+	// that would bounce back.
+	const rateOptions = $derived(rateBasisOptionsFor(employmentType))
+	// Switching to a type that cannot be hourly must not leave a now-invalid basis selected.
+	$effect(() => {
+		if (!isRateBasisAllowed(rateType, employmentType)) rateType = 'MONTHLY'
+	})
 </script>
 
 <svelte:head>
@@ -244,6 +269,7 @@
 						<select
 							id="employmentType"
 							name="employmentType"
+							bind:value={employmentType}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						>
 							<!-- New hires start probationary (#136); regularization is automatic at 6 months.
@@ -285,10 +311,13 @@
 							bind:value={rateType}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						>
-							{#each RATE_BASIS_OPTIONS as opt (opt.value)}
+							{#each rateOptions as opt (opt.value)}
 								<option value={opt.value}>{opt.label}</option>
 							{/each}
 						</select>
+						{#if form?.fieldErrors?.rateType}
+							<p class="mt-1 text-xs text-destructive">{form.fieldErrors.rateType[0]}</p>
+						{/if}
 					</div>
 					<div>
 						<label for="basicMonthlySalary" class="text-sm font-medium"
@@ -371,36 +400,56 @@
 						<input
 							id="sssNumber"
 							name="sssNumber"
+							aria-invalid={invalid('sssNumber')}
 							value={form?.values?.sssNumber ?? ''}
+							placeholder={GOV_ID_FORMATS.sssNumber.example}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
+						{#if form?.fieldErrors?.sssNumber}
+							<p class="mt-1 text-xs text-red-400">{form.fieldErrors.sssNumber[0]}</p>
+						{/if}
 					</div>
 					<div>
 						<label for="philhealthNumber" class="text-sm font-medium">PhilHealth Number</label>
 						<input
 							id="philhealthNumber"
 							name="philhealthNumber"
+							aria-invalid={invalid('philhealthNumber')}
 							value={form?.values?.philhealthNumber ?? ''}
+							placeholder={GOV_ID_FORMATS.philhealthNumber.example}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
+						{#if form?.fieldErrors?.philhealthNumber}
+							<p class="mt-1 text-xs text-red-400">{form.fieldErrors.philhealthNumber[0]}</p>
+						{/if}
 					</div>
 					<div>
 						<label for="pagibigNumber" class="text-sm font-medium">Pag-IBIG Number</label>
 						<input
 							id="pagibigNumber"
 							name="pagibigNumber"
+							aria-invalid={invalid('pagibigNumber')}
 							value={form?.values?.pagibigNumber ?? ''}
+							placeholder={GOV_ID_FORMATS.pagibigNumber.example}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
+						{#if form?.fieldErrors?.pagibigNumber}
+							<p class="mt-1 text-xs text-red-400">{form.fieldErrors.pagibigNumber[0]}</p>
+						{/if}
 					</div>
 					<div>
 						<label for="tinNumber" class="text-sm font-medium">TIN Number</label>
 						<input
 							id="tinNumber"
 							name="tinNumber"
+							aria-invalid={invalid('tinNumber')}
 							value={form?.values?.tinNumber ?? ''}
+							placeholder={GOV_ID_FORMATS.tinNumber.example}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
+						{#if form?.fieldErrors?.tinNumber}
+							<p class="mt-1 text-xs text-red-400">{form.fieldErrors.tinNumber[0]}</p>
+						{/if}
 					</div>
 				</div>
 			</fieldset>
@@ -468,19 +517,28 @@
 						<input
 							id="bankAccountNumber"
 							name="bankAccountNumber"
+							aria-invalid={invalid('bankAccountNumber')}
 							value={form?.values?.bankAccountNumber ?? ''}
+							placeholder={GOV_ID_FORMATS.bankAccountNumber.example}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
+						{#if form?.fieldErrors?.bankAccountNumber}
+							<p class="mt-1 text-xs text-destructive">{form.fieldErrors.bankAccountNumber[0]}</p>
+						{/if}
 					</div>
 					<div>
 						<label for="gcashNumber" class="text-sm font-medium">GCash Number</label>
 						<input
 							id="gcashNumber"
 							name="gcashNumber"
+							aria-invalid={invalid('gcashNumber')}
 							value={form?.values?.gcashNumber ?? ''}
-							placeholder="e.g. 0917xxxxxxx"
+							placeholder={GOV_ID_FORMATS.gcashNumber.example}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
+						{#if form?.fieldErrors?.gcashNumber}
+							<p class="mt-1 text-xs text-destructive">{form.fieldErrors.gcashNumber[0]}</p>
+						{/if}
 					</div>
 				</div>
 			</fieldset>

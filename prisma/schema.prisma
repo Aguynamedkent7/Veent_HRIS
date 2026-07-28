@@ -37,10 +37,17 @@ enum Role {
 }
 
 enum EmploymentType {
-  FULL_TIME
+  // FULL_TIME was renamed to REGULAR (#172) — payslips already printed it as "REGULAR", so the
+  // data model now matches the document. Renaming a Postgres enum value is NOT something
+  // `prisma db push` can do without dropping the type, so any existing database must run
+  // `pnpm tsx scripts/migrate-employment-type-regular.ts` BEFORE the push.
+  REGULAR
   PART_TIME
   CONTRACTUAL
   PROBATIONARY
+  // #187: branch crew who work called shifts, and interns.
+  ON_CALL
+  INTERN
 }
 
 enum EmploymentStatus {
@@ -49,10 +56,15 @@ enum EmploymentStatus {
   OFFBOARDED
 }
 
-// Client-confirmed (#122): employees are either on a fixed monthly salary or paid hourly.
-// There is no daily rate — DAILY was removed rather than left as an enum value the UI hides.
+// #122 removed DAILY on the basis that staff are either salaried or hourly; #189 reverses that
+// and restores it. Adding an enum value is something `db push` handles on its own — unlike the
+// FULL_TIME → REGULAR rename, no migration script is needed.
+//
+// HOURLY is restricted to PART_TIME and ON_CALL staff (#189); the rate/type pairing is enforced
+// in `$lib/utils/rate-basis`, which the create form, the edit form and the API all validate with.
 enum RateType {
   MONTHLY
+  DAILY
   HOURLY
 }
 
@@ -274,6 +286,10 @@ model Organization {
   // Company Discord server invite link (#186). When set, onboarding emails new hires an
   // invitation; null (most tenants) skips it. Only Veent has adopted Discord so far.
   discordInviteUrl String?
+  // Prefix for generated employee numbers ("EMP" → EMP-015). Per-org because the branches
+  // number their staff separately: JoJo Potato uses JJ, Sweetleaf SL. The default backfills
+  // existing rows and keeps Veent on EMP.
+  employeeNumberPrefix String @default("EMP") @db.VarChar(8)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -877,14 +893,27 @@ model Announcement {
   @@map("announcements")
 }
 
+// What a notification is about, so the activity feed can label it with an icon rather than
+// smuggling one into the message text as an emoji. GENERAL is the fallback for rows written
+// before this existed and for events that fit no bucket.
+enum NotificationKind {
+  GENERAL
+  ANNOUNCEMENT
+  AWARD
+  PAYSLIP
+  REQUEST
+  RECRUITMENT
+}
+
 // Per-user in-app notification. Surfaced as a toast on next load; readAt set once seen.
 model Notification {
-  id        String    @id @default(cuid())
+  id        String           @id @default(cuid())
   userId    String
   message   String
+  kind      NotificationKind @default(GENERAL)
   link      String?
   readAt    DateTime?
-  createdAt DateTime  @default(now())
+  createdAt DateTime         @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

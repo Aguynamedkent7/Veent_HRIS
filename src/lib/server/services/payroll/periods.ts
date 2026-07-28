@@ -291,7 +291,7 @@ export async function release(id: string, organizationId: string, ctx: AuditCont
 			})
 			const userIds = [...new Set(entries.map((e) => e.employee.userId))]
 			const label = `${formatShortDate(period.startDate)}–${formatShortDate(period.endDate)}`
-			await notifyMany(userIds, `Your payslip for ${label} is available.`, '/payslips')
+			await notifyMany(userIds, `Your payslip for ${label} is available.`, '/payslips', 'PAYSLIP')
 		}
 	} catch (e) {
 		console.error('[NOTIFY] Failed to notify payslip release for period', id, e)

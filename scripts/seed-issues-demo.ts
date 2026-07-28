@@ -72,7 +72,7 @@ async function main() {
 				lastName: opts.lastName,
 				departmentId: opts.departmentId,
 				jobTitle: opts.jobTitle,
-				employmentType: 'FULL_TIME',
+				employmentType: 'REGULAR',
 				startDate: opts.startDate,
 				basicMonthlySalary: opts.salary,
 				rateType: 'MONTHLY',

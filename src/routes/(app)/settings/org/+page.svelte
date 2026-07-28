@@ -111,24 +111,24 @@
 			<table class="w-full text-sm">
 				<thead class="border-b bg-muted/50">
 					<tr>
-						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Title</th>
-						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Department</th>
-						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Level</th>
-						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Salary Grade</th>
-						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Employees</th>
-						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
-						<th class="px-4 py-3"></th>
+						<th class="w-full px-4 py-2 text-left font-medium text-muted-foreground">Title</th>
+						<th class="px-4 py-2 text-left font-medium text-muted-foreground">Department</th>
+						<th class="px-4 py-2 text-left font-medium text-muted-foreground">Level</th>
+						<th class="px-4 py-2 text-left font-medium text-muted-foreground">Salary Grade</th>
+						<th class="px-4 py-2 text-left font-medium text-muted-foreground">Employees</th>
+						<th class="px-4 py-2 text-left font-medium text-muted-foreground">Status</th>
+						<th class="w-[1%] whitespace-nowrap px-4 py-2"></th>
 					</tr>
 				</thead>
 				<tbody class="divide-y">
 					{#each data.positions as pos (pos.id)}
 						<tr class="hover:bg-muted/30">
-							<td class="px-4 py-3 font-medium">{pos.title}</td>
-							<td class="px-4 py-3 text-muted-foreground">{pos.department?.name ?? '—'}</td>
-							<td class="px-4 py-3 text-muted-foreground">{pos.level ?? '—'}</td>
-							<td class="px-4 py-3 text-muted-foreground">{pos.salaryGrade?.name ?? '—'}</td>
-							<td class="px-4 py-3 text-muted-foreground">{pos._count.employees}</td>
-							<td class="px-4 py-3">
+							<td class="px-4 py-2 font-medium">{pos.title}</td>
+							<td class="px-4 py-2 text-muted-foreground">{pos.department?.name ?? '—'}</td>
+							<td class="px-4 py-2 text-muted-foreground">{pos.level ?? '—'}</td>
+							<td class="px-4 py-2 text-muted-foreground">{pos.salaryGrade?.name ?? '—'}</td>
+							<td class="px-4 py-2 text-muted-foreground">{pos._count.employees}</td>
+							<td class="px-4 py-2">
 								<span
 									class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {pos.isActive
 										? 'bg-green-500/15 text-green-400'
@@ -137,7 +137,7 @@
 									{pos.isActive ? 'ACTIVE' : 'INACTIVE'}
 								</span>
 							</td>
-							<td class="px-4 py-3 text-right">
+							<td class="w-[1%] whitespace-nowrap px-4 py-2 text-right">
 								<button
 									onclick={() => (editingId = editingId === pos.id ? null : pos.id)}
 									class="rounded-md border px-3 py-1 text-xs hover:bg-accent"
@@ -258,21 +258,21 @@
 			<table class="w-full text-sm">
 				<thead class="border-b bg-muted/50">
 					<tr>
-						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Employee</th>
-						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Job Title</th>
-						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Department</th>
-						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Position</th>
-						<th class="px-4 py-3"></th>
+						<th class="w-full px-4 py-2 text-left font-medium text-muted-foreground">Employee</th>
+						<th class="px-4 py-2 text-left font-medium text-muted-foreground">Job Title</th>
+						<th class="px-4 py-2 text-left font-medium text-muted-foreground">Department</th>
+						<th class="px-4 py-2 text-left font-medium text-muted-foreground">Position</th>
+						<th class="w-[1%] whitespace-nowrap px-4 py-2"></th>
 					</tr>
 				</thead>
 				<tbody class="divide-y">
 					{#each data.employees as emp (emp.id)}
 						{@const assign = assignGuard(emp.id)}
 						<tr class="hover:bg-muted/30">
-							<td class="px-4 py-3 font-medium">{emp.name}</td>
-							<td class="px-4 py-3 text-muted-foreground">{emp.jobTitle}</td>
-							<td class="px-4 py-3 text-muted-foreground">{emp.departmentName ?? '—'}</td>
-							<td class="px-4 py-3" colspan="2">
+							<td class="px-4 py-2 font-medium">{emp.name}</td>
+							<td class="px-4 py-2 text-muted-foreground">{emp.jobTitle}</td>
+							<td class="px-4 py-2 text-muted-foreground">{emp.departmentName ?? '—'}</td>
+							<td class="px-4 py-2" colspan="2">
 								<form
 									method="POST"
 									action="?/assignEmployee"

@@ -90,39 +90,31 @@ export async function getTimesheet(id: string, organizationId: string) {
 }
 
 /**
- * A plain MANAGER may only act on resources belonging to their direct reports.
- * HR_ADMIN / SUPER_ADMIN act org-wide. Throws 403 otherwise.
- */
-async function assertManagesEmployee(ctx: AuditContext, reportsToId: string | null) {
-	if (ctx.actorRole !== 'MANAGER') return
-	const actorEmployee = await db.employee.findUnique({
-		where: { userId: ctx.actorId },
-		select: { id: true }
-	})
-	if (!actorEmployee || reportsToId !== actorEmployee.id) {
-		error(403, 'You can only review items for your direct reports')
-	}
-}
-
-/**
  * Authorize a mutation of `ts`: the owner may act on their own timesheet (callers apply the
- * status rules — e.g. draft-only); managers/HR act per their direct-reports scope. A non-owner
- * without a management role is rejected. Returns whether the actor owns the timesheet.
+ * status rules — e.g. draft-only); the HR ladder acts org-wide. A non-owner without a
+ * management role is rejected. Returns whether the actor owns the timesheet.
+ *
+ * MANAGER used to be narrowed further, to its direct reports only. That was dropped: MANAGER
+ * is the branch title for on-branch HR at JoJo Potato and Sweetleaf and carries the same
+ * authority as HR_ADMIN, which is how every other surface already treats it — Team Timesheets
+ * lists the whole org, and the aggregate panel and /attendance corrections clear
+ * `requireMinRole('HR_ADMIN')` because both roles rank 2. Keeping the narrowing here only
+ * meant a manager could create or aggregate a sheet and then be refused when syncing it,
+ * and it failed outright for the many employees with no `reportsTo` set at all. Tenancy is
+ * unaffected: `getTimesheet` scopes by organizationId before any of this runs.
+ *
+ * Exported so a caller that does side-effectful work of its own before replacing entries
+ * (`?/syncAttendance` derives attendance first) can authorize up front rather than let the
+ * write happen and the check refuse afterwards.
  */
-async function assertCanModify(
-	ctx: AuditContext,
-	ts: { employeeId: string; employee: { reportsToId: string | null } }
-) {
+export async function assertCanModifyTimesheet(ctx: AuditContext, ts: { employeeId: string }) {
 	const actorEmployee = await db.employee.findUnique({
 		where: { userId: ctx.actorId },
 		select: { id: true }
 	})
 	const isOwner = actorEmployee?.id === ts.employeeId
 	if (isOwner) return { isOwner: true }
-	if (can(ctx.actorRole, 'VIEW_TEAM')) {
-		await assertManagesEmployee(ctx, ts.employee.reportsToId)
-		return { isOwner: false }
-	}
+	if (can(ctx.actorRole, 'VIEW_TEAM')) return { isOwner: false }
 	error(403, 'You can only modify your own timesheet')
 }
 
@@ -169,9 +161,9 @@ export async function createTimesheet(
 }
 
 /**
- * Replace a timesheet's entries and recompute its total (HR review edits). Managers are scoped
- * to their direct reports; approved timesheets are locked. Runs in a transaction so the entries
- * and total stay consistent.
+ * Replace a timesheet's entries and recompute its total (HR review edits). The HR ladder acts
+ * org-wide; approved timesheets are locked. Runs in a transaction so the entries and total
+ * stay consistent.
  */
 export async function updateTimesheetEntries(
 	id: string,
@@ -180,7 +172,7 @@ export async function updateTimesheetEntries(
 	ctx: AuditContext
 ) {
 	const ts = await getTimesheet(id, organizationId)
-	const { isOwner } = await assertCanModify(ctx, ts)
+	const { isOwner } = await assertCanModifyTimesheet(ctx, ts)
 	// The owner may only change their own DRAFT (e.g. sync from attendance); managers/HR may edit
 	// anything that isn't already APPROVED.
 	if (isOwner && ts.status !== 'DRAFT') error(400, 'You can only edit your own draft timesheet')
@@ -239,15 +231,14 @@ export async function submitTimesheet(id: string, employeeId: string, ctx: Audit
 }
 
 /**
- * Delete a timesheet (entries cascade). The owner may delete their own DRAFT/REJECTED; managers
- * are scoped to their direct reports and HR/super act org-wide (any status). Deletion is explicit
- * (confirmed in the UI), never automatic.
+ * Delete a timesheet (entries cascade). The owner may delete their own DRAFT/REJECTED; the HR
+ * ladder acts org-wide at any status. Deletion is explicit (confirmed in the UI), never automatic.
  */
 export async function deleteTimesheet(id: string, organizationId: string, ctx: AuditContext) {
 	const ts = await getTimesheet(id, organizationId)
-	const { isOwner } = await assertCanModify(ctx, ts)
+	const { isOwner } = await assertCanModifyTimesheet(ctx, ts)
 	// The owner may delete only their own DRAFT/REJECTED timesheet — not once it's submitted (under
-	// review) or approved (locked). Managers/HR keep the broader scope handled by assertCanModify.
+	// review) or approved (locked). Managers/HR keep the broader scope handled by the guard.
 	if (isOwner && ts.status !== 'DRAFT' && ts.status !== 'REJECTED')
 		error(400, 'You can only delete your own draft timesheet')
 
@@ -272,12 +263,13 @@ export async function deleteTimesheet(id: string, organizationId: string, ctx: A
  * HR submits an aggregated draft on the employee's behalf. HR builds a draft from time
  * logs on /timesheets (they don't own it, so the owner-only `submitTimesheet` can't be
  * used); this moves it to SUBMITTED so it lands in the normal review queue — /timesheets
- * never approves in place. Only DRAFT timesheets are eligible. Managers are scoped to
- * their direct reports. The update and its audit log share one transaction.
+ * never approves in place. Only DRAFT timesheets are eligible. The update and its audit log
+ * share one transaction.
+ *
+ * Org-scoped only — `getTimesheet` filters by organizationId, and the route gates the role.
  */
 export async function submitDraftByHr(id: string, organizationId: string, ctx: AuditContext) {
 	const ts = await getTimesheet(id, organizationId)
-	await assertManagesEmployee(ctx, ts.employee.reportsToId)
 	if (ts.status !== 'DRAFT') error(400, 'Only draft timesheets can be submitted here')
 
 	return db.$transaction(async (tx) => {
@@ -337,9 +329,9 @@ export async function reviewTimesheet(
 
 	const live = liveChain(ts.approvalSteps)
 
-	// Legacy fallback: a step-less timesheet reviews directly under manager scope.
+	// Legacy fallback: a step-less timesheet reviews directly under the caller's org scope
+	// (the route already required the reviewer role; the self-review guard is above).
 	if (!live || !live.currentStep) {
-		await assertManagesEmployee(ctx, ts.employee.reportsToId)
 		const updated = await db.timesheet.update({
 			where: { id },
 			data: {

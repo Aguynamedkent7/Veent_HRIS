@@ -83,9 +83,16 @@ test('admin sees masked numbers, reveals full values, and the reveal is audited'
 
 	// The reveal wrote a VIEW audit entry on the Employee entity.
 	await page.goto('/reports/audit-log', { waitUntil: 'domcontentloaded' })
-	const viewRow = page.locator('tbody tr', { hasText: 'VIEW' }).first()
-	await expect(viewRow).toBeVisible()
-	await expect(viewRow.getByText('Employee', { exact: true })).toBeVisible()
+	// Matched on the action and entity cells exactly, not `hasText: 'VIEW'`: that is a
+	// case-insensitive substring, so it also matched the "View changes" payload toggle present
+	// on every audited row. `.first()` then returned whichever row happened to be newest —
+	// usually another spec's — and the entityType assertion failed at random under
+	// fullyParallel. Matching both cells makes this independent of what else is in the log.
+	const viewRow = page
+		.locator('tbody tr')
+		.filter({ has: page.getByText('VIEW', { exact: true }) })
+		.filter({ has: page.getByText('Employee', { exact: true }) })
+	await expect(viewRow.first()).toBeVisible()
 })
 
 // #95: the per-record masking above is only half the boundary — the roster list

@@ -1,13 +1,15 @@
 import type { EmploymentType } from '@prisma/client'
 
 // One place both the client and server read employment-type wording from, so the
-// dashboard status card, the 201 file and payslips can't drift (#167). FULL_TIME reads
-// as "Regular" — the term the business uses for a regularised employee.
+// dashboard status card, the 201 file and payslips can't drift (#167). The enum value was
+// FULL_TIME and always read as "Regular" here; #172 renamed the value to match the wording.
 export const EMPLOYMENT_TYPE_LABEL: Record<EmploymentType, string> = {
-	FULL_TIME: 'Regular',
+	REGULAR: 'Regular',
 	PROBATIONARY: 'Probationary',
 	CONTRACTUAL: 'Contractual',
-	PART_TIME: 'Part-time'
+	PART_TIME: 'Part-time',
+	ON_CALL: 'On-call',
+	INTERN: 'Intern'
 }
 
 export function employmentTypeLabel(type: EmploymentType): string {

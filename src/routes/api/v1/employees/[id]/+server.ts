@@ -3,6 +3,7 @@ import { can, requireCapability, requireMinRole } from '$lib/server/rbac'
 import { getEmployee, updateEmployee, offboardEmployee } from '$lib/server/services/employees'
 import { apiError } from '$lib/server/api-error'
 import { db } from '$lib/server/db'
+import { govIdSchema } from '$lib/utils/gov-ids'
 import { z } from 'zod'
 import type { RequestHandler } from './$types'
 
@@ -14,14 +15,18 @@ const updateSchema = z.object({
 	contactAddress: z.string().optional(),
 	departmentId: z.string().optional(),
 	jobTitle: z.string().optional(),
-	employmentType: z.enum(['FULL_TIME', 'PROBATIONARY', 'CONTRACTUAL', 'PART_TIME']).optional(),
+	employmentType: z
+		.enum(['REGULAR', 'PROBATIONARY', 'CONTRACTUAL', 'PART_TIME', 'ON_CALL', 'INTERN'])
+		.optional(),
 	employmentStatus: z.enum(['ACTIVE', 'ON_LEAVE', 'OFFBOARDED']).optional(),
 	basicMonthlySalary: z.coerce.number().positive().optional(),
-	rateType: z.enum(['MONTHLY', 'HOURLY']).optional(),
-	sssNumber: z.string().optional(),
-	philhealthNumber: z.string().optional(),
-	pagibigNumber: z.string().optional(),
-	tinNumber: z.string().optional(),
+	rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
+	// #191: a PATCH only carries the fields the caller intends to change, so anything sent
+	// here is by definition new and is format-checked and stored canonically.
+	sssNumber: govIdSchema('sssNumber'),
+	philhealthNumber: govIdSchema('philhealthNumber'),
+	pagibigNumber: govIdSchema('pagibigNumber'),
+	tinNumber: govIdSchema('tinNumber'),
 	reportsToId: z.string().optional()
 })
 

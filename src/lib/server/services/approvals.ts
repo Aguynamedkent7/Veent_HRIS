@@ -193,7 +193,12 @@ export async function decide(
 					? 'returned for correction'
 					: null
 	if (verb) {
-		await notify(req.employee.userId, `Your ${label} request was ${verb}.`, `/requests/${req.id}`)
+		await notify(
+			req.employee.userId,
+			`Your ${label} request was ${verb}.`,
+			`/requests/${req.id}`,
+			'REQUEST'
+		)
 	}
 
 	return { status: transition.status, currentStage: transition.currentStage }

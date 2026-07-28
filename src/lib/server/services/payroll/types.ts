@@ -5,8 +5,11 @@
 
 import { D, q2n, type Money, type MoneyLike } from './money'
 
-/** MONTHLY = fixed monthly salary, HOURLY = paid for hours worked. No daily rate (#122). */
-export type RateType = 'MONTHLY' | 'HOURLY'
+/**
+ * MONTHLY = fixed monthly salary, HOURLY = paid per hour worked, DAILY = paid per day worked
+ * (#189 restored DAILY, which #122 had removed).
+ */
+export type RateType = 'MONTHLY' | 'DAILY' | 'HOURLY'
 
 /** An employee's compensation basis. */
 export interface EmployeeComp {
@@ -100,7 +103,12 @@ export function round2(n: number): number {
 /** Hours in a full month for this employee — the MONTHLY↔HOURLY conversion factor.
  *  The 22×8 defaults are a placeholder until they become configurable (#110). */
 function monthlyHoursOf(comp: EmployeeComp): Money {
-	return D(comp.monthlyWorkingDays ?? 22).times(comp.dailyWorkingHours ?? 8)
+	return D(comp.monthlyWorkingDays ?? 22).times(dailyHoursOf(comp))
+}
+
+/** Paid hours in one working day — the DAILY↔HOURLY conversion factor (#189). */
+function dailyHoursOf(comp: EmployeeComp): Money {
+	return D(comp.dailyWorkingHours ?? 8)
 }
 
 /**
@@ -115,6 +123,9 @@ function monthlyHoursOf(comp: EmployeeComp): Money {
  */
 export function hourlyRateOf(comp: EmployeeComp): Money {
 	if (comp.rateType === 'HOURLY') return D(comp.basicMonthlySalary)
+	// DAILY holds a per-day rate, so it converts through the day length rather than the month:
+	// dividing by the full monthly hours would pay a ₱800/day employee ₱4.55/hr (#189).
+	if (comp.rateType === 'DAILY') return D(comp.basicMonthlySalary).dividedBy(dailyHoursOf(comp))
 	return D(comp.basicMonthlySalary).dividedBy(monthlyHoursOf(comp))
 }
 
@@ -127,6 +138,10 @@ export function hourlyRateOf(comp: EmployeeComp): Money {
  */
 export function monthlyBasisOf(comp: EmployeeComp): Money {
 	if (comp.rateType === 'MONTHLY') return D(comp.basicMonthlySalary)
+	// A daily rate projects by working days, not by hours — ₱800/day × 22 = ₱17,600, whereas
+	// going via the hourly rate and back would be the same number by a longer route.
+	if (comp.rateType === 'DAILY')
+		return D(comp.basicMonthlySalary).times(comp.monthlyWorkingDays ?? 22)
 	return D(comp.basicMonthlySalary).times(monthlyHoursOf(comp))
 }
 
@@ -136,8 +151,10 @@ export function monthlyBasisOf(comp: EmployeeComp): Money {
  * - `FIXED`   — MONTHLY staff are on a fixed monthly salary (client-confirmed). Basic does not
  *               vary with hours worked; unworked time comes off as explicit TARDINESS/ABSENCE
  *               deduction lines.
- * - `HOURLY`  — everyone else is paid for hours actually worked. Unworked time is unpaid by
- *               construction, so TARDINESS/ABSENCE must NOT also be charged.
+ * - `HOURLY`  — everyone else (HOURLY and DAILY) is paid for hours actually worked. Unworked
+ *               time is unpaid by construction, so TARDINESS/ABSENCE must NOT also be charged.
+ *               A DAILY employee reaches this path with their rate already converted to an
+ *               hourly one, so a full day pays exactly the daily rate and a half day pays half.
  *
  * Charging both is the double-deduction of #121: `regularHours` is already net of lateness, so
  * an hours-derived basic plus a TARDINESS line docks the same minutes twice.

@@ -1,5 +1,5 @@
 import { fail, isHttpError, redirect } from '@sveltejs/kit'
-import { can, requireMinRole } from '$lib/server/rbac'
+import { can, requireCapability, requireMinRole } from '$lib/server/rbac'
 import {
 	countTimesheets,
 	listTimesheets,
@@ -8,7 +8,8 @@ import {
 	submitTimesheet,
 	updateTimesheetEntries,
 	deleteTimesheet,
-	submitDraftByHr
+	submitDraftByHr,
+	assertCanModifyTimesheet
 } from '$lib/server/services/timesheets'
 import { paginate } from '$lib/server/pagination'
 import {
@@ -24,6 +25,14 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const user = locals.user!
 	const isManager = can(user.role, 'VIEW_TEAM')
 	const isHrAdmin = can(user.role, 'MANAGE_HR')
+	// #165: /timesheets is view-only for the Employee role — they read their own sheets,
+	// but creating/submitting/deleting is the manager ladder's (HR aggregates from punches
+	// and submits drafts on their behalf). Mirrors the `requireModify` gate on the actions.
+	const canModify = isManager
+	// Creating a sheet now names its employee explicitly, which makes it HR work rather than
+	// self-service. Deliberately not `canModify && myEmployee` — the picker supplies the
+	// target, so an HR user with no Employee record of their own (the CEO) can still create.
+	const canCreate = isHrAdmin
 
 	const status = url.searchParams.get('status') ?? undefined
 
@@ -52,7 +61,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		? listTimesheets(teamParams, { skip: teamPagination.skip, take: teamPagination.take })
 		: Promise.resolve([])
 
-	// HR gets the "Aggregate from time logs" panel, which needs an employee picker.
+	// HR gets the "Aggregate from time logs" panel and the New Timesheet dialog, both of
+	// which pick an employee from this list.
 	const employees = isHrAdmin
 		? await db.employee.findMany({
 				where: { user: { organizationId: user.organizationId }, employmentStatus: 'ACTIVE' },
@@ -69,8 +79,15 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		myEmployeeId: myEmployee?.id,
 		isManager,
 		isHrAdmin,
+		canModify,
+		canCreate,
 		employees
 	}
+}
+
+/** #165: every mutating action on this page is closed to the Employee role. */
+function requireModify(event: RequestEvent) {
+	requireCapability(event.locals.user!.role, 'VIEW_TEAM')
 }
 
 function ctxOf(event: RequestEvent) {
@@ -91,6 +108,7 @@ function toFail(e: unknown) {
 
 const createSchema = z
 	.object({
+		employeeId: z.string().min(1),
 		periodStart: z.coerce.date(),
 		periodEnd: z.coerce.date()
 	})
@@ -208,37 +226,41 @@ export const actions: Actions = {
 		}
 	},
 
-	// Period-range create (shared NewTimesheetDialog): reflect the employee's punches for
-	// the period, seed a DRAFT from the derived attendance (no punches → empty draft), then
+	// Period-range create (NewTimesheetDialog): reflect the named employee's punches for the
+	// period, seed a DRAFT from the derived attendance (no punches → empty draft), then
 	// redirect to /timesheets so the new row is visible. Submission happens separately.
+	//
+	// HR-only: the dialog names its employee, so this is HR acting for someone rather than
+	// self-service. It is also the one creation surface that tolerates a punch-free period —
+	// the aggregate panel needs punches, and /attendance "Save as timesheet" rejects an empty
+	// range outright (#214).
 	create: async (event) => {
+		requireModify(event)
 		const user = event.locals.user!
-		const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
-		if (!myEmployee) return fail(400, { error: 'No employee profile found' })
+		requireCapability(user.role, 'MANAGE_HR')
 
 		const parsed = createSchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success)
 			return fail(400, { error: parsed.error.errors[0]?.message ?? 'Invalid dates' })
 
+		// createTimesheet takes the id on trust — it checks the period shape and the duplicate
+		// constraint but never the org — so the tenancy check has to happen here.
+		const target = await resolveOrgEmployee(parsed.data.employeeId, user.organizationId)
+		if (!target) return fail(404, { error: 'Employee not found' })
+
 		const ctx = ctxOf(event)
 		try {
 			await autoDeriveFromPunches(
 				user.organizationId,
-				{ from: parsed.data.periodStart, to: parsed.data.periodEnd, employeeId: myEmployee.id },
+				{ from: parsed.data.periodStart, to: parsed.data.periodEnd, employeeId: target.id },
 				ctx
 			)
 			const entries = await attendanceEntriesForRange(
-				myEmployee.id,
+				target.id,
 				parsed.data.periodStart,
 				parsed.data.periodEnd
 			)
-			await createTimesheet(
-				myEmployee.id,
-				parsed.data.periodStart,
-				parsed.data.periodEnd,
-				entries,
-				ctx
-			)
+			await createTimesheet(target.id, parsed.data.periodStart, parsed.data.periodEnd, entries, ctx)
 		} catch (e) {
 			return toFail(e)
 		}
@@ -248,6 +270,7 @@ export const actions: Actions = {
 	// Repopulate a draft's entries from the period's attendance (re-derives punches first).
 	// Authorized in updateTimesheetEntries: the owner may sync their own draft; managers/HR too.
 	syncAttendance: async (event) => {
+		requireModify(event)
 		const org = event.locals.user!.organizationId
 		const id = (await event.request.formData()).get('id') as string
 		if (!id) return fail(400, { error: 'Missing timesheet id' })
@@ -255,6 +278,10 @@ export const actions: Actions = {
 		const ctx = ctxOf(event)
 		try {
 			const ts = await getTimesheet(id, org)
+			// Authorize before deriving: updateTimesheetEntries is what checks the caller, and
+			// autoDeriveFromPunches writes AttendanceDay rows — running it first meant a caller
+			// who was about to be refused still triggered the write.
+			await assertCanModifyTimesheet(ctx, ts)
 			await autoDeriveFromPunches(
 				org,
 				{ from: ts.periodStart, to: ts.periodEnd, employeeId: ts.employeeId },
@@ -271,6 +298,7 @@ export const actions: Actions = {
 	},
 
 	submit: async (event) => {
+		requireModify(event)
 		const user = event.locals.user!
 		const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
 		if (!myEmployee) return fail(400, { error: 'No employee profile found' })
@@ -308,9 +336,10 @@ export const actions: Actions = {
 		}
 	},
 
-	// Authorization is in deleteTimesheet: the owner may delete their own DRAFT/REJECTED; managers
-	// (direct reports) and HR/super act more broadly. No hard role gate here.
+	// Past the #165 role gate, per-record authorization is still deleteTimesheet's: the owner may
+	// delete their own DRAFT/REJECTED, while HR/super act across their scope.
 	delete: async (event) => {
+		requireModify(event)
 		const id = (await event.request.formData()).get('id') as string
 		try {
 			await deleteTimesheet(id, event.locals.user!.organizationId, ctxOf(event))
@@ -322,6 +351,7 @@ export const actions: Actions = {
 
 	// Submit each selected (draft) timesheet the current user owns; others are skipped.
 	submitMany: async (event) => {
+		requireModify(event)
 		const user = event.locals.user!
 		const myEmployee = await db.employee.findUnique({
 			where: { userId: user.id },
@@ -354,6 +384,7 @@ export const actions: Actions = {
 	// Items the caller can't delete — not owned, or submitted/approved on a select-all — throw
 	// and are counted as skipped rather than aborting the batch.
 	deleteMany: async (event) => {
+		requireModify(event)
 		const ids = String((await event.request.formData()).get('ids') ?? '')
 			.split(',')
 			.map((s) => s.trim())

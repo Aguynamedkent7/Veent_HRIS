@@ -63,7 +63,7 @@ async function main() {
 			contactAddress: '900 Exit St, Makati City',
 			departmentId: dept.id,
 			jobTitle: 'Senior Analyst',
-			employmentType: 'FULL_TIME',
+			employmentType: 'REGULAR',
 			employmentStatus: 'ACTIVE',
 			startDate: new Date('2023-03-01'),
 			basicMonthlySalary: 44000,

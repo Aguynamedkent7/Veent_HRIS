@@ -27,10 +27,12 @@ interface CreateEmployeeInput {
 	startDate: Date
 	basicMonthlySalary: number
 	rateType?: RateType
-	sssNumber?: string
-	philhealthNumber?: string
-	pagibigNumber?: string
-	tinNumber?: string
+	// Nullable, not just optional: the #191 validators normalise an empty field to null, and
+	// Prisma reads null as "no value" for these optional columns.
+	sssNumber?: string | null
+	philhealthNumber?: string | null
+	pagibigNumber?: string | null
+	tinNumber?: string | null
 	reportsToId?: string
 	discordId?: string | null
 	workScheduleId?: string | null
@@ -40,8 +42,8 @@ interface CreateEmployeeInput {
 	emergencyContactPhone?: string
 	bankName?: string
 	bankAccountName?: string
-	bankAccountNumber?: string
-	gcashNumber?: string
+	bankAccountNumber?: string | null
+	gcashNumber?: string | null
 }
 
 interface UpdateEmployeeInput {
@@ -197,9 +199,10 @@ export async function getEmployee(id: string, organizationId: string, viewerRole
 	})
 	if (!employee) error(404, 'Employee not found')
 
-	// Compensation, government IDs, and disbursement details are HR-only. A MANAGER
-	// may view a report's record but must not see salary, tax/government identifiers,
-	// or bank/GCash details.
+	// Compensation, government IDs, and disbursement details are HR-only: below the HR_ADMIN
+	// rank they come back null. Note MANAGER is *not* below it — #133 made MANAGER on-branch HR
+	// and ranks it level with HR_ADMIN, so a manager does see these. (An earlier comment here
+	// claimed the opposite; it predated #133.)
 	if (viewerRole && ROLE_HIERARCHY[viewerRole] < ROLE_HIERARCHY.HR_ADMIN) {
 		return {
 			...employee,
@@ -217,6 +220,52 @@ export async function getEmployee(id: string, organizationId: string, viewerRole
 	return employee
 }
 
+/** Employee numbers are `PREFIX-NNN`; NNN is padded to at least this width. */
+const NUMBER_WIDTH = 3
+/** Attempts to allocate a free number before giving up (only a concurrent create can clash). */
+const ALLOCATION_ATTEMPTS = 5
+
+/**
+ * Next employee number for an org: the highest numeric suffix already in use, plus one.
+ *
+ * This used to be `count + 1`, which is not a sequence — it drifts from the numbers actually
+ * issued as soon as anyone is deleted, or when rows use different widths. Both were true here,
+ * which is how EMP-0013 came to be issued *after* EMP-0014 existed, and then how onboarding
+ * started failing outright against the (organizationId, employeeNumber) unique index.
+ *
+ * Reads through `tx` so the scan and the insert share one transaction. Scoped on
+ * Employee.organizationId — the column the unique index actually uses, not
+ * `user.organizationId`, which is a separate column that merely agrees today.
+ */
+async function nextEmployeeNumber(tx: Prisma.TransactionClient, organizationId: string) {
+	const org = await tx.organization.findUniqueOrThrow({
+		where: { id: organizationId },
+		select: { employeeNumberPrefix: true }
+	})
+
+	const rows = await tx.employee.findMany({
+		where: { organizationId },
+		select: { employeeNumber: true }
+	})
+
+	// Trailing digits only, so every historical shape reads correctly regardless of prefix or
+	// width (EMP-0014 → 14, JJ-004 → 4). Max across all of the org's numbers, not just those
+	// sharing the new prefix: conservative, and it cannot collide with an existing number.
+	const highest = rows.reduce((max, r) => {
+		const n = Number(r.employeeNumber.match(/(\d+)$/)?.[1] ?? NaN)
+		return Number.isFinite(n) && n > max ? n : max
+	}, 0)
+
+	return `${org.employeeNumberPrefix}-${String(highest + 1).padStart(NUMBER_WIDTH, '0')}`
+}
+
+/** True for a unique violation on (organizationId, employeeNumber) specifically. */
+function isEmployeeNumberConflict(e: unknown) {
+	if (!(e instanceof Prisma.PrismaClientKnownRequestError) || e.code !== 'P2002') return false
+	const target = e.meta?.target
+	return Array.isArray(target) && target.includes('employeeNumber')
+}
+
 export async function createEmployee(
 	organizationId: string,
 	input: CreateEmployeeInput,
@@ -225,78 +274,18 @@ export async function createEmployee(
 	const existingUser = await db.user.findUnique({ where: { email: input.email } })
 	if (existingUser) error(409, 'Email already in use')
 
-	const count = await db.employee.count({ where: { user: { organizationId } } })
-	const employeeNumber = `EMP-${String(count + 1).padStart(4, '0')}`
-
+	// Hashed once, outside the retry loop — bcrypt at cost 12 is by far the expensive part and
+	// the password does not change between attempts.
 	const passwordHash = await bcrypt.hash(input.password, 12)
 
-	const employee = await db.$transaction(async (tx: Prisma.TransactionClient) => {
-		const user = await tx.user.create({
-			data: {
-				organizationId,
-				email: input.email,
-				passwordHash,
-				role: input.role
-			}
-		})
-
-		const created = await tx.employee.create({
-			data: {
-				userId: user.id,
-				organizationId,
-				employeeNumber,
-				firstName: input.firstName,
-				lastName: input.lastName,
-				middleName: input.middleName,
-				dateOfBirth: input.dateOfBirth,
-				gender: input.gender,
-				contactPhone: input.contactPhone,
-				contactAddress: input.contactAddress,
-				departmentId: input.departmentId,
-				jobTitle: input.jobTitle,
-				employmentType: input.employmentType,
-				startDate: input.startDate,
-				basicMonthlySalary: input.basicMonthlySalary,
-				rateType: input.rateType ?? 'MONTHLY',
-				sssNumber: input.sssNumber,
-				philhealthNumber: input.philhealthNumber,
-				pagibigNumber: input.pagibigNumber,
-				tinNumber: input.tinNumber,
-				emergencyContactName: input.emergencyContactName,
-				emergencyContactRelation: input.emergencyContactRelation,
-				emergencyContactPhone: input.emergencyContactPhone,
-				bankName: input.bankName,
-				bankAccountName: input.bankAccountName,
-				bankAccountNumber: input.bankAccountNumber,
-				gcashNumber: input.gcashNumber,
-				reportsToId: input.reportsToId,
-				discordId: input.discordId,
-				// #186: company-email provisioning is deferred, so seed it with the hire's working
-				// email; HR updates it once the real address exists.
-				companyEmail: input.email,
-				// Onboarding sets the work schedule (attendance derivation depends on it) and the
-				// position; both are optional. Coerce empty string → null (an empty <select> posts
-				// "", which is not a valid FK) so we don't hit a foreign-key violation.
-				workScheduleId: input.workScheduleId || null,
-				positionId: input.positionId || null
-			},
-			include: { department: true, user: { select: { email: true, role: true } } }
-		})
-
-		// Allocate this year's leave entitlement from the org's leave-type defaults (#137).
-		// Inside the transaction so a new hire is never left half-onboarded with no ledger —
-		// `assertLeaveBalance` reads a missing row as zero, so that state blocks their first
-		// filing outright.
-		await ensureLeaveBalances(created.id, organizationId, input.startDate.getFullYear(), tx)
-
-		return created
-	})
+	const employee = await allocateAndCreate(organizationId, input, passwordHash)
 
 	await writeAuditLog(ctx, {
 		action: 'CREATE',
 		entityType: 'Employee',
-		entityId: employee.id,
-		newValue: { employeeNumber, email: input.email }
+		// From the created row, not a variable computed up front: a retry changes the number.
+		newValue: { employeeNumber: employee.employeeNumber, email: input.email },
+		entityId: employee.id
 	})
 
 	// On onboarding, invite the new hire to the company Discord server (#186) — only when
@@ -324,6 +313,88 @@ export async function createEmployee(
 	}
 
 	return employee
+}
+
+/**
+ * Allocate a number and insert, retrying the whole transaction if a concurrent create took the
+ * number first. Only a genuine race can reach a second attempt — the number is read inside the
+ * transaction — so a handful of attempts is plenty.
+ */
+async function allocateAndCreate(
+	organizationId: string,
+	input: CreateEmployeeInput,
+	passwordHash: string
+) {
+	for (let attempt = 1; ; attempt++) {
+		try {
+			return await db.$transaction(async (tx: Prisma.TransactionClient) => {
+				const employeeNumber = await nextEmployeeNumber(tx, organizationId)
+				const user = await tx.user.create({
+					data: {
+						organizationId,
+						email: input.email,
+						passwordHash,
+						role: input.role
+					}
+				})
+
+				const created = await tx.employee.create({
+					data: {
+						userId: user.id,
+						organizationId,
+						employeeNumber,
+						firstName: input.firstName,
+						lastName: input.lastName,
+						middleName: input.middleName,
+						dateOfBirth: input.dateOfBirth,
+						gender: input.gender,
+						contactPhone: input.contactPhone,
+						contactAddress: input.contactAddress,
+						departmentId: input.departmentId,
+						jobTitle: input.jobTitle,
+						employmentType: input.employmentType,
+						startDate: input.startDate,
+						basicMonthlySalary: input.basicMonthlySalary,
+						rateType: input.rateType ?? 'MONTHLY',
+						sssNumber: input.sssNumber,
+						philhealthNumber: input.philhealthNumber,
+						pagibigNumber: input.pagibigNumber,
+						tinNumber: input.tinNumber,
+						emergencyContactName: input.emergencyContactName,
+						emergencyContactRelation: input.emergencyContactRelation,
+						emergencyContactPhone: input.emergencyContactPhone,
+						bankName: input.bankName,
+						bankAccountName: input.bankAccountName,
+						bankAccountNumber: input.bankAccountNumber,
+						gcashNumber: input.gcashNumber,
+						reportsToId: input.reportsToId,
+						discordId: input.discordId,
+						// #186: company-email provisioning is deferred, so seed it with the hire's working
+						// email; HR updates it once the real address exists.
+						companyEmail: input.email,
+						// Onboarding sets the work schedule (attendance derivation depends on it) and the
+						// position; both are optional. Coerce empty string → null (an empty <select> posts
+						// "", which is not a valid FK) so we don't hit a foreign-key violation.
+						workScheduleId: input.workScheduleId || null,
+						positionId: input.positionId || null
+					},
+					include: { department: true, user: { select: { email: true, role: true } } }
+				})
+
+				// Allocate this year's leave entitlement from the org's leave-type defaults (#137).
+				// Inside the transaction so a new hire is never left half-onboarded with no ledger —
+				// `assertLeaveBalance` reads a missing row as zero, so that state blocks their first
+				// filing outright. Re-run on a retry because the whole transaction is replayed.
+				await ensureLeaveBalances(created.id, organizationId, input.startDate.getFullYear(), tx)
+
+				return created
+			})
+		} catch (e) {
+			// Anything that is not a lost race on the number — a duplicate Discord ID, a bad FK —
+			// is the caller’s problem and must surface now rather than be retried.
+			if (!isEmployeeNumberConflict(e) || attempt >= ALLOCATION_ATTEMPTS) throw e
+		}
+	}
 }
 
 export async function updateEmployee(
