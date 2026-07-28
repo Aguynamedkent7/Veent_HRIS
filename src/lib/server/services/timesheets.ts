@@ -8,9 +8,16 @@ import { canActOnStage, nextState, liveChain, rolesOf } from './approvals'
 import type { AuditContext } from './types'
 import type { Prisma } from '@prisma/client'
 
-// Create the maker-checker chain for a timesheet (#134). When a maker (MANAGE_HR)
-// submits on the employee's behalf, MAKE completes now; when the employee submits
-// their own, MAKE stays pending for branch HR. Runs inside the submit transaction.
+// Create the maker-checker chain for a timesheet (#134). `makerUserId` set → that person is
+// the maker, so MAKE completes now and the chain opens at VERIFY; `null` → MAKE stays pending
+// for a branch HR/Manager to act on. Runs inside the submit transaction.
+//
+// Two lanes since #165 made /timesheets view-only for the Employee role (#214 decision: HR-as-
+// maker is intended, NOT a bug — do not re-add a manager MAKE gate for HR-submitted sheets):
+//   • Rank-and-file employee's sheet → HR submits on their behalf (`submitDraftByHr`, makerUserId
+//     set) → MAKE auto-completes; VERIFY + APPROVE remain the oversight gates.
+//   • Manager/HR's OWN sheet → they self-submit (`submitTimesheet`, makerUserId null) → MAKE
+//     stays pending so a different checker reviews it. This path is still live, not dead code.
 async function createTimesheetChain(
 	tx: Prisma.TransactionClient,
 	timesheetId: string,
@@ -215,7 +222,8 @@ export async function submitTimesheet(id: string, employeeId: string, ctx: Audit
 			where: { id },
 			data: { status: 'SUBMITTED', submittedAt: new Date() }
 		})
-		// The employee submits their own, so MAKE stays pending for branch HR (#134).
+		// Self-submit lane (owner submits their own sheet). Post-#165 only Manager/HR reach
+		// this — employees are view-only — so MAKE stays pending for a different checker (#134/#214).
 		await createTimesheetChain(tx, id, null)
 		return ts2
 	})
@@ -281,7 +289,7 @@ export async function submitDraftByHr(id: string, organizationId: string, ctx: A
 		})
 		if (res.count === 0) error(400, 'Only draft timesheets can be submitted here')
 		// HR submits on the employee's behalf, so they are the maker — MAKE completes now
-		// and the chain opens at VERIFY (#134).
+		// and the chain opens at VERIFY (#134). Intended since #165/#214, not a skipped gate.
 		await createTimesheetChain(tx, id, ctx.actorId)
 
 		await writeAuditLog(
