@@ -53,6 +53,12 @@ export interface DeriveInput {
 	approvedOtHours?: number
 	/** True when an approved leave covers this day. */
 	onLeave?: boolean
+	/**
+	 * Whether to mark this day LATE against the schedule start (#190). Defaults to true; the
+	 * caller passes `Organization.trackTardiness && WorkSchedule.trackTardiness`. When false,
+	 * lateMinutes stays 0 and the day resolves to PRESENT. Undertime is unaffected.
+	 */
+	enforceTardiness?: boolean
 	config?: DeriveConfig
 }
 
@@ -146,6 +152,7 @@ function emptyResult(status: AttendanceStatus, timeIn: Date | null = null): Atte
 export function deriveAttendanceDay(input: DeriveInput): AttendanceDayResult {
 	const { schedule, dayType } = input
 	const approvedOt = input.approvedOtHours ?? 0
+	const enforceTardiness = input.enforceTardiness ?? true
 	const cfg = input.config ?? DEFAULT_NIGHT_WINDOW
 
 	if (input.onLeave) return emptyResult('ON_LEAVE')
@@ -230,11 +237,12 @@ export function deriveAttendanceDay(input: DeriveInput): AttendanceDayResult {
 	// night differential on an hour the employee spent at lunch.
 	const nightDiffHours = round2(Math.min(nightMs / 3_600_000, workedHours))
 
-	// Late / undertime only apply to a scheduled regular day.
+	// Late / undertime only apply to a scheduled regular day. Late is additionally gated on
+	// enforceTardiness (#190) — when off, the day never resolves to LATE. Undertime is separate.
 	let lateMinutes = 0
 	let undertimeMinutes = 0
 	if (dayType === 'REGULAR' && schedule && firstIn && lastOut) {
-		lateMinutes = Math.max(0, phtMinuteOfDay(firstIn) - schedule.startMinutes)
+		if (enforceTardiness) lateMinutes = Math.max(0, phtMinuteOfDay(firstIn) - schedule.startMinutes)
 		undertimeMinutes = Math.max(0, schedule.endMinutes - phtMinuteOfDay(lastOut))
 	}
 

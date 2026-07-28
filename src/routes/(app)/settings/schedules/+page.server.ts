@@ -1,11 +1,23 @@
 import { fail } from '@sveltejs/kit'
+import { db } from '$lib/server/db'
 import { requireMinRole } from '$lib/server/rbac'
-import { listSchedules, createSchedule } from '$lib/server/services/attendance/schedules'
+import {
+	listSchedules,
+	createSchedule,
+	setScheduleTardiness,
+	setOrgTardiness
+} from '$lib/server/services/attendance/schedules'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
 	requireMinRole(locals.user!.role, 'HR_ADMIN')
-	return { schedules: await listSchedules(locals.user!.organizationId) }
+	const organizationId = locals.user!.organizationId
+	const [schedules, org] = await Promise.all([
+		listSchedules(organizationId),
+		db.organization.findUnique({ where: { id: organizationId }, select: { trackTardiness: true } })
+	])
+	// #190: the org master switch greys out the per-schedule toggles when it's off.
+	return { schedules, orgTracksTardiness: org?.trackTardiness ?? true }
 }
 
 function hhmmToMin(s: string): number | null {
@@ -23,6 +35,7 @@ export const actions: Actions = {
 		const endMinutes = hhmmToMin(String(fd.get('end') ?? ''))
 		const breakMinutes = Number(fd.get('breakMinutes') ?? 0)
 		const isDefault = fd.get('isDefault') === 'on'
+		const trackTardiness = fd.get('trackTardiness') === 'on'
 		const weekdays = fd
 			.getAll('weekday')
 			.map((v) => Number(v))
@@ -34,7 +47,7 @@ export const actions: Actions = {
 		try {
 			await createSchedule(
 				locals.user!.organizationId,
-				{ name, isDefault, startMinutes, endMinutes, breakMinutes, weekdays },
+				{ name, isDefault, trackTardiness, startMinutes, endMinutes, breakMinutes, weekdays },
 				{
 					organizationId: locals.user!.organizationId,
 					actorId: locals.user!.id,
@@ -45,6 +58,39 @@ export const actions: Actions = {
 		} catch (e: unknown) {
 			const err = e as { status?: number; body?: { message?: string } }
 			if (err?.status === 400) return fail(400, { error: err.body?.message ?? 'Invalid schedule' })
+			throw e
+		}
+		return { success: true }
+	},
+
+	toggleOrgTardiness: async ({ request, locals, getClientAddress }) => {
+		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		const enabled = (await request.formData()).get('enabled') === 'true'
+		await setOrgTardiness(locals.user!.organizationId, enabled, {
+			organizationId: locals.user!.organizationId,
+			actorId: locals.user!.id,
+			actorRole: locals.user!.role,
+			ipAddress: getClientAddress()
+		})
+		return { success: true }
+	},
+
+	toggleTardiness: async ({ request, locals, getClientAddress }) => {
+		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		const fd = await request.formData()
+		const id = String(fd.get('id') ?? '')
+		const enabled = fd.get('enabled') === 'true'
+		if (!id) return fail(400, { error: 'Missing schedule id' })
+		try {
+			await setScheduleTardiness(locals.user!.organizationId, id, enabled, {
+				organizationId: locals.user!.organizationId,
+				actorId: locals.user!.id,
+				actorRole: locals.user!.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e: unknown) {
+			const err = e as { status?: number; body?: { message?: string } }
+			if (err?.status) return fail(err.status, { error: err.body?.message ?? 'Update failed' })
 			throw e
 		}
 		return { success: true }
