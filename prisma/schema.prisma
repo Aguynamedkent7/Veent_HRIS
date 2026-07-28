@@ -290,6 +290,9 @@ model Organization {
   // number their staff separately: JoJo Potato uses JJ, Sweetleaf SL. The default backfills
   // existing rows and keeps Veent on EMP.
   employeeNumberPrefix String @default("EMP") @db.VarChar(8)
+  // Master switch for schedule-based tardiness (#190). Off → no employee is ever marked LATE,
+  // company-wide; ANDs with each WorkSchedule.trackTardiness. Default keeps current behavior.
+  trackTardiness Boolean @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -1658,6 +1661,9 @@ model WorkSchedule {
   organizationId String
   name           String
   isDefault      Boolean  @default(false)
+  // Per-schedule tardiness switch (#190). ANDs with Organization.trackTardiness; when either is
+  // off, employees on this schedule are never marked LATE. Default keeps current behavior.
+  trackTardiness Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

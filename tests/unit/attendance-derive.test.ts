@@ -19,6 +19,7 @@ function derive(
 		dayType?: DayType
 		approvedOtHours?: number
 		onLeave?: boolean
+		enforceTardiness?: boolean
 	} = {}
 ) {
 	return deriveAttendanceDay({
@@ -26,7 +27,8 @@ function derive(
 		schedule: opts.schedule === undefined ? SCHED : opts.schedule,
 		dayType: opts.dayType ?? 'REGULAR',
 		approvedOtHours: opts.approvedOtHours,
-		onLeave: opts.onLeave
+		onLeave: opts.onLeave,
+		enforceTardiness: opts.enforceTardiness
 	})
 }
 
@@ -185,6 +187,30 @@ describe('deriveAttendanceDay — unpaid meal break when breaks are not punched'
 			dayType: 'REGULAR_HOLIDAY'
 		})
 		expect(r.workedHours).toBeCloseTo(9, 2)
+	})
+})
+
+// #190: tardiness tracking can be switched off (org master AND per-schedule). The caller passes
+// the resolved flag; here we assert the pure gate. Only lateness is affected — undertime stays.
+describe('deriveAttendanceDay — tardiness tracking toggle', () => {
+	it('tracks lateness by default (enforceTardiness omitted)', () => {
+		const r = derive([p('IN', T('09:30')), p('OUT', T('18:00'))])
+		expect(r.lateMinutes).toBe(30)
+		expect(r.status).toBe('LATE')
+	})
+
+	it('never marks LATE when tardiness tracking is off', () => {
+		const r = derive([p('IN', T('09:30')), p('OUT', T('18:00'))], { enforceTardiness: false })
+		expect(r.lateMinutes).toBe(0)
+		expect(r.status).toBe('PRESENT')
+	})
+
+	it('still computes undertime when tardiness tracking is off (gate is late-only)', () => {
+		// Late in (09:30) AND early out (16:00): late is suppressed, undertime is not.
+		const r = derive([p('IN', T('09:30')), p('OUT', T('16:00'))], { enforceTardiness: false })
+		expect(r.lateMinutes).toBe(0)
+		expect(r.undertimeMinutes).toBe(120)
+		expect(r.status).toBe('PRESENT')
 	})
 })
 

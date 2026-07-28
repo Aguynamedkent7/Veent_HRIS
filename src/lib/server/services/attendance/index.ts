@@ -20,7 +20,7 @@ import type { AuditContext } from '../types'
  * `isDefault` schedule was written, badged in settings and preselected on the create form, but
  * never actually read here. Employees with no explicit assignment were therefore derived against
  * a phantom shift — an 8–5 worker was charged 60 minutes of undertime every day, which feeds the
- * TARDINESS deduction and reaches payroll. Prefer `resolveDefaultScheduleDays` over this constant;
+ * TARDINESS deduction and reaches payroll. Prefer `resolveDefaultSchedule` over this constant;
  * it only applies when the organization genuinely has nothing configured.
  */
 export const FALLBACK_WEEKDAY_SHIFT: ScheduleDay = {
@@ -29,13 +29,12 @@ export const FALLBACK_WEEKDAY_SHIFT: ScheduleDay = {
 	breakMinutes: 60
 } // 08:00–17:00
 
-/** The org's designated default schedule days, or null when none is configured. */
-async function resolveDefaultScheduleDays(organizationId: string) {
-	const def = await db.workSchedule.findFirst({
+/** The org's designated default schedule (days + tardiness flag), or null when none is configured. */
+async function resolveDefaultSchedule(organizationId: string) {
+	return db.workSchedule.findFirst({
 		where: { organizationId, isDefault: true },
 		include: { days: true }
 	})
-	return def?.days ?? null
 }
 
 /**
@@ -154,7 +153,15 @@ export async function deriveRange(
 
 	// Fetched once per run: employees without an explicit assignment derive against the org's
 	// designated default rather than a hardcoded shift.
-	const defaultScheduleDays = await resolveDefaultScheduleDays(organizationId)
+	const defaultSchedule = await resolveDefaultSchedule(organizationId)
+	const defaultScheduleDays = defaultSchedule?.days ?? null
+
+	// Org master tardiness switch (#190). ANDs with the employee's effective schedule flag below.
+	const org = await db.organization.findUnique({
+		where: { id: organizationId },
+		select: { trackTardiness: true }
+	})
+	const orgTracksTardiness = org?.trackTardiness ?? true
 
 	// PHT day range expressed as an absolute UTC window (PHT day D = [D 00:00+08:00, D+1 00:00+08:00)).
 	const phtStart = new Date(`${fromKey}T00:00:00+08:00`)
@@ -166,6 +173,11 @@ export async function deriveRange(
 
 	for (const emp of employees) {
 		const scheduleDays = emp.workSchedule ? emp.workSchedule.days : defaultScheduleDays
+		// Effective tardiness = org master AND the employee's effective-schedule flag (#190).
+		const scheduleTracksTardiness = emp.workSchedule
+			? emp.workSchedule.trackTardiness
+			: (defaultSchedule?.trackTardiness ?? true)
+		const enforceTardiness = orgTracksTardiness && scheduleTracksTardiness
 
 		const punches = await db.timeLog.findMany({
 			where: { employeeId: emp.id, timestamp: { gte: phtStart, lt: phtEndExclusive } },
@@ -243,7 +255,8 @@ export async function deriveRange(
 				schedule: dayType === 'REGULAR' ? schedDay : null,
 				dayType,
 				approvedOtHours: approvedOtByDay.get(dayKey) ?? 0,
-				onLeave
+				onLeave,
+				enforceTardiness
 			})
 
 			const data = {
@@ -407,11 +420,21 @@ export async function correctDay(
 	let write: Record<string, unknown> = { ...data }
 
 	if (editingTimes) {
-		const scheduleDays = day.employee.workSchedule
-			? day.employee.workSchedule.days
-			: await resolveDefaultScheduleDays(organizationId)
+		const assigned = day.employee.workSchedule
+		const defaultSchedule = assigned ? null : await resolveDefaultSchedule(organizationId)
+		const scheduleDays = assigned ? assigned.days : (defaultSchedule?.days ?? null)
 		const weekday = day.date.getUTCDay()
 		const schedDay = scheduleDayFor(scheduleDays as never, weekday)
+
+		// Effective tardiness = org master AND the employee's effective-schedule flag (#190), so an
+		// HR-corrected day honors the same setting as the batch derive.
+		const org = await db.organization.findUnique({
+			where: { id: organizationId },
+			select: { trackTardiness: true }
+		})
+		const enforceTardiness =
+			(org?.trackTardiness ?? true) &&
+			(assigned ? assigned.trackTardiness : (defaultSchedule?.trackTardiness ?? true))
 
 		// Mirror deriveRange's OT gating: worked overtime only pays up to the approved hours.
 		const dayKey = day.date.toISOString().slice(0, 10)
@@ -437,7 +460,8 @@ export async function correctDay(
 			punches,
 			schedule: day.dayType === 'REGULAR' ? schedDay : null,
 			dayType: day.dayType as DayType,
-			approvedOtHours
+			approvedOtHours,
+			enforceTardiness
 		})
 
 		// HR changing the dropdown to something other than the day's current status is an

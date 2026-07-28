@@ -12,7 +12,8 @@ const { dbMock } = vi.hoisted(() => ({
 	dbMock: {
 		attendanceDay: { findFirst: vi.fn(), update: vi.fn() },
 		request: { findMany: vi.fn() },
-		workSchedule: { findFirst: vi.fn() }
+		workSchedule: { findFirst: vi.fn() },
+		organization: { findUnique: vi.fn() }
 	}
 }))
 
@@ -39,7 +40,7 @@ function mockDay(overrides: Record<string, unknown> = {}) {
 		employeeId: 'emp1',
 		regularHours: 0,
 		overtimeHours: 0,
-		employee: { workSchedule: { days: SCHED_DAYS } },
+		employee: { workSchedule: { days: SCHED_DAYS, trackTardiness: true } },
 		...overrides
 	})
 }
@@ -47,6 +48,7 @@ function mockDay(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
 	vi.clearAllMocks()
 	dbMock.request.findMany.mockResolvedValue([]) // no approved OT
+	dbMock.organization.findUnique.mockResolvedValue({ trackTardiness: true }) // #190 master on
 	dbMock.attendanceDay.update.mockImplementation(async (args: { data: unknown }) => args.data)
 })
 
