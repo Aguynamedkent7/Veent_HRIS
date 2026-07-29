@@ -86,6 +86,7 @@
 	const addDeduction = createSubmitGuard()
 	const toggleStatutory = createSubmitGuard()
 	const toggleErExternal = createSubmitGuard()
+	const setAllocation = createSubmitGuard()
 	const STATUTORY_LABELS: Record<string, string> = {
 		SSS: 'SSS',
 		PHILHEALTH: 'PhilHealth',
@@ -1158,6 +1159,29 @@
 													>
 												{/if}
 											</form>
+											<!-- EE-share cutoff allocation (#173, Feature E). Moot while exempt (EE already
+											     zeroed), so hidden then. Auto-submits on change. -->
+											{#if !s.exempt}
+												<form
+													method="POST"
+													action="?/setStatutoryAllocation"
+													use:enhance={setAllocation.enhance}
+												>
+													<input type="hidden" name="contribution" value={s.contribution} />
+													<select
+														name="allocation"
+														value={s.allocation}
+														disabled={setAllocation.busy}
+														onchange={(e) => e.currentTarget.form?.requestSubmit()}
+														class="h-7 rounded-md border border-input bg-background px-2 text-xs disabled:pointer-events-none disabled:opacity-50"
+														aria-label="Employee-share cutoff"
+													>
+														<option value="EVEN">Even split</option>
+														<option value="FIRST">1st cutoff</option>
+														<option value="SECOND">2nd cutoff</option>
+													</select>
+												</form>
+											{/if}
 											<!-- Employer-share-paid-externally control (#173). Meaningless while exempt (both
 											     shares already zeroed), so hidden then. -->
 											{#if !s.exempt}

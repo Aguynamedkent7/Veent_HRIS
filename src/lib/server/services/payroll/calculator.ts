@@ -4,9 +4,15 @@ import { computeEarnings } from './earnings'
 import { ratesFromRule, type PayRates } from './rates'
 import { computeDeductions, type AmortItem } from './deductions'
 import { recurringDeductionComponents } from './employee-deductions'
-import { statutoryExemptions, employerShareExternals } from './employee-statutory'
+import {
+	statutoryExemptions,
+	employerShareExternals,
+	statutoryAllocations
+} from './employee-statutory'
 import { computeStatutoryDeductions } from './ph-statutory'
-import { D, q2n, sumQ } from './money'
+import type { StatutoryAllocation } from '@prisma/client'
+import type { PeriodKind } from '$lib/utils/pay-periods'
+import { D, q2n, sumQ, ZERO, type Money } from './money'
 import {
 	absenceHoursOf,
 	basicPayBasis,
@@ -46,6 +52,23 @@ export interface EmployeeComputeConfig {
 	 * of `statutoryExemptions` (which zeroes both shares). Omitted → all ER shares kept (the default).
 	 */
 	employerShareExternal?: { sss: boolean; philhealth: boolean; pagibig: boolean }
+	/**
+	 * Per-employee statutory EE-share cutoff choice (#173, Feature E). EVEN (or omitted) keeps the
+	 * `× periodShare` split; FIRST/SECOND load the full monthly EE onto one semi-monthly cutoff. Only
+	 * meaningful when `periodKind` is FIRST_HALF or SECOND_HALF — WHOLE_MONTH/legacy runs ignore it.
+	 * ER share and tax keep their normal proration regardless.
+	 */
+	statutoryAllocations?: {
+		sss: StatutoryAllocation
+		philhealth: StatutoryAllocation
+		pagibig: StatutoryAllocation
+	}
+	/**
+	 * Which standard cutoff this run covers (#173, Feature E), from `describePeriod(start, end).kind`.
+	 * Drives `statutoryAllocations`; omitted/null (preview has no period) → allocation is moot and the
+	 * EE share falls back to `× periodShare`.
+	 */
+	periodKind?: PeriodKind | null
 	/** Org premium-pay multipliers (from PayRateRule); omitted → DOLE defaults. */
 	rates?: PayRates
 	/**
@@ -77,6 +100,25 @@ export interface EmployeeComputeResult {
 	statutory: ProratedStatutory
 	/** Deductions gross could not fund (#103). > 0 means net was floored and needs review. */
 	uncollected: number
+}
+
+/**
+ * The employee share for one contribution in this period (#173, Feature E). Outside a semi-monthly
+ * cutoff (WHOLE_MONTH or a legacy/null period) allocation is moot and the monthly EE prorates by
+ * `× share` exactly as before. On a cutoff: EVEN keeps the half split; FIRST loads the full monthly
+ * EE onto the 1–15 cutoff (0 on the other), SECOND onto the 16–EOM cutoff. Returns a Money that the
+ * caller quantizes once, exactly like the pre-existing EE line.
+ */
+function resolveEE(
+	monthlyEE: Money,
+	mode: StatutoryAllocation,
+	kind: PeriodKind | null | undefined,
+	share: Money
+): Money {
+	if (kind !== 'FIRST_HALF' && kind !== 'SECOND_HALF') return monthlyEE.times(share)
+	if (mode === 'FIRST') return kind === 'FIRST_HALF' ? monthlyEE : ZERO
+	if (mode === 'SECOND') return kind === 'SECOND_HALF' ? monthlyEE : ZERO
+	return monthlyEE.times(0.5) // EVEN — today's behaviour (share is 0.5 on any cutoff)
 }
 
 export function computeEmployeeResult(
@@ -111,13 +153,20 @@ export function computeEmployeeResult(
 	// #173 (Feature C): "employer share paid externally" zeroes the ER share only. Exempt already
 	// zeroes both shares, so a contribution that is exempt makes this a no-op (EE stays 0 either way).
 	const ext = cfg.employerShareExternal
+	// #173 (Feature E): the EE share may be loaded onto one semi-monthly cutoff instead of split.
+	// Applied AFTER the exempt check — an exempt contribution stays 0 (its allocation is moot). ER
+	// share and tax keep `× share` proration. Omitted → EVEN (unchanged).
+	const alloc = cfg.statutoryAllocations
+	const kind = cfg.periodKind
 	const share = D(cfg.periodShare)
 	const statutory: ProratedStatutory = {
-		sssEe: ex?.sss ? 0 : q2n(m.sssEe.times(share)),
+		sssEe: ex?.sss ? 0 : q2n(resolveEE(m.sssEe, alloc?.sss ?? 'EVEN', kind, share)),
 		sssEr: ex?.sss || ext?.sss ? 0 : q2n(m.sssEr.times(share)),
-		philhealthEe: ex?.philhealth ? 0 : q2n(m.philhealthEe.times(share)),
+		philhealthEe: ex?.philhealth
+			? 0
+			: q2n(resolveEE(m.philhealthEe, alloc?.philhealth ?? 'EVEN', kind, share)),
 		philhealthEr: ex?.philhealth || ext?.philhealth ? 0 : q2n(m.philhealthEr.times(share)),
-		pagibigEe: ex?.pagibig ? 0 : q2n(m.pagibigEe.times(share)),
+		pagibigEe: ex?.pagibig ? 0 : q2n(resolveEE(m.pagibigEe, alloc?.pagibig ?? 'EVEN', kind, share)),
 		pagibigEr: ex?.pagibig || ext?.pagibig ? 0 : q2n(m.pagibigEr.times(share)),
 		withholdingTax: q2n(m.withholdingTax.times(share))
 	}
@@ -212,7 +261,8 @@ export async function previewPayroll(
 		payRateRule,
 		recurringDeductions,
 		statutoryExempt,
-		statutoryExternal
+		statutoryExternal,
+		statutoryAllocation
 	] = await Promise.all([
 		db.payrollConfig.findUnique({ where: { organizationId } }),
 		db.earningType.findMany({ where: { organizationId }, select: { code: true, taxable: true } }),
@@ -233,6 +283,12 @@ export async function previewPayroll(
 		db.employeeStatutoryConfig.findMany({
 			where: { employeeId, employerSharePaidExternally: true },
 			select: { contribution: true }
+		}),
+		// EE-share allocation (#173, Feature E) — wired identically to the run. Moot here (a preview
+		// has no cutoff, so `periodKind` stays undefined), but kept symmetric with computePayroll.
+		db.employeeStatutoryConfig.findMany({
+			where: { employeeId, allocation: { not: 'EVEN' } },
+			select: { contribution: true, allocation: true }
 		})
 	])
 
@@ -243,6 +299,7 @@ export async function previewPayroll(
 		periodShare,
 		statutoryExemptions: statutoryExemptions(statutoryExempt),
 		employerShareExternal: employerShareExternals(statutoryExternal),
+		statutoryAllocations: statutoryAllocations(statutoryAllocation),
 		recurringDeductions: recurringDeductionComponents(recurringDeductions, periodShare),
 		loans: loansAll.map((l) => ({
 			refId: l.id,

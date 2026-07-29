@@ -1,7 +1,7 @@
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
-import type { StatutoryContribution } from '@prisma/client'
+import type { StatutoryContribution, StatutoryAllocation } from '@prisma/client'
 import { computePagibig, computePhilhealth, computeSSS } from './ph-statutory'
 import { monthlyBasisOf } from './types'
 import { q2 } from './money'
@@ -50,6 +50,19 @@ export function employerShareExternals(rows: Array<{ contribution: StatutoryCont
 }
 
 /**
+ * Map allocation rows (#173, Feature E) to the engine's `statutoryAllocations`. A missing row (or an
+ * EVEN row) means the default half-and-half split. Same shape/plumbing as `statutoryExemptions` so
+ * the real run and the preview stay identical.
+ */
+export function statutoryAllocations(
+	rows: Array<{ contribution: StatutoryContribution; allocation: StatutoryAllocation }>
+) {
+	const of = (c: StatutoryContribution): StatutoryAllocation =>
+		rows.find((r) => r.contribution === c)?.allocation ?? 'EVEN'
+	return { sss: of('SSS'), philhealth: of('PHILHEALTH'), pagibig: of('PAGIBIG') }
+}
+
+/**
  * The three statutory contributions with the employee's current enrollment and the monthly EE
  * amount they would owe (display-only, computed from the same rate helpers the engine uses).
  */
@@ -57,7 +70,12 @@ export async function listStatutoryRows(employeeId: string, organizationId: stri
 	const employee = await requireEmployee(employeeId, organizationId)
 	const configs = await db.employeeStatutoryConfig.findMany({
 		where: { employeeId },
-		select: { contribution: true, exempt: true, employerSharePaidExternally: true }
+		select: {
+			contribution: true,
+			exempt: true,
+			employerSharePaidExternally: true,
+			allocation: true
+		}
 	})
 	const monthly = monthlyBasisOf({
 		basicMonthlySalary: employee.basicMonthlySalary,
@@ -74,6 +92,7 @@ export async function listStatutoryRows(employeeId: string, organizationId: stri
 			contribution,
 			exempt: config?.exempt ?? false,
 			employerSharePaidExternally: config?.employerSharePaidExternally ?? false,
+			allocation: config?.allocation ?? 'EVEN',
 			monthlyEe: monthlyEe[contribution]
 		}
 	})
@@ -125,6 +144,33 @@ export async function setEmployerShareExternal(
 		entityType: 'EmployeeStatutoryConfig',
 		entityId: row.id,
 		newValue: { contribution, employerSharePaidExternally: external }
+	})
+	return row
+}
+
+/**
+ * Upsert the EE-share cutoff allocation (#173, Feature E) for one contribution and audit it. Shares
+ * the `@@unique([employeeId, contribution])` row with `exempt` + `employerSharePaidExternally`, so
+ * only `allocation` is touched — the other flags are preserved (created rows default them to false).
+ */
+export async function setStatutoryAllocation(
+	employeeId: string,
+	organizationId: string,
+	contribution: StatutoryContribution,
+	allocation: StatutoryAllocation,
+	ctx: AuditContext
+) {
+	await requireEmployee(employeeId, organizationId)
+	const row = await db.employeeStatutoryConfig.upsert({
+		where: { employeeId_contribution: { employeeId, contribution } },
+		create: { employeeId, contribution, allocation },
+		update: { allocation }
+	})
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'EmployeeStatutoryConfig',
+		entityId: row.id,
+		newValue: { contribution, allocation }
 	})
 	return row
 }

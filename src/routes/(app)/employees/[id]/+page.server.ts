@@ -34,7 +34,8 @@ import {
 import {
 	listStatutoryRows,
 	setStatutoryExemption,
-	setEmployerShareExternal
+	setEmployerShareExternal,
+	setStatutoryAllocation
 } from '$lib/server/services/payroll/employee-statutory'
 import { listSchedules } from '$lib/server/services/attendance/schedules'
 import {
@@ -251,6 +252,10 @@ const statutoryToggleSchema = z.object({
 const employerShareExternalToggleSchema = z.object({
 	contribution: z.enum(['SSS', 'PHILHEALTH', 'PAGIBIG']),
 	external: z.enum(['true', 'false']).transform((v) => v === 'true')
+})
+const statutoryAllocationSchema = z.object({
+	contribution: z.enum(['SSS', 'PHILHEALTH', 'PAGIBIG']),
+	allocation: z.enum(['EVEN', 'FIRST', 'SECOND'])
 })
 
 const updateSchema = z.object({
@@ -586,6 +591,26 @@ export const actions: Actions = {
 				locals.user!.organizationId,
 				parsed.data.contribution,
 				parsed.data.external,
+				ctxOf(locals, getClientAddress())
+			)
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
+		}
+		return { success: true }
+	},
+
+	// Set which semi-monthly cutoff the EE share is deducted on (#173, Feature E). HR-only, audited.
+	setStatutoryAllocation: async ({ request, locals, params, getClientAddress }) => {
+		requireCapability(locals.user!.role, 'MANAGE_HR')
+		const parsed = statutoryAllocationSchema.safeParse(Object.fromEntries(await request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Invalid statutory allocation' })
+		try {
+			await setStatutoryAllocation(
+				params.id,
+				locals.user!.organizationId,
+				parsed.data.contribution,
+				parsed.data.allocation,
 				ctxOf(locals, getClientAddress())
 			)
 		} catch (e: unknown) {

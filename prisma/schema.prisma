@@ -525,6 +525,15 @@ enum StatutoryContribution {
   PAGIBIG
 }
 
+// #173 (Feature E): which semi-monthly cutoff the EMPLOYEE share is deducted on. EVEN splits it
+// half-and-half (today's proration); FIRST takes the full monthly EE on the 1–15 cutoff, SECOND on
+// the 16–EOM cutoff. Employer share and tax keep their normal proration regardless.
+enum StatutoryAllocation {
+  EVEN
+  FIRST
+  SECOND
+}
+
 model EmployeeStatutoryConfig {
   id           String                @id @default(cuid())
   employeeId   String
@@ -533,6 +542,8 @@ model EmployeeStatutoryConfig {
   // #173 (Feature C): employer share is remitted elsewhere (e.g. primary employer / dual
   // employment) — zero the ER share only; the EE share is still deducted. Independent of `exempt`.
   employerSharePaidExternally Boolean @default(false)
+  // #173 (Feature E): per-employee EE-share cutoff choice. Default EVEN = today's behaviour.
+  allocation   StatutoryAllocation   @default(EVEN)
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @updatedAt
   employee     Employee              @relation(fields: [employeeId], references: [id], onDelete: Cascade)

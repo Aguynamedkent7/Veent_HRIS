@@ -7,12 +7,16 @@ import { computeEmployeeResult } from './calculator'
 import { ratesFromRule } from './rates'
 import { type AmortItem } from './deductions'
 import { recurringDeductionComponents } from './employee-deductions'
-import { statutoryExemptions, employerShareExternals } from './employee-statutory'
+import {
+	statutoryExemptions,
+	employerShareExternals,
+	statutoryAllocations
+} from './employee-statutory'
 import { D, q2n, sum, ZERO } from './money'
 import { emptyAttendance, round2, type EmployeeComp } from './types'
 import { buildAttendanceInput } from '../attendance/input'
 import { computeWorkingDays } from '$lib/utils/dates'
-import { isValidStandardPeriod, periodShareOf } from '$lib/utils/pay-periods'
+import { describePeriod, isValidStandardPeriod, periodShareOf } from '$lib/utils/pay-periods'
 import { ensurePayrollApprovalChain } from '../approvals'
 import type { AuditContext } from '../types'
 
@@ -95,6 +99,7 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		recurringDeductionsAll,
 		statutoryExemptAll,
 		statutoryExternalAll,
+		statutoryAllocationAll,
 		holidays
 	] = await Promise.all([
 		db.employee.findMany({ where: { user: { organizationId }, employmentStatus: 'ACTIVE' } }),
@@ -133,6 +138,12 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			where: { employee: { organizationId }, employerSharePaidExternally: true },
 			select: { employeeId: true, contribution: true }
 		}),
+		// Per-employee EE-share cutoff allocation (#173, Feature E) — only non-EVEN rows matter; EVEN
+		// is the default (half split). Grouped by employee like the other per-employee data below.
+		db.employeeStatutoryConfig.findMany({
+			where: { employee: { organizationId }, allocation: { not: 'EVEN' } },
+			select: { employeeId: true, contribution: true, allocation: true }
+		}),
 		// Public holidays inside the period — the scheduled-hours fallback below must not
 		// bill them as ordinary working days.
 		db.publicHoliday.findMany({
@@ -155,6 +166,10 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	// frequency-based share so their numbers don't shift.
 	const frequencyShare = (config?.payFrequency ?? 'SEMI_MONTHLY') === 'MONTHLY' ? 1 : 0.5
 	const periodShare = periodShareOf(run.periodStart, run.periodEnd, frequencyShare)
+	// #173 (Feature E): the run's cutoff kind, computed once, drives EE-share allocation in the
+	// engine. WHOLE_MONTH/legacy periods (null) make allocation moot — the engine falls back to
+	// `× periodShare` there.
+	const periodKind = describePeriod(run.periodStart, run.periodEnd).kind
 	const loansByEmp = groupByEmployee(loansAll)
 	const advancesByEmp = groupByEmployee(advancesAll)
 	const enrollmentsByEmp = groupByEmployee(enrollmentsAll)
@@ -162,6 +177,7 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	const recurringDeductionsByEmp = groupByEmployee(recurringDeductionsAll)
 	const statutoryExemptByEmp = groupByEmployee(statutoryExemptAll)
 	const statutoryExternalByEmp = groupByEmployee(statutoryExternalAll)
+	const statutoryAllocationByEmp = groupByEmployee(statutoryAllocationAll)
 	// Holidays were previously passed as [], so a period containing public holidays
 	// counted them as ordinary working days. That inflates `scheduledHours` below, and
 	// since BASIC = regularHours * hourlyRate, it inflated basic pay for every employee
@@ -254,6 +270,8 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			expectedHours: scheduledHours,
 			statutoryExemptions: statutoryExemptions(statutoryExemptByEmp.get(emp.id) ?? []),
 			employerShareExternal: employerShareExternals(statutoryExternalByEmp.get(emp.id) ?? []),
+			statutoryAllocations: statutoryAllocations(statutoryAllocationByEmp.get(emp.id) ?? []),
+			periodKind,
 			loans,
 			cashAdvances,
 			recurringDeductions: [
