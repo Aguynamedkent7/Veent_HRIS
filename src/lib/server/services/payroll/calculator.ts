@@ -2,6 +2,7 @@ import { db } from '$lib/server/db'
 import { error } from '@sveltejs/kit'
 import { computeEarnings } from './earnings'
 import { ratesFromRule, type PayRates } from './rates'
+import { statutoryRatesFromConfig } from './statutory-rates'
 import { computeDeductions, type AmortItem } from './deductions'
 import { recurringDeductionComponents } from './employee-deductions'
 import {
@@ -9,7 +10,7 @@ import {
 	employerShareExternals,
 	statutoryAllocations
 } from './employee-statutory'
-import { computeStatutoryDeductions } from './ph-statutory'
+import { computeStatutoryDeductions, type StatutoryRates } from './ph-statutory'
 import type { StatutoryAllocation } from '@prisma/client'
 import type { PeriodKind } from '$lib/utils/pay-periods'
 import { D, q2n, sumQ, ZERO, type Money } from './money'
@@ -71,6 +72,12 @@ export interface EmployeeComputeConfig {
 	periodKind?: PeriodKind | null
 	/** Org premium-pay multipliers (from PayRateRule); omitted → DOLE defaults. */
 	rates?: PayRates
+	/**
+	 * Org statutory rate overrides (#220), resolved from `StatutoryRateConfig` via
+	 * `statutoryRatesFromConfig`. Omitted (or all fields absent) → the hardcoded PH tables in
+	 * `ph-statutory.ts`, i.e. today's numbers. Wired identically in the run and the preview.
+	 */
+	statutoryRates?: StatutoryRates
 	/**
 	 * Paid hours the period actually schedules, used to value absences for fixed-basic staff
 	 * (#121). The real run passes its holiday-aware `scheduledHours`; omitted → derived from the
@@ -144,7 +151,7 @@ export function computeEmployeeResult(
 	// exactly once — here. Previously each was rounded, scaled by 0.5, then rounded again.
 	// #120: brackets are defined on a MONTHLY salary credit, so hourly staff are projected to a
 	// monthly equivalent first — passing a raw hourly rate would floor them in the lowest bracket.
-	const m = computeStatutoryDeductions(monthlyBasisOf(comp))
+	const m = computeStatutoryDeductions(monthlyBasisOf(comp), cfg.statutoryRates)
 	// #173: an exempted contribution is not enrolled — zero BOTH its EE and ER share before
 	// proration, leaving the other contributions and their proration untouched. Withholding tax
 	// is never exempted (income-based exemption is already the ₱0 bracket), so it is always
@@ -259,6 +266,7 @@ export async function previewPayroll(
 		loansAll,
 		advancesAll,
 		payRateRule,
+		statutoryRateConfig,
 		recurringDeductions,
 		statutoryExempt,
 		statutoryExternal,
@@ -269,6 +277,8 @@ export async function previewPayroll(
 		db.loan.findMany({ where: { employeeId, status: 'ACTIVE', balance: { gt: 0 } } }),
 		db.cashAdvance.findMany({ where: { employeeId, status: 'ACTIVE', balance: { gt: 0 } } }),
 		db.payRateRule.findUnique({ where: { organizationId } }),
+		// Org statutory rate overrides (#220) — resolved identically to the real run (run↔preview parity).
+		db.statutoryRateConfig.findUnique({ where: { organizationId } }),
 		// Recurring custom deductions apply in the preview too (#66) — same as a real run.
 		db.employeeDeduction.findMany({
 			where: { employeeId, isActive: true, deductionType: { isActive: true } },
@@ -296,6 +306,7 @@ export async function previewPayroll(
 	const cfg: EmployeeComputeConfig = {
 		taxableByCode: new Map(earningTypes.map((e) => [e.code, e.taxable])),
 		rates: ratesFromRule(payRateRule),
+		statutoryRates: statutoryRatesFromConfig(statutoryRateConfig),
 		periodShare,
 		statutoryExemptions: statutoryExemptions(statutoryExempt),
 		employerShareExternal: employerShareExternals(statutoryExternal),

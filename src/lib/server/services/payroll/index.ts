@@ -5,6 +5,7 @@ import { Prisma, type Role } from '@prisma/client'
 import { canAny } from '$lib/rbac'
 import { computeEmployeeResult } from './calculator'
 import { ratesFromRule } from './rates'
+import { statutoryRatesFromConfig } from './statutory-rates'
 import { type AmortItem } from './deductions'
 import { recurringDeductionComponents } from './employee-deductions'
 import {
@@ -95,6 +96,7 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		advancesAll,
 		enrollmentsAll,
 		payRateRule,
+		statutoryRateConfig,
 		recurringAll,
 		recurringDeductionsAll,
 		statutoryExemptAll,
@@ -117,6 +119,8 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			select: { id: true, employeeId: true, plan: { select: { name: true, employeeCost: true } } }
 		}),
 		db.payRateRule.findUnique({ where: { organizationId } }),
+		// Org statutory rate overrides (#220) — one optional org row, resolved to effective rates below.
+		db.statutoryRateConfig.findUnique({ where: { organizationId } }),
 		// Recurring allowance/incentive assignments feed the adjustment buckets (#65).
 		db.employeeEarning.findMany({
 			where: { employee: { organizationId }, isActive: true }
@@ -159,6 +163,9 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	const taxableByCode = new Map(earningTypes.map((e) => [e.code, e.taxable]))
 	// Premium-pay multipliers from PayRateRule (falls back to DOLE defaults when unset).
 	const rates = ratesFromRule(payRateRule)
+	// #220: statutory tables from StatutoryRateConfig (falls back to the hardcoded PH defaults when
+	// unset). Resolved once and threaded into the shared engine identically to the preview.
+	const statutoryRates = statutoryRatesFromConfig(statutoryRateConfig)
 	// Requirement #5 (review) + #129: prorate monthly statutory to the run's ACTUAL period
 	// shape — WHOLE_MONTH carries the full month (1), either half carries 0.5. This replaces
 	// reading the org-wide payFrequency, which mis-prorated an org that mixes half-month and
@@ -265,6 +272,7 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		const result = computeEmployeeResult(comp, attendance, adjustments, {
 			taxableByCode,
 			rates,
+			statutoryRates,
 			periodShare,
 			// Holiday-aware schedule for the period — values absences for fixed-basic staff (#121).
 			expectedHours: scheduledHours,

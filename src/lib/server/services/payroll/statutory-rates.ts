@@ -1,0 +1,239 @@
+/**
+ * Org-scoped statutory rate overrides (#220). Mirrors `rates.ts`/`ratesFromRule`: hardcoded PH
+ * defaults live in `ph-statutory.ts`; a `StatutoryRateConfig` row overrides them field-by-field.
+ * A null field (or no row) falls back to the hardcoded default, so an org with no config computes
+ * byte-for-byte today's numbers — the parity guarantee.
+ *
+ * This module holds three things: the pure resolver (`statutoryRatesFromConfig`, wired into both the
+ * real run and the preview), the on-save validation (trust boundary — HR is editing tax math), and
+ * the DB-backed get/update service (org-scoped upsert + audit).
+ */
+
+import { z } from 'zod'
+import { Prisma } from '@prisma/client'
+import { db } from '$lib/server/db'
+import { writeAuditLog } from '$lib/server/audit'
+import type { AuditContext } from '../types'
+import type { SSSBracket, TaxBracket, StatutoryRates } from './ph-statutory'
+
+// ─── Resolver (fallback pattern) ──────────────────────────────────────────────
+
+/**
+ * Loose shape of a persisted `StatutoryRateConfig` row — accepted so this stays independent of the
+ * exact Prisma client type. The two bracket columns are JSON; the open-ended last ceiling is stored
+ * as `null` and revived to `Infinity` here so the runtime bracket shape matches the hardcoded tables.
+ */
+export interface StatutoryRateConfigRow {
+	philhealthRate?: Prisma.Decimal | null
+	philhealthFloor?: Prisma.Decimal | null
+	philhealthCeiling?: Prisma.Decimal | null
+	pagibigRate?: Prisma.Decimal | null
+	pagibigCap?: Prisma.Decimal | null
+	sssBrackets?: Prisma.JsonValue | null
+	taxBrackets?: Prisma.JsonValue | null
+}
+
+const numOrUndef = (v: Prisma.Decimal | null | undefined): number | undefined =>
+	v == null ? undefined : Number(v)
+
+function reviveSssBrackets(json: Prisma.JsonValue | null | undefined): SSSBracket[] | undefined {
+	if (!Array.isArray(json)) return undefined
+	return json.map((raw) => {
+		const b = raw as Record<string, unknown>
+		return {
+			salaryFloor: Number(b.salaryFloor),
+			salaryCeiling: b.salaryCeiling == null ? Infinity : Number(b.salaryCeiling),
+			totalContribution: Number(b.totalContribution),
+			eeShare: Number(b.eeShare),
+			erShare: Number(b.erShare)
+		}
+	})
+}
+
+function reviveTaxBrackets(json: Prisma.JsonValue | null | undefined): TaxBracket[] | undefined {
+	if (!Array.isArray(json)) return undefined
+	return json.map((raw) => {
+		const b = raw as Record<string, unknown>
+		return {
+			floor: Number(b.floor),
+			ceiling: b.ceiling == null ? Infinity : Number(b.ceiling),
+			baseTax: Number(b.baseTax),
+			rate: Number(b.rate),
+			excessOver: Number(b.excessOver)
+		}
+	})
+}
+
+/**
+ * Resolve a config row (or null) into the effective `StatutoryRates`. Each field falls back to the
+ * hardcoded default via `undefined` — `computeStatutoryDeductions` then uses the constant. A null
+ * config yields all-undefined, i.e. exactly the pre-#220 behaviour. The PhilHealth/Pag-IBIG rates
+ * are kept as their exact Prisma `Decimal` (not narrowed to a float) so `.times()` stays exact.
+ */
+export function statutoryRatesFromConfig(
+	config: StatutoryRateConfigRow | null | undefined
+): StatutoryRates {
+	if (!config) return {}
+	return {
+		sssBrackets: reviveSssBrackets(config.sssBrackets),
+		taxBrackets: reviveTaxBrackets(config.taxBrackets),
+		philhealth: {
+			rate: config.philhealthRate ?? undefined,
+			floor: numOrUndef(config.philhealthFloor),
+			ceiling: numOrUndef(config.philhealthCeiling)
+		},
+		pagibig: {
+			rate: config.pagibigRate ?? undefined,
+			cap: numOrUndef(config.pagibigCap)
+		}
+	}
+}
+
+// ─── Validation (trust boundary) ──────────────────────────────────────────────
+// The open-ended last bracket carries `ceiling: null` (revived to Infinity). Cross-row invariants:
+// sorted ascending by floor, non-overlapping, first floor covers 0, only the last bracket is
+// open-ended. Non-strict contiguity is intentional — the real SSS/BIR tables leave ±0.01/±1 gaps at
+// bracket boundaries, so a zero-gap rule would reject the legal tables HR must be able to enter.
+
+const sssBracketSchema = z.object({
+	salaryFloor: z.number().finite().nonnegative(),
+	salaryCeiling: z.number().finite().positive().nullable(),
+	totalContribution: z.number().finite().nonnegative(),
+	eeShare: z.number().finite().nonnegative(),
+	erShare: z.number().finite().nonnegative()
+})
+
+export const sssBracketsSchema = z
+	.array(sssBracketSchema)
+	.min(1, 'At least one SSS bracket is required.')
+	.superRefine((rows, ctx) => {
+		const add = (message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, message })
+		if (rows[0].salaryFloor > 0) add('First SSS bracket must start at 0 (cover the low end).')
+		rows.forEach((b, i) => {
+			const isLast = i === rows.length - 1
+			if (isLast && b.salaryCeiling !== null)
+				add('Last SSS bracket must be open-ended (no ceiling).')
+			if (!isLast && b.salaryCeiling === null) add('Only the last SSS bracket may be open-ended.')
+			if (b.salaryCeiling !== null && b.salaryCeiling < b.salaryFloor)
+				add(`SSS bracket ${i + 1}: ceiling is below its floor.`)
+			if (i > 0) {
+				const prev = rows[i - 1]
+				if (b.salaryFloor <= prev.salaryFloor)
+					add('SSS brackets must be sorted ascending by floor.')
+				if (prev.salaryCeiling !== null && b.salaryFloor < prev.salaryCeiling)
+					add(`SSS bracket ${i + 1} overlaps the previous bracket.`)
+			}
+		})
+	})
+
+const taxBracketSchema = z.object({
+	floor: z.number().finite().nonnegative(),
+	ceiling: z.number().finite().positive().nullable(),
+	baseTax: z.number().finite().nonnegative(),
+	rate: z.number().finite().min(0).max(1),
+	excessOver: z.number().finite().nonnegative()
+})
+
+export const taxBracketsSchema = z
+	.array(taxBracketSchema)
+	.min(1, 'At least one tax bracket is required.')
+	.superRefine((rows, ctx) => {
+		const add = (message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, message })
+		if (rows[0].floor > 0) add('First tax bracket must start at 0 (cover the low end).')
+		rows.forEach((b, i) => {
+			const isLast = i === rows.length - 1
+			if (isLast && b.ceiling !== null) add('Last tax bracket must be open-ended (no ceiling).')
+			if (!isLast && b.ceiling === null) add('Only the last tax bracket may be open-ended.')
+			if (b.ceiling !== null && b.ceiling < b.floor)
+				add(`Tax bracket ${i + 1}: ceiling is below its floor.`)
+			if (i > 0) {
+				const prev = rows[i - 1]
+				if (b.floor <= prev.floor) add('Tax brackets must be sorted ascending by floor.')
+				if (prev.ceiling !== null && b.floor < prev.ceiling)
+					add(`Tax bracket ${i + 1} overlaps the previous bracket.`)
+			}
+		})
+	})
+
+/**
+ * Full save payload. Every field is nullable — null means "clear the override, use the hardcoded
+ * default". Scalars are stored as-is (PhilHealth/Pag-IBIG rate as a decimal fraction, e.g. 0.05).
+ */
+export const statutoryRateInputSchema = z
+	.object({
+		philhealthRate: z.number().min(0).max(1).nullable(),
+		philhealthFloor: z.number().nonnegative().nullable(),
+		philhealthCeiling: z.number().nonnegative().nullable(),
+		pagibigRate: z.number().min(0).max(1).nullable(),
+		pagibigCap: z.number().nonnegative().nullable(),
+		sssBrackets: sssBracketsSchema.nullable(),
+		taxBrackets: taxBracketsSchema.nullable()
+	})
+	.superRefine((v, ctx) => {
+		if (
+			v.philhealthFloor !== null &&
+			v.philhealthCeiling !== null &&
+			v.philhealthFloor > v.philhealthCeiling
+		)
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: 'PhilHealth floor must be ≤ ceiling.'
+			})
+	})
+
+export type StatutoryRateInput = z.infer<typeof statutoryRateInputSchema>
+
+// ─── Service (org-scoped upsert + audit) ──────────────────────────────────────
+
+export async function getStatutoryRateConfig(organizationId: string) {
+	return db.statutoryRateConfig.findUnique({ where: { organizationId } })
+}
+
+// A nullable Json column stores SQL NULL (no override) via Prisma.DbNull; an array via itself.
+const jsonOrNull = (v: unknown[] | null): Prisma.InputJsonValue | typeof Prisma.DbNull =>
+	v == null ? Prisma.DbNull : (v as unknown as Prisma.InputJsonValue)
+
+export async function updateStatutoryRateConfig(
+	organizationId: string,
+	data: StatutoryRateInput,
+	ctx: AuditContext
+) {
+	const persist = {
+		philhealthRate: data.philhealthRate,
+		philhealthFloor: data.philhealthFloor,
+		philhealthCeiling: data.philhealthCeiling,
+		pagibigRate: data.pagibigRate,
+		pagibigCap: data.pagibigCap,
+		sssBrackets: jsonOrNull(data.sssBrackets),
+		taxBrackets: jsonOrNull(data.taxBrackets)
+	}
+
+	const existing = await db.statutoryRateConfig.findUnique({ where: { organizationId } })
+	const row = await db.statutoryRateConfig.upsert({
+		where: { organizationId },
+		create: { organizationId, ...persist },
+		update: persist
+	})
+
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'StatutoryRateConfig',
+		entityId: row.id,
+		oldValue: existing
+			? {
+					philhealthRate: numOrUndef(existing.philhealthRate) ?? null,
+					pagibigRate: numOrUndef(existing.pagibigRate) ?? null,
+					sssBrackets: existing.sssBrackets ?? null,
+					taxBrackets: existing.taxBrackets ?? null
+				}
+			: undefined,
+		newValue: {
+			philhealthRate: data.philhealthRate,
+			pagibigRate: data.pagibigRate,
+			sssBrackets: data.sssBrackets,
+			taxBrackets: data.taxBrackets
+		}
+	})
+
+	return row
+}

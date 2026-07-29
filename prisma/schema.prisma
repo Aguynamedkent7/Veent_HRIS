@@ -312,6 +312,7 @@ model Organization {
   earningTypes             EarningType[]
   deductionTypes           DeductionType[]
   payRateRule              PayRateRule?
+  statutoryRateConfig      StatutoryRateConfig?
   workSchedules            WorkSchedule[]
   salaryGrades             SalaryGrade[]
   announcements            Announcement[]
@@ -1609,6 +1610,34 @@ model PayRateRule {
   organization Organization @relation(fields: [organizationId], references: [id])
 
   @@map("pay_rate_rules")
+}
+
+// Org-scoped overrides for the PH statutory rate tables (#220). Mirrors PayRateRule:
+// one optional row per org, overwrite-in-place (NOT effective-dated — approved runs are
+// frozen so history lives in the stored payslips). Every column is nullable; a null field
+// falls back to the hardcoded default in ph-statutory.ts, so an org with no row (or a row
+// with all-null fields) computes byte-for-byte today's statutory numbers. The bracket
+// tables are JSON arrays of the SSSBracket[] / TaxBracket[] shapes (open-ended last
+// ceiling stored as null, revived to Infinity on read), validated on save.
+model StatutoryRateConfig {
+  id             String @id @default(cuid())
+  organizationId String @unique
+
+  philhealthRate    Decimal? @db.Decimal(6, 4)
+  philhealthFloor   Decimal? @db.Decimal(12, 2)
+  philhealthCeiling Decimal? @db.Decimal(12, 2)
+
+  pagibigRate Decimal? @db.Decimal(6, 4)
+  pagibigCap  Decimal? @db.Decimal(12, 2)
+
+  sssBrackets Json?
+  taxBrackets Json?
+
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@map("statutory_rate_configs")
 }
 
 model Loan {
