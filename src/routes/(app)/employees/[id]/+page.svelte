@@ -85,6 +85,7 @@
 	const endDeduction = createSubmitGuard()
 	const addDeduction = createSubmitGuard()
 	const toggleStatutory = createSubmitGuard()
+	const toggleErExternal = createSubmitGuard()
 	const STATUTORY_LABELS: Record<string, string> = {
 		SSS: 'SSS',
 		PHILHEALTH: 'PhilHealth',
@@ -1125,32 +1126,65 @@
 											{formatCurrency(s.monthlyEe)}<span class="ml-1 text-xs text-muted-foreground"
 												>/mo</span
 											>
+											{#if s.employerSharePaidExternally}
+												<span class="block text-xs font-sans text-muted-foreground"
+													>Employer share paid externally</span
+												>
+											{/if}
 										{/if}
 									</td>
 									<td class="py-1.5 text-right">
-										<form
-											method="POST"
-											action="?/toggleStatutoryExemption"
-											use:enhance={toggleStatutory.enhance}
-										>
-											<input type="hidden" name="contribution" value={s.contribution} />
-											<input type="hidden" name="exempt" value={s.exempt ? 'false' : 'true'} />
-											{#if s.exempt}
-												<button
-													type="submit"
-													disabled={toggleStatutory.busy}
-													class="rounded-md border border-primary/20 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/10 disabled:pointer-events-none disabled:opacity-50"
-													>{toggleStatutory.busy ? 'Saving…' : 'Restore'}</button
+										<div class="flex flex-col items-end gap-1">
+											<form
+												method="POST"
+												action="?/toggleStatutoryExemption"
+												use:enhance={toggleStatutory.enhance}
+											>
+												<input type="hidden" name="contribution" value={s.contribution} />
+												<input type="hidden" name="exempt" value={s.exempt ? 'false' : 'true'} />
+												{#if s.exempt}
+													<button
+														type="submit"
+														disabled={toggleStatutory.busy}
+														class="rounded-md border border-primary/20 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/10 disabled:pointer-events-none disabled:opacity-50"
+														>{toggleStatutory.busy ? 'Saving…' : 'Restore'}</button
+													>
+												{:else}
+													<button
+														type="submit"
+														disabled={toggleStatutory.busy}
+														class="rounded-md border border-red-500/20 px-2 py-0.5 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-500/10 disabled:pointer-events-none disabled:opacity-50"
+														>{toggleStatutory.busy ? 'Saving…' : 'Remove'}</button
+													>
+												{/if}
+											</form>
+											<!-- Employer-share-paid-externally control (#173). Meaningless while exempt (both
+											     shares already zeroed), so hidden then. -->
+											{#if !s.exempt}
+												<form
+													method="POST"
+													action="?/toggleEmployerShareExternal"
+													use:enhance={toggleErExternal.enhance}
 												>
-											{:else}
-												<button
-													type="submit"
-													disabled={toggleStatutory.busy}
-													class="rounded-md border border-red-500/20 px-2 py-0.5 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-500/10 disabled:pointer-events-none disabled:opacity-50"
-													>{toggleStatutory.busy ? 'Saving…' : 'Remove'}</button
-												>
+													<input type="hidden" name="contribution" value={s.contribution} />
+													<input
+														type="hidden"
+														name="external"
+														value={s.employerSharePaidExternally ? 'false' : 'true'}
+													/>
+													<button
+														type="submit"
+														disabled={toggleErExternal.busy}
+														class="rounded-md border border-border px-2 py-0.5 text-xs font-medium text-muted-foreground hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+														>{toggleErExternal.busy
+															? 'Saving…'
+															: s.employerSharePaidExternally
+																? 'Restore employer share'
+																: 'Employer share paid externally'}</button
+													>
+												</form>
 											{/if}
-										</form>
+										</div>
 									</td>
 								</tr>
 							{/each}

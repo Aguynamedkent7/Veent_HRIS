@@ -530,6 +530,9 @@ model EmployeeStatutoryConfig {
   employeeId   String
   contribution StatutoryContribution
   exempt       Boolean               @default(false)
+  // #173 (Feature C): employer share is remitted elsewhere (e.g. primary employer / dual
+  // employment) — zero the ER share only; the EE share is still deducted. Independent of `exempt`.
+  employerSharePaidExternally Boolean @default(false)
   createdAt    DateTime              @default(now())
   updatedAt    DateTime              @updatedAt
   employee     Employee              @relation(fields: [employeeId], references: [id], onDelete: Cascade)

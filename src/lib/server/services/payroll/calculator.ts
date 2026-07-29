@@ -4,7 +4,7 @@ import { computeEarnings } from './earnings'
 import { ratesFromRule, type PayRates } from './rates'
 import { computeDeductions, type AmortItem } from './deductions'
 import { recurringDeductionComponents } from './employee-deductions'
-import { statutoryExemptions } from './employee-statutory'
+import { statutoryExemptions, employerShareExternals } from './employee-statutory'
 import { computeStatutoryDeductions } from './ph-statutory'
 import { D, q2n, sumQ } from './money'
 import {
@@ -40,6 +40,12 @@ export interface EmployeeComputeConfig {
 	 * all contributions on (the default).
 	 */
 	statutoryExemptions?: { sss: boolean; philhealth: boolean; pagibig: boolean }
+	/**
+	 * Per-employee "employer share paid externally" (#173, Feature C). A flagged contribution has its
+	 * ER share zeroed before proration; the EE share is still deducted and tax is untouched. Independent
+	 * of `statutoryExemptions` (which zeroes both shares). Omitted → all ER shares kept (the default).
+	 */
+	employerShareExternal?: { sss: boolean; philhealth: boolean; pagibig: boolean }
 	/** Org premium-pay multipliers (from PayRateRule); omitted → DOLE defaults. */
 	rates?: PayRates
 	/**
@@ -102,14 +108,17 @@ export function computeEmployeeResult(
 	// is never exempted (income-based exemption is already the ₱0 bracket), so it is always
 	// computed from the full contributions — `m.withholdingTax` is not affected here.
 	const ex = cfg.statutoryExemptions
+	// #173 (Feature C): "employer share paid externally" zeroes the ER share only. Exempt already
+	// zeroes both shares, so a contribution that is exempt makes this a no-op (EE stays 0 either way).
+	const ext = cfg.employerShareExternal
 	const share = D(cfg.periodShare)
 	const statutory: ProratedStatutory = {
 		sssEe: ex?.sss ? 0 : q2n(m.sssEe.times(share)),
-		sssEr: ex?.sss ? 0 : q2n(m.sssEr.times(share)),
+		sssEr: ex?.sss || ext?.sss ? 0 : q2n(m.sssEr.times(share)),
 		philhealthEe: ex?.philhealth ? 0 : q2n(m.philhealthEe.times(share)),
-		philhealthEr: ex?.philhealth ? 0 : q2n(m.philhealthEr.times(share)),
+		philhealthEr: ex?.philhealth || ext?.philhealth ? 0 : q2n(m.philhealthEr.times(share)),
 		pagibigEe: ex?.pagibig ? 0 : q2n(m.pagibigEe.times(share)),
-		pagibigEr: ex?.pagibig ? 0 : q2n(m.pagibigEr.times(share)),
+		pagibigEr: ex?.pagibig || ext?.pagibig ? 0 : q2n(m.pagibigEr.times(share)),
 		withholdingTax: q2n(m.withholdingTax.times(share))
 	}
 
@@ -202,7 +211,8 @@ export async function previewPayroll(
 		advancesAll,
 		payRateRule,
 		recurringDeductions,
-		statutoryExempt
+		statutoryExempt,
+		statutoryExternal
 	] = await Promise.all([
 		db.payrollConfig.findUnique({ where: { organizationId } }),
 		db.earningType.findMany({ where: { organizationId }, select: { code: true, taxable: true } }),
@@ -218,6 +228,11 @@ export async function previewPayroll(
 		db.employeeStatutoryConfig.findMany({
 			where: { employeeId, exempt: true },
 			select: { contribution: true }
+		}),
+		// "Employer share paid externally" applies in the preview too (#173) — same as a real run.
+		db.employeeStatutoryConfig.findMany({
+			where: { employeeId, employerSharePaidExternally: true },
+			select: { contribution: true }
 		})
 	])
 
@@ -227,6 +242,7 @@ export async function previewPayroll(
 		rates: ratesFromRule(payRateRule),
 		periodShare,
 		statutoryExemptions: statutoryExemptions(statutoryExempt),
+		employerShareExternal: employerShareExternals(statutoryExternal),
 		recurringDeductions: recurringDeductionComponents(recurringDeductions, periodShare),
 		loans: loansAll.map((l) => ({
 			refId: l.id,

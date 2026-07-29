@@ -38,6 +38,18 @@ export function statutoryExemptions(rows: Array<{ contribution: StatutoryContrib
 }
 
 /**
+ * Map "employer share paid externally" rows (#173, Feature C) to the engine's `employerShareExternal`
+ * flags. Same shape/plumbing as `statutoryExemptions` so the real run and the preview stay identical.
+ */
+export function employerShareExternals(rows: Array<{ contribution: StatutoryContribution }>) {
+	return {
+		sss: rows.some((r) => r.contribution === 'SSS'),
+		philhealth: rows.some((r) => r.contribution === 'PHILHEALTH'),
+		pagibig: rows.some((r) => r.contribution === 'PAGIBIG')
+	}
+}
+
+/**
  * The three statutory contributions with the employee's current enrollment and the monthly EE
  * amount they would owe (display-only, computed from the same rate helpers the engine uses).
  */
@@ -45,7 +57,7 @@ export async function listStatutoryRows(employeeId: string, organizationId: stri
 	const employee = await requireEmployee(employeeId, organizationId)
 	const configs = await db.employeeStatutoryConfig.findMany({
 		where: { employeeId },
-		select: { contribution: true, exempt: true }
+		select: { contribution: true, exempt: true, employerSharePaidExternally: true }
 	})
 	const monthly = monthlyBasisOf({
 		basicMonthlySalary: employee.basicMonthlySalary,
@@ -56,11 +68,15 @@ export async function listStatutoryRows(employeeId: string, organizationId: stri
 		PHILHEALTH: q2(computePhilhealth(monthly).ee).toNumber(),
 		PAGIBIG: q2(computePagibig(monthly).ee).toNumber()
 	}
-	return CONTRIBUTIONS.map((contribution) => ({
-		contribution,
-		exempt: configs.find((c) => c.contribution === contribution)?.exempt ?? false,
-		monthlyEe: monthlyEe[contribution]
-	}))
+	return CONTRIBUTIONS.map((contribution) => {
+		const config = configs.find((c) => c.contribution === contribution)
+		return {
+			contribution,
+			exempt: config?.exempt ?? false,
+			employerSharePaidExternally: config?.employerSharePaidExternally ?? false,
+			monthlyEe: monthlyEe[contribution]
+		}
+	})
 }
 
 /** Upsert the exemption row for one contribution and audit the change. */
@@ -82,6 +98,33 @@ export async function setStatutoryExemption(
 		entityType: 'EmployeeStatutoryConfig',
 		entityId: row.id,
 		newValue: { contribution, exempt }
+	})
+	return row
+}
+
+/**
+ * Upsert the "employer share paid externally" flag (#173, Feature C) for one contribution and audit
+ * it. Shares the `@@unique([employeeId, contribution])` row with `exempt`, so only this flag is
+ * touched — `exempt` is preserved (created rows default it to false).
+ */
+export async function setEmployerShareExternal(
+	employeeId: string,
+	organizationId: string,
+	contribution: StatutoryContribution,
+	external: boolean,
+	ctx: AuditContext
+) {
+	await requireEmployee(employeeId, organizationId)
+	const row = await db.employeeStatutoryConfig.upsert({
+		where: { employeeId_contribution: { employeeId, contribution } },
+		create: { employeeId, contribution, employerSharePaidExternally: external },
+		update: { employerSharePaidExternally: external }
+	})
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'EmployeeStatutoryConfig',
+		entityId: row.id,
+		newValue: { contribution, employerSharePaidExternally: external }
 	})
 	return row
 }

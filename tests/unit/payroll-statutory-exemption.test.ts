@@ -81,6 +81,62 @@ describe('computeEmployeeResult — statutory exemptions', () => {
 	})
 })
 
+// ─── Feature C: employer share paid externally ─────────────────────────────────
+
+describe('computeEmployeeResult — employer share paid externally (#173)', () => {
+	const base = computeEmployeeResult(comp, att({ regularHours: FULL_PERIOD_HOURS }), {}, cfg())
+
+	it('no external flag is byte-for-byte identical to omitting the field', () => {
+		const withField = computeEmployeeResult(
+			comp,
+			att({ regularHours: FULL_PERIOD_HOURS }),
+			{},
+			cfg({ employerShareExternal: { sss: false, philhealth: false, pagibig: false } })
+		)
+		expect(withField).toEqual(base)
+	})
+
+	it('external SSS zeroes only the ER share; EE, the others, and tax stay intact', () => {
+		const r = computeEmployeeResult(
+			comp,
+			att({ regularHours: FULL_PERIOD_HOURS }),
+			{},
+			cfg({ employerShareExternal: { sss: true, philhealth: false, pagibig: false } })
+		)
+		expect(r.statutory.sssEr).toBe(0)
+		// EE share is still deducted, unchanged from the baseline.
+		expect(r.statutory.sssEe).toBeCloseTo(base.statutory.sssEe, 2)
+		expect(r.statutory.sssEe).toBeGreaterThan(0)
+		// The SSS EE line still appears among the deductions.
+		expect(r.deductions.find((d) => d.code === 'SSS_EE')?.amount ?? 0).toBeCloseTo(
+			base.statutory.sssEe,
+			2
+		)
+		// The other contributions (both shares) and tax are untouched.
+		expect(r.statutory.philhealthEe).toBeCloseTo(base.statutory.philhealthEe, 2)
+		expect(r.statutory.philhealthEr).toBeCloseTo(base.statutory.philhealthEr, 2)
+		expect(r.statutory.pagibigEe).toBeCloseTo(base.statutory.pagibigEe, 2)
+		expect(r.statutory.pagibigEr).toBeCloseTo(base.statutory.pagibigEr, 2)
+		expect(r.statutory.withholdingTax).toBeCloseTo(base.statutory.withholdingTax, 2)
+		// Net is unchanged — only the ER share (never deducted from the employee) moved.
+		expect(r.netPay).toBeCloseTo(base.netPay, 2)
+	})
+
+	it('exempt + external together zeroes both shares (external is a no-op over exempt)', () => {
+		const r = computeEmployeeResult(
+			comp,
+			att({ regularHours: FULL_PERIOD_HOURS }),
+			{},
+			cfg({
+				statutoryExemptions: { sss: true, philhealth: false, pagibig: false },
+				employerShareExternal: { sss: true, philhealth: false, pagibig: false }
+			})
+		)
+		expect(r.statutory.sssEe).toBe(0)
+		expect(r.statutory.sssEr).toBe(0)
+	})
+})
+
 // ─── Service: setStatutoryExemption ────────────────────────────────────────────
 
 const { dbMock } = vi.hoisted(() => ({
@@ -92,7 +148,8 @@ const { dbMock } = vi.hoisted(() => ({
 vi.mock('$lib/server/db', () => ({ db: dbMock }))
 vi.mock('$lib/server/audit', () => ({ writeAuditLog: vi.fn().mockResolvedValue(undefined) }))
 
-const { setStatutoryExemption } = await import('$lib/server/services/payroll/employee-statutory')
+const { setStatutoryExemption, setEmployerShareExternal } =
+	await import('$lib/server/services/payroll/employee-statutory')
 
 const ctx = {
 	organizationId: 'org1',
@@ -141,6 +198,47 @@ describe('setStatutoryExemption', () => {
 	it('rejects an employee outside the caller’s organization', async () => {
 		dbMock.employee.findFirst.mockResolvedValue(null)
 		await expect(setStatutoryExemption('emp1', 'org1', 'SSS', true, ctx)).rejects.toMatchObject({
+			status: 404
+		})
+		expect(dbMock.employeeStatutoryConfig.upsert).not.toHaveBeenCalled()
+	})
+})
+
+describe('setEmployerShareExternal (#173)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+		dbMock.employee.findFirst.mockResolvedValue({
+			id: 'emp1',
+			basicMonthlySalary: 30000,
+			rateType: 'MONTHLY'
+		})
+		dbMock.employeeStatutoryConfig.upsert.mockResolvedValue({ id: 'cfg1' })
+	})
+
+	it('upserts only the external flag (preserving exempt) and audits it', async () => {
+		const { writeAuditLog } = await import('$lib/server/audit')
+		await setEmployerShareExternal('emp1', 'org1', 'SSS', true, ctx)
+
+		// Neither create nor update mentions `exempt` — the shared row's exempt flag is preserved
+		// (create defaults it to false; update leaves it as-is).
+		expect(dbMock.employeeStatutoryConfig.upsert).toHaveBeenCalledWith({
+			where: { employeeId_contribution: { employeeId: 'emp1', contribution: 'SSS' } },
+			create: { employeeId: 'emp1', contribution: 'SSS', employerSharePaidExternally: true },
+			update: { employerSharePaidExternally: true }
+		})
+		expect(writeAuditLog).toHaveBeenCalledWith(
+			ctx,
+			expect.objectContaining({
+				entityType: 'EmployeeStatutoryConfig',
+				entityId: 'cfg1',
+				newValue: { contribution: 'SSS', employerSharePaidExternally: true }
+			})
+		)
+	})
+
+	it('rejects an employee outside the caller’s organization', async () => {
+		dbMock.employee.findFirst.mockResolvedValue(null)
+		await expect(setEmployerShareExternal('emp1', 'org1', 'SSS', true, ctx)).rejects.toMatchObject({
 			status: 404
 		})
 		expect(dbMock.employeeStatutoryConfig.upsert).not.toHaveBeenCalled()
