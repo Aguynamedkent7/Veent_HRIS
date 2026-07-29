@@ -388,11 +388,18 @@ export const actions: Actions = {
 	// role check runs server-side — the UI button is cosmetic gating only (Constitution P2).
 	reveal: async ({ locals, params, getClientAddress }) => {
 		requireCapability(locals.user!.role, 'MANAGE_HR')
+		// A self-reveal (an HR user opening their own 201 file) is exempt from the audit log —
+		// own data, decision #2. Same identity comparison as load's object-level access check.
+		const self = await db.employee.findUnique({
+			where: { userId: locals.user!.id },
+			select: { id: true }
+		})
+		const isSelf = self?.id === params.id
 		const revealed = await revealEmployeeSensitive(
 			params.id,
 			locals.user!.organizationId,
 			ctxOf(locals, getClientAddress()),
-			{ audit: true }
+			{ audit: !isSelf }
 		)
 		return { revealed }
 	},

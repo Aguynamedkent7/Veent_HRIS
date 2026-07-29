@@ -59,11 +59,18 @@ export const SENSITIVE_ACCOUNT_FIELDS = [
 // Every masked field, for the reveal audit's field list.
 export const SENSITIVE_FIELDS = [...SENSITIVE_ACCOUNT_FIELDS, 'basicMonthlySalary'] as const
 
+// The masked shape of an employee record: salary comes back as the string sentinel (or null),
+// never a number, so a masked value can never be used in arithmetic without a compile error.
+// Account-style fields are already string | null, so they need no override.
+export type MaskedEmployee<T> = Omit<T, 'basicMonthlySalary'> & {
+	basicMonthlySalary: string | null
+}
+
 // Shallow copy of an employee record with every sensitive field masked: account-style numbers
 // reduced to their last 4, salary replaced by a fixed sentinel. A field already null stays null
 // (nothing to reveal); non-sensitive fields are untouched. Only masks keys that are present, so
 // it is safe on partial selects. The single masking transform every consumer inherits (#111).
-export function maskEmployee<T extends Record<string, unknown>>(employee: T): T {
+export function maskEmployee<T extends Record<string, unknown>>(employee: T): MaskedEmployee<T> {
 	const masked: Record<string, unknown> = { ...employee }
 	for (const field of SENSITIVE_ACCOUNT_FIELDS) {
 		if (field in masked) masked[field] = maskAccountNumber(masked[field] as string | null)
@@ -71,7 +78,7 @@ export function maskEmployee<T extends Record<string, unknown>>(employee: T): T 
 	if ('basicMonthlySalary' in masked) {
 		masked.basicMonthlySalary = masked.basicMonthlySalary == null ? null : MASKED_SALARY
 	}
-	return masked as T
+	return masked as MaskedEmployee<T>
 }
 
 export function formatFullName(

@@ -17,7 +17,9 @@ import type { AuditContext } from './types'
 export type OnboardingEmployee = {
 	positionId: string | null
 	workScheduleId: string | null
-	basicMonthlySalary: Prisma.Decimal | number | null
+	// `string` covers the masked sentinel (#111): the "done" check is presence-only (`!= null`),
+	// so a masked salary satisfies it without ever being read as a number.
+	basicMonthlySalary: Prisma.Decimal | number | string | null
 	bankName: string | null
 	bankAccountName: string | null
 	bankAccountNumber: string | null
