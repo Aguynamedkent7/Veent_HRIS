@@ -1,6 +1,6 @@
 /**
  * Philippines statutory deductions per TRAIN Law and latest contribution tables.
- * SSS: per EC table (January 2024 schedule), PhilHealth: 5% of MSC, Pag-IBIG: 2% capped PHP 100.
+ * SSS: per EC table (January 2024 schedule), PhilHealth: 5% of MSC, Pag-IBIG: 2% capped PHP 200.
  */
 
 import { D, ZERO, type Money, type MoneyLike } from './money'
@@ -265,7 +265,11 @@ export function computePagibig(
 	opts?: { rate?: MoneyLike; cap?: number }
 ): { ee: Money; er: Money } {
 	const RATE = opts?.rate ?? '0.02'
-	const CAP = opts?.cap ?? 100
+	// ₱200 = 2% of the ₱10,000 monthly-compensation ceiling (HDMF Circular 460, effective Feb 2024;
+	// was ₱100 under the old ₱5,000 ceiling). ponytail: single rate for both shares — the ≤₱1,500
+	// tier (EE 1% / ER 2%) is unmodelled; no real payroll pays under ₱1,500/mo. Add split EE/ER rates
+	// only if that population ever appears.
+	const CAP = opts?.cap ?? 200
 
 	const raw = D(monthlySalary).times(RATE)
 	const share = raw.gt(CAP) ? D(CAP) : raw
@@ -351,7 +355,7 @@ export const DEFAULT_STATUTORY_RATE_CONFIG = {
 	philhealthFloor: 10000,
 	philhealthCeiling: 100000,
 	pagibigRate: 0.02,
-	pagibigCap: 100,
+	pagibigCap: 200,
 	sssBrackets: sssBracketsToWire(SSS_TABLE_2024),
 	taxBrackets: taxBracketsToWire(BIR_MONTHLY_TAX_TABLE)
 }

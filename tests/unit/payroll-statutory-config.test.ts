@@ -37,8 +37,9 @@ const SEEDED = statutoryRatesFromConfig(seededRow)
 
 const s = (m: { toString(): string }) => m.toString()
 
-// Baselines captured from the pre-#220 hardcoded engine (SSS_TABLE_2024, BIR_MONTHLY_TAX_TABLE,
-// PhilHealth 0.05/10000/100000, Pag-IBIG 0.02/100). Byte-for-byte, not a tolerance.
+// Baselines from the hardcoded engine (SSS_TABLE_2024, BIR_MONTHLY_TAX_TABLE, PhilHealth
+// 0.05/10000/100000, Pag-IBIG 0.02/200). Byte-for-byte, not a tolerance. The three resolver paths
+// must agree; the Pag-IBIG cap is ₱200 (2% of the ₱10,000 ceiling, HDMF Circular 460).
 const PARITY: Record<
 	string,
 	{
@@ -61,42 +62,42 @@ const PARITY: Record<
 	'15000': {
 		sssEe: '675',
 		philhealthEe: '375',
-		pagibigEe: '100',
+		pagibigEe: '200',
 		tax: '0',
-		total: '1150',
-		net: '13850'
+		total: '1250',
+		net: '13750'
 	},
 	'30000': {
 		sssEe: '900',
 		philhealthEe: '750',
-		pagibigEe: '100',
-		tax: '1483.4',
-		total: '3233.4',
-		net: '26766.6'
+		pagibigEe: '200',
+		tax: '1463.4',
+		total: '3313.4',
+		net: '26686.6'
 	},
 	'50000': {
 		sssEe: '900',
 		philhealthEe: '1250',
-		pagibigEe: '100',
-		tax: '6104.25',
-		total: '8354.25',
-		net: '41645.75'
+		pagibigEe: '200',
+		tax: '6079.25',
+		total: '8429.25',
+		net: '41570.75'
 	},
 	'250000': {
 		sssEe: '900',
 		philhealthEe: '2500',
-		pagibigEe: '100',
-		tax: '66379.89',
-		total: '69879.89',
-		net: '180120.11'
+		pagibigEe: '200',
+		tax: '66347.89',
+		total: '69947.89',
+		net: '180052.11'
 	},
 	'10000.20': {
 		sssEe: '450',
 		philhealthEe: '250.005',
-		pagibigEe: '100',
+		pagibigEe: '200',
 		tax: '0',
-		total: '800.005',
-		net: '9200.195'
+		total: '900.005',
+		net: '9100.195'
 	}
 }
 
@@ -129,8 +130,8 @@ describe('overrides change the computed deduction', () => {
 				{ floor: 50000, ceiling: Infinity, baseTax: 0, rate: 0.2, excessOver: 50000 }
 			]
 		}
-		// 30000 gross → default tax 1483.40; with the exemption up to 50k it becomes 0.
-		expect(s(computeStatutoryDeductions(30000).withholdingTax)).toBe('1483.4')
+		// 30000 gross → default tax 1463.40; with the exemption up to 50k it becomes 0.
+		expect(s(computeStatutoryDeductions(30000).withholdingTax)).toBe('1463.4')
 		expect(s(computeStatutoryDeductions(30000, rates).withholdingTax)).toBe('0')
 	})
 
@@ -286,7 +287,7 @@ const seededDerivedRow: StatutoryRateConfigRow = {
 const SEEDED_DERIVED = statutoryRatesFromConfig(seededDerivedRow)
 const DERIVED_PARITY = {
 	...PARITY,
-	'250000': { ...PARITY['250000'], tax: '66380.06', total: '69880.06', net: '180119.94' }
+	'250000': { ...PARITY['250000'], tax: '66348.06', total: '69948.06', net: '180051.94' }
 }
 
 describe('seeded config with DERIVED baseTax reproduces the computed tax (#220)', () => {

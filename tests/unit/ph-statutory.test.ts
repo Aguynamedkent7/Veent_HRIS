@@ -55,9 +55,9 @@ describe('PhilHealth', () => {
 })
 
 describe('Pag-IBIG', () => {
-	it('caps at PHP 100 EE share', () => {
+	it('caps at PHP 200 EE share', () => {
 		const { ee } = computePagibig(20000)
-		expect(n(ee)).toBe(100)
+		expect(n(ee)).toBe(200)
 	})
 
 	it('applies 2% for low earner', () => {
