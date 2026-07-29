@@ -97,7 +97,12 @@ describe('maskEmployee (#111)', () => {
 	})
 
 	it('keeps a null sensitive field null (nothing to reveal)', () => {
-		const m = maskEmployee({ ...full, sssNumber: null, gcashNumber: null, basicMonthlySalary: null })
+		const m = maskEmployee({
+			...full,
+			sssNumber: null,
+			gcashNumber: null,
+			basicMonthlySalary: null
+		})
 		expect(m.sssNumber).toBeNull()
 		expect(m.gcashNumber).toBeNull()
 		expect(m.basicMonthlySalary).toBeNull()

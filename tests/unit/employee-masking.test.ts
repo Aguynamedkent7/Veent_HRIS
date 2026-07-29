@@ -4,7 +4,10 @@ import type { AuditContext } from '../../src/lib/server/services/types'
 // #111 — the security-critical gate: getEmployee is the single masking choke point and
 // revealEmployeeSensitive the only cleartext path. Both hit the DB, so the db client and the
 // audit sink are mocked; the fixture below is what findFirst resolves for every case.
-const { findFirst, writeAuditLog } = vi.hoisted(() => ({ findFirst: vi.fn(), writeAuditLog: vi.fn() }))
+const { findFirst, writeAuditLog } = vi.hoisted(() => ({
+	findFirst: vi.fn(),
+	writeAuditLog: vi.fn()
+}))
 vi.mock('$lib/server/db', () => ({ db: { employee: { findFirst } } }))
 vi.mock('$lib/server/audit', () => ({ writeAuditLog }))
 
