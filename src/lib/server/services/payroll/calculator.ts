@@ -4,6 +4,7 @@ import { computeEarnings } from './earnings'
 import { ratesFromRule, type PayRates } from './rates'
 import { computeDeductions, type AmortItem } from './deductions'
 import { recurringDeductionComponents } from './employee-deductions'
+import { statutoryExemptions } from './employee-statutory'
 import { computeStatutoryDeductions } from './ph-statutory'
 import { D, q2n, sumQ } from './money'
 import {
@@ -33,6 +34,12 @@ export interface EmployeeComputeConfig {
 	cashAdvances: AmortItem[]
 	/** Recurring custom deductions (#66), already prorated to the period. */
 	recurringDeductions?: PayComponent[]
+	/**
+	 * Per-employee statutory exemptions (#173). A flagged contribution is not enrolled, so BOTH
+	 * its EE and ER share are zeroed before proration. Withholding tax is never exempted. Omitted →
+	 * all contributions on (the default).
+	 */
+	statutoryExemptions?: { sss: boolean; philhealth: boolean; pagibig: boolean }
 	/** Org premium-pay multipliers (from PayRateRule); omitted → DOLE defaults. */
 	rates?: PayRates
 	/**
@@ -90,14 +97,19 @@ export function computeEmployeeResult(
 	// #120: brackets are defined on a MONTHLY salary credit, so hourly staff are projected to a
 	// monthly equivalent first — passing a raw hourly rate would floor them in the lowest bracket.
 	const m = computeStatutoryDeductions(monthlyBasisOf(comp))
+	// #173: an exempted contribution is not enrolled — zero BOTH its EE and ER share before
+	// proration, leaving the other contributions and their proration untouched. Withholding tax
+	// is never exempted (income-based exemption is already the ₱0 bracket), so it is always
+	// computed from the full contributions — `m.withholdingTax` is not affected here.
+	const ex = cfg.statutoryExemptions
 	const share = D(cfg.periodShare)
 	const statutory: ProratedStatutory = {
-		sssEe: q2n(m.sssEe.times(share)),
-		sssEr: q2n(m.sssEr.times(share)),
-		philhealthEe: q2n(m.philhealthEe.times(share)),
-		philhealthEr: q2n(m.philhealthEr.times(share)),
-		pagibigEe: q2n(m.pagibigEe.times(share)),
-		pagibigEr: q2n(m.pagibigEr.times(share)),
+		sssEe: ex?.sss ? 0 : q2n(m.sssEe.times(share)),
+		sssEr: ex?.sss ? 0 : q2n(m.sssEr.times(share)),
+		philhealthEe: ex?.philhealth ? 0 : q2n(m.philhealthEe.times(share)),
+		philhealthEr: ex?.philhealth ? 0 : q2n(m.philhealthEr.times(share)),
+		pagibigEe: ex?.pagibig ? 0 : q2n(m.pagibigEe.times(share)),
+		pagibigEr: ex?.pagibig ? 0 : q2n(m.pagibigEr.times(share)),
 		withholdingTax: q2n(m.withholdingTax.times(share))
 	}
 
@@ -183,25 +195,38 @@ export async function previewPayroll(
 	})
 	if (!employee) error(404, 'Employee not found')
 
-	const [config, earningTypes, loansAll, advancesAll, payRateRule, recurringDeductions] =
-		await Promise.all([
-			db.payrollConfig.findUnique({ where: { organizationId } }),
-			db.earningType.findMany({ where: { organizationId }, select: { code: true, taxable: true } }),
-			db.loan.findMany({ where: { employeeId, status: 'ACTIVE', balance: { gt: 0 } } }),
-			db.cashAdvance.findMany({ where: { employeeId, status: 'ACTIVE', balance: { gt: 0 } } }),
-			db.payRateRule.findUnique({ where: { organizationId } }),
-			// Recurring custom deductions apply in the preview too (#66) — same as a real run.
-			db.employeeDeduction.findMany({
-				where: { employeeId, isActive: true, deductionType: { isActive: true } },
-				include: { deductionType: { select: { code: true, label: true } } }
-			})
-		])
+	const [
+		config,
+		earningTypes,
+		loansAll,
+		advancesAll,
+		payRateRule,
+		recurringDeductions,
+		statutoryExempt
+	] = await Promise.all([
+		db.payrollConfig.findUnique({ where: { organizationId } }),
+		db.earningType.findMany({ where: { organizationId }, select: { code: true, taxable: true } }),
+		db.loan.findMany({ where: { employeeId, status: 'ACTIVE', balance: { gt: 0 } } }),
+		db.cashAdvance.findMany({ where: { employeeId, status: 'ACTIVE', balance: { gt: 0 } } }),
+		db.payRateRule.findUnique({ where: { organizationId } }),
+		// Recurring custom deductions apply in the preview too (#66) — same as a real run.
+		db.employeeDeduction.findMany({
+			where: { employeeId, isActive: true, deductionType: { isActive: true } },
+			include: { deductionType: { select: { code: true, label: true } } }
+		}),
+		// Statutory exemptions apply in the preview too (#173) — same as a real run.
+		db.employeeStatutoryConfig.findMany({
+			where: { employeeId, exempt: true },
+			select: { contribution: true }
+		})
+	])
 
 	const periodShare = (config?.payFrequency ?? 'SEMI_MONTHLY') === 'MONTHLY' ? 1 : 0.5
 	const cfg: EmployeeComputeConfig = {
 		taxableByCode: new Map(earningTypes.map((e) => [e.code, e.taxable])),
 		rates: ratesFromRule(payRateRule),
 		periodShare,
+		statutoryExemptions: statutoryExemptions(statutoryExempt),
 		recurringDeductions: recurringDeductionComponents(recurringDeductions, periodShare),
 		loans: loansAll.map((l) => ({
 			refId: l.id,

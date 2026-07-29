@@ -7,6 +7,7 @@ import { computeEmployeeResult } from './calculator'
 import { ratesFromRule } from './rates'
 import { type AmortItem } from './deductions'
 import { recurringDeductionComponents } from './employee-deductions'
+import { statutoryExemptions } from './employee-statutory'
 import { D, q2n, sum, ZERO } from './money'
 import { emptyAttendance, round2, type EmployeeComp } from './types'
 import { buildAttendanceInput } from '../attendance/input'
@@ -92,6 +93,7 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		payRateRule,
 		recurringAll,
 		recurringDeductionsAll,
+		statutoryExemptAll,
 		holidays
 	] = await Promise.all([
 		db.employee.findMany({ where: { user: { organizationId }, employmentStatus: 'ACTIVE' } }),
@@ -117,6 +119,12 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		db.employeeDeduction.findMany({
 			where: { employee: { organizationId }, isActive: true, deductionType: { isActive: true } },
 			include: { deductionType: { select: { code: true, label: true } } }
+		}),
+		// Per-employee statutory exemptions (#173) — only the exempt rows matter; enrolled is
+		// the default (no row). Grouped by employee like the other per-employee data below.
+		db.employeeStatutoryConfig.findMany({
+			where: { employee: { organizationId }, exempt: true },
+			select: { employeeId: true, contribution: true }
 		}),
 		// Public holidays inside the period — the scheduled-hours fallback below must not
 		// bill them as ordinary working days.
@@ -145,6 +153,7 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	const enrollmentsByEmp = groupByEmployee(enrollmentsAll)
 	const recurringByEmp = groupByEmployee(recurringAll)
 	const recurringDeductionsByEmp = groupByEmployee(recurringDeductionsAll)
+	const statutoryExemptByEmp = groupByEmployee(statutoryExemptAll)
 	// Holidays were previously passed as [], so a period containing public holidays
 	// counted them as ordinary working days. That inflates `scheduledHours` below, and
 	// since BASIC = regularHours * hourlyRate, it inflated basic pay for every employee
@@ -235,6 +244,7 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			periodShare,
 			// Holiday-aware schedule for the period — values absences for fixed-basic staff (#121).
 			expectedHours: scheduledHours,
+			statutoryExemptions: statutoryExemptions(statutoryExemptByEmp.get(emp.id) ?? []),
 			loans,
 			cashAdvances,
 			recurringDeductions: [

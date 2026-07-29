@@ -31,6 +31,10 @@ import {
 	createEmployeeDeduction,
 	endEmployeeDeduction
 } from '$lib/server/services/payroll/employee-deductions'
+import {
+	listStatutoryRows,
+	setStatutoryExemption
+} from '$lib/server/services/payroll/employee-statutory'
 import { listSchedules } from '$lib/server/services/attendance/schedules'
 import {
 	listEmployeeDocuments,
@@ -101,6 +105,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		recurringEarnings,
 		recurringDeductions,
 		deductionTypes,
+		statutoryConfig,
 		documents,
 		positions,
 		history,
@@ -127,6 +132,9 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 					orderBy: { code: 'asc' }
 				})
 			: Promise.resolve([]),
+		// Per-employee statutory enrollment (#173): the three contributions with their exempt
+		// flag and current monthly EE amount, for the Recurring Deductions panel.
+		canManage ? listStatutoryRows(params.id, locals.user!.organizationId) : Promise.resolve([]),
 		canManage ? listEmployeeDocuments(params.id, locals.user!.organizationId) : Promise.resolve([]),
 		canManage ? listPositions(locals.user!.organizationId) : Promise.resolve([]),
 		canManage ? getEmploymentHistory(params.id, locals.user!.organizationId) : Promise.resolve([]),
@@ -187,6 +195,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		recurringEarnings,
 		recurringDeductions,
 		deductionTypes,
+		statutoryConfig,
 		schedules,
 		branches,
 		showBranches,
@@ -233,6 +242,10 @@ const deductionSchema = z.object({
 	deductionTypeId: z.string().min(1),
 	label: z.string().max(100).optional(),
 	monthlyAmount: z.coerce.number().positive()
+})
+const statutoryToggleSchema = z.object({
+	contribution: z.enum(['SSS', 'PHILHEALTH', 'PAGIBIG']),
+	exempt: z.enum(['true', 'false']).transform((v) => v === 'true')
 })
 
 const updateSchema = z.object({
@@ -527,6 +540,26 @@ export const actions: Actions = {
 				actorRole: user.role,
 				ipAddress: getClientAddress()
 			})
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
+		}
+		return { success: true }
+	},
+
+	// Exempt/restore an individual employee from a statutory contribution (#173). HR-only, audited.
+	toggleStatutoryExemption: async ({ request, locals, params, getClientAddress }) => {
+		requireCapability(locals.user!.role, 'MANAGE_HR')
+		const parsed = statutoryToggleSchema.safeParse(Object.fromEntries(await request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Invalid statutory toggle' })
+		try {
+			await setStatutoryExemption(
+				params.id,
+				locals.user!.organizationId,
+				parsed.data.contribution,
+				parsed.data.exempt,
+				ctxOf(locals, getClientAddress())
+			)
 		} catch (e: unknown) {
 			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
 			throw e

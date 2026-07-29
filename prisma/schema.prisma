@@ -470,6 +470,7 @@ model Employee {
   cashAdvances          CashAdvance[]
   recurringEarnings     EmployeeEarning[]
   recurringDeductions   EmployeeDeduction[]
+  statutoryConfig       EmployeeStatutoryConfig[]
   workSchedule          WorkSchedule?          @relation(fields: [workScheduleId], references: [id])
   attendanceDays        AttendanceDay[]
   separations           SeparationRecord[]
@@ -513,6 +514,28 @@ model EmergencyContact {
 
   @@index([employeeId])
   @@map("emergency_contacts")
+}
+
+// Per-employee statutory enrollment (#173). One row per contribution the employee has been
+// individually exempted from — absence of a row means enrolled (the default). Designed to grow:
+// later features add employer-share/period-allocation columns alongside `exempt`.
+enum StatutoryContribution {
+  SSS
+  PHILHEALTH
+  PAGIBIG
+}
+
+model EmployeeStatutoryConfig {
+  id           String                @id @default(cuid())
+  employeeId   String
+  contribution StatutoryContribution
+  exempt       Boolean               @default(false)
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  employee     Employee              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, contribution])
+  @@map("employee_statutory_config")
 }
 
 // ─── Timesheet ────────────────────────────────────────────────────────────────
