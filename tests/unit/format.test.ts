@@ -3,7 +3,9 @@ import {
 	formatCurrency,
 	formatDateRange,
 	formatFullName,
-	maskAccountNumber
+	maskAccountNumber,
+	maskEmployee,
+	MASKED_SALARY
 } from '$lib/utils/format'
 
 describe('formatCurrency', () => {
@@ -57,6 +59,48 @@ describe('maskAccountNumber', () => {
 		expect(maskAccountNumber('0012 3456 7890')).toBe('•••• 7890')
 		// Short-after-stripping stays fully masked.
 		expect(maskAccountNumber('1-2-3-4')).toBe('••••')
+	})
+})
+
+describe('maskEmployee (#111)', () => {
+	const full = {
+		id: 'e1',
+		firstName: 'Elena',
+		basicMonthlySalary: 25000,
+		sssNumber: '34-1234567-8',
+		philhealthNumber: '12-345678901-2',
+		pagibigNumber: '1234-5678-9012',
+		tinNumber: '123-456-789-000',
+		bankAccountNumber: '00123456784321',
+		gcashNumber: '09170000009999'
+	}
+
+	it('reduces every account-style number to its last 4', () => {
+		const m = maskEmployee(full)
+		expect(m.sssNumber).toBe('•••• 5678')
+		expect(m.philhealthNumber).toBe('•••• 9012')
+		expect(m.pagibigNumber).toBe('•••• 9012')
+		expect(m.tinNumber).toBe('•••• 9000')
+		expect(m.bankAccountNumber).toBe('•••• 4321')
+		expect(m.gcashNumber).toBe('•••• 9999')
+	})
+
+	it('masks salary whole — never last-4, which would leak magnitude', () => {
+		expect(maskEmployee(full).basicMonthlySalary).toBe(MASKED_SALARY)
+	})
+
+	it('leaves non-sensitive fields untouched and does not mutate the input', () => {
+		const m = maskEmployee(full)
+		expect(m.id).toBe('e1')
+		expect(m.firstName).toBe('Elena')
+		expect(full.sssNumber).toBe('34-1234567-8')
+	})
+
+	it('keeps a null sensitive field null (nothing to reveal)', () => {
+		const m = maskEmployee({ ...full, sssNumber: null, gcashNumber: null, basicMonthlySalary: null })
+		expect(m.sssNumber).toBeNull()
+		expect(m.gcashNumber).toBeNull()
+		expect(m.basicMonthlySalary).toBeNull()
 	})
 })
 

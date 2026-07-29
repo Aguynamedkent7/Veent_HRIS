@@ -63,7 +63,9 @@ export const DERIVED_STEPS: DerivedDef[] = [
 		key: 'salary',
 		label: 'Compensation set',
 		hint: 'Set “Basic Monthly Salary”.',
-		done: (e) => Number(e.basicMonthlySalary ?? 0) > 0
+		// Presence, not magnitude: salary is required at hire and reaches this derivation masked
+		// (#111) as a non-numeric sentinel, so score it on non-null rather than a numeric compare.
+		done: (e) => e.basicMonthlySalary != null
 	},
 	{
 		key: 'disbursement',

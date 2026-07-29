@@ -7,6 +7,7 @@
 	import { isValidGovId, govIdError, type GovIdField } from '$lib/utils/gov-ids'
 	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
+	import MaskedField from '$lib/components/ui/MaskedField.svelte'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -25,9 +26,9 @@
 	const canManage = $derived(data.canManage)
 	// The schedule an unassigned employee actually falls back to, named from the org's data.
 	const orgDefaultSchedule = $derived(data.schedules?.find((s) => s.isDefault) ?? null)
-	// #54: `employee.bankAccountNumber`/`gcashNumber` arrive masked from the load.
-	// The full values exist client-side only after the audited reveal action, and any
-	// other action result (e.g. a profile save) drops back to the masked display.
+	// #111: every sensitive field (gov IDs, salary, bank/GCash) arrives masked from the load.
+	// The full values exist client-side only after the audited ?/reveal action, and any other
+	// action result (e.g. a save) drops back to the masked display.
 	const revealed = $derived(form?.revealed ?? null)
 
 	const DOC_CATEGORIES = [
@@ -59,8 +60,9 @@
 	const grade = $derived(employee.position?.salaryGrade ?? null)
 	const band = $derived.by(() => {
 		if (employee.rateType !== 'MONTHLY') return null
-		if (!grade || employee.basicMonthlySalary == null) return null
-		const s = Number(employee.basicMonthlySalary),
+		// Salary is masked until the audited reveal — the band can only be scored on the real figure.
+		if (!grade || revealed?.basicMonthlySalary == null) return null
+		const s = Number(revealed.basicMonthlySalary),
 			min = Number(grade.minSalary),
 			max = Number(grade.maxSalary)
 		return { status: s < min ? 'below' : s > max ? 'above' : 'within', min, max, name: grade.name }
@@ -70,7 +72,7 @@
 	// contacts, loans, cash advances, recurring earnings/deductions, uploaded documents, or a
 	// second offboard/reveal. One guard per form; the per-row forms share the guard for their
 	// action, which is fine because those rows submit one at a time.
-	const revealDisbursement = createSubmitGuard()
+	const reveal = createSubmitGuard()
 	const update = createSubmitGuard()
 	const offboard = createSubmitGuard()
 	const setSupervisors = createSubmitGuard()
@@ -202,7 +204,22 @@
 				{#if canManage}
 					<dt class="text-muted-foreground">Basic Salary</dt>
 					<dd class="font-medium">
-						{formatCurrency(Number(employee.basicMonthlySalary))}{savedRate.suffix}
+						{#if revealed?.basicMonthlySalary != null}
+							{formatCurrency(Number(revealed.basicMonthlySalary))}{savedRate.suffix}
+						{:else}
+							{employee.basicMonthlySalary ?? '—'}
+							{#if data.canReveal}
+								<form method="POST" action="?/reveal" use:enhance={reveal.enhance} class="inline">
+									<button
+										type="submit"
+										disabled={reveal.busy}
+										class="ml-1 text-xs font-normal text-primary hover:underline disabled:pointer-events-none disabled:opacity-50"
+										title="Revealing sensitive fields is recorded in the audit log"
+										>{reveal.busy ? 'Revealing…' : 'Reveal'}</button
+									>
+								</form>
+							{/if}
+						{/if}
 						{#if band}
 							{#if band.status === 'within'}
 								<span
@@ -229,22 +246,38 @@
 		<!-- Government IDs Card (HR-only) -->
 		{#if canManage}
 			<div class="rounded-lg border bg-card p-6 space-y-4">
-				<h2 class="font-semibold">Government IDs</h2>
+				<div class="flex items-center justify-between gap-3">
+					<h2 class="font-semibold">Government IDs</h2>
+					{#if data.canReveal && !revealed}
+						<form method="POST" action="?/reveal" use:enhance={reveal.enhance}>
+							<button
+								type="submit"
+								disabled={reveal.busy}
+								class="text-xs text-primary hover:underline disabled:pointer-events-none disabled:opacity-50"
+								title="Revealing sensitive fields is recorded in the audit log"
+								>{reveal.busy ? 'Revealing…' : 'Reveal IDs'}</button
+							>
+						</form>
+					{/if}
+				</div>
 				<dl class="grid grid-cols-1 gap-3 sm:grid-cols-2 text-sm">
 					{#each GOV_ID_ROWS as row (row.field)}
-						<dt class="text-muted-foreground">{row.label}</dt>
-						<dd>
-							{employee[row.field] ?? '—'}
-							<!-- #191 validates on entry, but values stored before it can be malformed.
-							     Flagged rather than blocked: an unchanged bad ID must not stop HR saving
-							     an unrelated edit, so it is surfaced here until someone corrects it. -->
-							{#if !isValidGovId(row.field, employee[row.field])}
+						<MaskedField
+							label={row.label}
+							masked={employee[row.field]}
+							value={revealed?.[row.field]}
+							mono
+						>
+							<!-- #191 validates on entry, but values stored before it can be malformed. The
+							     client only holds the masked value, so the flag is shown once revealed —
+							     it is surfaced, never blocking (an unchanged bad ID never stops a save). -->
+							{#if revealed && !isValidGovId(row.field, revealed[row.field])}
 								<span
 									class="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-400"
 									title={govIdError(row.field)}>check format</span
 								>
 							{/if}
-						</dd>
+						</MaskedField>
 					{/each}
 				</dl>
 			</div>
@@ -257,18 +290,14 @@
 						<span class="text-xs font-normal text-muted-foreground">(bank / GCash — sensitive)</span
 						>
 					</h2>
-					{#if data.canRevealDisbursement && !revealed}
-						<form
-							method="POST"
-							action="?/revealDisbursement"
-							use:enhance={revealDisbursement.enhance}
-						>
+					{#if data.canReveal && !revealed}
+						<form method="POST" action="?/reveal" use:enhance={reveal.enhance}>
 							<button
 								type="submit"
-								disabled={revealDisbursement.busy}
+								disabled={reveal.busy}
 								class="text-xs text-primary hover:underline disabled:pointer-events-none disabled:opacity-50"
 								title="Revealing full numbers is recorded in the audit log"
-								>{revealDisbursement.busy ? 'Revealing…' : 'Reveal full numbers'}</button
+								>{reveal.busy ? 'Revealing…' : 'Reveal full numbers'}</button
 							>
 						</form>
 					{/if}
@@ -278,12 +307,18 @@
 					<dd>{employee.bankName ?? '—'}</dd>
 					<dt class="text-muted-foreground">Account Name</dt>
 					<dd>{employee.bankAccountName ?? '—'}</dd>
-					<dt class="text-muted-foreground">Account No.</dt>
-					<dd class="font-mono">
-						{revealed?.bankAccountNumber ?? employee.bankAccountNumber ?? '—'}
-					</dd>
-					<dt class="text-muted-foreground">GCash No.</dt>
-					<dd class="font-mono">{revealed?.gcashNumber ?? employee.gcashNumber ?? '—'}</dd>
+					<MaskedField
+						label="Account No."
+						masked={employee.bankAccountNumber}
+						value={revealed?.bankAccountNumber}
+						mono
+					/>
+					<MaskedField
+						label="GCash No."
+						masked={employee.gcashNumber}
+						value={revealed?.gcashNumber}
+						mono
+					/>
 				</dl>
 			</div>
 		{/if}
@@ -442,10 +477,13 @@
 							type="number"
 							step={rate.step}
 							min="0"
-							value={Number(employee.basicMonthlySalary)}
+							value={revealed?.basicMonthlySalary ?? ''}
+							placeholder={String(employee.basicMonthlySalary ?? '')}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
-						<p class="mt-1 text-xs text-muted-foreground">{rate.hint}</p>
+						<p class="mt-1 text-xs text-muted-foreground">
+							{rate.hint} — masked; reveal above to edit, or leave blank to keep unchanged.
+						</p>
 					</div>
 					<div class="sm:col-span-3">
 						<label for="companyEmail" class="text-sm font-medium">Company Email</label>
@@ -515,13 +553,18 @@
 						<h3 class="text-sm font-semibold text-muted-foreground">
 							Government IDs <span class="font-normal">(payroll registration)</span>
 						</h3>
+						<p class="mt-1 text-xs text-muted-foreground">
+							Stored IDs stay masked; reveal above to edit, or leave a field blank to keep the
+							current value.
+						</p>
 					</div>
 					<div>
 						<label for="sssNumber" class="text-sm font-medium">SSS Number</label>
 						<input
 							id="sssNumber"
 							name="sssNumber"
-							value={employee.sssNumber ?? ''}
+							value={revealed?.sssNumber ?? ''}
+							placeholder={employee.sssNumber ?? ''}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
 					</div>
@@ -530,7 +573,8 @@
 						<input
 							id="philhealthNumber"
 							name="philhealthNumber"
-							value={employee.philhealthNumber ?? ''}
+							value={revealed?.philhealthNumber ?? ''}
+							placeholder={employee.philhealthNumber ?? ''}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
 					</div>
@@ -539,7 +583,8 @@
 						<input
 							id="pagibigNumber"
 							name="pagibigNumber"
-							value={employee.pagibigNumber ?? ''}
+							value={revealed?.pagibigNumber ?? ''}
+							placeholder={employee.pagibigNumber ?? ''}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
 					</div>
@@ -548,7 +593,8 @@
 						<input
 							id="tinNumber"
 							name="tinNumber"
-							value={employee.tinNumber ?? ''}
+							value={revealed?.tinNumber ?? ''}
+							placeholder={employee.tinNumber ?? ''}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
 					</div>
