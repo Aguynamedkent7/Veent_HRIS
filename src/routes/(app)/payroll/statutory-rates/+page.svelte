@@ -112,6 +112,35 @@
 	// Capability is fixed for the page's lifetime, so the initial value is exactly what we want.
 	// svelte-ignore state_referenced_locally
 	const saveAction = data.canManage ? '?/saveStatutoryRates' : '?/proposeStatutoryRates'
+
+	// Card selector: one service open at a time. All fields submit via the root hidden inputs, so an
+	// inactive (unmounted) panel never drops data — visibility and submission are fully decoupled.
+	const tabs = [
+		{ key: 'sss', name: 'SSS', desc: 'Social Security — bracketed peso amounts' },
+		{ key: 'philhealth', name: 'PhilHealth', desc: '5% of salary, ₱10k–₱100k band' },
+		{ key: 'pagibig', name: 'Pag-IBIG', desc: '2% of salary, capped ₱200' },
+		{ key: 'bir', name: 'BIR Withholding Tax', desc: 'Marginal income-tax brackets' }
+	] as const
+	let active = $state<(typeof tabs)[number]['key']>('sss')
+
+	// Roving-tabindex keyboard nav for the WAI-ARIA tablist (arrows move + activate, Home/End jump).
+	const focusTab = (key: string) => document.getElementById(`tab-${key}`)?.focus()
+	function onTabKeydown(e: KeyboardEvent, i: number) {
+		const step =
+			e.key === 'ArrowRight' || e.key === 'ArrowDown'
+				? 1
+				: e.key === 'ArrowLeft' || e.key === 'ArrowUp'
+					? -1
+					: 0
+		let next = i
+		if (step) next = (i + step + tabs.length) % tabs.length
+		else if (e.key === 'Home') next = 0
+		else if (e.key === 'End') next = tabs.length - 1
+		else return
+		e.preventDefault()
+		active = tabs[next].key
+		focusTab(active)
+	}
 </script>
 
 <svelte:head>
@@ -198,202 +227,300 @@
 		method="POST"
 		action={saveAction}
 		use:enhance={saveGuard.enhance}
-		class="rounded-md border bg-card p-6 space-y-6"
+		class="space-y-5"
 	>
-		<!-- PhilHealth / Pag-IBIG scalars -->
-		<div class="grid gap-4 sm:grid-cols-3">
-			<div class="space-y-1">
-				<label class="text-sm font-medium" for="stat-ph-rate">PhilHealth rate (%)</label>
-				<input
-					id="stat-ph-rate"
-					name="philhealthRate"
-					type="number"
-					min="0"
-					max="100"
-					step="0.01"
-					bind:value={philhealthRate}
-					class={scalarInput}
-				/>
-			</div>
-			<div class="space-y-1">
-				<label class="text-sm font-medium" for="stat-ph-floor">PhilHealth salary floor (₱)</label>
-				<input
-					id="stat-ph-floor"
-					name="philhealthFloor"
-					type="number"
-					min="0"
-					step="0.01"
-					bind:value={philhealthFloor}
-					class={scalarInput}
-				/>
-			</div>
-			<div class="space-y-1">
-				<label class="text-sm font-medium" for="stat-ph-ceil">PhilHealth salary ceiling (₱)</label>
-				<input
-					id="stat-ph-ceil"
-					name="philhealthCeiling"
-					type="number"
-					min="0"
-					step="0.01"
-					bind:value={philhealthCeiling}
-					class={scalarInput}
-				/>
-			</div>
-			<div class="space-y-1">
-				<label class="text-sm font-medium" for="stat-pi-rate">Pag-IBIG rate (%)</label>
-				<input
-					id="stat-pi-rate"
-					name="pagibigRate"
-					type="number"
-					min="0"
-					max="100"
-					step="0.01"
-					bind:value={pagibigRate}
-					class={scalarInput}
-				/>
-			</div>
-			<div class="space-y-1">
-				<label class="text-sm font-medium" for="stat-pi-cap">Pag-IBIG EE cap (₱)</label>
-				<input
-					id="stat-pi-cap"
-					name="pagibigCap"
-					type="number"
-					min="0"
-					step="0.01"
-					bind:value={pagibigCap}
-					class={scalarInput}
-				/>
-			</div>
+		<!-- Service selector: one card per statutory service; the active one's details show below. -->
+		<div
+			role="tablist"
+			aria-label="Statutory service"
+			class="grid grid-cols-2 gap-3 sm:grid-cols-4"
+		>
+			{#each tabs as t, i (t.key)}
+				<button
+					type="button"
+					role="tab"
+					id="tab-{t.key}"
+					aria-selected={active === t.key}
+					aria-controls="statutory-panel"
+					tabindex={active === t.key ? 0 : -1}
+					onclick={() => (active = t.key)}
+					onkeydown={(e) => onTabKeydown(e, i)}
+					class="flex flex-col gap-1.5 rounded-lg border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring {active ===
+					t.key
+						? 'border-primary bg-primary/5'
+						: 'border-border bg-card hover:border-foreground/20 hover:bg-muted/40'}"
+				>
+					<span class="flex items-center gap-2">
+						<span
+							class="h-2 w-2 shrink-0 rounded-full {active === t.key
+								? 'bg-primary'
+								: 'bg-muted-foreground/30'}"
+						></span>
+						<span
+							class="text-sm font-semibold {active === t.key
+								? 'text-foreground'
+								: 'text-foreground/80'}">{t.name}</span
+						>
+					</span>
+					<span class="text-xs text-muted-foreground">{t.desc}</span>
+				</button>
+			{/each}
 		</div>
 
-		<!-- SSS contribution table -->
-		<div class="rounded-md border bg-muted/30 p-4 space-y-3">
-			<h3 class="text-sm font-semibold">SSS contribution table</h3>
-			<div class="overflow-x-auto">
-				<table class="w-full text-sm">
-					<thead>
-						<tr class="text-left text-xs text-muted-foreground">
-							<th class="p-1 font-medium">Salary floor</th>
-							<th class="p-1 font-medium">Salary ceiling</th>
-							<th class="p-1 font-medium">Total (auto)</th>
-							<th class="p-1 font-medium">EE share</th>
-							<th class="p-1 font-medium">ER share</th>
-							<th class="p-1"></th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each sssRows as row, i (i)}
-							<tr>
-								<td class="p-1"
-									><input type="number" step="0.01" bind:value={row.salaryFloor} class={cell} /></td
-								>
-								<td class="p-1">
-									<input
-										type="number"
-										step="0.01"
-										bind:value={row.salaryCeiling}
-										placeholder={i === sssRows.length - 1 ? '∞ (open-ended)' : ''}
-										class={cell}
-									/>
-								</td>
-								<td class="p-1"><div class={roCell}>{sssTotal(row)}</div></td>
-								<td class="p-1"
-									><input type="number" step="0.01" bind:value={row.eeShare} class={cell} /></td
-								>
-								<td class="p-1"
-									><input type="number" step="0.01" bind:value={row.erShare} class={cell} /></td
-								>
-								<td class="p-1">
-									<button
-										type="button"
-										onclick={() => removeSssRow(i)}
-										class="rounded px-2 py-1 text-xs text-destructive hover:bg-destructive/10"
-										>Remove</button
-									>
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
-			<button
-				type="button"
-				onclick={addSssRow}
-				class="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted">+ Add row</button
+		<!-- Active service panel. Keyed so it crossfades on switch; reduced-motion users get it flat. -->
+		{#key active}
+			<div
+				id="statutory-panel"
+				role="tabpanel"
+				aria-labelledby="tab-{active}"
+				tabindex="0"
+				class="statutory-panel rounded-lg border bg-card p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 			>
-			<p class="text-xs text-muted-foreground">
-				Rows must be sorted ascending, non-overlapping, start at 0, and the last ceiling left blank
-				(open-ended). Total is derived from EE + ER shares on save.
-			</p>
-		</div>
-
-		<!-- BIR withholding tax table -->
-		<div class="rounded-md border bg-muted/30 p-4 space-y-3">
-			<h3 class="text-sm font-semibold">BIR withholding-tax table</h3>
-			<div class="overflow-x-auto">
-				<table class="w-full text-sm">
-					<thead>
-						<tr class="text-left text-xs text-muted-foreground">
-							<th class="p-1 font-medium">Income floor</th>
-							<th class="p-1 font-medium">Income ceiling</th>
-							<th class="p-1 font-medium">Base tax (auto)</th>
-							<th class="p-1 font-medium">Rate (%)</th>
-							<th class="p-1 font-medium">Excess over (auto)</th>
-							<th class="p-1"></th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each taxRows as row, i (i)}
-							<tr>
-								<td class="p-1"
-									><input type="number" step="0.01" bind:value={row.floor} class={cell} /></td
-								>
-								<td class="p-1">
-									<input
-										type="number"
-										step="0.01"
-										bind:value={row.ceiling}
-										placeholder={i === taxRows.length - 1 ? '∞ (open-ended)' : ''}
-										class={cell}
-									/>
-								</td>
-								<td class="p-1"><div class={roCell}>{taxDerived[i].baseTax}</div></td>
-								<td class="p-1"
-									><input
-										type="number"
-										step="0.01"
-										min="0"
-										max="100"
-										bind:value={row.rate}
-										class={cell}
-									/></td
-								>
-								<td class="p-1"><div class={roCell}>{taxDerived[i].excessOver}</div></td>
-								<td class="p-1">
-									<button
-										type="button"
-										onclick={() => removeTaxRow(i)}
-										class="rounded px-2 py-1 text-xs text-destructive hover:bg-destructive/10"
-										>Remove</button
-									>
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
+				{#if active === 'sss'}
+					<div class="space-y-3">
+						<div>
+							<h2 class="text-base font-semibold">Social Security System</h2>
+							<p class="mt-0.5 text-sm text-muted-foreground">
+								A published bracket table of fixed peso amounts — one EE and ER share per salary
+								band. The total is derived from EE + ER on save.
+							</p>
+						</div>
+						<div class="overflow-x-auto">
+							<table class="w-full text-sm">
+								<thead>
+									<tr class="text-left text-xs text-muted-foreground">
+										<th class="p-1 font-medium">Salary floor</th>
+										<th class="p-1 font-medium">Salary ceiling</th>
+										<th class="p-1 font-medium">Total (auto)</th>
+										<th class="p-1 font-medium">EE share</th>
+										<th class="p-1 font-medium">ER share</th>
+										<th class="p-1"></th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each sssRows as row, i (i)}
+										<tr>
+											<td class="p-1"
+												><input
+													type="number"
+													step="0.01"
+													bind:value={row.salaryFloor}
+													class={cell}
+												/></td
+											>
+											<td class="p-1">
+												<input
+													type="number"
+													step="0.01"
+													bind:value={row.salaryCeiling}
+													placeholder={i === sssRows.length - 1 ? '∞ (open-ended)' : ''}
+													class={cell}
+												/>
+											</td>
+											<td class="p-1"><div class={roCell}>{sssTotal(row)}</div></td>
+											<td class="p-1"
+												><input
+													type="number"
+													step="0.01"
+													bind:value={row.eeShare}
+													class={cell}
+												/></td
+											>
+											<td class="p-1"
+												><input
+													type="number"
+													step="0.01"
+													bind:value={row.erShare}
+													class={cell}
+												/></td
+											>
+											<td class="p-1">
+												<button
+													type="button"
+													onclick={() => removeSssRow(i)}
+													class="rounded px-2 py-1 text-xs text-destructive hover:bg-destructive/10"
+													>Remove</button
+												>
+											</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+						<button
+							type="button"
+							onclick={addSssRow}
+							class="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted"
+							>+ Add row</button
+						>
+						<p class="text-xs text-muted-foreground">
+							Rows must be sorted ascending, non-overlapping, start at 0, and the last ceiling left
+							blank (open-ended). Total is derived from EE + ER shares on save.
+						</p>
+					</div>
+				{:else if active === 'philhealth'}
+					<div class="space-y-3">
+						<div>
+							<h2 class="text-base font-semibold">PhilHealth</h2>
+							<p class="mt-0.5 text-sm text-muted-foreground">
+								A flat percentage of monthly salary, clamped between the floor and ceiling, then
+								split evenly between employee and employer.
+							</p>
+						</div>
+						<div class="grid gap-4 sm:max-w-2xl sm:grid-cols-3">
+							<div class="space-y-1">
+								<label class="text-sm font-medium" for="stat-ph-rate">Rate (%)</label>
+								<input
+									id="stat-ph-rate"
+									type="number"
+									min="0"
+									max="100"
+									step="0.01"
+									bind:value={philhealthRate}
+									class={scalarInput}
+								/>
+							</div>
+							<div class="space-y-1">
+								<label class="text-sm font-medium" for="stat-ph-floor">Salary floor (₱)</label>
+								<input
+									id="stat-ph-floor"
+									type="number"
+									min="0"
+									step="0.01"
+									bind:value={philhealthFloor}
+									class={scalarInput}
+								/>
+							</div>
+							<div class="space-y-1">
+								<label class="text-sm font-medium" for="stat-ph-ceil">Salary ceiling (₱)</label>
+								<input
+									id="stat-ph-ceil"
+									type="number"
+									min="0"
+									step="0.01"
+									bind:value={philhealthCeiling}
+									class={scalarInput}
+								/>
+							</div>
+						</div>
+					</div>
+				{:else if active === 'pagibig'}
+					<div class="space-y-3">
+						<div>
+							<h2 class="text-base font-semibold">Pag-IBIG</h2>
+							<p class="mt-0.5 text-sm text-muted-foreground">
+								A flat percentage of monthly salary for each of the employee and employer, capped at
+								the maximum share (₱200 = 2% of the ₱10,000 ceiling).
+							</p>
+						</div>
+						<div class="grid gap-4 sm:max-w-md sm:grid-cols-2">
+							<div class="space-y-1">
+								<label class="text-sm font-medium" for="stat-pi-rate">Rate (%)</label>
+								<input
+									id="stat-pi-rate"
+									type="number"
+									min="0"
+									max="100"
+									step="0.01"
+									bind:value={pagibigRate}
+									class={scalarInput}
+								/>
+							</div>
+							<div class="space-y-1">
+								<label class="text-sm font-medium" for="stat-pi-cap">Share cap (₱)</label>
+								<input
+									id="stat-pi-cap"
+									type="number"
+									min="0"
+									step="0.01"
+									bind:value={pagibigCap}
+									class={scalarInput}
+								/>
+							</div>
+						</div>
+					</div>
+				{:else if active === 'bir'}
+					<div class="space-y-3">
+						<div>
+							<h2 class="text-base font-semibold">BIR Withholding Tax</h2>
+							<p class="mt-0.5 text-sm text-muted-foreground">
+								Marginal income-tax brackets. Base tax and excess-over are derived from the ranges
+								and rates on save.
+							</p>
+						</div>
+						<div class="overflow-x-auto">
+							<table class="w-full text-sm">
+								<thead>
+									<tr class="text-left text-xs text-muted-foreground">
+										<th class="p-1 font-medium">Income floor</th>
+										<th class="p-1 font-medium">Income ceiling</th>
+										<th class="p-1 font-medium">Base tax (auto)</th>
+										<th class="p-1 font-medium">Rate (%)</th>
+										<th class="p-1 font-medium">Excess over (auto)</th>
+										<th class="p-1"></th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each taxRows as row, i (i)}
+										<tr>
+											<td class="p-1"
+												><input type="number" step="0.01" bind:value={row.floor} class={cell} /></td
+											>
+											<td class="p-1">
+												<input
+													type="number"
+													step="0.01"
+													bind:value={row.ceiling}
+													placeholder={i === taxRows.length - 1 ? '∞ (open-ended)' : ''}
+													class={cell}
+												/>
+											</td>
+											<td class="p-1"><div class={roCell}>{taxDerived[i].baseTax}</div></td>
+											<td class="p-1"
+												><input
+													type="number"
+													step="0.01"
+													min="0"
+													max="100"
+													bind:value={row.rate}
+													class={cell}
+												/></td
+											>
+											<td class="p-1"><div class={roCell}>{taxDerived[i].excessOver}</div></td>
+											<td class="p-1">
+												<button
+													type="button"
+													onclick={() => removeTaxRow(i)}
+													class="rounded px-2 py-1 text-xs text-destructive hover:bg-destructive/10"
+													>Remove</button
+												>
+											</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+						<button
+							type="button"
+							onclick={addTaxRow}
+							class="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted"
+							>+ Add row</button
+						>
+						<p class="text-xs text-muted-foreground">
+							The first row's ceiling is the ₱-exempt threshold (rate 0). Rows sorted ascending,
+							non-overlapping, start at 0, last ceiling blank; rate is a percentage (20 = 20%).
+						</p>
+					</div>
+				{/if}
 			</div>
-			<button
-				type="button"
-				onclick={addTaxRow}
-				class="rounded-md border px-3 py-1.5 text-xs font-medium hover:bg-muted">+ Add row</button
-			>
-			<p class="text-xs text-muted-foreground">
-				The first row's ceiling is the ₱-exempt threshold (rate 0). Rows sorted ascending,
-				non-overlapping, start at 0, last ceiling blank; rate is a percentage (20 = 20%). Base tax
-				and excess-over are derived from the ranges and rates on save.
-			</p>
-		</div>
+		{/key}
 
+		<!-- Every field submits here, always in the DOM regardless of which panel is open. -->
+		<input type="hidden" name="philhealthRate" value={philhealthRate} />
+		<input type="hidden" name="philhealthFloor" value={philhealthFloor} />
+		<input type="hidden" name="philhealthCeiling" value={philhealthCeiling} />
+		<input type="hidden" name="pagibigRate" value={pagibigRate} />
+		<input type="hidden" name="pagibigCap" value={pagibigCap} />
 		<input type="hidden" name="sssBrackets" value={sssPayload} />
 		<input type="hidden" name="taxBrackets" value={taxPayload} />
 
@@ -427,3 +554,22 @@
 	confirmText="Apply"
 	onconfirm={() => formEl?.requestSubmit()}
 />
+
+<style>
+	/* The active panel fades in on each switch; motion-sensitive users get it instantly. */
+	@media (prefers-reduced-motion: no-preference) {
+		.statutory-panel {
+			animation: panel-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
+		}
+	}
+	@keyframes panel-in {
+		from {
+			opacity: 0;
+			transform: translateY(4px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+</style>
