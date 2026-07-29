@@ -17,7 +17,9 @@ import type { AuditContext } from './types'
 export type OnboardingEmployee = {
 	positionId: string | null
 	workScheduleId: string | null
-	basicMonthlySalary: Prisma.Decimal | number | null
+	// `string` covers the masked sentinel (#111): the "done" check is presence-only (`!= null`),
+	// so a masked salary satisfies it without ever being read as a number.
+	basicMonthlySalary: Prisma.Decimal | number | string | null
 	bankName: string | null
 	bankAccountName: string | null
 	bankAccountNumber: string | null
@@ -63,7 +65,9 @@ export const DERIVED_STEPS: DerivedDef[] = [
 		key: 'salary',
 		label: 'Compensation set',
 		hint: 'Set “Basic Monthly Salary”.',
-		done: (e) => Number(e.basicMonthlySalary ?? 0) > 0
+		// Presence, not magnitude: salary is required at hire and reaches this derivation masked
+		// (#111) as a non-numeric sentinel, so score it on non-null rather than a numeric compare.
+		done: (e) => e.basicMonthlySalary != null
 	},
 	{
 		key: 'disbursement',

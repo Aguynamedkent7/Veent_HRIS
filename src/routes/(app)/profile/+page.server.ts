@@ -36,7 +36,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 	const from = new Date(Date.now() - PUNCH_WINDOW_DAYS * 24 * 60 * 60 * 1000)
 
 	const [employee, documents, benefits, rawPunches] = await Promise.all([
-		getEmployee(employeeRecord.id, user.organizationId),
+		// #111: mask sensitive fields in the payload even for one's own record — the profile page
+		// renders none of them, so this only stops the raw values shipping in the load JSON.
+		getEmployee(employeeRecord.id, user.organizationId, { isSelf: true }),
 		listEmployeeDocuments(employeeRecord.id, user.organizationId),
 		listEnrollmentsForEmployee(employeeRecord.id),
 		listPunches(employeeRecord.id, { from })

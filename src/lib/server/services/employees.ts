@@ -7,6 +7,7 @@ import { Prisma } from '@prisma/client'
 import { ensureLeaveBalances } from './leave'
 import { sendDiscordInviteEmail } from '$lib/server/notifications'
 import { notify } from './notifications'
+import { maskEmployee, SENSITIVE_FIELDS } from '$lib/utils/format'
 import type { AuditContext } from './types'
 import type { EmploymentType, EmploymentStatus, RateType, Gender, Role } from '@prisma/client'
 
@@ -186,7 +187,11 @@ export async function listEmployees(
 	})
 }
 
-export async function getEmployee(id: string, organizationId: string, viewerRole?: Role) {
+export async function getEmployee(
+	id: string,
+	organizationId: string,
+	opts?: { viewerRole?: Role; isSelf?: boolean }
+) {
 	const employee = await db.employee.findFirst({
 		where: { id, user: { organizationId } },
 		include: {
@@ -199,11 +204,20 @@ export async function getEmployee(id: string, organizationId: string, viewerRole
 	})
 	if (!employee) error(404, 'Employee not found')
 
+	// Internal callers (updateEmployee, offboardEmployee) pass no opts and get the raw record —
+	// they need cleartext to diff and never hand it to a client. Every client-facing caller
+	// passes opts, so masking is inherited by default: nothing leaks by omission (#111).
+	if (!opts) return employee
+
 	// Compensation, government IDs, and disbursement details are HR-only: below the HR_ADMIN
-	// rank they come back null. Note MANAGER is *not* below it — #133 made MANAGER on-branch HR
-	// and ranks it level with HR_ADMIN, so a manager does see these. (An earlier comment here
-	// claimed the opposite; it predated #133.)
-	if (viewerRole && ROLE_HIERARCHY[viewerRole] < ROLE_HIERARCHY.HR_ADMIN) {
+	// rank, and not the record's owner, they come back null. Note MANAGER is *not* below it —
+	// #133 made MANAGER on-branch HR and ranks it level with HR_ADMIN — so a manager falls
+	// through to the masked branch. Self always reaches masking too (own data, decision #2).
+	if (
+		!opts.isSelf &&
+		opts.viewerRole &&
+		ROLE_HIERARCHY[opts.viewerRole] < ROLE_HIERARCHY.HR_ADMIN
+	) {
 		return {
 			...employee,
 			basicMonthlySalary: null,
@@ -217,6 +231,50 @@ export async function getEmployee(id: string, organizationId: string, viewerRole
 			gcashNumber: null
 		}
 	}
+
+	// HR / MANAGER / self: masked by default. Full values only via revealEmployeeSensitive.
+	return maskEmployee(employee)
+}
+
+/**
+ * Full sensitive subset (government IDs, salary, disbursement) for one employee — the single
+ * path that returns these in cleartext (#111). Writes a VIEW audit entry unless `audit` is
+ * false; a self-reveal of one's own record is exempt (decision #2). The role gate lives at the
+ * call site (the UI button is cosmetic — Constitution P2).
+ */
+export async function revealEmployeeSensitive(
+	id: string,
+	organizationId: string,
+	ctx: AuditContext,
+	opts: { audit: boolean }
+) {
+	const employee = await db.employee.findFirst({
+		where: { id, user: { organizationId } },
+		select: {
+			id: true,
+			sssNumber: true,
+			philhealthNumber: true,
+			pagibigNumber: true,
+			tinNumber: true,
+			basicMonthlySalary: true,
+			bankName: true,
+			bankAccountName: true,
+			bankAccountNumber: true,
+			gcashNumber: true
+		}
+	})
+	if (!employee) error(404, 'Employee not found')
+
+	// Constitution P1/P4: reading PII is itself an auditable event.
+	if (opts.audit) {
+		await writeAuditLog(ctx, {
+			action: 'VIEW',
+			entityType: 'Employee',
+			entityId: employee.id,
+			newValue: { fields: [...SENSITIVE_FIELDS] }
+		})
+	}
+
 	return employee
 }
 

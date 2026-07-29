@@ -3,6 +3,7 @@ import { can, requireCapability, requireMinRole } from '$lib/server/rbac'
 import { getEmployee, updateEmployee, offboardEmployee } from '$lib/server/services/employees'
 import { apiError } from '$lib/server/api-error'
 import { db } from '$lib/server/db'
+import { maskEmployee } from '$lib/utils/format'
 import { govIdSchema } from '$lib/utils/gov-ids'
 import { z } from 'zod'
 import type { RequestHandler } from './$types'
@@ -44,7 +45,9 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 	}
 
 	try {
-		const employee = await getEmployee(params.id, locals.user.organizationId, locals.user.role)
+		const employee = await getEmployee(params.id, locals.user.organizationId, {
+			viewerRole: locals.user.role
+		})
 
 		// Object-level access control: a MANAGER may only read their own direct
 		// reports. HR/Super-Admin are unrestricted. Mirrors the 201-file page load.
@@ -89,7 +92,8 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 			actorId: locals.user.id,
 			actorRole: locals.user.role
 		})
-		return json({ data: updated })
+		// #111: never ship the raw record back — the PATCH response is a client-facing path too.
+		return json({ data: maskEmployee(updated) })
 	} catch (e: unknown) {
 		const err = e as { status?: number }
 		if (err?.status === 404) return apiError(404, 'Employee not found')

@@ -5,6 +5,7 @@ import {
 	getEmployee,
 	updateEmployee,
 	offboardEmployee,
+	revealEmployeeSensitive,
 	getEmploymentHistory
 } from '$lib/server/services/employees'
 import { listPositions } from '$lib/server/services/settings/org'
@@ -13,7 +14,7 @@ import { listEnrollmentsForEmployee } from '$lib/server/services/benefits'
 import { getEmployeeOnboarding, setManualCompletion } from '$lib/server/services/onboarding'
 import { listAssignableBranches, selectableBranches } from '$lib/server/services/branches'
 import { isFoodServiceOrg } from '$lib/orgs'
-import { govIdError, govIdSchema, normalizeGovId } from '$lib/utils/gov-ids'
+import { govIdSchema } from '$lib/utils/gov-ids'
 import {
 	listLoans,
 	listCashAdvances,
@@ -42,8 +43,6 @@ import {
 	setAdditionalSupervisors,
 	listReportIdsFor
 } from '$lib/server/services/supervisors'
-import { writeAuditLog } from '$lib/server/audit'
-import { maskAccountNumber } from '$lib/utils/format'
 import { db } from '$lib/server/db'
 import { z } from 'zod'
 import type { Actions, PageServerLoad } from './$types'
@@ -76,7 +75,9 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 
 	const canManage = can(locals.user!.role, 'MANAGE_HR')
 
-	const employee = await getEmployee(params.id, locals.user!.organizationId, locals.user!.role)
+	const employee = await getEmployee(params.id, locals.user!.organizationId, {
+		viewerRole: locals.user!.role
+	})
 
 	// Object-level access control: a MANAGER may only open their own direct
 	// reports' 201 file. HR/Super-Admin are unrestricted. (Field-level masking of
@@ -154,9 +155,9 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 			)
 		: null
 
-	// #54: disbursement numbers leave the server masked — full values are only
-	// obtainable through the audited ?/revealDisbursement action below.
-	const canRevealDisbursement = can(locals.user!.role, 'MANAGE_HR')
+	// #111: every sensitive field (gov IDs, salary, disbursement) leaves the server masked —
+	// full values are only obtainable through the audited ?/reveal action below.
+	const canReveal = can(locals.user!.role, 'MANAGE_HR')
 
 	// Additional supervisors (#176) — shown to everyone, editable by HR. The picker offers
 	// every other active employee in the org (minus the primary manager, handled server-side).
@@ -176,12 +177,9 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	return {
 		additionalSupervisors,
 		supervisorOptions,
-		employee: {
-			...employee,
-			bankAccountNumber: maskAccountNumber(employee.bankAccountNumber),
-			gcashNumber: maskAccountNumber(employee.gcashNumber)
-		},
-		canRevealDisbursement,
+		// Masked by getEmployee (#111) — the full values arrive only via the audited ?/reveal action.
+		employee,
+		canReveal,
 		departments,
 		canManage,
 		loans,
@@ -248,7 +246,11 @@ const updateSchema = z.object({
 		.trim()
 		.optional()
 		.transform((v) => (v ? v : null)),
-	basicMonthlySalary: z.coerce.number().positive().optional(),
+	// #111: salary renders masked (reveal-to-edit), so an empty field means "unchanged", not 0.
+	basicMonthlySalary: z.preprocess(
+		(v) => (v === '' ? undefined : v),
+		z.coerce.number().positive().optional()
+	),
 	rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
 	// Empty string clears the link; a value sets it (unique per employee).
 	discordId: z
@@ -275,27 +277,13 @@ const updateSchema = z.object({
 		.string()
 		.optional()
 		.transform((v) => (v ? v : null)),
-	// Government / statutory IDs (payroll registration). Empty clears the field.
-	sssNumber: z
-		.string()
-		.trim()
-		.optional()
-		.transform((v) => (v ? v : null)),
-	philhealthNumber: z
-		.string()
-		.trim()
-		.optional()
-		.transform((v) => (v ? v : null)),
-	pagibigNumber: z
-		.string()
-		.trim()
-		.optional()
-		.transform((v) => (v ? v : null)),
-	tinNumber: z
-		.string()
-		.trim()
-		.optional()
-		.transform((v) => (v ? v : null)),
+	// Government / statutory IDs (payroll registration). #111 renders these masked, so the form
+	// never prefills them: an empty field means "unchanged", any value typed is new and is
+	// format-checked here — exactly the bank/GCash model below.
+	sssNumber: govIdSchema('sssNumber'),
+	philhealthNumber: govIdSchema('philhealthNumber'),
+	pagibigNumber: govIdSchema('pagibigNumber'),
+	tinNumber: govIdSchema('tinNumber'),
 	// Disbursement details (sensitive, HR-only). Empty string clears the field.
 	bankName: z
 		.string()
@@ -350,40 +338,27 @@ export const actions: Actions = {
 			return fail(400, { error: messages.length ? messages.join(' · ') : 'Invalid input' })
 		}
 
-		// #191: the four statutory IDs are prefilled from the record, so the form re-posts them
-		// on every save. Validate only the ones whose value actually changed — otherwise a
-		// malformed ID entered before this validation existed would block unrelated edits
-		// (a phone number, an address) until someone fixed it. The employee page flags those
-		// legacy values instead, so they stay visible without being a roadblock.
-		const statutory = ['sssNumber', 'philhealthNumber', 'pagibigNumber', 'tinNumber'] as const
-		const stored = await db.employee.findFirst({
-			where: { id: params.id, user: { organizationId: user.organizationId } },
-			select: { sssNumber: true, philhealthNumber: true, pagibigNumber: true, tinNumber: true }
-		})
-		if (!stored) return fail(404, { error: 'Employee not found' })
-
-		const normalized: Partial<Record<(typeof statutory)[number], string | null>> = {}
-		const rejected: string[] = []
-		for (const field of statutory) {
-			const submitted = parsed.data[field]
-			if (submitted === stored[field]) continue // untouched — left exactly as it is
-			if (submitted === null) {
-				normalized[field] = null // cleared
-				continue
-			}
-			const canonical = normalizeGovId(field, submitted)
-			if (canonical === null) rejected.push(govIdError(field))
-			else normalized[field] = canonical
-		}
-		if (rejected.length) return fail(400, { error: rejected.join(' · ') })
-
-		// #54: the form never prefills the stored disbursement numbers (they render as
-		// placeholders), so an empty submission means "leave unchanged", not "clear".
+		// #111: the government IDs and disbursement numbers render masked and are never prefilled,
+		// so an empty submission means "leave unchanged", not "clear" — spread each only when the
+		// form actually carried a value. A malformed ID stored before validation existed is simply
+		// not re-submitted, so it never blocks an unrelated edit (a phone number, an address).
 		// Explicit clearing is deferred until a dedicated clear affordance exists.
-		const { bankAccountNumber, gcashNumber, branchId, ...rest } = parsed.data
+		const {
+			sssNumber,
+			philhealthNumber,
+			pagibigNumber,
+			tinNumber,
+			bankAccountNumber,
+			gcashNumber,
+			branchId,
+			...rest
+		} = parsed.data
 		const input = {
 			...rest,
-			...normalized,
+			...(sssNumber !== null && { sssNumber }),
+			...(philhealthNumber !== null && { philhealthNumber }),
+			...(pagibigNumber !== null && { pagibigNumber }),
+			...(tinNumber !== null && { tinNumber }),
 			...(bankAccountNumber !== null && { bankAccountNumber }),
 			...(gcashNumber !== null && { gcashNumber }),
 			// Branches only exist for the food-service tenants; ignore a posted branchId
@@ -409,32 +384,24 @@ export const actions: Actions = {
 		return { success: true }
 	},
 
-	// #54: audited reveal of the masked disbursement numbers. The role check runs
-	// server-side — the UI button is cosmetic gating only (Constitution P2).
-	revealDisbursement: async ({ locals, params, getClientAddress }) => {
+	// #111: audited reveal of every masked sensitive field (gov IDs, salary, disbursement). The
+	// role check runs server-side — the UI button is cosmetic gating only (Constitution P2).
+	reveal: async ({ locals, params, getClientAddress }) => {
 		requireCapability(locals.user!.role, 'MANAGE_HR')
-		const user = locals.user!
-
-		const employee = await db.employee.findFirst({
-			where: { id: params.id, user: { organizationId: user.organizationId } },
-			select: { id: true, bankAccountNumber: true, gcashNumber: true }
+		// A self-reveal (an HR user opening their own 201 file) is exempt from the audit log —
+		// own data, decision #2. Same identity comparison as load's object-level access check.
+		const self = await db.employee.findUnique({
+			where: { userId: locals.user!.id },
+			select: { id: true }
 		})
-		if (!employee) error(404, 'Employee not found')
-
-		// Constitution P1/P4: accessing PII is itself an auditable event.
-		await writeAuditLog(ctxOf(locals, getClientAddress()), {
-			action: 'VIEW',
-			entityType: 'Employee',
-			entityId: employee.id,
-			newValue: { fields: ['bankAccountNumber', 'gcashNumber'] }
-		})
-
-		return {
-			revealed: {
-				bankAccountNumber: employee.bankAccountNumber,
-				gcashNumber: employee.gcashNumber
-			}
-		}
+		const isSelf = self?.id === params.id
+		const revealed = await revealEmployeeSensitive(
+			params.id,
+			locals.user!.organizationId,
+			ctxOf(locals, getClientAddress()),
+			{ audit: !isSelf }
+		)
+		return { revealed }
 	},
 
 	offboard: async ({ request, locals, params, getClientAddress }) => {
