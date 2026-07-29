@@ -10,6 +10,7 @@
  */
 
 import { z } from 'zod'
+import { error } from '@sveltejs/kit'
 import { Prisma } from '@prisma/client'
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
@@ -193,10 +194,16 @@ export async function getStatutoryRateConfig(organizationId: string) {
 const jsonOrNull = (v: unknown[] | null): Prisma.InputJsonValue | typeof Prisma.DbNull =>
 	v == null ? Prisma.DbNull : (v as unknown as Prisma.InputJsonValue)
 
+/**
+ * Apply a rate set to the org's live StatutoryRateConfig + audit the change with full old→new.
+ * `meta` threads proposal provenance (proposer + proposal id) into the audit newValue when the
+ * apply came from a confirmed proposal, so the trail records proposer AND confirmer (#220).
+ */
 export async function updateStatutoryRateConfig(
 	organizationId: string,
 	data: StatutoryRateInput,
-	ctx: AuditContext
+	ctx: AuditContext,
+	meta?: { proposalId?: string; proposedById?: string }
 ) {
 	const persist = {
 		philhealthRate: data.philhealthRate,
@@ -222,18 +229,110 @@ export async function updateStatutoryRateConfig(
 		oldValue: existing
 			? {
 					philhealthRate: numOrUndef(existing.philhealthRate) ?? null,
+					philhealthFloor: numOrUndef(existing.philhealthFloor) ?? null,
+					philhealthCeiling: numOrUndef(existing.philhealthCeiling) ?? null,
 					pagibigRate: numOrUndef(existing.pagibigRate) ?? null,
+					pagibigCap: numOrUndef(existing.pagibigCap) ?? null,
 					sssBrackets: existing.sssBrackets ?? null,
 					taxBrackets: existing.taxBrackets ?? null
 				}
 			: undefined,
 		newValue: {
 			philhealthRate: data.philhealthRate,
+			philhealthFloor: data.philhealthFloor,
+			philhealthCeiling: data.philhealthCeiling,
 			pagibigRate: data.pagibigRate,
+			pagibigCap: data.pagibigCap,
 			sssBrackets: data.sssBrackets,
-			taxBrackets: data.taxBrackets
+			taxBrackets: data.taxBrackets,
+			...(meta ?? {})
 		}
 	})
 
 	return row
+}
+
+// ─── HR-propose / CEO-confirm (#220) ──────────────────────────────────────────
+// HR_ADMIN cannot edit live rates; their save records a PENDING proposal. A CEO/SUPER_ADMIN then
+// confirms (applies the payload to the live config) or rejects. The payload is re-validated against
+// `statutoryRateInputSchema` on apply — the trust boundary is the apply, not just the propose.
+
+export async function listPendingProposals(organizationId: string) {
+	return db.statutoryRateProposal.findMany({
+		where: { organizationId, status: 'PENDING' },
+		orderBy: { createdAt: 'desc' }
+	})
+}
+
+export async function proposeStatutoryRates(
+	organizationId: string,
+	data: StatutoryRateInput,
+	ctx: AuditContext
+) {
+	const proposal = await db.statutoryRateProposal.create({
+		data: {
+			organizationId,
+			proposedById: ctx.actorId,
+			payload: data as unknown as Prisma.InputJsonValue
+		}
+	})
+
+	await writeAuditLog(ctx, {
+		action: 'CREATE',
+		entityType: 'StatutoryRateProposal',
+		entityId: proposal.id,
+		newValue: { proposedById: ctx.actorId, payload: data }
+	})
+
+	return proposal
+}
+
+export async function confirmProposal(
+	organizationId: string,
+	proposalId: string,
+	ctx: AuditContext
+) {
+	const proposal = await db.statutoryRateProposal.findFirst({
+		where: { id: proposalId, organizationId, status: 'PENDING' }
+	})
+	if (!proposal) error(404, 'Pending proposal not found')
+
+	// Re-validate at apply time — the payload was validated on propose, but the apply is the real
+	// trust boundary (a stale/tampered row must not reach the tax math).
+	const data = statutoryRateInputSchema.parse(proposal.payload)
+	await updateStatutoryRateConfig(organizationId, data, ctx, {
+		proposalId: proposal.id,
+		proposedById: proposal.proposedById
+	})
+
+	return db.statutoryRateProposal.update({
+		where: { id: proposalId },
+		data: { status: 'APPLIED', decidedById: ctx.actorId, decidedAt: new Date() }
+	})
+}
+
+export async function rejectProposal(
+	organizationId: string,
+	proposalId: string,
+	ctx: AuditContext
+) {
+	const proposal = await db.statutoryRateProposal.findFirst({
+		where: { id: proposalId, organizationId, status: 'PENDING' }
+	})
+	if (!proposal) error(404, 'Pending proposal not found')
+
+	const updated = await db.statutoryRateProposal.update({
+		where: { id: proposalId },
+		data: { status: 'REJECTED', decidedById: ctx.actorId, decidedAt: new Date() }
+	})
+
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'StatutoryRateProposal',
+		entityId: proposalId,
+		oldValue: { status: 'PENDING', proposedById: proposal.proposedById },
+		newValue: { status: 'REJECTED', decidedById: ctx.actorId }
+	})
+
+	return updated
 }

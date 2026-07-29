@@ -331,6 +331,31 @@ export interface StatutoryRates {
 	pagibig?: { rate?: MoneyLike; cap?: number }
 }
 
+// An Infinity ceiling can't cross JSON or the DB — store null, revive to Infinity on read.
+export const sssBracketsToWire = (rows: SSSBracket[]) =>
+	rows.map((b) => ({
+		...b,
+		salaryCeiling: Number.isFinite(b.salaryCeiling) ? b.salaryCeiling : null
+	}))
+export const taxBracketsToWire = (rows: TaxBracket[]) =>
+	rows.map((b) => ({ ...b, ceiling: Number.isFinite(b.ceiling) ? b.ceiling : null }))
+
+/**
+ * Current PH legal values as the SEED/REFERENCE (#220). StatutoryRateConfig is now the
+ * authoritative source; each org's row is seeded to exactly this, the editor prefills it, and the
+ * resolver still falls back to it when a row is missing so a fresh org never computes zero tax.
+ * Shape matches what StatutoryRateConfig persists (Infinity ceilings already wired to null).
+ */
+export const DEFAULT_STATUTORY_RATE_CONFIG = {
+	philhealthRate: 0.05,
+	philhealthFloor: 10000,
+	philhealthCeiling: 100000,
+	pagibigRate: 0.02,
+	pagibigCap: 100,
+	sssBrackets: sssBracketsToWire(SSS_TABLE_2024),
+	taxBrackets: taxBracketsToWire(BIR_MONTHLY_TAX_TABLE)
+}
+
 export function computeStatutoryDeductions(
 	grossPay: MoneyLike,
 	rates?: StatutoryRates

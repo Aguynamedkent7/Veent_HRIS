@@ -313,6 +313,7 @@ model Organization {
   deductionTypes           DeductionType[]
   payRateRule              PayRateRule?
   statutoryRateConfig      StatutoryRateConfig?
+  statutoryRateProposals   StatutoryRateProposal[]
   workSchedules            WorkSchedule[]
   salaryGrades             SalaryGrade[]
   announcements            Announcement[]
@@ -986,11 +987,9 @@ model PayrollConfig {
   firstCutoff       Int?
   secondCutoff      Int?
   sssTable          Json
-  philhealthRate    Decimal      @db.Decimal(5, 4)
-  philhealthFloor   Decimal      @db.Decimal(10, 2)
-  philhealthCeiling Decimal      @db.Decimal(10, 2)
-  pagibigRate       Decimal      @db.Decimal(5, 4)
-  pagibigCeiling    Decimal      @db.Decimal(10, 2)
+  // #220: statutory RATE fields removed — StatutoryRateConfig is now the authoritative,
+  // seeded source of PhilHealth/Pag-IBIG/SSS/BIR figures. This config keeps only frequency,
+  // cutoffs, and the (legacy, unused-by-engine) sssTable/birTaxTable placeholders.
   birTaxTable       Json
   updatedAt         DateTime     @updatedAt
 
@@ -1638,6 +1637,31 @@ model StatutoryRateConfig {
   organization Organization @relation(fields: [organizationId], references: [id])
 
   @@map("statutory_rate_configs")
+}
+
+// #220: HR-propose / CEO-confirm approval trail for statutory rate changes. HR_ADMIN's save
+// creates a PENDING proposal (live StatutoryRateConfig unchanged); a CEO/SUPER_ADMIN confirm
+// applies the payload to the live config (status APPLIED) or rejects it (REJECTED).
+enum StatutoryRateProposalStatus {
+  PENDING
+  APPLIED
+  REJECTED
+}
+
+model StatutoryRateProposal {
+  id             String                      @id @default(cuid())
+  organizationId String
+  proposedById   String
+  payload        Json // the full proposed rate set (same shape StatutoryRateConfig stores)
+  status         StatutoryRateProposalStatus @default(PENDING)
+  decidedById    String?
+  decidedAt      DateTime?
+  createdAt      DateTime                    @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, status])
+  @@map("statutory_rate_proposals")
 }
 
 model Loan {

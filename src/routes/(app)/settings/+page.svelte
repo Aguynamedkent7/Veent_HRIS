@@ -68,8 +68,14 @@
 		{
 			href: '/payroll/config',
 			title: 'Payroll Config',
-			desc: 'Cutoffs, frequency, statutory rates',
+			desc: 'Cutoffs, frequency, premium multipliers',
 			super: true
+		},
+		{
+			href: '/payroll/statutory-rates',
+			title: 'Statutory Rates',
+			desc: 'SSS, PhilHealth, Pag-IBIG, BIR tax',
+			statutory: true
 		},
 		{
 			href: '/settings/holidays',
@@ -79,7 +85,12 @@
 		},
 		{ href: '/settings/roles', title: 'Roles & Access', desc: 'User role management', super: true }
 	]
-	const visible = $derived(cards.filter((c) => !c.super || data.isSuperAdmin))
+	const visible = $derived(
+		cards.filter((c) => {
+			if ('statutory' in c && c.statutory) return data.canStatutory
+			return !('super' in c && c.super) || data.isSuperAdmin
+		})
+	)
 </script>
 
 <svelte:head>

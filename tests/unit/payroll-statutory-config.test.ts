@@ -2,14 +2,30 @@ import { describe, it, expect } from 'vitest'
 import { Prisma } from '@prisma/client'
 import {
 	computeStatutoryDeductions,
+	DEFAULT_STATUTORY_RATE_CONFIG,
 	type StatutoryRates
 } from '$lib/server/services/payroll/ph-statutory'
 import {
 	statutoryRatesFromConfig,
 	sssBracketsSchema,
 	taxBracketsSchema,
-	statutoryRateInputSchema
+	statutoryRateInputSchema,
+	type StatutoryRateConfigRow
 } from '$lib/server/services/payroll/statutory-rates'
+
+// #220: the SEEDED path. A StatutoryRateConfig row seeded to the current legal values (exactly what
+// `prisma/seed-core.ts` writes and the editor prefills) must resolve to the same effective rates as
+// the hardcoded fallback — this is the parity guarantee for the "config is authoritative" model.
+const seededRow: StatutoryRateConfigRow = {
+	philhealthRate: new Prisma.Decimal(DEFAULT_STATUTORY_RATE_CONFIG.philhealthRate),
+	philhealthFloor: new Prisma.Decimal(DEFAULT_STATUTORY_RATE_CONFIG.philhealthFloor),
+	philhealthCeiling: new Prisma.Decimal(DEFAULT_STATUTORY_RATE_CONFIG.philhealthCeiling),
+	pagibigRate: new Prisma.Decimal(DEFAULT_STATUTORY_RATE_CONFIG.pagibigRate),
+	pagibigCap: new Prisma.Decimal(DEFAULT_STATUTORY_RATE_CONFIG.pagibigCap),
+	sssBrackets: DEFAULT_STATUTORY_RATE_CONFIG.sssBrackets as unknown as Prisma.JsonValue,
+	taxBrackets: DEFAULT_STATUTORY_RATE_CONFIG.taxBrackets as unknown as Prisma.JsonValue
+}
+const SEEDED = statutoryRatesFromConfig(seededRow)
 
 /**
  * #220 configurable statutory rate tables. The parity block is the safety gate: with no config the
@@ -82,12 +98,13 @@ const PARITY: Record<
 	}
 }
 
-describe('parity — no config row reproduces the hardcoded engine exactly', () => {
+describe('parity — no config row AND the seeded config reproduce the hardcoded engine exactly', () => {
 	for (const [salary, exp] of Object.entries(PARITY)) {
 		it(`salary ${salary}`, () => {
-			// Both the "no argument" path and the empty resolver output (statutoryRatesFromConfig(null))
-			// must land on the exact hardcoded numbers.
-			for (const rates of [undefined, statutoryRatesFromConfig(null)] as (
+			// Three paths must all land on the exact hardcoded numbers: the "no argument" fallback, the
+			// empty resolver output (statutoryRatesFromConfig(null)), and — the #220 rework gate — the
+			// SEEDED config resolved through the authoritative path.
+			for (const rates of [undefined, statutoryRatesFromConfig(null), SEEDED] as (
 				StatutoryRates | undefined
 			)[]) {
 				const r = computeStatutoryDeductions(salary, rates)
