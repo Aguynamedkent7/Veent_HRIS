@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -e
 
-CONTAINER="veent-db-5433"
+CONTAINER="veent-db-5434"
 DB_NAME="veent_hris"
 DB_USER="veent"
 DB_PASS="veent"
-DB_PORT="5433"
+DB_PORT="5434"
 PG_IMAGE="postgres:18"
 
 echo "==> Checking Docker container..."
