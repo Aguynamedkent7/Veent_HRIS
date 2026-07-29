@@ -60,7 +60,7 @@ describe('computeEmployeeResult — statutory exemptions', () => {
 		// Tax is never exempted — computed from the full contributions, unchanged.
 		expect(r.statutory.withholdingTax).toBeCloseTo(base.statutory.withholdingTax, 2)
 		// The SSS EE line no longer appears among the deductions.
-		expect(r.deductions.find((d) => d.code === 'SSS')?.amount ?? 0).toBe(0)
+		expect(r.deductions.find((d) => d.code === 'SSS_EE')?.amount ?? 0).toBe(0)
 	})
 
 	it('exempting all three zeroes every contribution but still computes tax', () => {
