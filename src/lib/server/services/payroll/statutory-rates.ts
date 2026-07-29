@@ -184,6 +184,36 @@ export const statutoryRateInputSchema = z
 
 export type StatutoryRateInput = z.infer<typeof statutoryRateInputSchema>
 
+// ─── Derived read-only columns (#220) ─────────────────────────────────────────
+// Only ranges + rates are user-editable; these columns are computed on save. Rates must ALREADY be
+// decimals here (the % → decimal conversion happens in the server action before this runs).
+
+/**
+ * Derive the tax brackets' read-only columns from their ranges+rates. Brackets are sorted by floor;
+ * `excessOver` is the bracket floor and `baseTax` accumulates the tax owed up to each floor:
+ * baseTax[0] = 0; baseTax[n] = baseTax[n-1] + (floor[n] - floor[n-1]) * rate[n-1].
+ */
+export function deriveTaxBrackets<T extends { floor: number; rate: number }>(
+	rows: T[]
+): (T & { baseTax: number; excessOver: number })[] {
+	const sorted = [...rows].sort((a, b) => a.floor - b.floor)
+	let baseTax = 0
+	return sorted.map((row, i) => {
+		if (i > 0) {
+			const prev = sorted[i - 1]
+			baseTax += (row.floor - prev.floor) * prev.rate
+		}
+		return { ...row, baseTax, excessOver: row.floor }
+	})
+}
+
+/** Derive each SSS bracket's read-only `totalContribution = eeShare + erShare`. */
+export function deriveSssTotals<T extends { eeShare: number; erShare: number }>(
+	rows: T[]
+): (T & { totalContribution: number })[] {
+	return rows.map((r) => ({ ...r, totalContribution: r.eeShare + r.erShare }))
+}
+
 // ─── Service (org-scoped upsert + audit) ──────────────────────────────────────
 
 export async function getStatutoryRateConfig(organizationId: string) {

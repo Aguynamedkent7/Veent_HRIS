@@ -10,6 +10,8 @@ import {
 	rejectProposal,
 	listPendingProposals,
 	statutoryRateInputSchema,
+	deriveTaxBrackets,
+	deriveSssTotals,
 	type StatutoryRateInput
 } from '$lib/server/services/payroll/statutory-rates'
 import type { StatutoryRateConfigRow } from '$lib/server/services/payroll/statutory-rates'
@@ -95,8 +97,10 @@ export const load: PageServerLoad = async ({ locals }) => {
 }
 
 // Form → StatutoryRateInput. Scalars arrive as strings; the two bracket tables as JSON strings from
-// the structured editor. Rate inputs are percentages (5 → 0.05). Everything is Zod-validated (the
-// trust boundary — this is tax math) before it reaches the config or a proposal.
+// the structured editor. Only ranges + rates are editable: rate inputs are percentages (5 → 0.05),
+// and the read-only columns (tax baseTax/excessOver, SSS totalContribution) are DERIVED here from
+// the editable fields. Everything is then Zod-validated (the trust boundary — this is tax math)
+// before it reaches the config or a proposal.
 function parseRates(fd: FormData) {
 	const str = (k: string) => {
 		const v = fd.get(k)
@@ -119,14 +123,43 @@ function parseRates(fd: FormData) {
 			return Symbol('invalid') // fails the schema rather than throwing here
 		}
 	}
+	const nn = (v: unknown) => (v == null ? null : Number(v))
+
+	// Tax: rate arrives as a percentage → decimal, then baseTax/excessOver are derived (never typed).
+	const taxRaw = jsonArr('taxBrackets')
+	const taxBrackets = Array.isArray(taxRaw)
+		? deriveTaxBrackets(
+				taxRaw.map((r) => {
+					const b = r as Record<string, unknown>
+					return { floor: Number(b.floor), ceiling: nn(b.ceiling), rate: Number(b.rate) / 100 }
+				})
+			)
+		: taxRaw
+
+	// SSS: amounts stay pesos; totalContribution is derived from ee+er (never typed).
+	const sssRaw = jsonArr('sssBrackets')
+	const sssBrackets = Array.isArray(sssRaw)
+		? deriveSssTotals(
+				sssRaw.map((r) => {
+					const b = r as Record<string, unknown>
+					return {
+						salaryFloor: Number(b.salaryFloor),
+						salaryCeiling: nn(b.salaryCeiling),
+						eeShare: Number(b.eeShare),
+						erShare: Number(b.erShare)
+					}
+				})
+			)
+		: sssRaw
+
 	return statutoryRateInputSchema.safeParse({
 		philhealthRate: pct('philhealthRate'),
 		philhealthFloor: num('philhealthFloor'),
 		philhealthCeiling: num('philhealthCeiling'),
 		pagibigRate: pct('pagibigRate'),
 		pagibigCap: num('pagibigCap'),
-		sssBrackets: jsonArr('sssBrackets'),
-		taxBrackets: jsonArr('taxBrackets')
+		sssBrackets,
+		taxBrackets
 	})
 }
 

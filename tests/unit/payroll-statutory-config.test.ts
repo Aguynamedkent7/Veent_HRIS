@@ -2,11 +2,13 @@ import { describe, it, expect } from 'vitest'
 import { Prisma } from '@prisma/client'
 import {
 	computeStatutoryDeductions,
+	computeWithholdingTax,
 	DEFAULT_STATUTORY_RATE_CONFIG,
 	type StatutoryRates
 } from '$lib/server/services/payroll/ph-statutory'
 import {
 	statutoryRatesFromConfig,
+	deriveTaxBrackets,
 	sssBracketsSchema,
 	taxBracketsSchema,
 	statutoryRateInputSchema,
@@ -267,5 +269,81 @@ describe('validation rejects incoherent tables (trust boundary)', () => {
 			taxBrackets: null
 		})
 		expect(parsed.success).toBe(true)
+	})
+})
+
+// #220: saving through the editor makes only ranges+rates authoritative and DERIVES the tax
+// baseTax/excessOver. For every standard salary the derived table reproduces today's computed tax
+// exactly; only the high brackets differ from the OLD published table by a rounding cent
+// (10833.33→10833.5, 40833.33→40833.5, 200833.33→200833.5), so the ₱250k case asserts the DERIVED
+// value — deriving is the intended behaviour now.
+const seededDerivedRow: StatutoryRateConfigRow = {
+	...seededRow,
+	taxBrackets: deriveTaxBrackets(
+		DEFAULT_STATUTORY_RATE_CONFIG.taxBrackets.map((b) => ({ ...b }))
+	) as unknown as Prisma.JsonValue
+}
+const SEEDED_DERIVED = statutoryRatesFromConfig(seededDerivedRow)
+const DERIVED_PARITY = {
+	...PARITY,
+	'250000': { ...PARITY['250000'], tax: '66380.06', total: '69880.06', net: '180119.94' }
+}
+
+describe('seeded config with DERIVED baseTax reproduces the computed tax (#220)', () => {
+	for (const [salary, exp] of Object.entries(DERIVED_PARITY)) {
+		it(`salary ${salary}`, () => {
+			const r = computeStatutoryDeductions(salary, SEEDED_DERIVED)
+			expect(s(r.sssEe)).toBe(exp.sssEe)
+			expect(s(r.philhealthEe)).toBe(exp.philhealthEe)
+			expect(s(r.pagibigEe)).toBe(exp.pagibigEe)
+			expect(s(r.withholdingTax)).toBe(exp.tax)
+			expect(s(r.totalDeductions)).toBe(exp.total)
+			expect(s(r.netPay)).toBe(exp.net)
+		})
+	}
+})
+
+describe('editing tax ranges/rates re-derives baseTax and the tax follows (#220)', () => {
+	const withInfinity = <T extends { ceiling: number | null }>(rows: T[]) =>
+		rows.map((b) => ({ ...b, ceiling: b.ceiling ?? Infinity }))
+
+	it('re-derives cumulative baseTax and moving the exempt threshold lowers the tax', () => {
+		const table = withInfinity(
+			deriveTaxBrackets([
+				{ floor: 0, ceiling: 20000, rate: 0 },
+				{ floor: 20000, ceiling: 50000, rate: 0.2 },
+				{ floor: 50000, ceiling: null, rate: 0.3 }
+			])
+		)
+		// baseTax = [0, 0, (50000-20000)*0.2 = 6000]; excessOver = floor.
+		expect(table.map((b) => b.baseTax)).toEqual([0, 0, 6000])
+		expect(table.map((b) => b.excessOver)).toEqual([0, 20000, 50000])
+		// income 60000 → 6000 + (60000-50000)*0.3 = 9000
+		expect(s(computeWithholdingTax(60000, table))).toBe('9000')
+
+		// Raise the exempt threshold to 30000 → the top bracket's baseTax re-derives to 4000, so the
+		// same income taxes less (7000). Editing a range coherently shifts downstream tax.
+		const edited = withInfinity(
+			deriveTaxBrackets([
+				{ floor: 0, ceiling: 30000, rate: 0 },
+				{ floor: 30000, ceiling: 50000, rate: 0.2 },
+				{ floor: 50000, ceiling: null, rate: 0.3 }
+			])
+		)
+		expect(edited.map((b) => b.baseTax)).toEqual([0, 0, 4000])
+		expect(s(computeWithholdingTax(60000, edited))).toBe('7000')
+	})
+})
+
+describe('rate percentage round-trip — load ×100 / save ÷100 drifts nothing (#220)', () => {
+	it('recovers the exact decimal for every seeded rate', () => {
+		const decimals = [
+			DEFAULT_STATUTORY_RATE_CONFIG.philhealthRate,
+			DEFAULT_STATUTORY_RATE_CONFIG.pagibigRate,
+			...DEFAULT_STATUTORY_RATE_CONFIG.taxBrackets.map((b) => b.rate)
+		]
+		for (const d of decimals) {
+			expect((d * 100) / 100).toBe(d)
+		}
 	})
 })

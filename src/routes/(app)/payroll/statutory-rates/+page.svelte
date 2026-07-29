@@ -11,12 +11,14 @@
 	let confirmOpen = $state(false)
 
 	// Prefill from the live authoritative config (#220). Rate fields are percentages in the UI.
+	// Round the ×100 to kill float noise (0.3 * 100 === 30.000000000000004); clean values round-trip.
+	const toPct = (d: number) => Math.round(d * 1e6) / 1e4
 	// svelte-ignore state_referenced_locally
 	const live = data.live
-	let philhealthRate = $state(live.philhealthRate * 100)
+	let philhealthRate = $state(toPct(live.philhealthRate))
 	let philhealthFloor = $state(live.philhealthFloor)
 	let philhealthCeiling = $state(live.philhealthCeiling)
-	let pagibigRate = $state(live.pagibigRate * 100)
+	let pagibigRate = $state(toPct(live.pagibigRate))
 	let pagibigCap = $state(live.pagibigCap)
 
 	type SssRow = {
@@ -34,18 +36,35 @@
 		excessOver: number | null
 	}
 	let sssRows = $state<SssRow[]>(structuredClone(live.sssBrackets as SssRow[]))
-	let taxRows = $state<TaxRow[]>(structuredClone(live.taxBrackets as TaxRow[]))
+	// Rate is shown/entered as a percentage in the UI (0.25 → 25); the server converts back on save.
+	let taxRows = $state<TaxRow[]>(
+		(live.taxBrackets as TaxRow[]).map((r) => ({
+			...r,
+			rate: r.rate == null ? null : toPct(r.rate)
+		}))
+	)
 
 	const num = (v: number | null) => (v == null ? 0 : Number(v))
 	const nullable = (v: number | null) => (v == null ? null : Number(v))
-	// The two tables are always sent — every field is authoritative now. The last bracket is
+	// Read-only previews of the columns the server derives on save (SSS total = ee+er; tax baseTax
+	// accumulates across brackets, excessOver = floor). Shown for transparency, never submitted.
+	const peso = (v: number) => Math.round(v * 100) / 100
+	const sssTotal = (r: SssRow) => peso(num(r.eeShare) + num(r.erShare))
+	const taxDerived = $derived.by(() => {
+		let baseTax = 0
+		return taxRows.map((r, i) => {
+			const floor = num(r.floor)
+			if (i > 0) baseTax += (floor - num(taxRows[i - 1].floor)) * (num(taxRows[i - 1].rate) / 100)
+			return { baseTax: peso(baseTax), excessOver: floor }
+		})
+	})
+	// Only ranges + rates are sent; the server derives the read-only columns. The last bracket is
 	// open-ended (null ceiling); the resolver revives that to Infinity.
 	const sssPayload = $derived(
 		JSON.stringify(
 			sssRows.map((r, i) => ({
 				salaryFloor: num(r.salaryFloor),
 				salaryCeiling: i === sssRows.length - 1 ? nullable(r.salaryCeiling) : num(r.salaryCeiling),
-				totalContribution: num(r.totalContribution),
 				eeShare: num(r.eeShare),
 				erShare: num(r.erShare)
 			}))
@@ -56,9 +75,7 @@
 			taxRows.map((r, i) => ({
 				floor: num(r.floor),
 				ceiling: i === taxRows.length - 1 ? nullable(r.ceiling) : num(r.ceiling),
-				baseTax: num(r.baseTax),
-				rate: num(r.rate),
-				excessOver: num(r.excessOver)
+				rate: num(r.rate)
 			}))
 		)
 	)
@@ -84,6 +101,10 @@
 
 	const cell =
 		'h-8 w-full rounded border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring'
+	// Read-only derived columns: same box as an input, but muted + non-interactive so it reads as a
+	// disabled field, not floating text.
+	const roCell =
+		'flex h-8 w-full cursor-not-allowed items-center rounded border border-input bg-background px-2 text-sm text-muted-foreground'
 	const scalarInput =
 		'flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
@@ -254,7 +275,7 @@
 						<tr class="text-left text-xs text-muted-foreground">
 							<th class="p-1 font-medium">Salary floor</th>
 							<th class="p-1 font-medium">Salary ceiling</th>
-							<th class="p-1 font-medium">Total</th>
+							<th class="p-1 font-medium">Total (auto)</th>
 							<th class="p-1 font-medium">EE share</th>
 							<th class="p-1 font-medium">ER share</th>
 							<th class="p-1"></th>
@@ -275,14 +296,7 @@
 										class={cell}
 									/>
 								</td>
-								<td class="p-1"
-									><input
-										type="number"
-										step="0.01"
-										bind:value={row.totalContribution}
-										class={cell}
-									/></td
-								>
+								<td class="p-1"><div class={roCell}>{sssTotal(row)}</div></td>
 								<td class="p-1"
 									><input type="number" step="0.01" bind:value={row.eeShare} class={cell} /></td
 								>
@@ -309,7 +323,7 @@
 			>
 			<p class="text-xs text-muted-foreground">
 				Rows must be sorted ascending, non-overlapping, start at 0, and the last ceiling left blank
-				(open-ended).
+				(open-ended). Total is derived from EE + ER shares on save.
 			</p>
 		</div>
 
@@ -322,9 +336,9 @@
 						<tr class="text-left text-xs text-muted-foreground">
 							<th class="p-1 font-medium">Income floor</th>
 							<th class="p-1 font-medium">Income ceiling</th>
-							<th class="p-1 font-medium">Base tax</th>
-							<th class="p-1 font-medium">Rate (0–1)</th>
-							<th class="p-1 font-medium">Excess over</th>
+							<th class="p-1 font-medium">Base tax (auto)</th>
+							<th class="p-1 font-medium">Rate (%)</th>
+							<th class="p-1 font-medium">Excess over (auto)</th>
 							<th class="p-1"></th>
 						</tr>
 					</thead>
@@ -343,22 +357,18 @@
 										class={cell}
 									/>
 								</td>
-								<td class="p-1"
-									><input type="number" step="0.01" bind:value={row.baseTax} class={cell} /></td
-								>
+								<td class="p-1"><div class={roCell}>{taxDerived[i].baseTax}</div></td>
 								<td class="p-1"
 									><input
 										type="number"
-										step="0.0001"
+										step="0.01"
 										min="0"
-										max="1"
+										max="100"
 										bind:value={row.rate}
 										class={cell}
 									/></td
 								>
-								<td class="p-1"
-									><input type="number" step="0.01" bind:value={row.excessOver} class={cell} /></td
-								>
+								<td class="p-1"><div class={roCell}>{taxDerived[i].excessOver}</div></td>
 								<td class="p-1">
 									<button
 										type="button"
@@ -379,7 +389,8 @@
 			>
 			<p class="text-xs text-muted-foreground">
 				The first row's ceiling is the ₱-exempt threshold (rate 0). Rows sorted ascending,
-				non-overlapping, start at 0, last ceiling blank; rate is a fraction (0.20 = 20%).
+				non-overlapping, start at 0, last ceiling blank; rate is a percentage (20 = 20%). Base tax
+				and excess-over are derived from the ranges and rates on save.
 			</p>
 		</div>
 
