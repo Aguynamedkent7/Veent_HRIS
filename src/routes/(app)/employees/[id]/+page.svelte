@@ -5,6 +5,7 @@
 	import { tenureLabel, tenureRequirement, monthsOfService } from '$lib/utils/dates'
 	import { rateBasisOptionsFor, rateBasisCopy, type RateBasis } from '$lib/utils/rate-basis'
 	import { isValidGovId, govIdError, type GovIdField } from '$lib/utils/gov-ids'
+	import { LOAN_TYPES } from '$lib/utils/loan-types'
 	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import MaskedField from '$lib/components/ui/MaskedField.svelte'
@@ -908,11 +909,16 @@
 							use:enhance={addLoan.enhance}
 							class="flex flex-wrap items-end gap-2"
 						>
-							<input
+							<select
 								name="type"
-								placeholder="Type"
-								class="h-8 w-24 rounded-md border border-input bg-background px-2 text-xs"
-							/>
+								required
+								class="h-8 w-28 rounded-md border border-input bg-background px-2 text-xs"
+							>
+								<option value="" disabled selected>Type</option>
+								{#each LOAN_TYPES as t (t)}
+									<option value={t}>{t}</option>
+								{/each}
+							</select>
 							<input
 								name="principal"
 								type="number"

@@ -3,11 +3,12 @@ import { z } from 'zod'
 import { requirePayrollManage } from '$lib/server/rbac'
 import { apiError, badRequest, forbidden } from '$lib/server/api-error'
 import { listLoans, createLoan } from '$lib/server/services/payroll/loans'
+import { LOAN_TYPES } from '$lib/utils/loan-types'
 import type { RequestHandler } from './$types'
 
 const createSchema = z.object({
 	employeeId: z.string().min(1),
-	type: z.string().optional(),
+	type: z.enum(LOAN_TYPES).optional(),
 	principal: z.coerce.number().positive(),
 	installment: z.coerce.number().positive()
 })
