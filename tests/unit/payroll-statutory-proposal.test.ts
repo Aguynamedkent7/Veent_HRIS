@@ -12,7 +12,7 @@ import type { StatutoryRateInput } from '$lib/server/services/payroll/statutory-
  */
 
 const { dbMock } = vi.hoisted(() => {
-	const db: Record<string, unknown> = {
+	const db = {
 		statutoryRateProposal: {
 			create: vi.fn(),
 			findFirst: vi.fn(),
@@ -21,10 +21,11 @@ const { dbMock } = vi.hoisted(() => {
 			updateMany: vi.fn(),
 			findUniqueOrThrow: vi.fn()
 		},
-		statutoryRateConfig: { findUnique: vi.fn(), upsert: vi.fn() }
+		statutoryRateConfig: { findUnique: vi.fn(), upsert: vi.fn() },
+		$transaction: vi.fn()
 	}
 	// confirmProposal runs inside a $transaction; the callback gets the same mock as the tx client.
-	db.$transaction = vi.fn(async (cb: (tx: unknown) => unknown) => cb(db))
+	db.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb(db))
 	return { dbMock: db }
 })
 
