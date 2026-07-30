@@ -3,7 +3,7 @@ import { error } from '@sveltejs/kit'
 import { computeEarnings } from './earnings'
 import { ratesFromRule, type PayRates } from './rates'
 import { statutoryRatesFromConfig } from './statutory-rates'
-import { computeDeductions, type AmortItem } from './deductions'
+import { computeDeductions, computeTardiness, computeAbsence, type AmortItem } from './deductions'
 import { recurringDeductionComponents } from './employee-deductions'
 import {
 	statutoryExemptions,
@@ -13,7 +13,7 @@ import {
 import { computeStatutoryDeductions, type StatutoryRates } from './ph-statutory'
 import type { StatutoryAllocation } from '@prisma/client'
 import type { PeriodKind } from '$lib/utils/pay-periods'
-import { D, q2n, sumQ, ZERO, type Money } from './money'
+import { D, q2n, sum, sumQ, ZERO, type Money } from './money'
 import {
 	absenceHoursOf,
 	basicPayBasis,
@@ -21,6 +21,7 @@ import {
 	hourlyRateOf,
 	monthlyBasisOf,
 	type AttendanceInput,
+	type ComputeSegment,
 	type EmployeeComp,
 	type PayAdjustments,
 	type PayComponent,
@@ -99,6 +100,14 @@ export interface EmployeeComputeConfig {
 	 * pay-type flips and hourly/daily to Stage 2); omitted → basic prorates by `× periodShare`.
 	 */
 	basicSegments?: { salary: Money; rateType: RateType; weight: Money }[]
+	/**
+	 * #170 Stage 2: day-split segments for a MIXED-basis mid-period change (an hourly/daily rate
+	 * change, or a MONTHLY↔hourly pay-type flip). Takes precedence over `basicSegments`. BASIC,
+	 * TARDINESS and ABSENCE become sums over these segments (each valued by its own basis/rate/
+	 * expectedHours); premiums, statutory, loans, recurring and the #103 floor stay period-aggregate.
+	 * Omitted → the Stage 1 `basicSegments` path or the single-value default (parity).
+	 */
+	segments?: ComputeSegment[]
 }
 
 export interface ProratedStatutory {
@@ -151,7 +160,8 @@ export function computeEmployeeResult(
 ): EmployeeComputeResult {
 	const earnings = computeEarnings(comp, attendance, adjustments, cfg.rates, {
 		periodShare: cfg.periodShare,
-		basicSegments: cfg.basicSegments
+		basicSegments: cfg.basicSegments,
+		segments: cfg.segments
 	})
 	// Requirement: taxability from EarningType config.
 	for (const c of earnings.components) {
@@ -206,12 +216,38 @@ export function computeEmployeeResult(
 	const fixedBasic = basicPayBasis(comp) === 'FIXED'
 	const expectedHours = cfg.expectedHours ?? expectedHoursOf(comp, cfg.periodShare)
 
+	// #170 Stage 2: a mixed-basis split values tardiness/absence PER SEGMENT — each FIXED segment
+	// against its own rate and its own `expectedHours` (wd_i × dailyHours), so a MONTHLY→hourly flip
+	// never charges the MONTHLY half for the hourly half's hours (#121). Hourly segments contribute
+	// nothing (their unworked time is already absent from BASIC). Absent → today's single-basis path.
+	const segFixed = cfg.segments?.filter((s) => basicPayBasis(s.comp) === 'FIXED')
+	const tardinessAmount = segFixed
+		? sum(
+				segFixed.map((s) =>
+					computeTardiness(
+						hourlyRateOf(s.comp),
+						s.attendance.lateMinutes,
+						s.attendance.undertimeMinutes
+					)
+				)
+			)
+		: undefined
+	const absenceAmount = segFixed
+		? sum(
+				segFixed.map((s) =>
+					computeAbsence(hourlyRateOf(s.comp), absenceHoursOf(s.attendance, s.expectedHours))
+				)
+			)
+		: undefined
+
 	const ded = computeDeductions({
 		gross: earnings.gross,
 		hourlyRate: hourlyRateOf(comp),
-		lateMinutes: fixedBasic ? attendance.lateMinutes : 0,
-		undertimeMinutes: fixedBasic ? attendance.undertimeMinutes : 0,
-		absenceHours: fixedBasic ? absenceHoursOf(attendance, expectedHours) : 0,
+		lateMinutes: cfg.segments ? 0 : fixedBasic ? attendance.lateMinutes : 0,
+		undertimeMinutes: cfg.segments ? 0 : fixedBasic ? attendance.undertimeMinutes : 0,
+		absenceHours: cfg.segments ? 0 : fixedBasic ? absenceHoursOf(attendance, expectedHours) : 0,
+		tardinessAmount,
+		absenceAmount,
 		statutory: {
 			sssEe: statutory.sssEe,
 			philhealthEe: statutory.philhealthEe,

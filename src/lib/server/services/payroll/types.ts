@@ -64,6 +64,20 @@ export function emptyAttendance(): AttendanceInput {
 	}
 }
 
+/**
+ * One day-split segment of a mid-period pay change (#170/#171 Stage 2). Carries its OWN comp basis
+ * (an hourly/daily rate change or a MONTHLY↔hourly flip changes `comp.rateType` between segments),
+ * its working-day `weight` (Σ weight == periodShare), its own attendance slice, and its own
+ * holiday-aware `expectedHours` (wd_i × dailyHours) — absence for a FIXED segment is valued against
+ * THIS, never the whole period, so a flip can't charge one basis for the other's unowed hours.
+ */
+export interface ComputeSegment {
+	comp: EmployeeComp
+	weight: Money
+	attendance: AttendanceInput
+	expectedHours: number
+}
+
 /** Manual earnings not derived from attendance. */
 export interface PayAdjustments {
 	allowances?: number

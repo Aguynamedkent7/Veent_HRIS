@@ -128,6 +128,30 @@ describe('#170 — a MONTHLY split reconciles to salary × periodShare', () => {
 		expect(split.grossPay).toBe(baseline.grossPay)
 	})
 
+	it('a single full-period FIXED ComputeSegment (Stage 2 seam) == the no-segments result', () => {
+		const comp: EmployeeComp = { basicMonthlySalary: 30000, rateType: 'MONTHLY' }
+		const attendance = att({ regularHours: 80, overtimeHours: 5, lateMinutes: 30 })
+		const expectedHours = 88
+
+		const baseline = computeEmployeeResult(
+			comp,
+			attendance,
+			{},
+			cfg({ periodShare: 0.5, expectedHours })
+		)
+		const withSeg = computeEmployeeResult(
+			comp,
+			attendance,
+			{},
+			cfg({
+				periodShare: 0.5,
+				expectedHours,
+				segments: [{ comp, weight: D(0.5), attendance, expectedHours }]
+			})
+		)
+		expect(withSeg).toEqual(baseline)
+	})
+
 	it('two DIFFERENT-salary segments blend by weight (30000@0.25 + 42000@0.25 = 18000)', () => {
 		const comp: EmployeeComp = { basicMonthlySalary: 42000, rateType: 'MONTHLY' }
 		const r = computeEmployeeResult(

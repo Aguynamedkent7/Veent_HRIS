@@ -125,6 +125,39 @@ describe('#119 — payslip reconciliation (fuzz over centavo salaries)', () => {
 		}
 	})
 
+	it('reconciles a mixed-basis mid-period split (#170/#171 Stage 2 segments)', () => {
+		// A MONTHLY→HOURLY flip mid-period: a FIXED first half + an hourly second half, with premiums,
+		// an allowance, tardiness and a loan all present. net === gross − Σ lines must still hold.
+		for (const salary of HALF_CENT_CASES) {
+			const monthly: EmployeeComp = { basicMonthlySalary: salary, rateType: 'MONTHLY' }
+			const periodEnd: EmployeeComp = { basicMonthlySalary: '275.50', rateType: 'HOURLY' }
+			const r = computeEmployeeResult(
+				periodEnd,
+				att({ regularHours: 84, overtimeHours: 3, nightDiffHours: 1.5 }),
+				{ allowances: 500.25 },
+				cfg({
+					statutoryComp: monthly,
+					loans: [{ refId: 'L1', label: 'Loan', installment: '500.00', balance: '3000.00' }],
+					segments: [
+						{
+							comp: monthly,
+							weight: D(0.25),
+							attendance: att({ regularHours: 40, lateMinutes: 30 }),
+							expectedHours: 44
+						},
+						{
+							comp: periodEnd,
+							weight: D(0.5),
+							attendance: att({ regularHours: 44 }),
+							expectedHours: 0
+						}
+					]
+				})
+			)
+			assertReconciles(r, `split ${salary}`)
+		}
+	})
+
 	it('floors net at 0 and still reconciles when deductions exceed gross (#103)', () => {
 		// ROUND_HALF_UP is symmetric, unlike Math.round's half-toward-zero on negatives.
 		const comp: EmployeeComp = { basicMonthlySalary: '9000.55', rateType: 'MONTHLY' }
