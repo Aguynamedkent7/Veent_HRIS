@@ -186,6 +186,9 @@ enum OfferStatus {
 enum HolidayType {
   REGULAR
   SPECIAL_NON_WORKING
+  // #199: a declared Special *Working* holiday is paid as an ordinary working day — no premium
+  // (cf. SPECIAL_NON_WORKING at +30%). Attendance maps it back to the schedule-based day type.
+  SPECIAL_WORKING
 }
 
 enum AuditAction {

@@ -19,7 +19,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 const holidaySchema = z.object({
 	date: z.coerce.date(),
 	name: z.string().min(1, 'Holiday name is required'),
-	type: z.enum(['REGULAR', 'SPECIAL_NON_WORKING'])
+	type: z.enum(['REGULAR', 'SPECIAL_NON_WORKING', 'SPECIAL_WORKING'])
 })
 
 export const actions: Actions = {

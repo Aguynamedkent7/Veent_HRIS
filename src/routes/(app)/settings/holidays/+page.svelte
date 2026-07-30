@@ -28,11 +28,13 @@
 
 	function typeBadgeClass(type: string) {
 		if (type === 'REGULAR') return 'bg-red-500/15 text-red-400'
+		if (type === 'SPECIAL_WORKING') return 'bg-green-500/15 text-green-400'
 		return 'bg-blue-500/15 text-blue-400'
 	}
 
 	function typeLabel(type: string) {
 		if (type === 'REGULAR') return 'Regular'
+		if (type === 'SPECIAL_WORKING') return 'Special Working'
 		return 'Special Non-Working'
 	}
 </script>
@@ -114,6 +116,7 @@
 					>
 						<option value="REGULAR">Regular</option>
 						<option value="SPECIAL_NON_WORKING">Special Non-Working</option>
+						<option value="SPECIAL_WORKING">Special Working</option>
 					</select>
 				</div>
 			</div>
@@ -201,6 +204,9 @@
 												value="SPECIAL_NON_WORKING"
 												selected={holiday.type === 'SPECIAL_NON_WORKING'}
 												>Special Non-Working</option
+											>
+											<option value="SPECIAL_WORKING" selected={holiday.type === 'SPECIAL_WORKING'}
+												>Special Working</option
 											>
 										</select>
 									</div>

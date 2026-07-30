@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { scheduleDayFor, FALLBACK_WEEKDAY_SHIFT } from '$lib/server/services/attendance/index'
+import {
+	scheduleDayFor,
+	FALLBACK_WEEKDAY_SHIFT,
+	holidayDayType
+} from '$lib/server/services/attendance/index'
 import { deriveAttendanceDay, type AttPunchType } from '$lib/server/services/attendance/derive'
 
 /**
@@ -74,5 +78,22 @@ describe('an unassigned 8-5 employee is no longer charged phantom undertime', ()
 
 		// Same full day's work, charged 60 minutes of undertime purely by shift mismatch.
 		expect(r.undertimeMinutes).toBe(60)
+	})
+})
+
+describe('holidayDayType — premium routing (#199)', () => {
+	it('routes premium holidays to their buckets', () => {
+		expect(holidayDayType('REGULAR', true)).toBe('REGULAR_HOLIDAY')
+		expect(holidayDayType('SPECIAL_NON_WORKING', true)).toBe('SPECIAL_HOLIDAY')
+	})
+
+	it('treats a Special Working holiday as an ordinary day — no premium', () => {
+		expect(holidayDayType('SPECIAL_WORKING', true)).toBe('REGULAR') // scheduled → regular pay
+		expect(holidayDayType('SPECIAL_WORKING', false)).toBe('REST_DAY') // off-schedule → rest day
+	})
+
+	it('a non-holiday resolves by schedule', () => {
+		expect(holidayDayType(undefined, true)).toBe('REGULAR')
+		expect(holidayDayType(undefined, false)).toBe('REST_DAY')
 	})
 })

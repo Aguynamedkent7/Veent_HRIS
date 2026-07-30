@@ -5,6 +5,7 @@ import { manilaDayKey } from '$lib/utils/dates'
 import { deriveAttendanceDay, type AttPunchType, type DayType, type ScheduleDay } from './derive'
 import { createTimesheet } from '../timesheets'
 import type { AuditContext } from '../types'
+import type { HolidayType } from '@prisma/client'
 
 /**
  * Attendance service (Slice 2): derive AttendanceDay records from TimeLog punches against each
@@ -53,6 +54,15 @@ export function scheduleDayFor(
 			: null
 	}
 	return weekday >= 1 && weekday <= 5 ? FALLBACK_WEEKDAY_SHIFT : null
+}
+
+/** Resolve a day's attendance day-type from its holiday type (if any) and whether it's a scheduled
+ *  workday. Only REGULAR (+100%) and SPECIAL_NON_WORKING (+30%) carry a premium; SPECIAL_WORKING
+ *  (#199) is an ordinary paid day, so it resolves like a non-holiday. */
+export function holidayDayType(holiday: HolidayType | undefined, scheduled: boolean): DayType {
+	if (holiday === 'REGULAR') return 'REGULAR_HOLIDAY'
+	if (holiday === 'SPECIAL_NON_WORKING') return 'SPECIAL_HOLIDAY'
+	return scheduled ? 'REGULAR' : 'REST_DAY'
 }
 
 /** Group punches into shifts, attributing an overnight OUT/breaks to the IN's PHT day. */
@@ -224,13 +234,7 @@ export async function deriveRange(
 			const weekday = cur.getUTCDay()
 			const holiday = holidayByDay.get(dayKey)
 			const schedDay = scheduleDayFor(scheduleDays as never, weekday)
-			const dayType: DayType = holiday
-				? holiday === 'REGULAR'
-					? 'REGULAR_HOLIDAY'
-					: 'SPECIAL_HOLIDAY'
-				: schedDay
-					? 'REGULAR'
-					: 'REST_DAY'
+			const dayType: DayType = holidayDayType(holiday, Boolean(schedDay))
 			const onLeave = leaves.some(
 				(l) =>
 					l.startDate.toISOString().slice(0, 10) <= dayKey &&
