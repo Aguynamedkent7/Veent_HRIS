@@ -45,12 +45,13 @@ describe('compensationForPeriod — parity (no in-period change)', () => {
 	})
 
 	it('hire baseline effective before the period → still one segment; statutoryBasis == periodEnd', () => {
-		const hist = [row([2024, 1, 1], 30000)]
+		// Distinct from FALLBACK (30000) so the assertions prove the pre-period history row is used, not the fallback.
+		const hist = [row([2024, 1, 1], 28000)]
 		const r = compensationForPeriod(hist, second.start, second.end, 0.5, FALLBACK, calDays)
 		expect(r.segments).toHaveLength(1)
 		expect(str(r.segments[0].weight)).toBe('0.5')
-		expect(str(r.statutoryBasis.salary)).toBe('30000')
-		expect(str(r.periodEnd.salary)).toBe('30000')
+		expect(str(r.statutoryBasis.salary)).toBe('28000')
+		expect(str(r.periodEnd.salary)).toBe('28000')
 	})
 
 	it('WHOLE_MONTH share of 1 with no change → single segment weight 1', () => {

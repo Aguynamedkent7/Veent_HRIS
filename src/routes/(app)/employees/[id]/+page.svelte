@@ -51,13 +51,14 @@
 
 	// #170: the mid-period change form has its own rate-basis state so its amount label follows the
 	// selected basis and its dropdown offers only bases valid for this employment type (like create).
-	let compRateType = $state<RateBasis>('MONTHLY')
-	$effect(() => {
-		compRateType = employee.rateType as RateBasis
-	})
+	// Initialized from the saved basis; NOT re-synced from `employee` (the [id] route remounts per
+	// employee), so a later reprop — e.g. after a salary reveal — can't discard an in-progress pick.
+	// svelte-ignore state_referenced_locally
+	let compRateType = $state<RateBasis>(employee.rateType as RateBasis)
 	const compRate = $derived(rateBasisCopy(compRateType))
 	const compRateOptions = $derived(rateBasisOptionsFor(employee.employmentType))
-	// Effective date is bounded [hire date, today] — v1 forbids future-dating (no scheduler).
+	// Effective date is lower-bounded at the hire date; today is the default. Backdating and
+	// future-dating are both allowed (the cache heals on read — no scheduler).
 	const todayInput = new Date().toISOString().slice(0, 10)
 	const hireInput = $derived(new Date(employee.startDate).toISOString().slice(0, 10))
 
@@ -1407,19 +1408,19 @@
 						>(records an effective-dated change; payroll splits a run that straddles it)</span
 					>
 				</h2>
-				{#if form?.notice}
+				{#if form?.action === 'changeCompensation' && form?.notice}
 					<div
 						class="rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-400"
 					>
 						{form.notice}
 					</div>
-				{:else if form?.success}
+				{:else if form?.action === 'changeCompensation' && form?.success}
 					<div
 						class="rounded-md border border-green-500/20 bg-green-500/10 px-3 py-2 text-sm text-green-400"
 					>
 						Saved.
 					</div>
-				{:else if form?.error}
+				{:else if form?.action === 'changeCompensation' && form?.error}
 					<div
 						class="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-red-400"
 					>

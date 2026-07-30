@@ -196,11 +196,19 @@ export async function computeFinalPay(
 		})
 	])
 
-	const monthly = currentCompensation(compHistory, record.effectiveDate, {
+	const comp = currentCompensation(compHistory, record.effectiveDate, {
 		basicMonthlySalary: employee.basicMonthlySalary,
 		rateType: employee.rateType
-	}).salary.toNumber()
-	const dailyRate = monthly / WORKING_DAYS_PER_MONTH
+	})
+	const rate = comp.salary.toNumber()
+	// #189: the stored figure means something different per basis (mirror payslip-document.ts). Dividing
+	// an hourly/daily rate by the monthly working days would understate the day value 176×/22×.
+	const dailyRate =
+		comp.rateType === 'HOURLY'
+			? rate * 8
+			: comp.rateType === 'DAILY'
+				? rate
+				: rate / WORKING_DAYS_PER_MONTH
 	const leaveDays = leaveBalances.reduce((sum, b) => sum + Number(b.remaining), 0)
 	const leaveConversion = round2(leaveDays * dailyRate)
 	const loanBalance = round2(loans.reduce((sum, l) => sum + Number(l.balance), 0))

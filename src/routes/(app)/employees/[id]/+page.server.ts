@@ -432,10 +432,13 @@ export const actions: Actions = {
 	// current cache and audits atomically; a backdate into an approved run comes back as a notice.
 	changeCompensation: async ({ request, locals, params, getClientAddress }) => {
 		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		// Discriminator: this form shares the page's single `form` prop with every other action, so its
+		// message block gates on `form.action` to ignore a sibling form's success/error.
+		const action = 'changeCompensation'
 		const parsed = changeCompensationSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) {
 			const messages = parsed.error.errors.map((e) => e.message).filter(Boolean)
-			return fail(400, { error: messages.length ? messages.join(' · ') : 'Invalid input' })
+			return fail(400, { action, error: messages.length ? messages.join(' · ') : 'Invalid input' })
 		}
 		try {
 			const { notice } = await recordCompensationChange(
@@ -444,9 +447,10 @@ export const actions: Actions = {
 				parsed.data,
 				ctxOf(locals, getClientAddress())
 			)
-			return { success: true, notice }
+			return { action, success: true, notice }
 		} catch (e) {
-			return failFromError(e)
+			const f = failFromError(e)
+			return fail(f.status, { action, ...f.data })
 		}
 	},
 

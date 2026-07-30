@@ -492,8 +492,9 @@ model Employee {
 // ({basicMonthlySalary, rateType}) in effect from `effectiveDate`. `Employee.{basicMonthlySalary,
 // rateType}` stay the authoritative "current" cache (== the snapshot with the latest effectiveDate
 // ≤ today); this table is authoritative only for "as of date X", which the payroll engine reads to
-// split a run across a mid-period change. Future-dating is disallowed in v1 (no scheduler to advance
-// the cache). Actor id is a plain String (no User relation) per StatutoryRateProposal precedent.
+// split a run across a mid-period change. Future-dating is allowed: cache re-derivation is bounded to
+// effectiveDate ≤ today and healed on read (getEmployee), so a future row stays dormant until its date
+// arrives — no scheduler needed. Actor id is a plain String (no User relation) per StatutoryRateProposal precedent.
 model EmployeeCompensation {
   id                 String   @id @default(cuid())
   employeeId         String

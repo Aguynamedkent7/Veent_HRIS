@@ -569,8 +569,9 @@ export async function updateEmployee(
  * the latest effectiveDate ≤ today — so a correction backdated below a later change never moves it.
  * `basicMonthlySalary`/`rateType` are HISTORY_FIELDS, so the 201 timeline picks the change up.
  *
- * Future-dating is rejected: v1 has no scheduler to advance the cache when a future date arrives.
- * A change backdated into an APPROVED run returns a non-fatal notice — the frozen-run guard makes it
+ * Future-dating is allowed: the cache is re-derived as the snapshot with the latest effectiveDate ≤
+ * today and healed on read (getEmployee), so a future row stays dormant until its date arrives — no
+ * scheduler needed. A change backdated into an APPROVED run returns a non-fatal notice — the frozen-run guard makes it
  * structurally safe (approved numbers are never recomputed), but it must not be silent.
  */
 export async function recordCompensationChange(
@@ -581,11 +582,22 @@ export async function recordCompensationChange(
 ): Promise<{ notice?: string }> {
 	const employee = await getEmployee(id, organizationId)
 
-	// Reveal-to-edit "unchanged": an empty salary carries the current figure; an omitted rateType too.
+	// "Unchanged" is judged against the comp in effect on the effective date, not the current cache —
+	// otherwise a valid backdated correction whose value happens to equal today's figure is rejected.
+	// An empty salary/rateType carries whatever was in effect then (the reveal-to-edit form prefills
+	// current, which for the default today-dated change is the same figure).
 	const currentSalary = Number(employee.basicMonthlySalary)
-	const basicMonthlySalary = input.basicMonthlySalary ?? currentSalary
-	const rateType = input.rateType ?? employee.rateType
-	if (basicMonthlySalary === currentSalary && rateType === employee.rateType) {
+	const history = await db.employeeCompensation.findMany({
+		where: { employeeId: id },
+		select: { basicMonthlySalary: true, rateType: true, effectiveDate: true, changedAt: true }
+	})
+	const atEff = currentCompensation(history, input.effectiveDate, {
+		basicMonthlySalary: currentSalary,
+		rateType: employee.rateType
+	})
+	const basicMonthlySalary = input.basicMonthlySalary ?? atEff.salary.toNumber()
+	const rateType = input.rateType ?? atEff.rateType
+	if (basicMonthlySalary === atEff.salary.toNumber() && rateType === atEff.rateType) {
 		error(400, 'No change to record — enter a new salary or pay type.')
 	}
 
@@ -645,7 +657,7 @@ export async function recordCompensationChange(
 				action: 'UPDATE',
 				entityType: 'Employee',
 				entityId: id,
-				oldValue: { basicMonthlySalary: currentSalary, rateType: employee.rateType },
+				oldValue: { basicMonthlySalary: atEff.salary.toNumber(), rateType: atEff.rateType },
 				newValue: { basicMonthlySalary, rateType, effectiveDate: eff }
 			},
 			tx
