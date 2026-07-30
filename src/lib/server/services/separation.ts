@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client'
 import type { SeparationType } from '@prisma/client'
 import type { AuditContext } from './types'
 import { clearanceTemplateForOrg } from './offboarding'
+import { currentCompensation } from './payroll/compensation'
 import { sendOffboardingNoticeEmail } from '$lib/server/notifications'
 
 // Average paid working days per month — used to convert a monthly salary to a
@@ -173,10 +174,16 @@ export async function computeFinalPay(
 	const record = await getSeparation(separationId, organizationId)
 	const employeeId = record.employee.id
 
-	const [employee, leaveBalances, loans, cashAdvances] = await Promise.all([
+	const [employee, compHistory, leaveBalances, loans, cashAdvances] = await Promise.all([
 		db.employee.findUniqueOrThrow({
 			where: { id: employeeId },
-			select: { basicMonthlySalary: true }
+			select: { basicMonthlySalary: true, rateType: true }
+		}),
+		// #170 Stage 1.5: final pay reads salary directly (not via getEmployee), so resolve the comp in
+		// effect on the separation date from history — a raise effective by then must reach final pay.
+		db.employeeCompensation.findMany({
+			where: { employeeId },
+			select: { basicMonthlySalary: true, rateType: true, effectiveDate: true, changedAt: true }
 		}),
 		db.leaveBalance.findMany({
 			where: { employeeId, year: record.effectiveDate.getFullYear() },
@@ -189,7 +196,10 @@ export async function computeFinalPay(
 		})
 	])
 
-	const monthly = Number(employee.basicMonthlySalary)
+	const monthly = currentCompensation(compHistory, record.effectiveDate, {
+		basicMonthlySalary: employee.basicMonthlySalary,
+		rateType: employee.rateType
+	}).salary.toNumber()
 	const dailyRate = monthly / WORKING_DAYS_PER_MONTH
 	const leaveDays = leaveBalances.reduce((sum, b) => sum + Number(b.remaining), 0)
 	const leaveConversion = round2(leaveDays * dailyRate)

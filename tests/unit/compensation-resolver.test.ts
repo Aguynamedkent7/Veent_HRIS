@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { compensationForPeriod, type CompRow } from '$lib/server/services/payroll/compensation'
+import {
+	compensationForPeriod,
+	currentCompensation,
+	type CompRow
+} from '$lib/server/services/payroll/compensation'
 import { periodDays } from '$lib/utils/pay-periods'
 import { D } from '$lib/server/services/payroll/money'
 
@@ -150,5 +154,47 @@ describe('compensationForPeriod — working-day weighting', () => {
 		expect(str(r.segments[0].weight.plus(r.segments[1].weight))).toBe('0.5')
 		expect(str(r.segments[0].weight)).toBe(str(D(0.5).times(4).dividedBy(15)))
 		expect(str(r.segments[1].weight)).toBe(str(D(0.5).times(11).dividedBy(15)))
+	})
+})
+
+describe('currentCompensation — as-of cache resolution (#170 Stage 1.5)', () => {
+	const asOf = d(2026, MAY, 20)
+
+	it('empty history → fallback', () => {
+		const c = currentCompensation([], asOf, FALLBACK)
+		expect(str(c.salary)).toBe('30000')
+		expect(c.rateType).toBe('MONTHLY')
+	})
+
+	it('picks the latest snapshot with effectiveDate ≤ asOf', () => {
+		const hist = [
+			row([2024, 1, 1], 30000),
+			row([2026, MAY, 10], 40000),
+			row([2026, MAY, 25], 50000)
+		]
+		// May 20 sits between the May 10 and May 25 changes → the May 10 (40000) is current.
+		expect(str(currentCompensation(hist, asOf, FALLBACK).salary)).toBe('40000')
+	})
+
+	it('ignores a future-dated snapshot until its date arrives', () => {
+		const hist = [row([2024, 1, 1], 30000), row([2026, MAY, 25], 50000)]
+		expect(str(currentCompensation(hist, d(2026, MAY, 20), FALLBACK).salary)).toBe('30000') // before
+		expect(str(currentCompensation(hist, d(2026, MAY, 25), FALLBACK).salary)).toBe('50000') // on
+		expect(str(currentCompensation(hist, d(2026, MAY, 26), FALLBACK).salary)).toBe('50000') // after
+	})
+
+	it('same-day changes tiebreak by changedAt (last wins)', () => {
+		const hist = [
+			row([2026, MAY, 10], 40000, 'MONTHLY', d(2026, MAY, 10)),
+			row([2026, MAY, 10], 45000, 'MONTHLY', d(2026, MAY, 11))
+		]
+		expect(str(currentCompensation(hist, asOf, FALLBACK).salary)).toBe('45000')
+	})
+
+	it('carries a rateType change through', () => {
+		const hist = [row([2024, 1, 1], 30000, 'MONTHLY'), row([2026, MAY, 10], 250, 'HOURLY')]
+		const c = currentCompensation(hist, asOf, FALLBACK)
+		expect(c.rateType).toBe('HOURLY')
+		expect(str(c.salary)).toBe('250')
 	})
 })

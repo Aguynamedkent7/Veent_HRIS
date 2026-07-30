@@ -1436,11 +1436,10 @@
 							required
 							value={todayInput}
 							min={hireInput}
-							max={todayInput}
 							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						/>
 						<p class="mt-1 text-xs text-muted-foreground">
-							When it takes effect. Backdating is allowed; future dates are not.
+							When it takes effect. Backdating and future-dating are both allowed.
 						</p>
 					</div>
 					<div>

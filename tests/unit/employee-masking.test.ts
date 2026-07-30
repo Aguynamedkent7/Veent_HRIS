@@ -4,11 +4,19 @@ import type { AuditContext } from '../../src/lib/server/services/types'
 // #111 — the security-critical gate: getEmployee is the single masking choke point and
 // revealEmployeeSensitive the only cleartext path. Both hit the DB, so the db client and the
 // audit sink are mocked; the fixture below is what findFirst resolves for every case.
-const { findFirst, writeAuditLog } = vi.hoisted(() => ({
+const { findFirst, compFindMany, employeeUpdate, writeAuditLog } = vi.hoisted(() => ({
 	findFirst: vi.fn(),
+	// getEmployee's heal-on-read (#170 Stage 1.5): a separate history query + a stale-only update.
+	compFindMany: vi.fn(),
+	employeeUpdate: vi.fn(),
 	writeAuditLog: vi.fn()
 }))
-vi.mock('$lib/server/db', () => ({ db: { employee: { findFirst } } }))
+vi.mock('$lib/server/db', () => ({
+	db: {
+		employee: { findFirst, update: employeeUpdate },
+		employeeCompensation: { findMany: compFindMany }
+	}
+}))
 vi.mock('$lib/server/audit', () => ({ writeAuditLog }))
 
 import { getEmployee, revealEmployeeSensitive } from '../../src/lib/server/services/employees'
@@ -32,6 +40,8 @@ const ctx: AuditContext = { organizationId: 'org', actorId: 'actor-1', actorRole
 
 beforeEach(() => {
 	findFirst.mockReset().mockResolvedValue({ ...RAW })
+	compFindMany.mockReset().mockResolvedValue([]) // no history → heal is a no-op, cache unchanged
+	employeeUpdate.mockReset()
 	writeAuditLog.mockReset()
 })
 

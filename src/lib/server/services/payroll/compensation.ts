@@ -54,6 +54,47 @@ export interface PeriodCompensation {
 const DAY_MS = 24 * 60 * 60 * 1000
 const dayBefore = (d: Date): Date => new Date(d.getTime() - DAY_MS)
 
+/** Lift history into decimal rows, ascending by (effectiveDate, changedAt) so the last row on/before
+ *  a date wins the tiebreak. */
+function sortedRows(history: CompRow[]) {
+	return history
+		.map((r) => ({
+			salary: D(r.basicMonthlySalary),
+			rateType: r.rateType,
+			eff: utcMidnight(r.effectiveDate).getTime(),
+			seq: r.changedAt.getTime()
+		}))
+		.sort((a, b) => a.eff - b.eff || a.seq - b.seq)
+}
+
+/** The comp in effect at time `t`: the latest row with effectiveDate ≤ t, else `fallback`. `rows`
+ *  must be pre-sorted by `sortedRows`; `t` is a UTC-midnight epoch ms. */
+function compAt(rows: ReturnType<typeof sortedRows>, t: number, fallback: Comp): Comp {
+	let picked: (typeof rows)[number] | undefined
+	for (const r of rows) {
+		if (r.eff <= t) picked = r
+		else break
+	}
+	return picked ? { salary: picked.salary, rateType: picked.rateType } : fallback
+}
+
+/**
+ * The employee's current compensation as of `asOf` (#170 Stage 1.5): the latest snapshot with
+ * effectiveDate ≤ asOf (UTC-midnight, changedAt tiebreak), else `fallback`. A future-dated snapshot
+ * is ignored until its date arrives. This is the read the cache-heal in `getEmployee` uses, so
+ * secondary readers (display, final pay) reflect the correct current figure without a scheduler.
+ */
+export function currentCompensation(
+	history: CompRow[],
+	asOf: Date,
+	fallback: { basicMonthlySalary: MoneyLike; rateType: RateType }
+): Comp {
+	return compAt(sortedRows(history), utcMidnight(asOf).getTime(), {
+		salary: D(fallback.basicMonthlySalary),
+		rateType: fallback.rateType
+	})
+}
+
 export function compensationForPeriod(
 	history: CompRow[],
 	periodStart: Date,
@@ -67,25 +108,8 @@ export function compensationForPeriod(
 	const share = D(periodShare)
 	const fallbackComp: Comp = { salary: D(fallback.basicMonthlySalary), rateType: fallback.rateType }
 
-	// Ascending by (effectiveDate, changedAt) so the last row on/before a date wins the tiebreak.
-	const rows = history
-		.map((r) => ({
-			salary: D(r.basicMonthlySalary),
-			rateType: r.rateType,
-			eff: utcMidnight(r.effectiveDate).getTime(),
-			seq: r.changedAt.getTime()
-		}))
-		.sort((a, b) => a.eff - b.eff || a.seq - b.seq)
-
-	const compOn = (d: Date): Comp => {
-		const t = d.getTime()
-		let picked: (typeof rows)[number] | undefined
-		for (const r of rows) {
-			if (r.eff <= t) picked = r
-			else break
-		}
-		return picked ? { salary: picked.salary, rateType: picked.rateType } : fallbackComp
-	}
+	const rows = sortedRows(history)
+	const compOn = (d: Date): Comp => compAt(rows, d.getTime(), fallbackComp)
 
 	const statutoryBasis = compOn(firstDayOfMonth(start))
 	const periodEndComp = compOn(end)

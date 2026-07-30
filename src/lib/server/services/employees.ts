@@ -10,6 +10,8 @@ import { notify } from './notifications'
 import { maskEmployee, SENSITIVE_FIELDS } from '$lib/utils/format'
 import { utcMidnight } from '$lib/utils/pay-periods'
 import { isRateBasisAllowed, RATE_BASIS_MISMATCH } from '$lib/utils/rate-basis'
+import { currentCompensation } from './payroll/compensation'
+import { D } from './payroll/money'
 import type { AuditContext } from './types'
 import type { EmploymentType, EmploymentStatus, RateType, Gender, Role } from '@prisma/client'
 
@@ -206,6 +208,33 @@ export async function getEmployee(
 		}
 	})
 	if (!employee) error(404, 'Employee not found')
+
+	// ponytail: heal-on-read (#170 Stage 1.5). The effective-dated EmployeeCompensation history is the
+	// source of truth; Employee.{basicMonthlySalary,rateType} is a cache. Fetched with a SEPARATE query
+	// and kept strictly local — never added to the `include` or the returned object — so raw snapshot
+	// figures can't ride the return value past the #111 mask. When the cache is stale (e.g. the first
+	// read after a future-dated change's effective date has passed) we correct the column in place and
+	// use the healed RAW values below; otherwise nothing is written. No audit — the change was audited
+	// when the snapshot was inserted. Single indexed lookup (employeeId), so this is cheap.
+	const compHistory = await db.employeeCompensation.findMany({
+		where: { employeeId: id },
+		select: { basicMonthlySalary: true, rateType: true, effectiveDate: true, changedAt: true }
+	})
+	const healed = currentCompensation(compHistory, new Date(), {
+		basicMonthlySalary: employee.basicMonthlySalary,
+		rateType: employee.rateType
+	})
+	if (
+		!D(employee.basicMonthlySalary).equals(healed.salary) ||
+		employee.rateType !== healed.rateType
+	) {
+		await db.employee.update({
+			where: { id },
+			data: { basicMonthlySalary: healed.salary, rateType: healed.rateType }
+		})
+		employee.basicMonthlySalary = healed.salary
+		employee.rateType = healed.rateType
+	}
 
 	// Internal callers (updateEmployee, offboardEmployee) pass no opts and get the raw record —
 	// they need cleartext to diff and never hand it to a client. Every client-facing caller
@@ -564,11 +593,13 @@ export async function recordCompensationChange(
 	// the form filters the dropdown — the same guard the create form applies.
 	if (!isRateBasisAllowed(rateType, employee.employmentType)) error(400, RATE_BASIS_MISMATCH)
 
-	// Bounds: hire date ≤ effectiveDate ≤ today (UTC-midnight). Future-dating is forbidden in v1.
+	// Lower bound only: effectiveDate ≥ hire date (UTC-midnight). Future-dating is allowed (#170 Stage
+	// 1.5) — no scheduler needed: the insert below leaves the current cache untouched (its re-derivation
+	// is "max effectiveDate ≤ today"), and getEmployee heals the cache the first time it is read on or
+	// after the effective date.
 	const eff = utcMidnight(input.effectiveDate)
 	const today = utcMidnight(new Date())
 	const hired = utcMidnight(employee.startDate)
-	if (eff.getTime() > today.getTime()) error(400, 'Effective date cannot be in the future.')
 	if (eff.getTime() < hired.getTime()) error(400, 'Effective date cannot be before the hire date.')
 
 	// Non-fatal notice when backdating into a frozen (APPROVED) run — those are never recomputed.
