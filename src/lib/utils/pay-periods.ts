@@ -63,8 +63,13 @@ export function periodDays(start: Date, end: Date): number {
 	return Math.round(ms / (24 * 60 * 60 * 1000)) + 1
 }
 
+/** UTC-midnight first calendar day of `d`'s month — the statutory basis anchor for #170/#171. */
+export function firstDayOfMonth(d: Date): Date {
+	return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1))
+}
+
 /** Drop any intra-day component so comparisons are on the calendar day only. */
-function utcMidnight(d: Date): Date {
+export function utcMidnight(d: Date): Date {
 	return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
 }
 

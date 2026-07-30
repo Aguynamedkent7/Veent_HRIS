@@ -445,6 +445,19 @@ async function allocateAndCreate(
 				// filing outright. Re-run on a retry because the whole transaction is replayed.
 				await ensureLeaveBalances(created.id, organizationId, input.startDate.getFullYear(), tx)
 
+				// #170/#171: seed the effective-dated compensation baseline (current comp, effective
+				// since the hire date) so the mid-period payroll resolver always has a floor.
+				await tx.employeeCompensation.create({
+					data: {
+						employeeId: created.id,
+						basicMonthlySalary: created.basicMonthlySalary,
+						rateType: created.rateType,
+						effectiveDate: input.startDate,
+						changedById: 'system',
+						note: 'baseline (hire)'
+					}
+				})
+
 				return created
 			})
 		} catch (e) {

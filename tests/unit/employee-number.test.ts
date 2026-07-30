@@ -22,6 +22,8 @@ const { dbMock } = vi.hoisted(() => ({
 		// about number allocation, and an org with no leave types simply allocates nothing.
 		leaveType: { findMany: vi.fn() },
 		leaveBalance: { findMany: vi.fn(), createMany: vi.fn() },
+		// createEmployee also seeds the #170/#171 compensation baseline inside the transaction.
+		employeeCompensation: { create: vi.fn() },
 		$transaction: vi.fn()
 	}
 }))
