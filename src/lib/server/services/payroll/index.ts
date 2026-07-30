@@ -4,6 +4,7 @@ import { error } from '@sveltejs/kit'
 import { Prisma, type Role } from '@prisma/client'
 import { canAny } from '$lib/rbac'
 import { computeEmployeeResult } from './calculator'
+import { compensationForPeriod } from './compensation'
 import { ratesFromRule } from './rates'
 import { statutoryRatesFromConfig } from './statutory-rates'
 import { type AmortItem } from './deductions'
@@ -102,6 +103,7 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		statutoryExemptAll,
 		statutoryExternalAll,
 		statutoryAllocationAll,
+		compensationAll,
 		holidays
 	] = await Promise.all([
 		db.employee.findMany({ where: { user: { organizationId }, employmentStatus: 'ACTIVE' } }),
@@ -148,6 +150,15 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			where: { employee: { organizationId }, allocation: { not: 'EVEN' } },
 			select: { employeeId: true, contribution: true, allocation: true }
 		}),
+		// #170: effective-dated compensation history for every employee, so the resolver can
+		// day-split a run that straddles a salary change and lag statutory to decision B. Ordered
+		// ascending so a same-day change's later `changedAt` wins the tiebreak; grouped by employee
+		// below like the other per-employee data. An employee with no rows falls back to their
+		// current cache, reproducing the pre-#170 numbers exactly.
+		db.employeeCompensation.findMany({
+			where: { employee: { organizationId } },
+			orderBy: [{ effectiveDate: 'asc' }, { changedAt: 'asc' }]
+		}),
 		// Public holidays inside the period — the scheduled-hours fallback below must not
 		// bill them as ordinary working days.
 		db.publicHoliday.findMany({
@@ -185,6 +196,7 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	const statutoryExemptByEmp = groupByEmployee(statutoryExemptAll)
 	const statutoryExternalByEmp = groupByEmployee(statutoryExternalAll)
 	const statutoryAllocationByEmp = groupByEmployee(statutoryAllocationAll)
+	const compensationByEmp = groupByEmployee(compensationAll)
 	// Holidays were previously passed as [], so a period containing public holidays
 	// counted them as ordinary working days. That inflates `scheduledHours` below, and
 	// since BASIC = regularHours * hourlyRate, it inflated basic pay for every employee
@@ -207,10 +219,40 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	let totalNet = ZERO
 
 	for (const emp of employees) {
+		// #170: resolve the period's compensation from the effective-dated history (holiday-aware
+		// working-day weighting). With no history it returns a single full-period segment whose
+		// weight is exactly `periodShare` and `statutoryBasis === periodEnd`, so everything below
+		// reduces to the pre-#170 behaviour.
+		const periodComp = compensationForPeriod(
+			compensationByEmp.get(emp.id) ?? [],
+			run.periodStart,
+			run.periodEnd,
+			periodShare,
+			{ basicMonthlySalary: emp.basicMonthlySalary, rateType: emp.rateType },
+			(s, e) =>
+				computeWorkingDays(
+					s,
+					e,
+					holidays.map((h) => h.date)
+				)
+		)
+		// Period-end comp drives basic/premium/tardiness rates — NOT the current cache, which for a
+		// past run with a later change would be too high.
 		const comp: EmployeeComp = {
-			basicMonthlySalary: emp.basicMonthlySalary,
-			rateType: emp.rateType
+			basicMonthlySalary: periodComp.periodEnd.salary,
+			rateType: periodComp.periodEnd.rateType
 		}
+		// Decision B: statutory always follows the day-1-of-month comp (every rate type).
+		const statutoryComp: EmployeeComp = {
+			basicMonthlySalary: periodComp.statutoryBasis.salary,
+			rateType: periodComp.statutoryBasis.rateType
+		}
+		// Stage 1 day-splits basic ONLY for a pure MONTHLY salary-amount split (>1 segment, every
+		// segment MONTHLY). A pay-type flip or an hourly/daily split is Stage 2 — there the single
+		// full-period FIXED path / today's hourly path stands, while statutory still lags correctly.
+		const segments = periodComp.segments
+		const basicSegments =
+			segments.length > 1 && segments.every((s) => s.rateType === 'MONTHLY') ? segments : undefined
 
 		const timesheets = await db.timesheet.findMany({
 			where: {
@@ -274,6 +316,9 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			rates,
 			statutoryRates,
 			periodShare,
+			// #170: decision-B statutory basis (always) and the MONTHLY day-split (when safe).
+			statutoryComp,
+			basicSegments,
 			// Holiday-aware schedule for the period — values absences for fixed-basic staff (#121).
 			expectedHours: scheduledHours,
 			statutoryExemptions: statutoryExemptions(statutoryExemptByEmp.get(emp.id) ?? []),

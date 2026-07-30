@@ -23,7 +23,8 @@ import {
 	type AttendanceInput,
 	type EmployeeComp,
 	type PayAdjustments,
-	type PayComponent
+	type PayComponent,
+	type RateType
 } from './types'
 
 /**
@@ -84,6 +85,20 @@ export interface EmployeeComputeConfig {
 	 * employee's working days × daily hours × `periodShare`.
 	 */
 	expectedHours?: number
+	/**
+	 * #170 (decision B): the comp effective on the FIRST calendar day of the period's month — the
+	 * statutory basis. Statutory (SSS/PhilHealth/Pag-IBIG/tax) is computed from THIS, not the
+	 * period-end comp, so a raise effective mid-month only reaches statutory the following month.
+	 * Omitted → statutory uses `comp` (today's behaviour, and the no-change parity anchor).
+	 */
+	statutoryComp?: EmployeeComp
+	/**
+	 * #170: day-split basic-pay segments for a MONTHLY mid-period salary change. Each carries a
+	 * `weight` = periodShare · (segment working days / period working days), Σ weight == periodShare,
+	 * so basic = Σ (salary × weight). Only passed for a pure MONTHLY amount split (the run guards
+	 * pay-type flips and hourly/daily to Stage 2); omitted → basic prorates by `× periodShare`.
+	 */
+	basicSegments?: { salary: Money; rateType: RateType; weight: Money }[]
 }
 
 export interface ProratedStatutory {
@@ -135,7 +150,8 @@ export function computeEmployeeResult(
 	cfg: EmployeeComputeConfig
 ): EmployeeComputeResult {
 	const earnings = computeEarnings(comp, attendance, adjustments, cfg.rates, {
-		periodShare: cfg.periodShare
+		periodShare: cfg.periodShare,
+		basicSegments: cfg.basicSegments
 	})
 	// Requirement: taxability from EarningType config.
 	for (const c of earnings.components) {
@@ -151,7 +167,13 @@ export function computeEmployeeResult(
 	// exactly once — here. Previously each was rounded, scaled by 0.5, then rounded again.
 	// #120: brackets are defined on a MONTHLY salary credit, so hourly staff are projected to a
 	// monthly equivalent first — passing a raw hourly rate would floor them in the lowest bracket.
-	const m = computeStatutoryDeductions(monthlyBasisOf(comp), cfg.statutoryRates)
+	// #170 (decision B): statutory follows the day-1-of-month comp when supplied, so a mid-month
+	// raise only lifts contributions the following month. `statutoryComp === comp` (the no-change
+	// case, and the default) keeps today's numbers exactly.
+	const m = computeStatutoryDeductions(
+		monthlyBasisOf(cfg.statutoryComp ?? comp),
+		cfg.statutoryRates
+	)
 	// #173: an exempted contribution is not enrolled — zero BOTH its EE and ER share before
 	// proration, leaving the other contributions and their proration untouched. Withholding tax
 	// is never exempted (income-based exemption is already the ₱0 bracket), so it is always

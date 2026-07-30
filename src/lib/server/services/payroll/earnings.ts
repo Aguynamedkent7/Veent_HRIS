@@ -16,7 +16,7 @@ import type {
 	PayComponent
 } from './types'
 import { basicPayBasis, hourlyRateOf } from './types'
-import { D, q2n, sumQ, type Money } from './money'
+import { D, q2n, sum, sumQ, type Money } from './money'
 import { resolveRates, type PayRates } from './rates'
 
 /** Quantize a component's exact amount once — this is the line's last step. */
@@ -29,7 +29,7 @@ export function computeEarnings(
 	att: AttendanceInput,
 	adjustments: PayAdjustments = {},
 	ratesOverride?: Partial<PayRates>,
-	opts: { periodShare?: number } = {}
+	opts: { periodShare?: number; basicSegments?: { salary: Money; weight: Money }[] } = {}
 ): EarningsResult {
 	const rates = resolveRates(ratesOverride)
 	const hr = hourlyRateOf(comp)
@@ -43,9 +43,16 @@ export function computeEarnings(
 	// not shrink with hours. Everyone else is paid for hours actually worked. The hourly rate is
 	// still needed either way — OT, night diff, holiday premiums and the tardiness valuation all
 	// derive from it.
+	//
+	// #170: a mid-period salary change day-splits the fixed basic into weighted segments (Σ weight
+	// == periodShare, working-day weighted). Carried exact and quantized once at the line below, so
+	// a single full-period segment (weight == periodShare) reproduces the un-split figure byte for
+	// byte. Absent → today's `× periodShare`.
 	const basicPay =
 		basicPayBasis(comp) === 'FIXED'
-			? D(comp.basicMonthlySalary).times(periodShare)
+			? opts.basicSegments
+				? sum(opts.basicSegments.map((s) => s.salary.times(s.weight)))
+				: D(comp.basicMonthlySalary).times(periodShare)
 			: at(att.regularHours)
 
 	const candidates: PayComponent[] = [
