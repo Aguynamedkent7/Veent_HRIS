@@ -234,10 +234,11 @@ export function computeSSS(
 	monthlySalary: MoneyLike,
 	brackets: SSSBracket[] = SSS_TABLE_2024
 ): { ee: Money; er: Money } {
+	const table = brackets.length ? brackets : SSS_TABLE_2024
 	const salary = D(monthlySalary)
 	const bracket =
-		brackets.find((b) => salary.gte(b.salaryFloor) && salary.lte(b.salaryCeiling)) ??
-		brackets[brackets.length - 1]
+		table.find((b) => salary.gte(b.salaryFloor) && salary.lte(b.salaryCeiling)) ??
+		table[table.length - 1]
 
 	// Fixed peso amounts straight off the table — exact by nature, no arithmetic involved.
 	return { ee: D(bracket.eeShare), er: D(bracket.erShare) }
@@ -298,10 +299,10 @@ export function computeWithholdingTax(
 	taxableMonthlyIncome: MoneyLike,
 	brackets: TaxBracket[] = BIR_MONTHLY_TAX_TABLE
 ): Money {
+	const table = brackets.length ? brackets : BIR_MONTHLY_TAX_TABLE
 	const income = D(taxableMonthlyIncome)
 	const bracket =
-		brackets.find((b) => income.gte(b.floor) && income.lte(b.ceiling)) ??
-		brackets[brackets.length - 1]
+		table.find((b) => income.gte(b.floor) && income.lte(b.ceiling)) ?? table[table.length - 1]
 
 	// Bracket rates (0.15/0.20/0.25/0.30/0.35) are exact as decimals; as binary floats they are not.
 	return D(bracket.baseTax).plus(income.minus(bracket.excessOver).times(D(bracket.rate)))

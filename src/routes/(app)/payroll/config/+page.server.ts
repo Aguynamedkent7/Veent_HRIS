@@ -87,7 +87,11 @@ export const actions: Actions = {
 							secondCutoff: existing.secondCutoff
 						}
 					: undefined,
-				newValue: { payFrequency, cutoffDay1, cutoffDay2 }
+				newValue: {
+					payFrequency,
+					firstCutoff: cutoffDay1 ?? null,
+					secondCutoff: cutoffDay2 ?? null
+				}
 			}
 		)
 

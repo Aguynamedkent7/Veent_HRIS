@@ -189,6 +189,31 @@ describe('statutoryRatesFromConfig resolver', () => {
 		expect(s(computeStatutoryDeductions(500000, resolved).sssEe)).toBe('800')
 		expect(s(computeStatutoryDeductions(30000, resolved).philhealthEe)).toBe('600') // 30000×0.04/2
 	})
+
+	it('an empty sssBrackets array falls back to the hardcoded table (never a []-crash)', () => {
+		const resolved = statutoryRatesFromConfig({ sssBrackets: [] })
+		expect(resolved.sssBrackets).toBeUndefined()
+		// Falls through to SSS_TABLE_2024 rather than dereferencing an out-of-range bracket.
+		expect(s(computeStatutoryDeductions(3000, resolved).sssEe)).toBe('180')
+	})
+
+	it('a bracket row with a non-numeric field falls back to the hardcoded table (no NaN)', () => {
+		const resolved = statutoryRatesFromConfig({
+			sssBrackets: [
+				{
+					salaryFloor: 0,
+					salaryCeiling: 'oops',
+					totalContribution: 570,
+					eeShare: 180,
+					erShare: 390
+				}
+			] as unknown as Prisma.JsonValue
+		})
+		expect(resolved.sssBrackets).toBeUndefined()
+		const r = computeStatutoryDeductions(3000, resolved)
+		expect(s(r.sssEe)).toBe('180')
+		expect(Number.isNaN(r.sssEe.toNumber())).toBe(false)
+	})
 })
 
 describe('validation rejects incoherent tables (trust boundary)', () => {

@@ -3,6 +3,7 @@ import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import type { StatutoryContribution, StatutoryAllocation } from '@prisma/client'
 import { computePagibig, computePhilhealth, computeSSS } from './ph-statutory'
+import { getStatutoryRateConfig, statutoryRatesFromConfig } from './statutory-rates'
 import { monthlyBasisOf } from './types'
 import { q2 } from './money'
 import type { AuditContext } from '../types'
@@ -68,23 +69,29 @@ export function statutoryAllocations(
  */
 export async function listStatutoryRows(employeeId: string, organizationId: string) {
 	const employee = await requireEmployee(employeeId, organizationId)
-	const configs = await db.employeeStatutoryConfig.findMany({
-		where: { employeeId },
-		select: {
-			contribution: true,
-			exempt: true,
-			employerSharePaidExternally: true,
-			allocation: true
-		}
-	})
+	const [configs, rateConfig] = await Promise.all([
+		db.employeeStatutoryConfig.findMany({
+			where: { employeeId },
+			select: {
+				contribution: true,
+				exempt: true,
+				employerSharePaidExternally: true,
+				allocation: true
+			}
+		}),
+		getStatutoryRateConfig(organizationId)
+	])
+	// Preview against the org's own rates (#220), not the hardcoded defaults — falls back to them
+	// field-by-field when a config field is absent.
+	const rates = statutoryRatesFromConfig(rateConfig)
 	const monthly = monthlyBasisOf({
 		basicMonthlySalary: employee.basicMonthlySalary,
 		rateType: employee.rateType
 	})
 	const monthlyEe: Record<StatutoryContribution, number> = {
-		SSS: q2(computeSSS(monthly).ee).toNumber(),
-		PHILHEALTH: q2(computePhilhealth(monthly).ee).toNumber(),
-		PAGIBIG: q2(computePagibig(monthly).ee).toNumber()
+		SSS: q2(computeSSS(monthly, rates.sssBrackets).ee).toNumber(),
+		PHILHEALTH: q2(computePhilhealth(monthly, rates.philhealth).ee).toNumber(),
+		PAGIBIG: q2(computePagibig(monthly, rates.pagibig).ee).toNumber()
 	}
 	return CONTRIBUTIONS.map((contribution) => {
 		const config = configs.find((c) => c.contribution === contribution)

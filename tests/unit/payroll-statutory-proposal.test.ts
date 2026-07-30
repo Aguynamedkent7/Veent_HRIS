@@ -11,17 +11,22 @@ import type { StatutoryRateInput } from '$lib/server/services/payroll/statutory-
  *  - confirm/reject of a non-pending proposal is rejected.
  */
 
-const { dbMock } = vi.hoisted(() => ({
-	dbMock: {
+const { dbMock } = vi.hoisted(() => {
+	const db: Record<string, unknown> = {
 		statutoryRateProposal: {
 			create: vi.fn(),
 			findFirst: vi.fn(),
 			findMany: vi.fn(),
-			update: vi.fn()
+			update: vi.fn(),
+			updateMany: vi.fn(),
+			findUniqueOrThrow: vi.fn()
 		},
 		statutoryRateConfig: { findUnique: vi.fn(), upsert: vi.fn() }
 	}
-}))
+	// confirmProposal runs inside a $transaction; the callback gets the same mock as the tx client.
+	db.$transaction = vi.fn(async (cb: (tx: unknown) => unknown) => cb(db))
+	return { dbMock: db }
+})
 
 vi.mock('$lib/server/db', () => ({ db: dbMock }))
 vi.mock('$lib/server/audit', () => ({ writeAuditLog: vi.fn().mockResolvedValue(undefined) }))
@@ -76,20 +81,28 @@ describe('propose', () => {
 })
 
 describe('confirm', () => {
-	it('applies the payload to the live config and marks the proposal APPLIED', async () => {
-		dbMock.statutoryRateProposal.findFirst.mockResolvedValue({
+	it('atomically claims the proposal, applies the payload, and marks it APPLIED', async () => {
+		// The status-guarded claim succeeds (one row moved PENDING → APPLIED).
+		dbMock.statutoryRateProposal.updateMany.mockResolvedValue({ count: 1 })
+		dbMock.statutoryRateProposal.findUniqueOrThrow.mockResolvedValue({
 			id: 'prop1',
 			organizationId: 'org1',
 			proposedById: 'hr1',
-			status: 'PENDING',
+			status: 'APPLIED',
 			payload: PAYLOAD
 		})
 		dbMock.statutoryRateConfig.findUnique.mockResolvedValue(null)
 		dbMock.statutoryRateConfig.upsert.mockResolvedValue({ id: 'cfg1' })
-		dbMock.statutoryRateProposal.update.mockResolvedValue({ id: 'prop1', status: 'APPLIED' })
 
 		await confirmProposal('org1', 'prop1', CEO)
 
+		// Claim is status-guarded (only a PENDING row is moved) and stamps the confirmer.
+		expect(dbMock.statutoryRateProposal.updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { id: 'prop1', organizationId: 'org1', status: 'PENDING' },
+				data: expect.objectContaining({ status: 'APPLIED', decidedById: 'ceo1' })
+			})
+		)
 		// Payload reached the live config.
 		expect(dbMock.statutoryRateConfig.upsert).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -97,17 +110,10 @@ describe('confirm', () => {
 				create: expect.objectContaining({ philhealthRate: 0.04, pagibigCap: 100 })
 			})
 		)
-		// Proposal closed with the confirmer + timestamp.
-		expect(dbMock.statutoryRateProposal.update).toHaveBeenCalledWith(
-			expect.objectContaining({
-				where: { id: 'prop1' },
-				data: expect.objectContaining({ status: 'APPLIED', decidedById: 'ceo1' })
-			})
-		)
 	})
 
-	it('rejects a proposal that is not pending / not found', async () => {
-		dbMock.statutoryRateProposal.findFirst.mockResolvedValue(null)
+	it('rejects a proposal that is not pending / not found (nothing claimed → no apply)', async () => {
+		dbMock.statutoryRateProposal.updateMany.mockResolvedValue({ count: 0 })
 		await expect(confirmProposal('org1', 'missing', CEO)).rejects.toThrow()
 		expect(dbMock.statutoryRateConfig.upsert).not.toHaveBeenCalled()
 	})

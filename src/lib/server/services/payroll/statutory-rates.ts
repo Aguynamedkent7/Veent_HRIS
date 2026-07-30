@@ -15,6 +15,7 @@ import { Prisma } from '@prisma/client'
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import type { AuditContext } from '../types'
+import { D, q2n, ZERO } from './money'
 import type { SSSBracket, TaxBracket, StatutoryRates } from './ph-statutory'
 
 // ─── Resolver (fallback pattern) ──────────────────────────────────────────────
@@ -37,9 +38,14 @@ export interface StatutoryRateConfigRow {
 const numOrUndef = (v: Prisma.Decimal | null | undefined): number | undefined =>
 	v == null ? undefined : Number(v)
 
+// A revived open-ended ceiling is Infinity by design; every other field must be a finite number, or
+// the row is garbage. An empty array (or any garbage row) falls back to the hardcoded table via
+// `undefined` — never a `[]` that would make `computeSSS`/`computeWithholdingTax` dereference `[-1]`.
+const isFiniteCeiling = (n: number) => n === Infinity || Number.isFinite(n)
+
 function reviveSssBrackets(json: Prisma.JsonValue | null | undefined): SSSBracket[] | undefined {
-	if (!Array.isArray(json)) return undefined
-	return json.map((raw) => {
+	if (!Array.isArray(json) || json.length === 0) return undefined
+	const rows = json.map((raw) => {
 		const b = raw as Record<string, unknown>
 		return {
 			salaryFloor: Number(b.salaryFloor),
@@ -49,11 +55,20 @@ function reviveSssBrackets(json: Prisma.JsonValue | null | undefined): SSSBracke
 			erShare: Number(b.erShare)
 		}
 	})
+	const ok = rows.every(
+		(b) =>
+			Number.isFinite(b.salaryFloor) &&
+			isFiniteCeiling(b.salaryCeiling) &&
+			Number.isFinite(b.totalContribution) &&
+			Number.isFinite(b.eeShare) &&
+			Number.isFinite(b.erShare)
+	)
+	return ok ? rows : undefined
 }
 
 function reviveTaxBrackets(json: Prisma.JsonValue | null | undefined): TaxBracket[] | undefined {
-	if (!Array.isArray(json)) return undefined
-	return json.map((raw) => {
+	if (!Array.isArray(json) || json.length === 0) return undefined
+	const rows = json.map((raw) => {
 		const b = raw as Record<string, unknown>
 		return {
 			floor: Number(b.floor),
@@ -63,6 +78,15 @@ function reviveTaxBrackets(json: Prisma.JsonValue | null | undefined): TaxBracke
 			excessOver: Number(b.excessOver)
 		}
 	})
+	const ok = rows.every(
+		(b) =>
+			Number.isFinite(b.floor) &&
+			isFiniteCeiling(b.ceiling) &&
+			Number.isFinite(b.baseTax) &&
+			Number.isFinite(b.rate) &&
+			Number.isFinite(b.excessOver)
+	)
+	return ok ? rows : undefined
 }
 
 /**
@@ -100,8 +124,9 @@ const sssBracketSchema = z.object({
 	salaryFloor: z.number().finite().nonnegative(),
 	salaryCeiling: z.number().finite().positive().nullable(),
 	totalContribution: z.number().finite().nonnegative(),
-	eeShare: z.number().finite().nonnegative(),
-	erShare: z.number().finite().nonnegative()
+	// Peso contributions per month; a value in the millions is a fat-fingered salary in the wrong box.
+	eeShare: z.number().finite().nonnegative().max(1_000_000),
+	erShare: z.number().finite().nonnegative().max(1_000_000)
 })
 
 export const sssBracketsSchema = z
@@ -197,13 +222,15 @@ export function deriveTaxBrackets<T extends { floor: number; rate: number }>(
 	rows: T[]
 ): (T & { baseTax: number; excessOver: number })[] {
 	const sorted = [...rows].sort((a, b) => a.floor - b.floor)
-	let baseTax = 0
+	// Accumulate in exact decimal so an HR-edited table with non-round floors/rates can't drift a
+	// centavo into the persisted baseTax; quantize once per bracket at the money boundary.
+	let baseTax = ZERO
 	return sorted.map((row, i) => {
 		if (i > 0) {
 			const prev = sorted[i - 1]
-			baseTax += (row.floor - prev.floor) * prev.rate
+			baseTax = baseTax.plus(D(row.floor).minus(prev.floor).times(prev.rate))
 		}
-		return { ...row, baseTax, excessOver: row.floor }
+		return { ...row, baseTax: q2n(baseTax), excessOver: row.floor }
 	})
 }
 
@@ -233,7 +260,8 @@ export async function updateStatutoryRateConfig(
 	organizationId: string,
 	data: StatutoryRateInput,
 	ctx: AuditContext,
-	meta?: { proposalId?: string; proposedById?: string }
+	meta?: { proposalId?: string; proposedById?: string },
+	client: Prisma.TransactionClient = db
 ) {
 	const persist = {
 		philhealthRate: data.philhealthRate,
@@ -245,39 +273,43 @@ export async function updateStatutoryRateConfig(
 		taxBrackets: jsonOrNull(data.taxBrackets)
 	}
 
-	const existing = await db.statutoryRateConfig.findUnique({ where: { organizationId } })
-	const row = await db.statutoryRateConfig.upsert({
+	const existing = await client.statutoryRateConfig.findUnique({ where: { organizationId } })
+	const row = await client.statutoryRateConfig.upsert({
 		where: { organizationId },
 		create: { organizationId, ...persist },
 		update: persist
 	})
 
-	await writeAuditLog(ctx, {
-		action: 'UPDATE',
-		entityType: 'StatutoryRateConfig',
-		entityId: row.id,
-		oldValue: existing
-			? {
-					philhealthRate: numOrUndef(existing.philhealthRate) ?? null,
-					philhealthFloor: numOrUndef(existing.philhealthFloor) ?? null,
-					philhealthCeiling: numOrUndef(existing.philhealthCeiling) ?? null,
-					pagibigRate: numOrUndef(existing.pagibigRate) ?? null,
-					pagibigCap: numOrUndef(existing.pagibigCap) ?? null,
-					sssBrackets: existing.sssBrackets ?? null,
-					taxBrackets: existing.taxBrackets ?? null
-				}
-			: undefined,
-		newValue: {
-			philhealthRate: data.philhealthRate,
-			philhealthFloor: data.philhealthFloor,
-			philhealthCeiling: data.philhealthCeiling,
-			pagibigRate: data.pagibigRate,
-			pagibigCap: data.pagibigCap,
-			sssBrackets: data.sssBrackets,
-			taxBrackets: data.taxBrackets,
-			...(meta ?? {})
-		}
-	})
+	await writeAuditLog(
+		ctx,
+		{
+			action: 'UPDATE',
+			entityType: 'StatutoryRateConfig',
+			entityId: row.id,
+			oldValue: existing
+				? {
+						philhealthRate: numOrUndef(existing.philhealthRate) ?? null,
+						philhealthFloor: numOrUndef(existing.philhealthFloor) ?? null,
+						philhealthCeiling: numOrUndef(existing.philhealthCeiling) ?? null,
+						pagibigRate: numOrUndef(existing.pagibigRate) ?? null,
+						pagibigCap: numOrUndef(existing.pagibigCap) ?? null,
+						sssBrackets: existing.sssBrackets ?? null,
+						taxBrackets: existing.taxBrackets ?? null
+					}
+				: undefined,
+			newValue: {
+				philhealthRate: data.philhealthRate,
+				philhealthFloor: data.philhealthFloor,
+				philhealthCeiling: data.philhealthCeiling,
+				pagibigRate: data.pagibigRate,
+				pagibigCap: data.pagibigCap,
+				sssBrackets: data.sssBrackets,
+				taxBrackets: data.taxBrackets,
+				...(meta ?? {})
+			}
+		},
+		client
+	)
 
 	return row
 }
@@ -322,22 +354,31 @@ export async function confirmProposal(
 	proposalId: string,
 	ctx: AuditContext
 ) {
-	const proposal = await db.statutoryRateProposal.findFirst({
-		where: { id: proposalId, organizationId, status: 'PENDING' }
-	})
-	if (!proposal) error(404, 'Pending proposal not found')
+	return db.$transaction(async (tx) => {
+		// Atomically CLAIM the proposal: a status-guarded updateMany moves PENDING → APPLIED and only
+		// succeeds once, so two confirmers racing the same proposal can't both apply it. If nothing was
+		// claimed, someone else already decided it (or it never existed).
+		const claim = await tx.statutoryRateProposal.updateMany({
+			where: { id: proposalId, organizationId, status: 'PENDING' },
+			data: { status: 'APPLIED', decidedById: ctx.actorId, decidedAt: new Date() }
+		})
+		if (claim.count === 0) error(404, 'Pending proposal not found')
 
-	// Re-validate at apply time — the payload was validated on propose, but the apply is the real
-	// trust boundary (a stale/tampered row must not reach the tax math).
-	const data = statutoryRateInputSchema.parse(proposal.payload)
-	await updateStatutoryRateConfig(organizationId, data, ctx, {
-		proposalId: proposal.id,
-		proposedById: proposal.proposedById
-	})
+		const proposal = await tx.statutoryRateProposal.findUniqueOrThrow({ where: { id: proposalId } })
 
-	return db.statutoryRateProposal.update({
-		where: { id: proposalId },
-		data: { status: 'APPLIED', decidedById: ctx.actorId, decidedAt: new Date() }
+		// Re-validate at apply time — the payload was validated on propose, but the apply is the real
+		// trust boundary (a stale/tampered row must not reach the tax math). A parse failure throws and
+		// the transaction rolls the claim back to PENDING.
+		const data = statutoryRateInputSchema.parse(proposal.payload)
+		await updateStatutoryRateConfig(
+			organizationId,
+			data,
+			ctx,
+			{ proposalId: proposal.id, proposedById: proposal.proposedById },
+			tx
+		)
+
+		return proposal
 	})
 }
 

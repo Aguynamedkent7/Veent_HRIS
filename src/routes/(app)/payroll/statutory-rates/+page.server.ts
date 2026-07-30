@@ -85,12 +85,19 @@ export const load: PageServerLoad = async ({ locals }) => {
 			select: { id: true, email: true }
 		})
 		const emailById = new Map(proposers.map((p) => [p.id, p.email]))
-		pending = rows.map((r) => ({
-			id: r.id,
-			proposer: emailById.get(r.proposedById) ?? r.proposedById,
-			createdAt: r.createdAt,
-			changes: summarizeChanges(statutoryRateInputSchema.parse(r.payload), live)
-		}))
+		pending = rows.map((r) => {
+			// A malformed payload must not abort the whole load — the confirmer still needs to see the
+			// row so they can reject it. Fall back to a warning line for just that row.
+			const parsed = statutoryRateInputSchema.safeParse(r.payload)
+			return {
+				id: r.id,
+				proposer: emailById.get(r.proposedById) ?? r.proposedById,
+				createdAt: r.createdAt,
+				changes: parsed.success
+					? summarizeChanges(parsed.data, live)
+					: ['⚠ Unreadable proposal payload — reject and re-submit.']
+			}
+		})
 	}
 
 	return { live, canManage, canPropose, pending }

@@ -115,10 +115,20 @@
 
 	// Card selector: one service open at a time. All fields submit via the root hidden inputs, so an
 	// inactive (unmounted) panel never drops data — visibility and submission are fully decoupled.
+	// Card descriptions reflect the live values loaded for this org (#220), not hardcoded rates.
+	const k = (v: number) => (v % 1000 === 0 ? `₱${v / 1000}k` : `₱${v.toLocaleString('en-PH')}`)
 	const tabs = [
 		{ key: 'sss', name: 'SSS', desc: 'Social Security — bracketed peso amounts' },
-		{ key: 'philhealth', name: 'PhilHealth', desc: '5% of salary, ₱10k–₱100k band' },
-		{ key: 'pagibig', name: 'Pag-IBIG', desc: '2% of salary, capped ₱200' },
+		{
+			key: 'philhealth',
+			name: 'PhilHealth',
+			desc: `${toPct(live.philhealthRate)}% of salary, ${k(live.philhealthFloor)}–${k(live.philhealthCeiling)} band`
+		},
+		{
+			key: 'pagibig',
+			name: 'Pag-IBIG',
+			desc: `${toPct(live.pagibigRate)}% of salary, capped ₱${live.pagibigCap.toLocaleString('en-PH')}`
+		},
 		{ key: 'bir', name: 'BIR Withholding Tax', desc: 'Marginal income-tax brackets' }
 	] as const
 	let active = $state<(typeof tabs)[number]['key']>('sss')
@@ -507,7 +517,7 @@
 							>+ Add row</button
 						>
 						<p class="text-xs text-muted-foreground">
-							The first row's ceiling is the ₱-exempt threshold (rate 0). Rows sorted ascending,
+							The first row's ceiling is the tax-exempt threshold (rate 0). Rows sorted ascending,
 							non-overlapping, start at 0, last ceiling blank; rate is a percentage (20 = 20%).
 						</p>
 					</div>

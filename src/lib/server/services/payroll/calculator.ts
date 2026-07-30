@@ -125,7 +125,7 @@ function resolveEE(
 	if (kind !== 'FIRST_HALF' && kind !== 'SECOND_HALF') return monthlyEE.times(share)
 	if (mode === 'FIRST') return kind === 'FIRST_HALF' ? monthlyEE : ZERO
 	if (mode === 'SECOND') return kind === 'SECOND_HALF' ? monthlyEE : ZERO
-	return monthlyEE.times(0.5) // EVEN — today's behaviour (share is 0.5 on any cutoff)
+	return monthlyEE.times(share) // EVEN — the normal half split (share is 0.5 on a cutoff)
 }
 
 export function computeEmployeeResult(
@@ -268,9 +268,7 @@ export async function previewPayroll(
 		payRateRule,
 		statutoryRateConfig,
 		recurringDeductions,
-		statutoryExempt,
-		statutoryExternal,
-		statutoryAllocation
+		statutoryConfigs
 	] = await Promise.all([
 		db.payrollConfig.findUnique({ where: { organizationId } }),
 		db.earningType.findMany({ where: { organizationId }, select: { code: true, taxable: true } }),
@@ -284,21 +282,16 @@ export async function previewPayroll(
 			where: { employeeId, isActive: true, deductionType: { isActive: true } },
 			include: { deductionType: { select: { code: true, label: true } } }
 		}),
-		// Statutory exemptions apply in the preview too (#173) — same as a real run.
+		// Per-employee statutory config (#173): exemptions, externally-paid ER share, and EE-share
+		// allocation all live on one row — fetch once and partition in memory below (same as a real run).
 		db.employeeStatutoryConfig.findMany({
-			where: { employeeId, exempt: true },
-			select: { contribution: true }
-		}),
-		// "Employer share paid externally" applies in the preview too (#173) — same as a real run.
-		db.employeeStatutoryConfig.findMany({
-			where: { employeeId, employerSharePaidExternally: true },
-			select: { contribution: true }
-		}),
-		// EE-share allocation (#173, Feature E) — wired identically to the run. Moot here (a preview
-		// has no cutoff, so `periodKind` stays undefined), but kept symmetric with computePayroll.
-		db.employeeStatutoryConfig.findMany({
-			where: { employeeId, allocation: { not: 'EVEN' } },
-			select: { contribution: true, allocation: true }
+			where: { employeeId },
+			select: {
+				contribution: true,
+				exempt: true,
+				employerSharePaidExternally: true,
+				allocation: true
+			}
 		})
 	])
 
@@ -308,9 +301,13 @@ export async function previewPayroll(
 		rates: ratesFromRule(payRateRule),
 		statutoryRates: statutoryRatesFromConfig(statutoryRateConfig),
 		periodShare,
-		statutoryExemptions: statutoryExemptions(statutoryExempt),
-		employerShareExternal: employerShareExternals(statutoryExternal),
-		statutoryAllocations: statutoryAllocations(statutoryAllocation),
+		statutoryExemptions: statutoryExemptions(statutoryConfigs.filter((c) => c.exempt)),
+		employerShareExternal: employerShareExternals(
+			statutoryConfigs.filter((c) => c.employerSharePaidExternally)
+		),
+		statutoryAllocations: statutoryAllocations(
+			statutoryConfigs.filter((c) => c.allocation !== 'EVEN')
+		),
 		recurringDeductions: recurringDeductionComponents(recurringDeductions, periodShare),
 		loans: loansAll.map((l) => ({
 			refId: l.id,
