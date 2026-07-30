@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcrypt'
+import { DEFAULT_STATUTORY_RATE_CONFIG } from '../src/lib/server/services/payroll/ph-statutory'
 
 // Shared seed logic. `seedProd` is the minimal production baseline (orgs, org-level
 // config, and the three admin accounts). `seedE2E` layers the demo roster the
@@ -553,15 +554,21 @@ export async function seedProd(db: PrismaClient) {
 			payFrequency: 'SEMI_MONTHLY',
 			firstCutoff: 15,
 			secondCutoff: 30,
-			philhealthRate: 0.05,
-			philhealthFloor: 10000,
-			philhealthCeiling: 100000,
-			pagibigRate: 0.02,
-			pagibigCeiling: 5000,
 			sssTable: {},
 			birTaxTable: {}
 		}
 	})
+
+	// #220: StatutoryRateConfig is the authoritative source of statutory figures. Seed each org's
+	// row to the current PH legal values (the same constants the engine falls back to when a row is
+	// missing), so a fresh install starts on today's numbers and HR/CEO edit from a real baseline.
+	for (const orgId of ['org_seed', 'org_jojo', 'org_sweetleaf']) {
+		await db.statutoryRateConfig.upsert({
+			where: { organizationId: orgId },
+			update: {},
+			create: { organizationId: orgId, ...DEFAULT_STATUTORY_RATE_CONFIG }
+		})
+	}
 
 	// --- Payroll expansion config: earning/deduction codes + premium rate rule (DOLE defaults) ---
 	const earningTypes = [

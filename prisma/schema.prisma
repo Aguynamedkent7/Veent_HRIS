@@ -312,6 +312,8 @@ model Organization {
   earningTypes             EarningType[]
   deductionTypes           DeductionType[]
   payRateRule              PayRateRule?
+  statutoryRateConfig      StatutoryRateConfig?
+  statutoryRateProposals   StatutoryRateProposal[]
   workSchedules            WorkSchedule[]
   salaryGrades             SalaryGrade[]
   announcements            Announcement[]
@@ -470,6 +472,7 @@ model Employee {
   cashAdvances          CashAdvance[]
   recurringEarnings     EmployeeEarning[]
   recurringDeductions   EmployeeDeduction[]
+  statutoryConfig       EmployeeStatutoryConfig[]
   workSchedule          WorkSchedule?          @relation(fields: [workScheduleId], references: [id])
   attendanceDays        AttendanceDay[]
   separations           SeparationRecord[]
@@ -513,6 +516,42 @@ model EmergencyContact {
 
   @@index([employeeId])
   @@map("emergency_contacts")
+}
+
+// Per-employee statutory enrollment (#173). One row per contribution the employee has been
+// individually exempted from — absence of a row means enrolled (the default). Designed to grow:
+// later features add employer-share/period-allocation columns alongside `exempt`.
+enum StatutoryContribution {
+  SSS
+  PHILHEALTH
+  PAGIBIG
+}
+
+// #173 (Feature E): which semi-monthly cutoff the EMPLOYEE share is deducted on. EVEN splits it
+// half-and-half (today's proration); FIRST takes the full monthly EE on the 1–15 cutoff, SECOND on
+// the 16–EOM cutoff. Employer share and tax keep their normal proration regardless.
+enum StatutoryAllocation {
+  EVEN
+  FIRST
+  SECOND
+}
+
+model EmployeeStatutoryConfig {
+  id           String                @id @default(cuid())
+  employeeId   String
+  contribution StatutoryContribution
+  exempt       Boolean               @default(false)
+  // #173 (Feature C): employer share is remitted elsewhere (e.g. primary employer / dual
+  // employment) — zero the ER share only; the EE share is still deducted. Independent of `exempt`.
+  employerSharePaidExternally Boolean @default(false)
+  // #173 (Feature E): per-employee EE-share cutoff choice. Default EVEN = today's behaviour.
+  allocation   StatutoryAllocation   @default(EVEN)
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  employee     Employee              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, contribution])
+  @@map("employee_statutory_config")
 }
 
 // ─── Timesheet ────────────────────────────────────────────────────────────────
@@ -948,11 +987,9 @@ model PayrollConfig {
   firstCutoff       Int?
   secondCutoff      Int?
   sssTable          Json
-  philhealthRate    Decimal      @db.Decimal(5, 4)
-  philhealthFloor   Decimal      @db.Decimal(10, 2)
-  philhealthCeiling Decimal      @db.Decimal(10, 2)
-  pagibigRate       Decimal      @db.Decimal(5, 4)
-  pagibigCeiling    Decimal      @db.Decimal(10, 2)
+  // #220: statutory RATE fields removed — StatutoryRateConfig is now the authoritative,
+  // seeded source of PhilHealth/Pag-IBIG/SSS/BIR figures. This config keeps only frequency,
+  // cutoffs, and the (legacy, unused-by-engine) sssTable/birTaxTable placeholders.
   birTaxTable       Json
   updatedAt         DateTime     @updatedAt
 
@@ -1572,6 +1609,59 @@ model PayRateRule {
   organization Organization @relation(fields: [organizationId], references: [id])
 
   @@map("pay_rate_rules")
+}
+
+// Org-scoped overrides for the PH statutory rate tables (#220). Mirrors PayRateRule:
+// one optional row per org, overwrite-in-place (NOT effective-dated — approved runs are
+// frozen so history lives in the stored payslips). Every column is nullable; a null field
+// falls back to the hardcoded default in ph-statutory.ts, so an org with no row (or a row
+// with all-null fields) computes byte-for-byte today's statutory numbers. The bracket
+// tables are JSON arrays of the SSSBracket[] / TaxBracket[] shapes (open-ended last
+// ceiling stored as null, revived to Infinity on read), validated on save.
+model StatutoryRateConfig {
+  id             String @id @default(cuid())
+  organizationId String @unique
+
+  philhealthRate    Decimal? @db.Decimal(6, 4)
+  philhealthFloor   Decimal? @db.Decimal(12, 2)
+  philhealthCeiling Decimal? @db.Decimal(12, 2)
+
+  pagibigRate Decimal? @db.Decimal(6, 4)
+  pagibigCap  Decimal? @db.Decimal(12, 2)
+
+  sssBrackets Json?
+  taxBrackets Json?
+
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@map("statutory_rate_configs")
+}
+
+// #220: HR-propose / CEO-confirm approval trail for statutory rate changes. HR_ADMIN's save
+// creates a PENDING proposal (live StatutoryRateConfig unchanged); a CEO/SUPER_ADMIN confirm
+// applies the payload to the live config (status APPLIED) or rejects it (REJECTED).
+enum StatutoryRateProposalStatus {
+  PENDING
+  APPLIED
+  REJECTED
+}
+
+model StatutoryRateProposal {
+  id             String                      @id @default(cuid())
+  organizationId String
+  proposedById   String
+  payload        Json // the full proposed rate set (same shape StatutoryRateConfig stores)
+  status         StatutoryRateProposalStatus @default(PENDING)
+  decidedById    String?
+  decidedAt      DateTime?
+  createdAt      DateTime                    @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, status])
+  @@map("statutory_rate_proposals")
 }
 
 model Loan {

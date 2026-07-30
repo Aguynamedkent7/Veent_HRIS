@@ -41,9 +41,17 @@ const EXPECTED: Record<string, Role[]> = {
 	VERIFY_REQUESTS: ['VERIFIER'],
 	APPROVE_SIGNOFF: ['APPROVER'],
 	APPROVE_FINANCE: ['CEO', 'SUPER_ADMIN'],
+	MANAGE_STATUTORY_RATES: ['CEO', 'SUPER_ADMIN'],
+	PROPOSE_STATUTORY_RATES: ['HR_ADMIN'],
 	MANAGE_PAYROLL: ['MANAGER', 'SUPER_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER', 'CEO'],
 	VIEW_PAYROLL_REPORTS: ['MANAGER', 'SUPER_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER', 'FINANCE', 'CEO']
 }
+
+// PROPOSE_STATUTORY_RATES is the MAKER leg of the statutory-rate maker-checker (#220): only
+// HR_ADMIN proposes. CEO/SUPER_ADMIN hold the superior MANAGE_STATUTORY_RATES (edit directly +
+// confirm) and MANAGER holds neither, so this capability is a deliberate exception to the "CEO and
+// MANAGER hold every HR_ADMIN capability" invariants below.
+const HR_ADMIN_SUPERSET_EXCEPTIONS: (keyof typeof CAPABILITIES)[] = ['PROPOSE_STATUTORY_RATES']
 
 describe('capability table', () => {
 	it('covers every capability with no extras', () => {
@@ -84,6 +92,7 @@ describe('capability table', () => {
 	describe('CEO', () => {
 		it('holds every capability HR_ADMIN holds', () => {
 			for (const capability of Object.keys(CAPABILITIES) as (keyof typeof CAPABILITIES)[]) {
+				if (HR_ADMIN_SUPERSET_EXCEPTIONS.includes(capability)) continue
 				if (can('HR_ADMIN', capability)) {
 					expect(can('CEO', capability)).toBe(true)
 				}
@@ -136,6 +145,7 @@ describe('hasMinRole', () => {
 describe('MANAGER promotion', () => {
 	it('holds every capability HR_ADMIN holds', () => {
 		for (const capability of Object.keys(CAPABILITIES) as (keyof typeof CAPABILITIES)[]) {
+			if (HR_ADMIN_SUPERSET_EXCEPTIONS.includes(capability)) continue
 			if (can('HR_ADMIN', capability)) {
 				expect(can('MANAGER', capability)).toBe(true)
 			}
@@ -183,5 +193,28 @@ describe('multi-role (canAny / hasAnyMinRole)', () => {
 		expect(canAny(['VERIFIER'], 'MANAGE_HR')).toBe(false)
 		expect(hasAnyMinRole(['VERIFIER'], 'MANAGER')).toBe(false)
 		expect(canAny(['VERIFIER'], 'VERIFY_REQUESTS')).toBe(true)
+	})
+})
+
+// #220 statutory-rate access contract, spelled out: CEO/Super-Admin edit + confirm; HR proposes;
+// everyone else is locked out of both legs.
+describe('statutory rate capabilities (#220)', () => {
+	it('lets only CEO and Super Admin edit/confirm directly', () => {
+		for (const role of ALL_ROLES) {
+			expect(can(role, 'MANAGE_STATUTORY_RATES')).toBe(role === 'CEO' || role === 'SUPER_ADMIN')
+		}
+	})
+
+	it('lets only HR Admin propose', () => {
+		for (const role of ALL_ROLES) {
+			expect(can(role, 'PROPOSE_STATUTORY_RATES')).toBe(role === 'HR_ADMIN')
+		}
+	})
+
+	it('denies both legs to a plain manager and an employee', () => {
+		for (const role of ['MANAGER', 'EMPLOYEE'] as Role[]) {
+			expect(can(role, 'MANAGE_STATUTORY_RATES')).toBe(false)
+			expect(can(role, 'PROPOSE_STATUTORY_RATES')).toBe(false)
+		}
 	})
 })

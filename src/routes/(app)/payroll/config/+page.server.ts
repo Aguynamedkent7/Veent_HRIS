@@ -14,7 +14,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 		db.payRateRule.findUnique({ where: { organizationId: locals.user!.organizationId } })
 	])
 
-	// Resolved multipliers (DOLE defaults when the org has no PayRateRule row yet).
+	// Resolved multipliers (DOLE defaults when the org has no PayRateRule row yet). Statutory rate
+	// tables moved to /payroll/statutory-rates (#220), gated on the statutory-rate capabilities.
 	return { config, rates: ratesFromRule(payRateRule) }
 }
 
@@ -30,8 +31,6 @@ const ratesSchema = z.object({
 
 const configSchema = z.object({
 	payFrequency: z.enum(['SEMI_MONTHLY', 'MONTHLY']),
-	philhealthRate: z.coerce.number().min(0).max(100),
-	pagibigRate: z.coerce.number().min(0).max(100),
 	cutoffDay1: z.coerce.number().int().min(1).max(28).optional(),
 	cutoffDay2: z.coerce.number().int().min(1).max(31).optional()
 })
@@ -47,11 +46,7 @@ export const actions: Actions = {
 			return fail(400, { error: 'Invalid configuration values', details: parsed.error.flatten() })
 		}
 
-		const { payFrequency, philhealthRate, pagibigRate, cutoffDay1, cutoffDay2 } = parsed.data
-
-		// Convert percentage inputs to decimal rates
-		const philhealthRateDecimal = philhealthRate / 100
-		const pagibigRateDecimal = pagibigRate / 100
+		const { payFrequency, cutoffDay1, cutoffDay2 } = parsed.data
 
 		const existing = await db.payrollConfig.findUnique({
 			where: { organizationId: user.organizationId }
@@ -62,11 +57,6 @@ export const actions: Actions = {
 			create: {
 				organizationId: user.organizationId,
 				payFrequency,
-				philhealthRate: philhealthRateDecimal,
-				philhealthFloor: 10000,
-				philhealthCeiling: 100000,
-				pagibigRate: pagibigRateDecimal,
-				pagibigCeiling: 5000,
 				firstCutoff: cutoffDay1 ?? null,
 				secondCutoff: cutoffDay2 ?? null,
 				sssTable: {},
@@ -74,8 +64,6 @@ export const actions: Actions = {
 			},
 			update: {
 				payFrequency,
-				philhealthRate: philhealthRateDecimal,
-				pagibigRate: pagibigRateDecimal,
 				firstCutoff: cutoffDay1 ?? null,
 				secondCutoff: cutoffDay2 ?? null
 			}
@@ -95,14 +83,14 @@ export const actions: Actions = {
 				oldValue: existing
 					? {
 							payFrequency: existing.payFrequency,
-							philhealthRate: Number(existing.philhealthRate),
-							pagibigRate: Number(existing.pagibigRate)
+							firstCutoff: existing.firstCutoff,
+							secondCutoff: existing.secondCutoff
 						}
 					: undefined,
 				newValue: {
 					payFrequency,
-					philhealthRate: philhealthRateDecimal,
-					pagibigRate: pagibigRateDecimal
+					firstCutoff: cutoffDay1 ?? null,
+					secondCutoff: cutoffDay2 ?? null
 				}
 			}
 		)

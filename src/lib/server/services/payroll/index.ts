@@ -5,13 +5,19 @@ import { Prisma, type Role } from '@prisma/client'
 import { canAny } from '$lib/rbac'
 import { computeEmployeeResult } from './calculator'
 import { ratesFromRule } from './rates'
+import { statutoryRatesFromConfig } from './statutory-rates'
 import { type AmortItem } from './deductions'
 import { recurringDeductionComponents } from './employee-deductions'
+import {
+	statutoryExemptions,
+	employerShareExternals,
+	statutoryAllocations
+} from './employee-statutory'
 import { D, q2n, sum, ZERO } from './money'
 import { emptyAttendance, round2, type EmployeeComp } from './types'
 import { buildAttendanceInput } from '../attendance/input'
 import { computeWorkingDays } from '$lib/utils/dates'
-import { isValidStandardPeriod, periodShareOf } from '$lib/utils/pay-periods'
+import { describePeriod, isValidStandardPeriod, periodShareOf } from '$lib/utils/pay-periods'
 import { ensurePayrollApprovalChain } from '../approvals'
 import type { AuditContext } from '../types'
 
@@ -90,8 +96,12 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		advancesAll,
 		enrollmentsAll,
 		payRateRule,
+		statutoryRateConfig,
 		recurringAll,
 		recurringDeductionsAll,
+		statutoryExemptAll,
+		statutoryExternalAll,
+		statutoryAllocationAll,
 		holidays
 	] = await Promise.all([
 		db.employee.findMany({ where: { user: { organizationId }, employmentStatus: 'ACTIVE' } }),
@@ -109,6 +119,8 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			select: { id: true, employeeId: true, plan: { select: { name: true, employeeCost: true } } }
 		}),
 		db.payRateRule.findUnique({ where: { organizationId } }),
+		// Org statutory rate overrides (#220) — one optional org row, resolved to effective rates below.
+		db.statutoryRateConfig.findUnique({ where: { organizationId } }),
 		// Recurring allowance/incentive assignments feed the adjustment buckets (#65).
 		db.employeeEarning.findMany({
 			where: { employee: { organizationId }, isActive: true }
@@ -117,6 +129,24 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		db.employeeDeduction.findMany({
 			where: { employee: { organizationId }, isActive: true, deductionType: { isActive: true } },
 			include: { deductionType: { select: { code: true, label: true } } }
+		}),
+		// Per-employee statutory exemptions (#173) — only the exempt rows matter; enrolled is
+		// the default (no row). Grouped by employee like the other per-employee data below.
+		db.employeeStatutoryConfig.findMany({
+			where: { employee: { organizationId }, exempt: true },
+			select: { employeeId: true, contribution: true }
+		}),
+		// Per-employee "employer share paid externally" (#173, Feature C) — zeroes the ER share only.
+		// Mirrors the exempt fetch/grouping; independent flag on the same config row.
+		db.employeeStatutoryConfig.findMany({
+			where: { employee: { organizationId }, employerSharePaidExternally: true },
+			select: { employeeId: true, contribution: true }
+		}),
+		// Per-employee EE-share cutoff allocation (#173, Feature E) — only non-EVEN rows matter; EVEN
+		// is the default (half split). Grouped by employee like the other per-employee data below.
+		db.employeeStatutoryConfig.findMany({
+			where: { employee: { organizationId }, allocation: { not: 'EVEN' } },
+			select: { employeeId: true, contribution: true, allocation: true }
 		}),
 		// Public holidays inside the period — the scheduled-hours fallback below must not
 		// bill them as ordinary working days.
@@ -133,6 +163,9 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	const taxableByCode = new Map(earningTypes.map((e) => [e.code, e.taxable]))
 	// Premium-pay multipliers from PayRateRule (falls back to DOLE defaults when unset).
 	const rates = ratesFromRule(payRateRule)
+	// #220: statutory tables from StatutoryRateConfig (falls back to the hardcoded PH defaults when
+	// unset). Resolved once and threaded into the shared engine identically to the preview.
+	const statutoryRates = statutoryRatesFromConfig(statutoryRateConfig)
 	// Requirement #5 (review) + #129: prorate monthly statutory to the run's ACTUAL period
 	// shape — WHOLE_MONTH carries the full month (1), either half carries 0.5. This replaces
 	// reading the org-wide payFrequency, which mis-prorated an org that mixes half-month and
@@ -140,11 +173,18 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	// frequency-based share so their numbers don't shift.
 	const frequencyShare = (config?.payFrequency ?? 'SEMI_MONTHLY') === 'MONTHLY' ? 1 : 0.5
 	const periodShare = periodShareOf(run.periodStart, run.periodEnd, frequencyShare)
+	// #173 (Feature E): the run's cutoff kind, computed once, drives EE-share allocation in the
+	// engine. WHOLE_MONTH/legacy periods (null) make allocation moot — the engine falls back to
+	// `× periodShare` there.
+	const periodKind = describePeriod(run.periodStart, run.periodEnd).kind
 	const loansByEmp = groupByEmployee(loansAll)
 	const advancesByEmp = groupByEmployee(advancesAll)
 	const enrollmentsByEmp = groupByEmployee(enrollmentsAll)
 	const recurringByEmp = groupByEmployee(recurringAll)
 	const recurringDeductionsByEmp = groupByEmployee(recurringDeductionsAll)
+	const statutoryExemptByEmp = groupByEmployee(statutoryExemptAll)
+	const statutoryExternalByEmp = groupByEmployee(statutoryExternalAll)
+	const statutoryAllocationByEmp = groupByEmployee(statutoryAllocationAll)
 	// Holidays were previously passed as [], so a period containing public holidays
 	// counted them as ordinary working days. That inflates `scheduledHours` below, and
 	// since BASIC = regularHours * hourlyRate, it inflated basic pay for every employee
@@ -232,9 +272,14 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		const result = computeEmployeeResult(comp, attendance, adjustments, {
 			taxableByCode,
 			rates,
+			statutoryRates,
 			periodShare,
 			// Holiday-aware schedule for the period — values absences for fixed-basic staff (#121).
 			expectedHours: scheduledHours,
+			statutoryExemptions: statutoryExemptions(statutoryExemptByEmp.get(emp.id) ?? []),
+			employerShareExternal: employerShareExternals(statutoryExternalByEmp.get(emp.id) ?? []),
+			statutoryAllocations: statutoryAllocations(statutoryAllocationByEmp.get(emp.id) ?? []),
+			periodKind,
 			loans,
 			cashAdvances,
 			recurringDeductions: [

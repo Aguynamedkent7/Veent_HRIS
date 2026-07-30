@@ -80,6 +80,13 @@ export const CAPABILITIES = {
 	 * requests (leave, OT) but never signs off money.
 	 */
 	APPROVE_FINANCE: ['CEO', 'SUPER_ADMIN'],
+	/**
+	 * Statutory rate tables (#220). Edit directly + confirm/reject proposals — the finance
+	 * authority the CEO and Super Admin already hold over payroll money.
+	 */
+	MANAGE_STATUTORY_RATES: ['CEO', 'SUPER_ADMIN'],
+	/** Submit a statutory rate change for CEO approval — HR maintains the tables, CEO signs off. */
+	PROPOSE_STATUTORY_RATES: ['HR_ADMIN'],
 	/** Runs payroll: periods, runs, loans, cash advances, calculator. */
 	MANAGE_PAYROLL: ['MANAGER', 'SUPER_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER', 'CEO'],
 	/** Reads payroll reports — adds read-only Finance. */

@@ -7,14 +7,16 @@
 
 ## ⚠️ Environment note (read first)
 
-- **DB is on port 5433** (container `veent-db-5433`, user/pass/db all `veent`). `.env`'s
-  `DATABASE_URL` points to `localhost:5433`. `./start.sh` brings up the container, syncs the schema,
-  seeds if empty, and runs `pnpm dev` + `pnpm bot`. The dev container binds to localhost only and
-  must never be reused outside local development.
-- **The DB container uses `--network host`** (Postgres binds the host directly via `-c port=5433`),
+- **DB is on port 5434** (container `veent-db-5434`, user/pass `veent`, db `veent_hris`). `.env.dev`'s
+  `DATABASE_URL` points to `localhost:5434/veent_hris`, and `./start.sh` loads it explicitly
+  (`dotenv -e .env.dev`) since prisma no longer auto-loads a plain `.env`. `start.sh` brings up the
+  container, syncs the schema, seeds if empty, and runs `pnpm dev` + `pnpm bot`. The dev container
+  binds to localhost only and must never be reused outside local development. (Port moved off 5433 to
+  avoid a clash with the `veent_wifiportal-db-1` container, which publishes host :5433.)
+- **The DB container uses `--network host`** (Postgres binds the host directly via `-c port=5434`),
   _not_ `-p` bridge publishing — so it never depends on the `docker0` bridge (which is kept
   down/IP-less here to stop it shadowing `wlan0`). If you have an old bridge-mode container, recreate
-  it once: `docker rm -f veent-db-5433 && ./start.sh`. `start.sh` probes host→DB reachability and
+  it once: `docker rm -f veent-db-5434 && ./start.sh`. `start.sh` probes host→DB reachability and
   fails loudly (instead of hanging on Prisma P1001) if the path is broken.
 - **After pulling, run `pnpm db:push`** (or `./start.sh`) to apply schema changes, then restart
   `pnpm dev` — the running server caches the Prisma client and will 500 on new columns until
