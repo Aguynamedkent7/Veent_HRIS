@@ -4,6 +4,7 @@ import { error } from '@sveltejs/kit'
 import { Prisma, type Role } from '@prisma/client'
 import { canAny } from '$lib/rbac'
 import { computeEmployeeResult } from './calculator'
+import { compensationForPeriod, type CompSegment } from './compensation'
 import { ratesFromRule } from './rates'
 import { statutoryRatesFromConfig } from './statutory-rates'
 import { type AmortItem } from './deductions'
@@ -14,8 +15,8 @@ import {
 	statutoryAllocations
 } from './employee-statutory'
 import { D, q2n, sum, ZERO } from './money'
-import { emptyAttendance, round2, type EmployeeComp } from './types'
-import { buildAttendanceInput } from '../attendance/input'
+import { emptyAttendance, round2, type ComputeSegment, type EmployeeComp } from './types'
+import { buildAttendanceInput, buildSegmentAttendance } from '../attendance/input'
 import { computeWorkingDays } from '$lib/utils/dates'
 import { describePeriod, isValidStandardPeriod, periodShareOf } from '$lib/utils/pay-periods'
 import { ensurePayrollApprovalChain } from '../approvals'
@@ -29,6 +30,42 @@ function groupByEmployee<T extends { employeeId: string }>(rows: T[]): Map<strin
 		map.set(row.employeeId, list)
 	}
 	return map
+}
+
+/**
+ * #170/#171 Stage 2: turn the resolver's day-split segments into engine `ComputeSegment`s — one per
+ * segment, carrying its own comp basis, working-day weight, attendance slice and holiday-aware
+ * `expectedHours`. Attendance comes from `buildSegmentAttendance` (real AttendanceDay rows bucketed
+ * by day); when there are none, the whole-period `regularHours` is split by working-day share, so the
+ * per-segment hours sum back to the period total. Comp uses the engine's default working-day/hours
+ * factors (same as the period-end comp), so `hourlyRateOf` matches across the split.
+ */
+export async function buildComputeSegments(
+	employeeId: string,
+	segments: CompSegment[],
+	regularHours: number,
+	workingDays: number,
+	holidayDates: Date[],
+	dailyHours: number
+): Promise<ComputeSegment[]> {
+	const perSegAtt = await buildSegmentAttendance(
+		employeeId,
+		segments.map((s) => ({ start: s.start, end: s.end }))
+	)
+	return segments.map((seg, i) => {
+		const wd = computeWorkingDays(seg.start, seg.end, holidayDates)
+		// ponytail: guard the degenerate zero-working-day period (share/expected collapse to 0 —
+		// no work, no basic — rather than NaN).
+		const share = workingDays > 0 ? wd / workingDays : 0
+		return {
+			comp: { basicMonthlySalary: seg.salary, rateType: seg.rateType },
+			weight: seg.weight,
+			attendance: perSegAtt
+				? perSegAtt[i]
+				: { ...emptyAttendance(), regularHours: regularHours * share },
+			expectedHours: wd * dailyHours
+		}
+	})
 }
 
 export async function createPayrollRun(
@@ -102,6 +139,7 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		statutoryExemptAll,
 		statutoryExternalAll,
 		statutoryAllocationAll,
+		compensationAll,
 		holidays
 	] = await Promise.all([
 		db.employee.findMany({ where: { user: { organizationId }, employmentStatus: 'ACTIVE' } }),
@@ -148,6 +186,15 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			where: { employee: { organizationId }, allocation: { not: 'EVEN' } },
 			select: { employeeId: true, contribution: true, allocation: true }
 		}),
+		// #170: effective-dated compensation history for every employee, so the resolver can
+		// day-split a run that straddles a salary change and lag statutory to decision B. Ordered
+		// ascending so a same-day change's later `changedAt` wins the tiebreak; grouped by employee
+		// below like the other per-employee data. An employee with no rows falls back to their
+		// current cache, reproducing the pre-#170 numbers exactly.
+		db.employeeCompensation.findMany({
+			where: { employee: { organizationId } },
+			orderBy: [{ effectiveDate: 'asc' }, { changedAt: 'asc' }]
+		}),
 		// Public holidays inside the period — the scheduled-hours fallback below must not
 		// bill them as ordinary working days.
 		db.publicHoliday.findMany({
@@ -185,6 +232,7 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	const statutoryExemptByEmp = groupByEmployee(statutoryExemptAll)
 	const statutoryExternalByEmp = groupByEmployee(statutoryExternalAll)
 	const statutoryAllocationByEmp = groupByEmployee(statutoryAllocationAll)
+	const compensationByEmp = groupByEmployee(compensationAll)
 	// Holidays were previously passed as [], so a period containing public holidays
 	// counted them as ordinary working days. That inflates `scheduledHours` below, and
 	// since BASIC = regularHours * hourlyRate, it inflated basic pay for every employee
@@ -207,10 +255,43 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	let totalNet = ZERO
 
 	for (const emp of employees) {
+		// #170: resolve the period's compensation from the effective-dated history (holiday-aware
+		// working-day weighting). With no history it returns a single full-period segment whose
+		// weight is exactly `periodShare` and `statutoryBasis === periodEnd`, so everything below
+		// reduces to the pre-#170 behaviour.
+		const periodComp = compensationForPeriod(
+			compensationByEmp.get(emp.id) ?? [],
+			run.periodStart,
+			run.periodEnd,
+			periodShare,
+			{ basicMonthlySalary: emp.basicMonthlySalary, rateType: emp.rateType },
+			(s, e) =>
+				computeWorkingDays(
+					s,
+					e,
+					holidays.map((h) => h.date)
+				)
+		)
+		// Period-end comp drives basic/premium/tardiness rates — NOT the current cache, which for a
+		// past run with a later change would be too high.
 		const comp: EmployeeComp = {
-			basicMonthlySalary: emp.basicMonthlySalary,
-			rateType: emp.rateType
+			basicMonthlySalary: periodComp.periodEnd.salary,
+			rateType: periodComp.periodEnd.rateType
 		}
+		// Decision B: statutory always follows the day-1-of-month comp (every rate type).
+		const statutoryComp: EmployeeComp = {
+			basicMonthlySalary: periodComp.statutoryBasis.salary,
+			rateType: periodComp.statutoryBasis.rateType
+		}
+		// A pure MONTHLY salary-amount split takes the Stage 1 `basicSegments` path (unchanged); any
+		// other in-period split (hourly/daily rate change, or a MONTHLY↔hourly flip) is Stage 2 and
+		// goes through `segments` (built below). A single segment (no change) takes neither → parity.
+		const segments = periodComp.segments
+		const monthlyOnlySplit = segments.length > 1 && segments.every((s) => s.rateType === 'MONTHLY')
+		const stage2Split = segments.length > 1 && !monthlyOnlySplit
+		const basicSegments = monthlyOnlySplit ? segments : undefined
+		// A flip is a Stage 2 split whose segments don't all share one rateType — flag for manual review.
+		const isFlip = stage2Split && new Set(segments.map((s) => s.rateType)).size > 1
 
 		const timesheets = await db.timesheet.findMany({
 			where: {
@@ -268,12 +349,29 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			refId: e.id
 		}))
 
+		// #170/#171 Stage 2: for a mixed-basis split, resolve per-segment attendance + expected hours.
+		const computeSegments = stage2Split
+			? await buildComputeSegments(
+					emp.id,
+					segments,
+					regularHours,
+					workingDays,
+					holidays.map((h) => h.date),
+					comp.dailyWorkingHours ?? 8
+				)
+			: undefined
+
 		// Shared engine — identical to the Payroll Calculator for the same inputs.
 		const result = computeEmployeeResult(comp, attendance, adjustments, {
 			taxableByCode,
 			rates,
 			statutoryRates,
 			periodShare,
+			// #170: decision-B statutory basis (always), the MONTHLY day-split (Stage 1), and the
+			// mixed-basis segment split (Stage 2) — mutually exclusive; a single segment passes none.
+			statutoryComp,
+			basicSegments,
+			segments: computeSegments,
 			// Holiday-aware schedule for the period — values absences for fixed-basic staff (#121).
 			expectedHours: scheduledHours,
 			statutoryExemptions: statutoryExemptions(statutoryExemptByEmp.get(emp.id) ?? []),
@@ -297,14 +395,18 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			attendance.specialHolidayHours +
 			attendance.specialHolidayOtHours
 		// #103: a floored net is never silent — it means deductions outran gross and someone has to
-		// look at it. Zero paid hours stays a separate, more specific reason.
-		const isFlagged = paidHours === 0 || result.uncollected > 0
+		// look at it. Zero paid hours stays a separate, more specific reason. #171: a mid-period
+		// pay-type flip mixes bases we value approximately (premiums stay at the period-end rate), so
+		// surface it for manual review — but never block the run.
+		const isFlagged = paidHours === 0 || result.uncollected > 0 || isFlip
 		const flagReason =
 			paidHours === 0
 				? 'No hours recorded for period'
 				: result.uncollected > 0
 					? `Deductions exceed pay — ₱${result.uncollected.toFixed(2)} uncollected`
-					: null
+					: isFlip
+						? 'Mid-period pay-type change — verify manually'
+						: null
 
 		perEmployee.push({
 			entry: {

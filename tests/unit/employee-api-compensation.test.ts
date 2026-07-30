@@ -1,0 +1,127 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import type { Role } from '@prisma/client'
+import { MASKED_SALARY } from '$lib/utils/format'
+
+/**
+ * #170 blocker fix — the v1 PATCH must NOT write pay straight onto the Employee row (the payroll
+ * run reads period-end salary from EmployeeCompensation history, so a bare write is silently lost).
+ * A salary/rateType change must delegate to `recordCompensationChange`, which inserts a history
+ * snapshot; resending the current salary is a no-op, not a 400. DB + audit + bcrypt are mocked so
+ * the whole PATCH → service → history-write chain runs for real against the mocked client.
+ */
+
+const { dbMock, txMock } = vi.hoisted(() => {
+	const txMock = {
+		employeeCompensation: { create: vi.fn(), findFirst: vi.fn() },
+		employee: { update: vi.fn() }
+	}
+	return {
+		txMock,
+		dbMock: {
+			// getEmployee (raw + masked) reads this; updateEmployee would write here (must NOT for pay).
+			employee: { findFirst: vi.fn(), update: vi.fn() },
+			// getEmployee's heal-on-read (#170 Stage 1.5) queries the comp history.
+			employeeCompensation: { findMany: vi.fn() },
+			payrollRun: { findFirst: vi.fn() },
+			$transaction: vi.fn(async (fn: (tx: typeof txMock) => unknown) => fn(txMock))
+		}
+	}
+})
+
+vi.mock('$lib/server/db', () => ({ db: dbMock }))
+vi.mock('$lib/server/audit', () => ({ writeAuditLog: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('bcrypt', () => ({ default: { hash: vi.fn().mockResolvedValue('hashed') } }))
+
+const { PATCH } = await import('../../src/routes/api/v1/employees/[id]/+server')
+
+const HR_USER = { id: 'u1', organizationId: 'org1', role: 'HR_ADMIN' as Role }
+
+const EMP = {
+	id: 'emp1',
+	basicMonthlySalary: 30000,
+	rateType: 'MONTHLY' as const,
+	employmentType: 'REGULAR' as const,
+	startDate: new Date('2024-01-01'),
+	// present so maskEmployee has something to mask on the re-fetch
+	sssNumber: '34-1234567-8',
+	bankAccountNumber: '000123456789'
+}
+
+const patch = (body: unknown, user = HR_USER) =>
+	PATCH({
+		locals: { user },
+		params: { id: 'emp1' },
+		request: { json: async () => body }
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	} as any)
+
+beforeEach(() => {
+	vi.clearAllMocks()
+	dbMock.employee.findFirst.mockResolvedValue(EMP)
+	dbMock.employee.update.mockResolvedValue(EMP) // updateEmployee still handles non-pay fields
+	dbMock.employeeCompensation.findMany.mockResolvedValue([]) // no history → getEmployee heal is a no-op
+	dbMock.payrollRun.findFirst.mockResolvedValue(null) // no frozen run in the way
+	dbMock.$transaction.mockImplementation(async (fn: (tx: typeof txMock) => unknown) => fn(txMock))
+	// the re-derived current cache after the change
+	txMock.employeeCompensation.findFirst.mockResolvedValue({
+		basicMonthlySalary: 50000,
+		rateType: 'MONTHLY'
+	})
+})
+
+/** No Employee-row write (the updateEmployee path) may carry pay fields — those go to history. */
+function assertNoBarePayWrite() {
+	for (const [arg] of dbMock.employee.update.mock.calls) {
+		expect(arg.data).not.toHaveProperty('basicMonthlySalary')
+		expect(arg.data).not.toHaveProperty('rateType')
+	}
+}
+
+describe('PATCH /api/v1/employees/[id] — pay routes through the history writer (#170)', () => {
+	it('a salary change writes an EmployeeCompensation snapshot, not a bare Employee pay write', async () => {
+		const res = await patch({ basicMonthlySalary: 50000 })
+
+		expect(res.status).toBe(200)
+		// Delegated: the history row is inserted (effective today, rateType carried forward)…
+		expect(txMock.employeeCompensation.create).toHaveBeenCalledTimes(1)
+		expect(txMock.employeeCompensation.create).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				employeeId: 'emp1',
+				basicMonthlySalary: 50000,
+				rateType: 'MONTHLY'
+			})
+		})
+		// …and pay never leaks into the generic Employee-row update.
+		assertNoBarePayWrite()
+
+		// Response is the masked re-fetch (salary sentinel), never the raw pre-change record.
+		const payload = await res.json()
+		expect(payload.data.basicMonthlySalary).toBe(MASKED_SALARY)
+	})
+
+	it('resending the current salary is a no-op, not a 400', async () => {
+		const res = await patch({ basicMonthlySalary: 30000 }) // === current
+
+		expect(res.status).toBe(200)
+		// No snapshot written when nothing actually changed…
+		expect(txMock.employeeCompensation.create).not.toHaveBeenCalled()
+		// …and the response is a normal (masked) record, carrying no error.
+		const payload = await res.json()
+		expect(payload.error).toBeUndefined()
+		expect(payload.data.basicMonthlySalary).toBe(MASKED_SALARY)
+	})
+
+	it('a rateType-only change also delegates to the history writer', async () => {
+		const res = await patch({ rateType: 'DAILY' })
+
+		expect(res.status).toBe(200)
+		expect(txMock.employeeCompensation.create).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				employeeId: 'emp1',
+				basicMonthlySalary: 30000,
+				rateType: 'DAILY'
+			})
+		})
+		assertNoBarePayWrite()
+	})
+})

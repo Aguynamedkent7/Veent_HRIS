@@ -1,9 +1,13 @@
 import { json } from '@sveltejs/kit'
 import { can, requireCapability, requireMinRole } from '$lib/server/rbac'
-import { getEmployee, updateEmployee, offboardEmployee } from '$lib/server/services/employees'
+import {
+	getEmployee,
+	updateEmployee,
+	offboardEmployee,
+	recordCompensationChange
+} from '$lib/server/services/employees'
 import { apiError } from '$lib/server/api-error'
 import { db } from '$lib/server/db'
-import { maskEmployee } from '$lib/utils/format'
 import { govIdSchema } from '$lib/utils/gov-ids'
 import { z } from 'zod'
 import type { RequestHandler } from './$types'
@@ -86,17 +90,47 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 		return apiError(400, 'Invalid request body')
 	}
 
+	// #170: pay must never be written straight onto the Employee row — the payroll run reads
+	// period-end salary from EmployeeCompensation history, so a bare Employee write would be silently
+	// ignored. Split pay out: non-pay fields still go through updateEmployee; a salary/rateType change
+	// is recorded as an effective-today snapshot via recordCompensationChange (which also updates the
+	// cache). Resending the same salary is a no-op, not an error.
+	const { basicMonthlySalary, rateType, ...rest } = parsed.data
+	const ctx = {
+		organizationId: locals.user.organizationId,
+		actorId: locals.user.id,
+		actorRole: locals.user.role
+	}
+
 	try {
-		const updated = await updateEmployee(params.id, locals.user.organizationId, parsed.data, {
-			organizationId: locals.user.organizationId,
-			actorId: locals.user.id,
-			actorRole: locals.user.role
+		if (Object.keys(rest).length > 0) {
+			await updateEmployee(params.id, locals.user.organizationId, rest, ctx)
+		}
+		if (basicMonthlySalary !== undefined || rateType !== undefined) {
+			try {
+				await recordCompensationChange(
+					params.id,
+					locals.user.organizationId,
+					{ basicMonthlySalary, rateType, effectiveDate: new Date() },
+					ctx
+				)
+			} catch (e: unknown) {
+				// A PATCH resending the current salary/pay type is a no-op, not a failure — swallow only
+				// the writer's "no change" 400 and let the (unchanged) record be returned. Any other 400
+				// (e.g. an invalid rate/type pairing) still propagates to the client below.
+				const err = e as { status?: number; body?: { message?: string } }
+				if (!(err?.status === 400 && err.body?.message?.includes('No change'))) throw e
+			}
+		}
+		// #111: re-fetch masked so the response reflects the new salary, never the pre-change record.
+		const employee = await getEmployee(params.id, locals.user.organizationId, {
+			viewerRole: locals.user.role
 		})
-		// #111: never ship the raw record back — the PATCH response is a client-facing path too.
-		return json({ data: maskEmployee(updated) })
+		return json({ data: employee })
 	} catch (e: unknown) {
-		const err = e as { status?: number }
+		const err = e as { status?: number; body?: { message?: string } }
 		if (err?.status === 404) return apiError(404, 'Employee not found')
+		if (err?.status === 400) return apiError(400, err.body?.message ?? 'Bad request')
 		throw e
 	}
 }

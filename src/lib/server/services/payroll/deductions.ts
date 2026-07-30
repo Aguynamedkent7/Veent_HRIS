@@ -161,6 +161,14 @@ export function computeDeductions(params: {
 	undertimeMinutes: number
 	/** Unworked scheduled hours (fixed-basic employees only); 0 for hourly staff. */
 	absenceHours?: MoneyLike
+	/**
+	 * #170 Stage 2: pre-valued Σ-over-segments amounts that OVERRIDE the minutes×rate / hours×rate
+	 * computation when provided (a mixed-basis mid-period change values each segment at its own rate,
+	 * so the caller supplies the exact Decimal sum). Still quantized once here. Omitted → the
+	 * single-basis `lateMinutes`/`undertimeMinutes`/`absenceHours` path (byte-identical to before).
+	 */
+	tardinessAmount?: MoneyLike
+	absenceAmount?: MoneyLike
 	statutory: StatutoryEe
 	loans?: AmortItem[]
 	cashAdvances?: AmortItem[]
@@ -190,13 +198,19 @@ export function computeDeductions(params: {
 		{
 			code: 'TARDINESS',
 			label: 'Tardiness/undertime',
-			amount: q2n(computeTardiness(hourlyRate, lateMinutes, undertimeMinutes)),
+			amount:
+				params.tardinessAmount !== undefined
+					? q2n(params.tardinessAmount)
+					: q2n(computeTardiness(hourlyRate, lateMinutes, undertimeMinutes)),
 			taxable: false
 		},
 		{
 			code: 'ABSENCE',
 			label: 'Absences',
-			amount: q2n(computeAbsence(hourlyRate, params.absenceHours ?? 0)),
+			amount:
+				params.absenceAmount !== undefined
+					? q2n(params.absenceAmount)
+					: q2n(computeAbsence(hourlyRate, params.absenceHours ?? 0)),
 			taxable: false
 		}
 	].filter((c) => c.amount !== 0)

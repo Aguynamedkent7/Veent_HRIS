@@ -8,6 +8,10 @@ import { ensureLeaveBalances } from './leave'
 import { sendDiscordInviteEmail } from '$lib/server/notifications'
 import { notify } from './notifications'
 import { maskEmployee, SENSITIVE_FIELDS } from '$lib/utils/format'
+import { utcMidnight } from '$lib/utils/pay-periods'
+import { isRateBasisAllowed, RATE_BASIS_MISMATCH } from '$lib/utils/rate-basis'
+import { currentCompensation } from './payroll/compensation'
+import { D } from './payroll/money'
 import type { AuditContext } from './types'
 import type { EmploymentType, EmploymentStatus, RateType, Gender, Role } from '@prisma/client'
 
@@ -61,8 +65,9 @@ interface UpdateEmployeeInput {
 	employmentStatus?: EmploymentStatus
 	endDate?: Date
 	companyEmail?: string | null
-	basicMonthlySalary?: number
-	rateType?: RateType
+	// #170: pay is NOT editable here — salary/rateType route through `recordCompensationChange` so the
+	// effective-dated history stays authoritative for payroll. Kept out of the type so no caller can
+	// silently write pay onto the Employee row and have the run ignore it.
 	sssNumber?: string | null
 	philhealthNumber?: string | null
 	pagibigNumber?: string | null
@@ -203,6 +208,33 @@ export async function getEmployee(
 		}
 	})
 	if (!employee) error(404, 'Employee not found')
+
+	// ponytail: heal-on-read (#170 Stage 1.5). The effective-dated EmployeeCompensation history is the
+	// source of truth; Employee.{basicMonthlySalary,rateType} is a cache. Fetched with a SEPARATE query
+	// and kept strictly local — never added to the `include` or the returned object — so raw snapshot
+	// figures can't ride the return value past the #111 mask. When the cache is stale (e.g. the first
+	// read after a future-dated change's effective date has passed) we correct the column in place and
+	// use the healed RAW values below; otherwise nothing is written. No audit — the change was audited
+	// when the snapshot was inserted. Single indexed lookup (employeeId), so this is cheap.
+	const compHistory = await db.employeeCompensation.findMany({
+		where: { employeeId: id },
+		select: { basicMonthlySalary: true, rateType: true, effectiveDate: true, changedAt: true }
+	})
+	const healed = currentCompensation(compHistory, new Date(), {
+		basicMonthlySalary: employee.basicMonthlySalary,
+		rateType: employee.rateType
+	})
+	if (
+		!D(employee.basicMonthlySalary).equals(healed.salary) ||
+		employee.rateType !== healed.rateType
+	) {
+		await db.employee.update({
+			where: { id },
+			data: { basicMonthlySalary: healed.salary, rateType: healed.rateType }
+		})
+		employee.basicMonthlySalary = healed.salary
+		employee.rateType = healed.rateType
+	}
 
 	// Internal callers (updateEmployee, offboardEmployee) pass no opts and get the raw record —
 	// they need cleartext to diff and never hand it to a client. Every client-facing caller
@@ -445,6 +477,19 @@ async function allocateAndCreate(
 				// filing outright. Re-run on a retry because the whole transaction is replayed.
 				await ensureLeaveBalances(created.id, organizationId, input.startDate.getFullYear(), tx)
 
+				// #170/#171: seed the effective-dated compensation baseline (current comp, effective
+				// since the hire date) so the mid-period payroll resolver always has a floor.
+				await tx.employeeCompensation.create({
+					data: {
+						employeeId: created.id,
+						basicMonthlySalary: created.basicMonthlySalary,
+						rateType: created.rateType,
+						effectiveDate: input.startDate,
+						changedById: 'system',
+						note: 'baseline (hire)'
+					}
+				})
+
 				return created
 			})
 		} catch (e) {
@@ -518,6 +563,110 @@ export async function updateEmployee(
 	return updated
 }
 
+/**
+ * Record an effective-dated compensation change (#170). Inserts an EmployeeCompensation snapshot,
+ * then re-derives the current cache — `Employee.{basicMonthlySalary, rateType}` = the snapshot with
+ * the latest effectiveDate ≤ today — so a correction backdated below a later change never moves it.
+ * `basicMonthlySalary`/`rateType` are HISTORY_FIELDS, so the 201 timeline picks the change up.
+ *
+ * Future-dating is allowed: the cache is re-derived as the snapshot with the latest effectiveDate ≤
+ * today and healed on read (getEmployee), so a future row stays dormant until its date arrives — no
+ * scheduler needed. A change backdated into an APPROVED run returns a non-fatal notice — the frozen-run guard makes it
+ * structurally safe (approved numbers are never recomputed), but it must not be silent.
+ */
+export async function recordCompensationChange(
+	id: string,
+	organizationId: string,
+	input: { basicMonthlySalary?: number; rateType?: RateType; effectiveDate: Date; note?: string },
+	ctx: AuditContext
+): Promise<{ notice?: string }> {
+	const employee = await getEmployee(id, organizationId)
+
+	// "Unchanged" is judged against the comp in effect on the effective date, not the current cache —
+	// otherwise a valid backdated correction whose value happens to equal today's figure is rejected.
+	// An empty salary/rateType carries whatever was in effect then (the reveal-to-edit form prefills
+	// current, which for the default today-dated change is the same figure).
+	const currentSalary = Number(employee.basicMonthlySalary)
+	const history = await db.employeeCompensation.findMany({
+		where: { employeeId: id },
+		select: { basicMonthlySalary: true, rateType: true, effectiveDate: true, changedAt: true }
+	})
+	const atEff = currentCompensation(history, input.effectiveDate, {
+		basicMonthlySalary: currentSalary,
+		rateType: employee.rateType
+	})
+	const basicMonthlySalary = input.basicMonthlySalary ?? atEff.salary.toNumber()
+	const rateType = input.rateType ?? atEff.rateType
+	if (basicMonthlySalary === atEff.salary.toNumber() && rateType === atEff.rateType) {
+		error(400, 'No change to record — enter a new salary or pay type.')
+	}
+
+	// A wrong pairing is a 176× payroll error (rate-basis.ts), so enforce it server-side even though
+	// the form filters the dropdown — the same guard the create form applies.
+	if (!isRateBasisAllowed(rateType, employee.employmentType)) error(400, RATE_BASIS_MISMATCH)
+
+	// Lower bound only: effectiveDate ≥ hire date (UTC-midnight). Future-dating is allowed (#170 Stage
+	// 1.5) — no scheduler needed: the insert below leaves the current cache untouched (its re-derivation
+	// is "max effectiveDate ≤ today"), and getEmployee heals the cache the first time it is read on or
+	// after the effective date.
+	const eff = utcMidnight(input.effectiveDate)
+	const today = utcMidnight(new Date())
+	const hired = utcMidnight(employee.startDate)
+	if (eff.getTime() < hired.getTime()) error(400, 'Effective date cannot be before the hire date.')
+
+	// Non-fatal notice when backdating into a frozen (APPROVED) run — those are never recomputed.
+	const frozen = await db.payrollRun.findFirst({
+		where: {
+			organizationId,
+			status: 'APPROVED',
+			periodStart: { lte: eff },
+			periodEnd: { gte: eff }
+		},
+		select: { id: true }
+	})
+	const notice = frozen
+		? `Backdated to ${eff.toISOString().slice(0, 10)}. Approved runs are not recalculated; applies to current and future open periods.`
+		: undefined
+
+	await db.$transaction(async (tx: Prisma.TransactionClient) => {
+		await tx.employeeCompensation.create({
+			data: {
+				employeeId: id,
+				basicMonthlySalary,
+				rateType,
+				effectiveDate: eff,
+				note: input.note,
+				changedById: ctx.actorId
+			}
+		})
+		// Re-derive the cache: the snapshot with the max effectiveDate ≤ today (same-day tiebreak by
+		// changedAt). A correction backdated below a later existing change leaves the cache put.
+		const current = await tx.employeeCompensation.findFirst({
+			where: { employeeId: id, effectiveDate: { lte: today } },
+			orderBy: [{ effectiveDate: 'desc' }, { changedAt: 'desc' }]
+		})
+		if (current) {
+			await tx.employee.update({
+				where: { id },
+				data: { basicMonthlySalary: current.basicMonthlySalary, rateType: current.rateType }
+			})
+		}
+		await writeAuditLog(
+			ctx,
+			{
+				action: 'UPDATE',
+				entityType: 'Employee',
+				entityId: id,
+				oldValue: { basicMonthlySalary: atEff.salary.toNumber(), rateType: atEff.rateType },
+				newValue: { basicMonthlySalary, rateType, effectiveDate: eff }
+			},
+			tx
+		)
+	})
+
+	return { notice }
+}
+
 export async function offboardEmployee(
 	id: string,
 	organizationId: string,
@@ -566,6 +715,8 @@ export interface EmploymentHistoryEvent {
 	actorEmail: string | null
 	type: 'HIRED' | 'CHANGE'
 	changes: EmploymentHistoryChange[]
+	/** #170: when a compensation change takes effect (present only on comp-change events). */
+	effectiveDate?: string
 }
 
 // Surface an employee's employment history (FR-051) from the audit trail:
@@ -636,12 +787,16 @@ export async function getEmploymentHistory(
 			changes.push({ label: HISTORY_LABELS[field], from, to })
 		}
 		if (changes.length > 0) {
+			// #170: a comp change carries the effective date in newValue — surface it so the timeline
+			// can distinguish "recorded on" from "effective from" (a backdated raise differs).
+			const eff = newValue.effectiveDate
 			events.push({
 				id: log.id,
 				date: log.createdAt,
 				actorEmail: log.actor?.email ?? null,
 				type: 'CHANGE',
-				changes
+				changes,
+				...(eff ? { effectiveDate: String(eff) } : {})
 			})
 		}
 	}

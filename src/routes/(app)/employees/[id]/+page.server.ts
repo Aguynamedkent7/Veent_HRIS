@@ -6,7 +6,8 @@ import {
 	updateEmployee,
 	offboardEmployee,
 	revealEmployeeSensitive,
-	getEmploymentHistory
+	getEmploymentHistory,
+	recordCompensationChange
 } from '$lib/server/services/employees'
 import { listPositions } from '$lib/server/services/settings/org'
 import { getLeaveBalances } from '$lib/server/services/leave'
@@ -269,12 +270,9 @@ const updateSchema = z.object({
 		.trim()
 		.optional()
 		.transform((v) => (v ? v : null)),
-	// #111: salary renders masked (reveal-to-edit), so an empty field means "unchanged", not 0.
-	basicMonthlySalary: z.preprocess(
-		(v) => (v === '' ? undefined : v),
-		z.coerce.number().positive().optional()
-	),
-	rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
+	// #170: salary/rateType are NOT editable here — the quick-edit form must not write pay onto the
+	// Employee row (payroll now reads period-end salary from EmployeeCompensation history, so a bare
+	// write would be silently ignored). Pay changes go through the dated `?/changeCompensation` path.
 	// Empty string clears the link; a value sets it (unique per employee).
 	discordId: z
 		.string()
@@ -323,6 +321,28 @@ const updateSchema = z.object({
 	bankAccountNumber: govIdSchema('bankAccountNumber'),
 	gcashNumber: govIdSchema('gcashNumber')
 })
+
+// #170: an effective-dated salary / pay-type change. Salary is masked (reveal-to-edit), so an empty
+// field means "unchanged", not 0 — same preprocess as the update form. At least one of salary /
+// rateType must actually be supplied; the service enforces the date bounds and the rate/type pairing.
+const changeCompensationSchema = z
+	.object({
+		basicMonthlySalary: z.preprocess(
+			(v) => (v === '' ? undefined : v),
+			z.coerce.number().positive().optional()
+		),
+		rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
+		effectiveDate: z.coerce.date(),
+		note: z
+			.string()
+			.trim()
+			.max(500)
+			.optional()
+			.transform((v) => (v ? v : undefined))
+	})
+	.refine((d) => d.basicMonthlySalary !== undefined || d.rateType !== undefined, {
+		message: 'Enter a new salary or pay type.'
+	})
 
 const emergencyContactSchema = z.object({
 	name: z.string().trim().min(1),
@@ -405,6 +425,33 @@ export const actions: Actions = {
 		}
 
 		return { success: true }
+	},
+
+	// #170: record an effective-dated salary / pay-type change. HR_ADMIN and up (a MANAGER may edit
+	// their reports' profile but must not move pay). The service inserts the snapshot, re-derives the
+	// current cache and audits atomically; a backdate into an approved run comes back as a notice.
+	changeCompensation: async ({ request, locals, params, getClientAddress }) => {
+		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		// Discriminator: this form shares the page's single `form` prop with every other action, so its
+		// message block gates on `form.action` to ignore a sibling form's success/error.
+		const action = 'changeCompensation'
+		const parsed = changeCompensationSchema.safeParse(Object.fromEntries(await request.formData()))
+		if (!parsed.success) {
+			const messages = parsed.error.errors.map((e) => e.message).filter(Boolean)
+			return fail(400, { action, error: messages.length ? messages.join(' · ') : 'Invalid input' })
+		}
+		try {
+			const { notice } = await recordCompensationChange(
+				params.id,
+				locals.user!.organizationId,
+				parsed.data,
+				ctxOf(locals, getClientAddress())
+			)
+			return { action, success: true, notice }
+		} catch (e) {
+			const f = failFromError(e)
+			return fail(f.status, { action, ...f.data })
+		}
 	},
 
 	// #111: audited reveal of every masked sensitive field (gov IDs, salary, disbursement). The

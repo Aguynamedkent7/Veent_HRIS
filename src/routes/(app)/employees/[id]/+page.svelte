@@ -3,7 +3,7 @@
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
 	import { tenureLabel, tenureRequirement, monthsOfService } from '$lib/utils/dates'
-	import { RATE_BASIS_OPTIONS, rateBasisCopy, type RateBasis } from '$lib/utils/rate-basis'
+	import { rateBasisOptionsFor, rateBasisCopy, type RateBasis } from '$lib/utils/rate-basis'
 	import { isValidGovId, govIdError, type GovIdField } from '$lib/utils/gov-ids'
 	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
@@ -45,15 +45,22 @@
 			? `${Math.max(1, Math.round(b / 1024))} KB`
 			: `${(b / 1024 / 1024).toFixed(1)} MB`
 
-	// #120: the amount field's label follows the selected basis, exactly as on the create form.
-	// Seeded from the saved value and re-seeded whenever `load` re-runs after a save.
-	let rateType = $state<RateBasis>('MONTHLY')
-	$effect(() => {
-		rateType = employee.rateType as RateBasis
-	})
-	const rate = $derived(rateBasisCopy(rateType))
-	// Read-only display follows the SAVED basis, not the in-progress form selection.
+	// #170: pay is edited only through the dated "Change Salary / Pay Type" form below — the quick-edit
+	// form no longer writes salary/rateType. This read-only display follows the SAVED basis.
 	const savedRate = $derived(rateBasisCopy(employee.rateType as RateBasis))
+
+	// #170: the mid-period change form has its own rate-basis state so its amount label follows the
+	// selected basis and its dropdown offers only bases valid for this employment type (like create).
+	// Initialized from the saved basis; NOT re-synced from `employee` (the [id] route remounts per
+	// employee), so a later reprop — e.g. after a salary reveal — can't discard an in-progress pick.
+	// svelte-ignore state_referenced_locally
+	let compRateType = $state<RateBasis>(employee.rateType as RateBasis)
+	const compRate = $derived(rateBasisCopy(compRateType))
+	const compRateOptions = $derived(rateBasisOptionsFor(employee.employmentType))
+	// Effective date is lower-bounded at the hire date; today is the default. Backdating and
+	// future-dating are both allowed (the cache heals on read — no scheduler).
+	const todayInput = new Date().toISOString().slice(0, 10)
+	const hireInput = $derived(new Date(employee.startDate).toISOString().slice(0, 10))
 
 	// Salary-band check: employee inherits their grade via their position (T163).
 	// Grades are monthly bands (#120), so an hourly rate must not be scored against them.
@@ -87,6 +94,7 @@
 	const toggleStatutory = createSubmitGuard()
 	const toggleErExternal = createSubmitGuard()
 	const setAllocation = createSubmitGuard()
+	const changeCompensation = createSubmitGuard()
 	const STATUTORY_LABELS: Record<string, string> = {
 		SSS: 'SSS',
 		PHILHEALTH: 'PhilHealth',
@@ -464,35 +472,6 @@
 							</p>
 						</div>
 					{/if}
-					<div>
-						<label for="rateType" class="text-sm font-medium">Rate Basis</label>
-						<select
-							id="rateType"
-							name="rateType"
-							bind:value={rateType}
-							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-						>
-							{#each RATE_BASIS_OPTIONS as opt (opt.value)}
-								<option value={opt.value}>{opt.label}</option>
-							{/each}
-						</select>
-					</div>
-					<div>
-						<label for="basicMonthlySalary" class="text-sm font-medium">{rate.label}</label>
-						<input
-							id="basicMonthlySalary"
-							name="basicMonthlySalary"
-							type="number"
-							step={rate.step}
-							min="0"
-							value={revealed?.basicMonthlySalary ?? ''}
-							placeholder={String(employee.basicMonthlySalary ?? '')}
-							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-						/>
-						<p class="mt-1 text-xs text-muted-foreground">
-							{rate.hint} — masked; reveal above to edit, or leave blank to keep unchanged.
-						</p>
-					</div>
 					<div class="sm:col-span-3">
 						<label for="companyEmail" class="text-sm font-medium">Company Email</label>
 						<input
@@ -1414,6 +1393,107 @@
 			</section>
 		{/if}
 
+		<!-- #170: effective-dated salary / pay-type change. HR_ADMIN and up; records a history snapshot
+		     and re-derives the current cache. Salary is masked (reveal above to edit). -->
+		{#if canManage && employee.employmentStatus === 'ACTIVE'}
+			<form
+				method="POST"
+				action="?/changeCompensation"
+				use:enhance={changeCompensation.enhance}
+				class="rounded-lg border p-6 space-y-4 lg:col-span-2"
+			>
+				<h2 class="font-semibold">
+					Change Salary / Pay Type
+					<span class="text-xs font-normal text-muted-foreground"
+						>(records an effective-dated change; payroll splits a run that straddles it)</span
+					>
+				</h2>
+				{#if form?.action === 'changeCompensation' && form?.notice}
+					<div
+						class="rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-400"
+					>
+						{form.notice}
+					</div>
+				{:else if form?.action === 'changeCompensation' && form?.success}
+					<div
+						class="rounded-md border border-green-500/20 bg-green-500/10 px-3 py-2 text-sm text-green-400"
+					>
+						Saved.
+					</div>
+				{:else if form?.action === 'changeCompensation' && form?.error}
+					<div
+						class="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-red-400"
+					>
+						{form.error}
+					</div>
+				{/if}
+				<div class="grid gap-3 sm:grid-cols-3">
+					<div>
+						<label for="effectiveDate" class="text-sm font-medium">Effective Date</label>
+						<input
+							id="effectiveDate"
+							name="effectiveDate"
+							type="date"
+							required
+							value={todayInput}
+							min={hireInput}
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+						<p class="mt-1 text-xs text-muted-foreground">
+							When it takes effect. Backdating and future-dating are both allowed.
+						</p>
+					</div>
+					<div>
+						<label for="compRateType" class="text-sm font-medium">Rate Basis</label>
+						<select
+							id="compRateType"
+							name="rateType"
+							bind:value={compRateType}
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						>
+							{#each compRateOptions as opt (opt.value)}
+								<option value={opt.value}>{opt.label}</option>
+							{/each}
+						</select>
+					</div>
+					<div>
+						<label for="compSalary" class="text-sm font-medium">{compRate.label}</label>
+						<input
+							id="compSalary"
+							name="basicMonthlySalary"
+							type="number"
+							step={compRate.step}
+							min="0"
+							value={revealed?.basicMonthlySalary ?? ''}
+							placeholder={String(employee.basicMonthlySalary ?? '')}
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+						<p class="mt-1 text-xs text-muted-foreground">
+							Masked; reveal above to edit, or leave blank to keep the current amount.
+						</p>
+					</div>
+					<div class="sm:col-span-3">
+						<label for="compNote" class="text-sm font-medium"
+							>Note <span class="text-muted-foreground">(optional)</span></label
+						>
+						<input
+							id="compNote"
+							name="note"
+							maxlength="500"
+							placeholder="e.g. Annual merit increase"
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+					</div>
+				</div>
+				<button
+					type="submit"
+					disabled={changeCompensation.busy}
+					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+					>{changeCompensation.busy ? 'Recording…' : 'Record change'}</button
+				>
+			</form>
+		{/if}
+
 		{#if canManage}
 			<section class="rounded-lg border bg-card p-6 space-y-4 lg:col-span-2">
 				<h2 class="font-semibold">
@@ -1437,7 +1517,13 @@
 									<span class="text-sm font-medium">
 										{ev.type === 'HIRED' ? 'Hired / record created' : 'Profile updated'}
 									</span>
-									<span class="text-xs text-muted-foreground">{formatShortDate(ev.date)}</span>
+									<span class="text-xs text-muted-foreground">
+										{formatShortDate(ev.date)}
+										<!-- #170: a comp change carries its own effective date (may be backdated). -->
+										{#if ev.effectiveDate}
+											· effective {formatShortDate(ev.effectiveDate)}
+										{/if}
+									</span>
 								</div>
 								{#if ev.changes.length}
 									<ul class="mt-1 space-y-0.5 text-sm text-muted-foreground">

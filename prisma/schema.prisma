@@ -473,6 +473,7 @@ model Employee {
   recurringEarnings     EmployeeEarning[]
   recurringDeductions   EmployeeDeduction[]
   statutoryConfig       EmployeeStatutoryConfig[]
+  compensationHistory   EmployeeCompensation[]
   workSchedule          WorkSchedule?          @relation(fields: [workScheduleId], references: [id])
   attendanceDays        AttendanceDay[]
   separations           SeparationRecord[]
@@ -485,6 +486,29 @@ model Employee {
   @@unique([organizationId, employeeNumber])
   @@index([organizationId, branchId])
   @@map("employees")
+}
+
+// #170/#171: effective-dated compensation snapshots. Each row is the FULL comp
+// ({basicMonthlySalary, rateType}) in effect from `effectiveDate`. `Employee.{basicMonthlySalary,
+// rateType}` stay the authoritative "current" cache (== the snapshot with the latest effectiveDate
+// ≤ today); this table is authoritative only for "as of date X", which the payroll engine reads to
+// split a run across a mid-period change. Future-dating is allowed: cache re-derivation is bounded to
+// effectiveDate ≤ today and healed on read (getEmployee), so a future row stays dormant until its date
+// arrives — no scheduler needed. Actor id is a plain String (no User relation) per StatutoryRateProposal precedent.
+model EmployeeCompensation {
+  id                 String   @id @default(cuid())
+  employeeId         String
+  basicMonthlySalary Decimal  @db.Decimal(12, 2)
+  rateType           RateType
+  effectiveDate      DateTime
+  note               String?
+  changedById        String
+  changedAt          DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId, effectiveDate])
+  @@map("employee_compensation_history")
 }
 
 // Additional (secondary) supervisors (#176). An employee's primary manager stays on
