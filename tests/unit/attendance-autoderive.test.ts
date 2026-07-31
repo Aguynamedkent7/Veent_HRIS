@@ -17,7 +17,8 @@ const { dbMock } = vi.hoisted(() => ({
 		timeLog: { findMany: vi.fn(), count: vi.fn() },
 		request: { findMany: vi.fn() },
 		workSchedule: { findFirst: vi.fn() },
-		attendanceDay: { findUnique: vi.fn(), upsert: vi.fn() }
+		attendanceDay: { findUnique: vi.fn(), upsert: vi.fn() },
+		organization: { findUnique: vi.fn() }
 	}
 }))
 
@@ -51,6 +52,7 @@ beforeEach(() => {
 	// No org-default schedule configured — exercises the last-resort shift.
 	dbMock.workSchedule.findFirst.mockResolvedValue(null)
 	dbMock.attendanceDay.upsert.mockResolvedValue({})
+	dbMock.organization.findUnique.mockResolvedValue({ trackTardiness: true }) // #190 master on
 })
 
 describe('deriveRange — skipUnpunched guard', () => {

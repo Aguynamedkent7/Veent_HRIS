@@ -10,6 +10,8 @@ test.describe.configure({ mode: 'serial' })
 
 const FULL_BANK_NO = '00123456784321' // masked display: •••• 4321
 const FULL_GCASH_NO = '09170000009999' // masked display: •••• 9999
+const FULL_SSS = '34-1234567-8' // masked display: •••• 5678
+const FULL_TIN = '123-456-789-000' // masked display: •••• 9000
 
 let employeeId: string
 
@@ -23,7 +25,12 @@ test.beforeAll(async () => {
 		employeeId = employee.id
 		await db.employee.update({
 			where: { id: employeeId },
-			data: { bankAccountNumber: FULL_BANK_NO, gcashNumber: FULL_GCASH_NO }
+			data: {
+				bankAccountNumber: FULL_BANK_NO,
+				gcashNumber: FULL_GCASH_NO,
+				sssNumber: FULL_SSS,
+				tinNumber: FULL_TIN
+			}
 		})
 	} finally {
 		await db.$disconnect()
@@ -36,7 +43,7 @@ test.afterAll(async () => {
 	try {
 		await db.employee.update({
 			where: { id: employeeId },
-			data: { bankAccountNumber: null, gcashNumber: null }
+			data: { bankAccountNumber: null, gcashNumber: null, sssNumber: null, tinNumber: null }
 		})
 	} finally {
 		await db.$disconnect()
@@ -75,17 +82,32 @@ test('admin sees masked numbers, reveals full values, and the reveal is audited'
 	expect(html).not.toContain(FULL_BANK_NO)
 	expect(html).not.toContain(FULL_GCASH_NO)
 
+	// #111: government IDs are masked on load too — full values absent until reveal.
+	await expect(page.getByText('•••• 5678')).toBeVisible()
+	await expect(page.getByText('•••• 9000')).toBeVisible()
+	expect(html).not.toContain(FULL_SSS)
+	expect(html).not.toContain(FULL_TIN)
+
 	// Reveal. The button is a plain form action submit, so it works with or
-	// without hydration having finished.
+	// without hydration having finished. One action reveals every sensitive field.
 	await page.getByRole('button', { name: 'Reveal full numbers' }).click()
 	await expect(page.getByText(FULL_BANK_NO)).toBeVisible()
 	await expect(page.getByText(FULL_GCASH_NO)).toBeVisible()
+	await expect(page.getByText(FULL_SSS)).toBeVisible()
+	await expect(page.getByText(FULL_TIN)).toBeVisible()
 
 	// The reveal wrote a VIEW audit entry on the Employee entity.
 	await page.goto('/reports/audit-log', { waitUntil: 'domcontentloaded' })
-	const viewRow = page.locator('tbody tr', { hasText: 'VIEW' }).first()
-	await expect(viewRow).toBeVisible()
-	await expect(viewRow.getByText('Employee', { exact: true })).toBeVisible()
+	// Matched on the action and entity cells exactly, not `hasText: 'VIEW'`: that is a
+	// case-insensitive substring, so it also matched the "View changes" payload toggle present
+	// on every audited row. `.first()` then returned whichever row happened to be newest —
+	// usually another spec's — and the entityType assertion failed at random under
+	// fullyParallel. Matching both cells makes this independent of what else is in the log.
+	const viewRow = page
+		.locator('tbody tr')
+		.filter({ has: page.getByText('VIEW', { exact: true }) })
+		.filter({ has: page.getByText('Employee', { exact: true }) })
+	await expect(viewRow.first()).toBeVisible()
 })
 
 // #95: the per-record masking above is only half the boundary — the roster list
@@ -138,7 +160,7 @@ test('forged reveal POST by a non-HR employee is rejected with 403', async ({ pa
 	await login(page, USERS.employee)
 	// Same-origin header so this exercises the action's RBAC check rather than
 	// SvelteKit's CSRF rejection (both are 403, but we want the role gate).
-	const response = await page.request.post(`/employees/${employeeId}?/revealDisbursement`, {
+	const response = await page.request.post(`/employees/${employeeId}?/reveal`, {
 		form: { attempt: '1' },
 		headers: { origin: new URL(page.url()).origin }
 	})
@@ -147,4 +169,29 @@ test('forged reveal POST by a non-HR employee is rejected with 403', async ({ pa
 	expect(body).not.toContain('Cross-site')
 	expect(body).not.toContain(FULL_BANK_NO)
 	expect(body).not.toContain(FULL_GCASH_NO)
+})
+
+// #111: the single-record API GET must inherit the service-layer mask too — a MANAGER+
+// reading GET /api/v1/employees/[id] gets masked gov IDs, salary, and disbursement, never
+// cleartext. Asserted as HR (admin), who holds the fullest read and so is the sharpest leak.
+test('admin reading one employee via the API receives masked sensitive fields, not cleartext', async ({
+	page
+}) => {
+	await login(page, USERS.admin)
+	const response = await page.request.get(`/api/v1/employees/${employeeId}`)
+	expect(response.status()).toBe(200)
+
+	const { data } = await response.json()
+	expect(data.bankAccountNumber).toBe('•••• 4321')
+	expect(data.gcashNumber).toBe('•••• 9999')
+	expect(data.sssNumber).toBe('•••• 5678')
+	expect(data.tinNumber).toBe('•••• 9000')
+	// Salary is masked whole (a fixed sentinel), never a number that leaks its magnitude.
+	expect(data.basicMonthlySalary).toBe('••••••')
+
+	// No cleartext anywhere in the payload.
+	const raw = JSON.stringify(data)
+	for (const secret of [FULL_BANK_NO, FULL_GCASH_NO, FULL_SSS, FULL_TIN]) {
+		expect(raw).not.toContain(secret)
+	}
 })

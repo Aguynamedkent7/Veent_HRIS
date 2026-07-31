@@ -6,6 +6,8 @@ import { computePayroll } from './index'
 import { D, q2, sum } from './money'
 import { deriveRange, lockRange } from '../attendance'
 import { isValidStandardPeriod } from '$lib/utils/pay-periods'
+import { notifyMany } from '../notifications'
+import { formatShortDate } from '$lib/utils/format'
 import type { AuditContext } from '../types'
 
 /**
@@ -277,6 +279,24 @@ export async function release(id: string, organizationId: string, ctx: AuditCont
 		entityId: id,
 		newValue: { status: 'RELEASED' }
 	})
+
+	// Notify every employee with a payslip in this period that it's now available (#169).
+	// Best-effort — a notifier failure must not undo the release.
+	try {
+		const runIds = period.runs.map((r) => r.id)
+		if (runIds.length) {
+			const entries = await db.payrollEntry.findMany({
+				where: { payrollRunId: { in: runIds } },
+				select: { employee: { select: { userId: true } } }
+			})
+			const userIds = [...new Set(entries.map((e) => e.employee.userId))]
+			const label = `${formatShortDate(period.startDate)}–${formatShortDate(period.endDate)}`
+			await notifyMany(userIds, `Your payslip for ${label} is available.`, '/payslips', 'PAYSLIP')
+		}
+	} catch (e) {
+		console.error('[NOTIFY] Failed to notify payslip release for period', id, e)
+	}
+
 	return updated
 }
 

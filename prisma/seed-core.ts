@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcrypt'
+import { DEFAULT_STATUTORY_RATE_CONFIG } from '../src/lib/server/services/payroll/ph-statutory'
 
 // Shared seed logic. `seedProd` is the minimal production baseline (orgs, org-level
 // config, and the three admin accounts). `seedE2E` layers the demo roster the
@@ -25,27 +26,189 @@ async function backfillMembershipsAndRoles(db: PrismaClient) {
 	}
 }
 
-// Food-service branch org (#140): an "Operations" department, a "Head of Operations"
-// Manager (that branch's HR), branch sign-off accounts, and a few crew reporting to the
-// Manager. Used by the cross-org tenancy E2E — "Head of Operations" exists in JoJo Potato
-// / Sweetleaf but not Veent, which cleanly proves an org switch.
-async function seedBranchOrg(
+// Next free employee number in an org, e.g. EMP-003 → EMP-004. Scans existing rows rather
+// than hard-coding, so a profile added to an org that already carries hand-numbered demo
+// rows (or older data where the numbering drifted) never trips the unique
+// (organizationId, employeeNumber) constraint.
+async function nextEmployeeNumber(db: PrismaClient, organizationId: string, prefix = 'EMP') {
+	const rows = await db.employee.findMany({
+		where: { organizationId },
+		select: { employeeNumber: true }
+	})
+	// Ignore the reserved 900+ band (fixed numbers for exec/sign-off accounts) so those never
+	// push the roster's next free number into a value another fixed account already claims.
+	const max = rows.reduce((m, r) => {
+		const n = parseInt(r.employeeNumber.replace(/\D/g, ''), 10)
+		return Number.isNaN(n) || n >= 900 ? m : Math.max(m, n)
+	}, 0)
+	return `${prefix}-${String(max + 1).padStart(3, '0')}`
+}
+
+// Give a login account an Employee record if it has none. Several accounts historically had
+// no profile — the CEO, the sign-off Verifier/Approver, and HR (whose seeded EMP-002 collided
+// with the demo Manager on drifted data, so its create silently failed). Without a profile the
+// Profile page has nothing to load and bounces to the dashboard (#profile). Keyed on userId so
+// it is idempotent; `number` pins a fixed value for non-roster accounts (kept clear of the
+// demo range), otherwise the next free number is used so a fresh DB still gets tidy sequencing.
+async function ensureEmployeeProfile(
 	db: PrismaClient,
-	branch: { id: string; slug: string; empPrefix: string },
-	crew: { first: string; last: string; title: string }[]
+	user: { id: string; organizationId: string },
+	data: {
+		firstName: string
+		lastName: string
+		jobTitle: string
+		departmentId: string
+		number?: string
+		basicMonthlySalary?: number
+	}
+) {
+	const existing = await db.employee.findUnique({
+		where: { userId: user.id },
+		select: { id: true }
+	})
+	if (existing) return existing
+	return db.employee.create({
+		data: {
+			userId: user.id,
+			organizationId: user.organizationId,
+			employeeNumber: data.number ?? (await nextEmployeeNumber(db, user.organizationId)),
+			firstName: data.firstName,
+			lastName: data.lastName,
+			departmentId: data.departmentId,
+			jobTitle: data.jobTitle,
+			employmentType: 'REGULAR',
+			startDate: new Date('2025-01-01'),
+			basicMonthlySalary: data.basicMonthlySalary ?? 30000,
+			rateType: 'MONTHLY'
+		}
+	})
+}
+
+// Standard PH leave policy (#137): VL/SL/SIL at 5 days each. Every tenant gets the same
+// set — without leave types an org has nothing to allocate, so its whole roster is locked
+// out of filing leave (which is how JoJo and Sweetleaf shipped before this).
+async function seedLeaveTypes(db: PrismaClient, organizationId: string) {
+	// The base set is only written when the org has none, so re-seeding never overwrites
+	// allocations HR has since tuned in Settings → Leave Types.
+	const existing = await db.leaveType.count({ where: { organizationId } })
+	if (existing === 0) {
+		await db.leaveType.createMany({
+			data: [
+				{
+					organizationId,
+					name: 'Vacation Leave',
+					isPaid: true,
+					defaultDaysPerYear: 5,
+					allowCarryOver: true,
+					maxCarryOverDays: 5
+				},
+				{ organizationId, name: 'Sick Leave', isPaid: true, defaultDaysPerYear: 5 },
+				{ organizationId, name: 'Emergency Leave', isPaid: true, defaultDaysPerYear: 3 },
+				{ organizationId, name: 'Maternity Leave', isPaid: true, defaultDaysPerYear: 105 },
+				{ organizationId, name: 'Paternity Leave', isPaid: true, defaultDaysPerYear: 7 }
+			]
+		})
+	}
+
+	// SIL is upserted outside that guard on purpose: orgs seeded before #137 already have
+	// leave types, so the block above skips them entirely and they would never gain the
+	// statutory entitlement. minMonthsOfService: 12 is the Labor Code 1-year rule, and is
+	// what the filing gate in services/requests/leave.ts reads.
+	await db.leaveType.upsert({
+		where: { organizationId_name: { organizationId, name: 'Service Incentive Leave' } },
+		update: { minMonthsOfService: 12 },
+		create: {
+			organizationId,
+			name: 'Service Incentive Leave',
+			isPaid: true,
+			defaultDaysPerYear: 5,
+			minMonthsOfService: 12
+		}
+	})
+}
+
+// Company departments per organization (#181). Idempotent via the (organizationId, name)
+// unique key; a node's `children` are seeded as sub-departments beneath it through the
+// self-referential hierarchy. Appending a department never disturbs existing employee
+// assignments — an existing department just upserts to itself.
+type DeptSeed = { name: string; children?: string[] }
+
+async function ensureDepartments(db: PrismaClient, organizationId: string, tree: DeptSeed[]) {
+	for (const node of tree) {
+		const parent = await db.department.upsert({
+			where: { organizationId_name: { organizationId, name: node.name } },
+			update: {},
+			create: { organizationId, name: node.name }
+		})
+		for (const child of node.children ?? []) {
+			await db.department.upsert({
+				where: { organizationId_name: { organizationId, name: child } },
+				update: { parentDepartmentId: parent.id },
+				create: { organizationId, name: child, parentDepartmentId: parent.id }
+			})
+		}
+	}
+}
+
+// Allocate the current year's entitlement to everyone in the org who is missing it (#137).
+// Mirrors ensureLeaveBalances() in services/leave.ts, which does the same at onboarding —
+// a missing row is read as a zero balance, so an unallocated employee cannot file at all.
+// Idempotent: existing rows are left untouched, so re-seeding never resets a used balance.
+async function seedLeaveBalances(db: PrismaClient, organizationId: string) {
+	const year = new Date().getFullYear()
+	const [types, employees] = await Promise.all([
+		db.leaveType.findMany({
+			where: { organizationId, isActive: true },
+			select: { id: true, defaultDaysPerYear: true }
+		}),
+		db.employee.findMany({
+			where: { organizationId },
+			select: { id: true, leaveBalances: { where: { year }, select: { leaveTypeId: true } } }
+		})
+	])
+
+	const rows = employees.flatMap((e) => {
+		const have = new Set(e.leaveBalances.map((b) => b.leaveTypeId))
+		return types
+			.filter((lt) => !have.has(lt.id))
+			.map((lt) => ({
+				employeeId: e.id,
+				leaveTypeId: lt.id,
+				year,
+				allocated: lt.defaultDaysPerYear,
+				used: 0,
+				remaining: lt.defaultDaysPerYear
+			}))
+	})
+	if (rows.length) await db.leaveBalance.createMany({ data: rows, skipDuplicates: true })
+}
+
+// Food-service tenant (#140): an "Operations" department, a "Head of Operations" Manager
+// (that tenant's HR), sign-off accounts, a few crew reporting to the Manager, and the
+// tenant's physical stores. Used by the cross-org tenancy E2E — "Head of Operations" exists
+// in JoJo Potato / Sweetleaf but not Veent, which cleanly proves an org switch.
+//
+// NOTE: "branch" here means a STORE (the Branch model), never the tenant — this function was
+// called seedBranchOrg when the word still meant the tenant itself.
+async function seedFoodServiceOrg(
+	db: PrismaClient,
+	tenant: { id: string; slug: string; empPrefix: string },
+	crew: { first: string; last: string; title: string }[],
+	// The tenant's physical stores. Fixed ids keep the upsert idempotent.
+	stores: { id: string; name: string; address: string; status?: 'OPEN' | 'CLOSED' }[]
 ) {
 	const branchDept = await db.department.upsert({
-		where: { organizationId_name: { organizationId: branch.id, name: 'Operations' } },
+		where: { organizationId_name: { organizationId: tenant.id, name: 'Operations' } },
 		update: {},
-		create: { organizationId: branch.id, name: 'Operations' }
+		create: { organizationId: tenant.id, name: 'Operations' }
 	})
 	const mgrHash = await bcrypt.hash('Manager@1234', 12)
 	const mgrUser = await db.user.upsert({
-		where: { email: `manager@${branch.slug}.ph` },
+		where: { email: `manager@${tenant.slug}.ph` },
 		update: { role: 'MANAGER' },
 		create: {
-			organizationId: branch.id,
-			email: `manager@${branch.slug}.ph`,
+			organizationId: tenant.id,
+			email: `manager@${tenant.slug}.ph`,
 			passwordHash: mgrHash,
 			role: 'MANAGER'
 		}
@@ -55,13 +218,13 @@ async function seedBranchOrg(
 		update: {},
 		create: {
 			userId: mgrUser.id,
-			organizationId: branch.id,
-			employeeNumber: `${branch.empPrefix}-001`,
+			organizationId: tenant.id,
+			employeeNumber: `${tenant.empPrefix}-001`,
 			firstName: 'Head',
 			lastName: 'of Operations',
 			departmentId: branchDept.id,
 			jobTitle: 'Head of Operations',
-			employmentType: 'FULL_TIME',
+			employmentType: 'REGULAR',
 			startDate: new Date('2025-01-15'),
 			basicMonthlySalary: 40000,
 			rateType: 'MONTHLY'
@@ -69,41 +232,49 @@ async function seedBranchOrg(
 	})
 
 	// Branch sign-off accounts (#134) so the maker → verifier → approver chain works within
-	// this org, not just Veent. Pure sign-off, no Employee record.
-	for (const [role, pw] of [
-		['VERIFIER', 'Verifier@1234'],
-		['APPROVER', 'Approver@1234']
+	// this org, not just Veent. Each also gets a profile (fixed high number, clear of the crew
+	// roster) so its Profile page resolves instead of bouncing to the dashboard (#profile).
+	for (const [role, pw, first, last, num] of [
+		['VERIFIER', 'Verifier@1234', 'Vera', 'Verifier', '901'],
+		['APPROVER', 'Approver@1234', 'Arno', 'Approver', '902']
 	] as const) {
-		const email = `${role.toLowerCase()}@${branch.slug}.ph`
+		const email = `${role.toLowerCase()}@${tenant.slug}.ph`
 		const h = await bcrypt.hash(pw, 12)
-		await db.user.upsert({
+		const signoffUser = await db.user.upsert({
 			where: { email },
 			update: { role },
-			create: { organizationId: branch.id, email, passwordHash: h, role }
+			create: { organizationId: tenant.id, email, passwordHash: h, role }
+		})
+		await ensureEmployeeProfile(db, signoffUser, {
+			firstName: first,
+			lastName: last,
+			jobTitle: `Sign-off ${role === 'VERIFIER' ? 'Verifier' : 'Approver'}`,
+			departmentId: branchDept.id,
+			number: `${tenant.empPrefix}-${num}`
 		})
 	}
 
 	let n = 2
 	for (const c of crew) {
-		const email = `${c.first.toLowerCase()}@${branch.slug}.ph`
+		const email = `${c.first.toLowerCase()}@${tenant.slug}.ph`
 		const uHash = await bcrypt.hash('Employee@1234', 12)
 		const u = await db.user.upsert({
 			where: { email },
 			update: {},
-			create: { organizationId: branch.id, email, passwordHash: uHash, role: 'EMPLOYEE' }
+			create: { organizationId: tenant.id, email, passwordHash: uHash, role: 'EMPLOYEE' }
 		})
 		await db.employee.upsert({
 			where: { userId: u.id },
 			update: { reportsToId: mgrEmployee.id },
 			create: {
 				userId: u.id,
-				organizationId: branch.id,
-				employeeNumber: `${branch.empPrefix}-00${n}`,
+				organizationId: tenant.id,
+				employeeNumber: `${tenant.empPrefix}-00${n}`,
 				firstName: c.first,
 				lastName: c.last,
 				departmentId: branchDept.id,
 				jobTitle: c.title,
-				employmentType: 'FULL_TIME',
+				employmentType: 'REGULAR',
 				startDate: new Date('2025-03-01'),
 				basicMonthlySalary: 18000,
 				rateType: 'MONTHLY',
@@ -112,6 +283,47 @@ async function seedBranchOrg(
 		})
 		n++
 	}
+
+	// Branches: the tenant's physical stores. The Head of Operations manages the first one
+	// (and is assigned to it); the crew are spread across the OPEN stores round-robin, with
+	// the last one deliberately left unassigned so the "unassigned" count has something to show.
+	const created: { id: string; status: string }[] = []
+	for (const st of stores) {
+		const row = await db.branch.upsert({
+			where: { id: st.id },
+			update: {},
+			create: {
+				id: st.id,
+				organizationId: tenant.id,
+				name: st.name,
+				address: st.address,
+				status: st.status ?? 'OPEN'
+			}
+		})
+		created.push({ id: row.id, status: row.status })
+	}
+
+	const open = created.filter((b) => b.status === 'OPEN')
+	if (open.length) {
+		await db.branch.update({ where: { id: open[0].id }, data: { managerId: mgrEmployee.id } })
+		await db.employee.update({ where: { id: mgrEmployee.id }, data: { branchId: open[0].id } })
+
+		const roster = await db.employee.findMany({
+			where: { organizationId: tenant.id, reportsToId: mgrEmployee.id },
+			select: { id: true },
+			orderBy: { employeeNumber: 'asc' }
+		})
+		// Leave the last crew member unassigned.
+		for (let i = 0; i < roster.length - 1; i++) {
+			await db.employee.update({
+				where: { id: roster[i].id },
+				data: { branchId: open[i % open.length].id }
+			})
+		}
+	}
+
+	// After the roster exists, so the whole crew gets this year's entitlement.
+	await seedLeaveBalances(db, tenant.id)
 }
 
 /**
@@ -137,37 +349,58 @@ export async function seedProd(db: PrismaClient) {
 	// backwards-compat; JoJo Potato and Sweetleaf are the two additional food-service tenants.
 	await db.organization.upsert({
 		where: { id: 'org_jojo' },
+		// employeeNumberPrefix is in `update` too, so a re-seed corrects an existing database
+		// that took the 'EMP' column default when the column was added.
 		update: {
 			name: 'JoJo Potato',
-			logoUrl: '/jojo-logo.svg',
+			logoUrl: '/jojo-logo.png',
 			themePrimary: '32 95% 44%', // amber
-			address: 'Quezon City, Metro Manila, Philippines'
+			address: 'Quezon City, Metro Manila, Philippines',
+			employeeNumberPrefix: 'JJ'
 		},
 		create: {
 			id: 'org_jojo',
 			name: 'JoJo Potato',
-			logoUrl: '/jojo-logo.svg',
+			logoUrl: '/jojo-logo.png',
 			themePrimary: '32 95% 44%',
-			address: 'Quezon City, Metro Manila, Philippines'
+			address: 'Quezon City, Metro Manila, Philippines',
+			employeeNumberPrefix: 'JJ'
 		}
 	})
 	await db.organization.upsert({
 		where: { id: 'org_sweetleaf' },
 		update: {
 			name: 'Sweetleaf',
-			logoUrl: '/sweetleaf-logo.svg',
+			logoUrl: '/sweetleaf-logo.png',
 			themePrimary: '142 71% 42%', // green
-			address: 'Pasig City, Metro Manila, Philippines'
+			address: 'Pasig City, Metro Manila, Philippines',
+			employeeNumberPrefix: 'SL'
 		},
 		create: {
 			id: 'org_sweetleaf',
 			name: 'Sweetleaf',
-			logoUrl: '/sweetleaf-logo.svg',
+			logoUrl: '/sweetleaf-logo.png',
 			themePrimary: '142 71% 42%',
-			address: 'Pasig City, Metro Manila, Philippines'
+			address: 'Pasig City, Metro Manila, Philippines',
+			employeeNumberPrefix: 'SL'
 		}
 	})
 
+	// Company departments per organization (#181). Veent runs on HR, sales and engineering;
+	// the food-service tenants group their back office under Admin (Finance, Accounting,
+	// Marketing). The demo Operations department (seedFoodServiceOrg) is left untouched.
+	await ensureDepartments(db, 'org_seed', [
+		{ name: 'Human Resources' },
+		{ name: 'Sales & Business Development' },
+		{ name: 'Software Developers' }
+	])
+	for (const foodOrgId of ['org_jojo', 'org_sweetleaf']) {
+		await ensureDepartments(db, foodOrgId, [
+			{ name: 'Admin', children: ['Finance', 'Accounting', 'Marketing'] }
+		])
+	}
+
+	// Human Resources (seeded just above) is the home department for Veent's admin accounts.
 	const dept = await db.department.upsert({
 		where: { organizationId_name: { organizationId: org.id, name: 'Human Resources' } },
 		update: {},
@@ -224,7 +457,7 @@ export async function seedProd(db: PrismaClient) {
 			lastName: 'Admin',
 			departmentId: dept.id,
 			jobTitle: 'HR System Administrator',
-			employmentType: 'FULL_TIME',
+			employmentType: 'REGULAR',
 			startDate: new Date('2025-01-01'),
 			basicMonthlySalary: 50000,
 			rateType: 'MONTHLY'
@@ -251,6 +484,38 @@ export async function seedProd(db: PrismaClient) {
 			create: { userId: ceo.id, organizationId: orgId }
 		})
 	}
+	// The CEO gets a profile in its home org so the Profile page resolves (the page scopes the
+	// lookup to the active org, so it cleanly guards back to the dashboard in the other tenants).
+	// A fixed high number keeps it clear of the demo roster's EMP-001..004.
+	await ensureEmployeeProfile(db, ceo, {
+		firstName: 'Cielo',
+		lastName: 'Executive',
+		jobTitle: 'Chief Executive Officer',
+		departmentId: dept.id,
+		number: 'EMP-900',
+		basicMonthlySalary: 150000
+	})
+
+	// --- System actor (#136) ---
+	// AuditLog.actorId is a non-nullable FK to User and actorRole is a required Role, so an
+	// automated job (the nightly regularization sweep) cannot write its audit row without a
+	// real user. This is that user — and it must never be able to log in:
+	//   • the password hash is of a random secret nobody holds, so bcrypt can never match, and
+	//   • isActive: false, which hooks.server.ts turns into an account_disabled redirect.
+	// HR_ADMIN (not SUPER_ADMIN) because regularization is an HR act and a service account
+	// should carry the least privilege that reads correctly in the audit trail.
+	const systemHash = await bcrypt.hash(`system-no-login-${crypto.randomUUID()}`, 12)
+	await db.user.upsert({
+		where: { email: 'system@veent.ph' },
+		update: { role: 'HR_ADMIN', isActive: false },
+		create: {
+			organizationId: org.id,
+			email: 'system@veent.ph',
+			passwordHash: systemHash,
+			role: 'HR_ADMIN',
+			isActive: false
+		}
+	})
 
 	// --- HR Admin (HR-level access) ---
 	const hrHash = await bcrypt.hash('Hr@1234', 12)
@@ -264,44 +529,21 @@ export async function seedProd(db: PrismaClient) {
 			role: 'HR_ADMIN'
 		}
 	})
-	await db.employee.upsert({
-		where: { userId: hrUser.id },
-		update: {},
-		create: {
-			userId: hrUser.id,
-			organizationId: org.id,
-			employeeNumber: 'EMP-002',
-			firstName: 'Hannah',
-			lastName: 'HR',
-			departmentId: dept.id,
-			jobTitle: 'HR Administrator',
-			employmentType: 'FULL_TIME',
-			startDate: new Date('2025-01-01'),
-			basicMonthlySalary: 45000,
-			rateType: 'MONTHLY'
-		}
+	// Next free number, not a hard-coded EMP-002: on drifted data the demo Manager already
+	// holds EMP-002, and the old fixed create collided and left HR with no profile at all.
+	await ensureEmployeeProfile(db, hrUser, {
+		firstName: 'Hannah',
+		lastName: 'HR',
+		jobTitle: 'HR Administrator',
+		departmentId: dept.id,
+		basicMonthlySalary: 45000
 	})
 
-	// Idempotent: LeaveType has no unique constraint on (organizationId, name), so
-	// createMany would duplicate on every run. Only seed when none exist yet.
-	const existingLeaveTypes = await db.leaveType.count({ where: { organizationId: org.id } })
-	if (existingLeaveTypes === 0) {
-		await db.leaveType.createMany({
-			data: [
-				{
-					organizationId: org.id,
-					name: 'Vacation Leave',
-					isPaid: true,
-					defaultDaysPerYear: 15,
-					allowCarryOver: true,
-					maxCarryOverDays: 5
-				},
-				{ organizationId: org.id, name: 'Sick Leave', isPaid: true, defaultDaysPerYear: 15 },
-				{ organizationId: org.id, name: 'Emergency Leave', isPaid: true, defaultDaysPerYear: 3 },
-				{ organizationId: org.id, name: 'Maternity Leave', isPaid: true, defaultDaysPerYear: 105 },
-				{ organizationId: org.id, name: 'Paternity Leave', isPaid: true, defaultDaysPerYear: 7 }
-			]
-		})
+	// Leave types are org-level configuration, so every tenant gets the standard PH set —
+	// not just Veent (#137). An org with no leave types has nothing to allocate, so its
+	// entire roster is locked out of filing leave.
+	for (const orgId of ['org_seed', 'org_jojo', 'org_sweetleaf']) {
+		await seedLeaveTypes(db, orgId)
 	}
 
 	await db.payrollConfig.upsert({
@@ -312,15 +554,21 @@ export async function seedProd(db: PrismaClient) {
 			payFrequency: 'SEMI_MONTHLY',
 			firstCutoff: 15,
 			secondCutoff: 30,
-			philhealthRate: 0.05,
-			philhealthFloor: 10000,
-			philhealthCeiling: 100000,
-			pagibigRate: 0.02,
-			pagibigCeiling: 5000,
 			sssTable: {},
 			birTaxTable: {}
 		}
 	})
+
+	// #220: StatutoryRateConfig is the authoritative source of statutory figures. Seed each org's
+	// row to the current PH legal values (the same constants the engine falls back to when a row is
+	// missing), so a fresh install starts on today's numbers and HR/CEO edit from a real baseline.
+	for (const orgId of ['org_seed', 'org_jojo', 'org_sweetleaf']) {
+		await db.statutoryRateConfig.upsert({
+			where: { organizationId: orgId },
+			update: {},
+			create: { organizationId: orgId, ...DEFAULT_STATUTORY_RATE_CONFIG }
+		})
+	}
 
 	// --- Payroll expansion config: earning/deduction codes + premium rate rule (DOLE defaults) ---
 	const earningTypes = [
@@ -410,6 +658,11 @@ export async function seedProd(db: PrismaClient) {
 
 	await backfillMembershipsAndRoles(db)
 
+	// Last, so it covers every employee this seed created. Also backfills orgs that predate
+	// #137: onboarding allocates balances now, but employees hired before it have none, and
+	// a missing row is read as a zero balance that blocks them from filing at all.
+	await seedLeaveBalances(db, org.id)
+
 	return { org, dept }
 }
 
@@ -425,7 +678,7 @@ export async function seedE2E(db: PrismaClient) {
 	// Verifier + Approver (#134): pure sign-off accounts for the maker→verifier→approver
 	// chain. No Employee record — they only check and approve, never file requests.
 	const verifierHash = await bcrypt.hash('Verifier@1234', 12)
-	await db.user.upsert({
+	const verifierUser = await db.user.upsert({
 		where: { email: 'verifier@veent.ph' },
 		update: { role: 'VERIFIER' },
 		create: {
@@ -436,7 +689,7 @@ export async function seedE2E(db: PrismaClient) {
 		}
 	})
 	const approverHash = await bcrypt.hash('Approver@1234', 12)
-	await db.user.upsert({
+	const approverUser = await db.user.upsert({
 		where: { email: 'approver@veent.ph' },
 		update: { role: 'APPROVER' },
 		create: {
@@ -445,6 +698,22 @@ export async function seedE2E(db: PrismaClient) {
 			passwordHash: approverHash,
 			role: 'APPROVER'
 		}
+	})
+	// Profiles so the sign-off accounts can open their own Profile page (#profile). Fixed high
+	// numbers keep them clear of the demo roster (EMP-001..004).
+	await ensureEmployeeProfile(db, verifierUser, {
+		firstName: 'Vince',
+		lastName: 'Verifier',
+		jobTitle: 'Sign-off Verifier',
+		departmentId: dept.id,
+		number: 'EMP-901'
+	})
+	await ensureEmployeeProfile(db, approverUser, {
+		firstName: 'Apple',
+		lastName: 'Approver',
+		jobTitle: 'Sign-off Approver',
+		departmentId: dept.id,
+		number: 'EMP-902'
 	})
 
 	// --- Manager (direct supervisor; approves the employee's timesheets in the E2E suite) ---
@@ -470,7 +739,7 @@ export async function seedE2E(db: PrismaClient) {
 			lastName: 'Manager',
 			departmentId: dept.id,
 			jobTitle: 'People Operations Manager',
-			employmentType: 'FULL_TIME',
+			employmentType: 'REGULAR',
 			startDate: new Date('2025-01-15'),
 			basicMonthlySalary: 45000,
 			rateType: 'MONTHLY'
@@ -490,7 +759,7 @@ export async function seedE2E(db: PrismaClient) {
 			role: 'EMPLOYEE'
 		}
 	})
-	const employee = await db.employee.upsert({
+	await db.employee.upsert({
 		where: { userId: employeeUser.id },
 		update: { reportsToId: managerEmployee.id, discordId: '123456789012345678' },
 		create: {
@@ -501,7 +770,7 @@ export async function seedE2E(db: PrismaClient) {
 			lastName: 'Employee',
 			departmentId: dept.id,
 			jobTitle: 'Software Engineer',
-			employmentType: 'FULL_TIME',
+			employmentType: 'REGULAR',
 			startDate: new Date('2025-02-01'),
 			basicMonthlySalary: 30000,
 			rateType: 'MONTHLY',
@@ -510,41 +779,200 @@ export async function seedE2E(db: PrismaClient) {
 		}
 	})
 
-	// --- Leave balances for the employee (current year) so leave-filing E2E validates ---
-	const balanceYear = new Date().getFullYear()
-	const employeeLeaveTypes = await db.leaveType.findMany({ where: { organizationId: org.id } })
-	for (const lt of employeeLeaveTypes) {
-		await db.leaveBalance.upsert({
-			where: {
-				employeeId_leaveTypeId_year: {
-					employeeId: employee.id,
-					leaveTypeId: lt.id,
-					year: balanceYear
-				}
+	// --- Leave balances (current year) so leave-filing E2E validates. Org-wide rather than
+	// just Elena (#137): HR and the Manager file leave in the request specs too, and a
+	// missing balance row reads as zero, which would block them. ---
+	await seedLeaveBalances(db, org.id)
+
+	// Onboarding checklist (#116): the derived defaults + one manual example for Veent so
+	// the Settings editor and the 201-file manual toggles are populated. Keys must match
+	// DERIVED_STEPS in src/lib/server/services/onboarding.ts.
+	const existingOnboarding = await db.onboardingChecklistItem.count({
+		where: { organizationId: org.id }
+	})
+	if (existingOnboarding === 0) {
+		const derivedSteps = [
+			{
+				derivedKey: 'account',
+				label: 'Company account created',
+				hint: 'A login is generated with the employee record.'
 			},
-			update: {},
-			create: {
-				employeeId: employee.id,
-				leaveTypeId: lt.id,
-				year: balanceYear,
-				allocated: lt.defaultDaysPerYear,
-				used: 0,
-				remaining: lt.defaultDaysPerYear
+			{
+				derivedKey: 'position',
+				label: 'Position assigned',
+				hint: 'Set “Position” in Update Profile.'
+			},
+			{
+				derivedKey: 'schedule',
+				label: 'Work schedule assigned',
+				hint: 'Set “Work Schedule” — this starts attendance tracking.'
+			},
+			{ derivedKey: 'salary', label: 'Compensation set', hint: 'Set “Basic Monthly Salary”.' },
+			{
+				derivedKey: 'disbursement',
+				label: 'Payroll disbursement registered',
+				hint: 'Add bank or GCash details under Disbursement.'
+			},
+			{
+				derivedKey: 'govids',
+				label: 'Government IDs on file',
+				hint: 'SSS, PhilHealth, Pag-IBIG, and TIN.'
+			},
+			{
+				derivedKey: 'contract',
+				label: 'Signed contract uploaded',
+				hint: 'Upload a “Contract” document.'
 			}
+		]
+		await db.onboardingChecklistItem.createMany({
+			data: [
+				...derivedSteps.map((d, i) => ({
+					organizationId: org.id,
+					kind: 'DERIVED' as const,
+					derivedKey: d.derivedKey,
+					label: d.label,
+					hint: d.hint,
+					order: i
+				})),
+				{
+					organizationId: org.id,
+					kind: 'MANUAL' as const,
+					label: 'Orientation completed',
+					hint: 'New-hire orientation attended.',
+					order: derivedSteps.length
+				}
+			]
 		})
 	}
 
-	// Branch orgs (#140): JoJo Potato and Sweetleaf each get a "Head of Operations" Manager
-	// + crew. The cross-org tenancy E2E switches the CEO into JoJo and asserts this roster.
-	await seedBranchOrg(db, { id: 'org_jojo', slug: 'jojo', empPrefix: 'JJ' }, [
-		{ first: 'Benjie', last: 'Fryer', title: 'Fry Cook' },
-		{ first: 'Carla', last: 'Server', title: 'Service Crew' },
-		{ first: 'Dino', last: 'Cashier', title: 'Cashier' }
-	])
-	await seedBranchOrg(db, { id: 'org_sweetleaf', slug: 'sweetleaf', empPrefix: 'SL' }, [
-		{ first: 'Ella', last: 'Barista', title: 'Barista' },
-		{ first: 'Fritz', last: 'Baker', title: 'Baker' }
-	])
+	// Job boards (#117): common PH boards for the recruitment publish-tracking checklist.
+	await db.jobBoard.createMany({
+		data: ['JobStreet', 'Indeed', 'LinkedIn', 'Facebook', 'Company Website', 'Referral'].map(
+			(name) => ({ organizationId: org.id, name })
+		),
+		skipDuplicates: true
+	})
+
+	// A demo open posting so the recruitment board-tracking checklist has something to act on.
+	await db.jobPosting.upsert({
+		where: { id: 'jp_seed_demo' },
+		update: {},
+		create: {
+			id: 'jp_seed_demo',
+			organizationId: org.id,
+			departmentId: dept.id,
+			title: 'Software Engineer',
+			description: 'Seed posting for the recruitment demo.',
+			status: 'OPEN',
+			postedAt: new Date('2026-06-01'),
+			createdById: managerUser.id
+		}
+	})
+
+	// Inventory (#114): a few demo assets so the registry isn't empty. Idempotent by id.
+	await db.inventoryItem.upsert({
+		where: { id: 'inv_seed_1' },
+		update: {},
+		create: {
+			id: 'inv_seed_1',
+			organizationId: org.id,
+			name: 'MacBook Pro 14"',
+			category: 'Laptop',
+			quantity: 1,
+			unit: 'pc',
+			location: 'Main office',
+			status: 'IN_STOCK',
+			serialNumber: 'C02-DEMO-001',
+			value: 120000
+		}
+	})
+	await db.inventoryItem.upsert({
+		where: { id: 'inv_seed_2' },
+		update: {},
+		create: {
+			id: 'inv_seed_2',
+			organizationId: org.id,
+			name: 'Office Chair',
+			category: 'Furniture',
+			quantity: 12,
+			unit: 'pcs',
+			location: 'Main office',
+			status: 'IN_STOCK',
+			value: 4500
+		}
+	})
+	await db.inventoryItem.upsert({
+		where: { id: 'inv_seed_3' },
+		update: {},
+		create: {
+			id: 'inv_seed_3',
+			organizationId: org.id,
+			name: 'Projector (old)',
+			category: 'AV Equipment',
+			quantity: 1,
+			unit: 'pc',
+			location: 'Storage',
+			status: 'RETIRED'
+		}
+	})
+
+	// Food-service tenants (#140): JoJo Potato and Sweetleaf each get a "Head of Operations"
+	// Manager + crew, and their physical stores. The cross-org tenancy E2E switches the CEO
+	// into JoJo and asserts this roster; the Branches E2E asserts these stores.
+	await seedFoodServiceOrg(
+		db,
+		{ id: 'org_jojo', slug: 'jojo', empPrefix: 'JJ' },
+		[
+			{ first: 'Benjie', last: 'Fryer', title: 'Fry Cook' },
+			{ first: 'Carla', last: 'Server', title: 'Service Crew' },
+			{ first: 'Dino', last: 'Cashier', title: 'Cashier' }
+		],
+		[
+			{
+				id: 'br_jojo_smdowntown',
+				name: 'SM CDO Downtown Premier',
+				address: 'Ground Floor, SM CDO Downtown Premier, Claro M. Recto Ave., Cagayan de Oro'
+			},
+			{
+				id: 'br_jojo_centrio',
+				name: 'Centrio Ayala Mall',
+				address: '2F Centrio Ayala Mall, Corrales cor. CM Recto Ave., Cagayan de Oro'
+			},
+			{
+				id: 'br_jojo_limketkai',
+				name: 'Limketkai Center',
+				address: 'Limketkai Center, Lapasan, Cagayan de Oro',
+				status: 'CLOSED'
+			}
+		]
+	)
+	await seedFoodServiceOrg(
+		db,
+		{ id: 'org_sweetleaf', slug: 'sweetleaf', empPrefix: 'SL' },
+		[
+			{ first: 'Ella', last: 'Barista', title: 'Barista' },
+			{ first: 'Fritz', last: 'Baker', title: 'Baker' }
+		],
+		[
+			{
+				id: 'br_sl_smuptown',
+				name: 'SM CDO Uptown',
+				address:
+					'Upper Ground Floor, SM City CDO Uptown, Masterson Ave., Upper Balulang, Cagayan de Oro'
+			},
+			{
+				id: 'br_sl_gaisano',
+				name: 'Gaisano Mall of CDO',
+				address: 'Gaisano City Mall, Corrales Ave. cor. Yacapin St., Cagayan de Oro'
+			},
+			{
+				id: 'br_sl_ororama',
+				name: 'Ororama Megacenter',
+				address: 'Ororama Megacenter, Cogon, Cagayan de Oro',
+				status: 'CLOSED'
+			}
+		]
+	)
 
 	// Cover the demo roster just added (seedProd already ran this for the admin accounts).
 	await backfillMembershipsAndRoles(db)

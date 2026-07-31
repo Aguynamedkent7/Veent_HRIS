@@ -3,7 +3,7 @@ import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import type { ApprovalDecision, ApprovalStage, Role } from '@prisma/client'
-import { applyApprovedRequest } from './requests/apply'
+import { applyApprovedRequest, type AppliedEffect } from './requests/apply'
 import { buildApprovalChain } from './requests/routing'
 import { notify } from './notifications'
 import type { AuditContext } from './types'
@@ -15,6 +15,15 @@ const STAGE_CAPABILITY: Record<ApprovalStage, keyof typeof CAPABILITIES> = {
 	MAKE: 'MANAGE_HR',
 	VERIFY: 'VERIFY_REQUESTS',
 	APPROVE: 'APPROVE_SIGNOFF'
+}
+
+// Payroll runs are financial sign-offs, so their chain routes the final APPROVE stage
+// to the finance approvers — CEO / Super Admin — not the generic APPROVER (#174). MAKE is
+// the payroll preparer (auto-completed at compute, never decided here); VERIFY is shared.
+const PAYROLL_STAGE_CAPABILITY: Record<ApprovalStage, keyof typeof CAPABILITIES> = {
+	MAKE: 'MANAGE_PAYROLL',
+	VERIFY: 'VERIFY_REQUESTS',
+	APPROVE: 'APPROVE_FINANCE'
 }
 
 export function rolesOf(ctx: AuditContext): Role[] {
@@ -53,10 +62,18 @@ export function canActOnStage(
 	stage: ApprovalStage,
 	actorRoles: Role[],
 	actorEmployeeId: string | null,
-	ownerEmployeeId: string | null
+	ownerEmployeeId: string | null,
+	stageCapability: Record<ApprovalStage, keyof typeof CAPABILITIES> = STAGE_CAPABILITY
 ): boolean {
 	if (actorEmployeeId != null && actorEmployeeId === ownerEmployeeId) return false
-	return canAny(actorRoles, STAGE_CAPABILITY[stage])
+	return canAny(actorRoles, stageCapability[stage])
+}
+
+// Payroll variant: the final APPROVE routes to the finance approvers (CEO / Super Admin,
+// #174). A run has no employee owner, so the separation-of-duties owner args are null and
+// the maker-vs-signer guard is applied by the caller against the MAKE step's actorId.
+export function canActOnPayrollStage(stage: ApprovalStage, actorRoles: Role[]): boolean {
+	return canActOnStage(stage, actorRoles, null, null, PAYROLL_STAGE_CAPABILITY)
 }
 
 // Pure transition: given the current stage / chain length / decision, what are the
@@ -118,16 +135,31 @@ export async function decide(
 
 	const transition = nextState(req.currentStage, liveSteps.length, decision)
 
-	await db.$transaction([
-		db.approvalStep.update({
+	// The step/request flip AND the on-approval effect (leave-balance deduction /
+	// INFO_UPDATE write) must commit atomically (#101). Previously the effect ran in a
+	// separate call after the flip, so a failure or crash between them left the request
+	// permanently APPROVED with the balance never deducted — free leave, with no reversal
+	// path. Running the effect on the same `tx` rolls the approval back if it fails.
+	const applied = await db.$transaction(async (tx): Promise<AppliedEffect | null> => {
+		await tx.approvalStep.update({
 			where: { id: step.id },
 			data: { decision, actorId: ctx.actorId, note: note ?? null, decidedAt: new Date() }
-		}),
-		db.request.update({
+		})
+		await tx.request.update({
 			where: { id: req.id },
 			data: { status: transition.status, currentStage: transition.currentStage }
 		})
-	])
+		if (transition.status === 'APPROVED') {
+			return applyApprovedRequest(tx, {
+				id: req.id,
+				type: req.type,
+				employeeId: req.employeeId,
+				dateFrom: req.dateFrom,
+				payload: req.payload
+			})
+		}
+		return null
+	})
 
 	await writeAuditLog(ctx, {
 		action: 'UPDATE',
@@ -136,18 +168,18 @@ export async function decide(
 		newValue: { attempt, stage: step.stage, decision, status: transition.status }
 	})
 
-	// On full approval, apply the request to attendance/payroll state.
-	if (transition.status === 'APPROVED') {
-		await applyApprovedRequest(
-			{
-				id: req.id,
-				type: req.type,
-				employeeId: req.employeeId,
-				dateFrom: req.dateFrom,
-				payload: req.payload
-			},
-			ctx
-		)
+	// Audit the applied effect after commit — mirrors the request-decision log above and
+	// avoids an orphan entry if the transaction had rolled back.
+	if (applied) {
+		await writeAuditLog(ctx, {
+			action: 'UPDATE',
+			entityType: applied.kind === 'LEAVE' ? 'LeaveBalance' : 'Employee',
+			entityId: req.employeeId,
+			newValue:
+				applied.kind === 'LEAVE'
+					? { leaveTypeId: applied.leaveTypeId, deducted: applied.deducted, viaRequest: req.id }
+					: { [applied.column]: applied.value, viaRequest: req.id }
+		})
 	}
 
 	// Notify the requester of the outcome.
@@ -161,7 +193,12 @@ export async function decide(
 					? 'returned for correction'
 					: null
 	if (verb) {
-		await notify(req.employee.userId, `Your ${label} request was ${verb}.`, `/requests/${req.id}`)
+		await notify(
+			req.employee.userId,
+			`Your ${label} request was ${verb}.`,
+			`/requests/${req.id}`,
+			'REQUEST'
+		)
 	}
 
 	return { status: transition.status, currentStage: transition.currentStage }
@@ -248,9 +285,12 @@ async function countActionablePayrollRuns(
 	roles: Role[],
 	userId: string
 ): Promise<number> {
-	if (!canAny(roles, 'VERIFY_REQUESTS') && !canAny(roles, 'APPROVE_SIGNOFF')) return 0
+	if (!canAny(roles, 'VERIFY_REQUESTS') && !canAny(roles, 'APPROVE_FINANCE')) return 0
+	// A finance approver counts pending runs across every tenant they sign off for (#174);
+	// a Verifier only sees their own org's queue.
+	const financeApprover = canAny(roles, 'APPROVE_FINANCE')
 	const runs = await db.payrollRun.findMany({
-		where: { organizationId, status: 'COMPUTED' },
+		where: { status: 'COMPUTED', ...(financeApprover ? {} : { organizationId }) },
 		select: {
 			approvalSteps: {
 				select: {
@@ -270,7 +310,7 @@ async function countActionablePayrollRuns(
 		const makeActorId = r.approvalSteps.find(
 			(s) => s.attempt === live.attempt && s.stage === 'MAKE'
 		)?.actorId
-		return canActOnStage(live.currentStep.stage, roles, null, null) && makeActorId !== userId
+		return canActOnPayrollStage(live.currentStep.stage, roles) && makeActorId !== userId
 	}).length
 }
 
@@ -372,8 +412,11 @@ export async function decidePayrollRun(
 	note: string | undefined,
 	ctx: AuditContext
 ) {
+	// A finance approver (CEO / Super Admin) signs off payroll for every tenant, so they
+	// reach a run by id alone; everyone else stays scoped to their own org (#174).
+	const financeApprover = canAny(rolesOf(ctx), 'APPROVE_FINANCE')
 	const run = await db.payrollRun.findFirst({
-		where: { id: runId, organizationId },
+		where: { id: runId, ...(financeApprover ? {} : { organizationId }) },
 		include: { approvalSteps: true }
 	})
 	if (!run) error(404, 'Payroll run not found')
@@ -384,9 +427,10 @@ export async function decidePayrollRun(
 
 	const step = live.currentStep
 	const roles = rolesOf(ctx)
-	// Stage authority is a capability (VERIFY → Verifier, APPROVE → Approver). No employee
-	// owner exists for a run, so the owner-based guard args are null.
-	if (!canActOnStage(step.stage, roles, null, null)) {
+	// Stage authority is a capability (VERIFY → Verifier, APPROVE → finance approver:
+	// CEO / Super Admin, #174). No employee owner exists for a run, so the owner-based
+	// guard args are null.
+	if (!canActOnPayrollStage(step.stage, roles)) {
 		error(403, 'You cannot act on this stage')
 	}
 	// Separation of duties: the maker of this attempt may not sign it off.
@@ -419,17 +463,22 @@ export async function decidePayrollRun(
 		}
 	})
 
-	await writeAuditLog(ctx, {
-		action: 'UPDATE',
-		entityType: 'PayrollRun',
-		entityId: runId,
-		newValue: {
-			attempt: live.attempt,
-			stage: step.stage,
-			decision,
-			status: finalApproved ? 'APPROVED' : 'COMPUTED'
+	// A cross-tenant finance approval belongs in the run's tenant audit trail, not the
+	// approver's home org — log against the run's organization (#174).
+	await writeAuditLog(
+		{ ...ctx, organizationId: run.organizationId },
+		{
+			action: 'UPDATE',
+			entityType: 'PayrollRun',
+			entityId: runId,
+			newValue: {
+				attempt: live.attempt,
+				stage: step.stage,
+				decision,
+				status: finalApproved ? 'APPROVED' : 'COMPUTED'
+			}
 		}
-	})
+	)
 
 	return { status: finalApproved ? 'APPROVED' : 'COMPUTED', stage: step.stage, decision }
 }

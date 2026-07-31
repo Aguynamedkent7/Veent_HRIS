@@ -16,12 +16,14 @@ export const load: PageServerLoad = async ({ locals }) => {
 	// a computed run and open it to sign off (#134). Sign-off roles get a read-only view —
 	// `canManage` gates the create/compute controls in the page.
 	const canManage = canAny(roles, 'MANAGE_PAYROLL')
-	const canSignOff = canAny(roles, 'VERIFY_REQUESTS') || canAny(roles, 'APPROVE_SIGNOFF')
+	const canSignOff = canAny(roles, 'VERIFY_REQUESTS') || canAny(roles, 'APPROVE_FINANCE')
 	if (!canManage && !canSignOff) error(403, 'Insufficient permissions')
 
-	// Stream the runs list so the page renders a skeleton while it loads.
-	const runs = listPayrollRuns(user.organizationId)
-	return { runs, canManage }
+	// Stream the runs list so the page renders a skeleton while it loads. Finance approvers
+	// (CEO / Super Admin) see every tenant's runs to sign them off (#174); the page labels
+	// the tenant and limits create/compute controls to the viewer's own org.
+	const runs = listPayrollRuns(user.organizationId, roles)
+	return { runs, canManage, viewerOrg: user.organizationId }
 }
 
 const createSchema = z.object({

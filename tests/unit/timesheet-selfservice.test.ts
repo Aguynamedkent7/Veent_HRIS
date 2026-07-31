@@ -111,6 +111,33 @@ describe('deleteTimesheet — owner vs manager authorization', () => {
 		await deleteTimesheet('ts1', ORG, ctx('MANAGER'))
 		expect(dbMock.timesheet.delete).toHaveBeenCalledTimes(1)
 	})
+
+	// MANAGER is the branch title for on-branch HR (JoJo/Sweetleaf) and carries HR_ADMIN's
+	// authority, so it is no longer narrowed to direct reports. Both cases below used to 403.
+	it('lets a manager act on an employee who is not their direct report', async () => {
+		dbMock.timesheet.findFirst.mockResolvedValue(makeTs({ status: 'SUBMITTED' }))
+		dbMock.employee.findUnique.mockResolvedValue({ id: 'someone-else' })
+		await deleteTimesheet('ts1', ORG, ctx('MANAGER'))
+		expect(dbMock.timesheet.delete).toHaveBeenCalledTimes(1)
+	})
+
+	it('lets a manager act on an employee with no reporting line at all', async () => {
+		// The common shape in practice — most employees have reportsToId unset, which made the
+		// old `reportsToId !== actor.id` check reject every manager for them.
+		dbMock.timesheet.findFirst.mockResolvedValue(
+			makeTs({ employee: { id: 'emp-owner', firstName: 'A', lastName: 'B', reportsToId: null } })
+		)
+		dbMock.employee.findUnique.mockResolvedValue({ id: 'mgr-emp' })
+		await deleteTimesheet('ts1', ORG, ctx('MANAGER'))
+		expect(dbMock.timesheet.delete).toHaveBeenCalledTimes(1)
+	})
+
+	it('still rejects a non-management role acting on someone else’s timesheet', async () => {
+		dbMock.timesheet.findFirst.mockResolvedValue(makeTs())
+		dbMock.employee.findUnique.mockResolvedValue({ id: 'emp-other' })
+		await expect(deleteTimesheet('ts1', ORG, ctx('FINANCE'))).rejects.toMatchObject({ status: 403 })
+		expect(dbMock.timesheet.delete).not.toHaveBeenCalled()
+	})
 })
 
 describe('updateTimesheetEntries — owner sync path', () => {

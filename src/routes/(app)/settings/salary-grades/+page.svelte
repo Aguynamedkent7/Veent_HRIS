@@ -26,7 +26,7 @@
 
 <div class="mx-auto max-w-4xl space-y-6">
 	<div>
-		<BackButton fallback="/settings" label="Settings" />
+		<BackButton fallback="/settings" label="Settings" preferFallback />
 		<h1 class="mt-1 text-2xl font-bold tracking-tight">Salary Grades</h1>
 		<p class="text-sm text-muted-foreground">
 			Pay bands assignable to positions. Employees inherit their band via their position; HR is
@@ -35,7 +35,9 @@
 	</div>
 
 	{#if form?.error}
-		<div class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+		<div
+			class="rounded-md border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-600 dark:text-red-400"
+		>
 			{form.error}
 		</div>
 	{/if}
@@ -46,8 +48,11 @@
 		<div class="overflow-x-auto rounded-md border">
 			<table class="w-full min-w-max text-sm">
 				<thead class="border-b bg-muted/50">
+					<!-- The name column absorbs the slack (`w-full`) so the money and action
+					     columns stay hugged to their content instead of being stretched apart
+					     by the table's own `w-full` (#142). -->
 					<tr>
-						<th class="px-3 py-2 text-left font-medium text-muted-foreground">Grade</th>
+						<th class="w-full px-3 py-2 text-left font-medium text-muted-foreground">Grade</th>
 						<th class="px-3 py-2 text-right font-medium text-muted-foreground">Min</th>
 						<th class="px-3 py-2 text-right font-medium text-muted-foreground">Mid</th>
 						<th class="px-3 py-2 text-right font-medium text-muted-foreground">Max</th>
@@ -59,24 +64,22 @@
 						{@const toggle = toggleGradeGuard(g.id)}
 						<tr class="hover:bg-muted/30 {g.isActive ? '' : 'opacity-50'}">
 							<td class="px-3 py-2 font-medium">{g.name}</td>
-							<td class="px-3 py-2 text-right font-mono text-xs"
+							<td class="whitespace-nowrap px-3 py-2 text-right font-mono text-xs"
 								>{formatCurrency(Number(g.minSalary))}</td
 							>
-							<td class="px-3 py-2 text-right font-mono text-xs"
+							<td class="whitespace-nowrap px-3 py-2 text-right font-mono text-xs"
 								>{formatCurrency(Number(g.midSalary))}</td
 							>
-							<td class="px-3 py-2 text-right font-mono text-xs"
+							<td class="whitespace-nowrap px-3 py-2 text-right font-mono text-xs"
 								>{formatCurrency(Number(g.maxSalary))}</td
 							>
-							<td class="px-3 py-2 text-right">
+							<td class="whitespace-nowrap px-3 py-2 text-right">
 								<form method="POST" action="?/toggleGrade" use:enhance={toggle.enhance}>
 									<input type="hidden" name="id" value={g.id} />
 									<button
 										type="submit"
 										disabled={toggle.busy}
-										class="rounded-md border px-3 py-1 text-xs font-medium disabled:pointer-events-none disabled:opacity-50 {g.isActive
-											? 'border-red-200 text-red-600 hover:bg-red-50'
-											: 'border-green-200 text-green-600 hover:bg-green-50'}"
+										class={g.isActive ? 'btn-row-danger' : 'btn-row-positive'}
 										>{toggle.busy ? 'Saving…' : g.isActive ? 'Deactivate' : 'Activate'}</button
 									>
 								</form>
@@ -146,9 +149,15 @@
 			<div class="overflow-x-auto rounded-md border">
 				<table class="w-full min-w-max text-sm">
 					<thead class="border-b bg-muted/50">
+						<!-- Same column rule as the Grades table above: the title absorbs the
+						     slack, the grade picker is pinned right (#142). -->
 						<tr>
-							<th class="px-3 py-2 text-left font-medium text-muted-foreground">Position</th>
-							<th class="px-3 py-2 text-left font-medium text-muted-foreground">Grade</th>
+							<th class="w-full px-3 py-2 text-left font-medium text-muted-foreground">Position</th>
+							<!-- Right-aligned so the picker sits against the table edge rather than floating
+							     mid-row (#142). Alignment and slack only: this table is min-w-max, under
+							     which per-column percentage widths (w-[1%]) collapse every column to zero —
+							     verified by screenshot, so size columns here with care. -->
+							<th class="px-3 py-2 text-right font-medium text-muted-foreground">Grade</th>
 						</tr>
 					</thead>
 					<tbody class="divide-y">
@@ -156,12 +165,12 @@
 							{@const assign = assignGradeGuard(p.id)}
 							<tr class="hover:bg-muted/30">
 								<td class="px-3 py-2">{p.title}</td>
-								<td class="px-3 py-2">
+								<td class="whitespace-nowrap px-3 py-2">
 									<form
 										method="POST"
 										action="?/assignGrade"
 										use:enhance={assign.enhance}
-										class="flex items-center gap-2"
+										class="flex items-center justify-end gap-2"
 									>
 										<input type="hidden" name="positionId" value={p.id} />
 										<!-- No submit button: the select auto-submits via requestSubmit(), which

@@ -21,7 +21,9 @@ const leaveTypeSchema = z.object({
 	isPaid: z.coerce.boolean(),
 	defaultDaysPerYear: z.coerce.number().min(0).max(365),
 	allowCarryOver: z.coerce.boolean(),
-	maxCarryOverDays: z.coerce.number().min(0).max(365).optional()
+	maxCarryOverDays: z.coerce.number().min(0).max(365).optional(),
+	// Tenure gate (#137): 0 = available from day one. Capped at 10 years.
+	minMonthsOfService: z.coerce.number().int().min(0).max(120).default(0)
 })
 
 function inputOf(d: z.infer<typeof leaveTypeSchema>): LeaveTypeInput {
@@ -30,7 +32,8 @@ function inputOf(d: z.infer<typeof leaveTypeSchema>): LeaveTypeInput {
 		isPaid: d.isPaid,
 		defaultDaysPerYear: d.defaultDaysPerYear,
 		allowCarryOver: d.allowCarryOver,
-		maxCarryOverDays: d.maxCarryOverDays ?? null
+		maxCarryOverDays: d.maxCarryOverDays ?? null,
+		minMonthsOfService: d.minMonthsOfService
 	}
 }
 

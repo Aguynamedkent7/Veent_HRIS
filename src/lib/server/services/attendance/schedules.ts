@@ -24,6 +24,7 @@ export async function createSchedule(
 	data: {
 		name: string
 		isDefault?: boolean
+		trackTardiness?: boolean
 		startMinutes: number
 		endMinutes: number
 		breakMinutes: number
@@ -42,6 +43,7 @@ export async function createSchedule(
 				organizationId,
 				name: data.name,
 				isDefault: data.isDefault ?? false,
+				trackTardiness: data.trackTardiness ?? true,
 				days: {
 					create: data.weekdays.map((weekday) => ({
 						weekday,
@@ -66,6 +68,41 @@ export async function createSchedule(
 		}
 	})
 	return schedule
+}
+
+/** Toggle the org-wide tardiness master switch (#190). ANDs with each schedule's own flag. */
+export async function setOrgTardiness(organizationId: string, enabled: boolean, ctx: AuditContext) {
+	await db.organization.update({
+		where: { id: organizationId },
+		data: { trackTardiness: enabled }
+	})
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'Organization',
+		entityId: organizationId,
+		newValue: { trackTardiness: enabled }
+	})
+}
+
+/** Toggle a schedule's tardiness tracking (#190). Org-scoped so it can't touch another tenant. */
+export async function setScheduleTardiness(
+	organizationId: string,
+	id: string,
+	enabled: boolean,
+	ctx: AuditContext
+) {
+	const res = await db.workSchedule.updateMany({
+		where: { id, organizationId },
+		data: { trackTardiness: enabled }
+	})
+	if (res.count === 0) error(404, 'Schedule not found')
+
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'WorkSchedule',
+		entityId: id,
+		newValue: { trackTardiness: enabled }
+	})
 }
 
 /** Assign (or clear, with null) an employee's work schedule. */

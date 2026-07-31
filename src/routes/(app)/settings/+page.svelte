@@ -42,10 +42,40 @@
 			super: false
 		},
 		{
+			href: '/settings/onboarding',
+			title: 'Onboarding Checklist',
+			desc: 'Derived & manual 201-file steps',
+			super: false
+		},
+		{
+			href: '/settings/offboarding',
+			title: 'Offboarding Checklist',
+			desc: 'Clearance steps for separations',
+			super: false
+		},
+		{
+			href: '/settings/posting-approvers',
+			title: 'Posting Approvers',
+			desc: 'Who approves each department’s job postings',
+			super: false
+		},
+		{
+			href: '/settings/job-boards',
+			title: 'Job Boards',
+			desc: 'Where postings can be published',
+			super: false
+		},
+		{
 			href: '/payroll/config',
 			title: 'Payroll Config',
-			desc: 'Cutoffs, frequency, statutory rates',
+			desc: 'Cutoffs, frequency, premium multipliers',
 			super: true
+		},
+		{
+			href: '/payroll/statutory-rates',
+			title: 'Statutory Rates',
+			desc: 'SSS, PhilHealth, Pag-IBIG, BIR tax',
+			statutory: true
 		},
 		{
 			href: '/settings/holidays',
@@ -55,7 +85,12 @@
 		},
 		{ href: '/settings/roles', title: 'Roles & Access', desc: 'User role management', super: true }
 	]
-	const visible = $derived(cards.filter((c) => !c.super || data.isSuperAdmin))
+	const visible = $derived(
+		cards.filter((c) => {
+			if ('statutory' in c && c.statutory) return data.canStatutory
+			return !('super' in c && c.super) || data.isSuperAdmin
+		})
+	)
 </script>
 
 <svelte:head>

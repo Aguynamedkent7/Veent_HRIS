@@ -42,7 +42,7 @@
 			{#if selectedDraftIds.length}
 				<form
 					method="POST"
-					action="?/publishMany"
+					action="?/submitMany"
 					use:enhance={() => {
 						publishing = true
 						return async ({ update }) => {
@@ -60,7 +60,9 @@
 						disabled={publishing}
 						class="rounded-md border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
 					>
-						{publishing ? 'Publishing…' : `Publish selected (${selectedDraftIds.length})`}
+						{publishing
+							? 'Submitting…'
+							: `Submit selected for approval (${selectedDraftIds.length})`}
 					</button>
 				</form>
 			{/if}
@@ -76,7 +78,7 @@
 	{#if form?.success && form.message}
 		<div
 			role="status"
-			class="rounded-md border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700"
+			class="rounded-md border border-green-500/20 bg-green-500/10 px-4 py-2 text-sm text-green-600 dark:text-green-400"
 		>
 			{form.message}
 		</div>
@@ -84,7 +86,7 @@
 	{#if form?.error}
 		<div
 			role="alert"
-			class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700"
+			class="rounded-md border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-600 dark:text-red-400"
 		>
 			{form.error}
 		</div>
@@ -201,18 +203,27 @@
 								/>
 							{/if}
 						</td>
-						<td class="px-4 py-3 font-medium">{jp.title}</td>
+						<td class="px-4 py-3 font-medium">
+							{jp.title}
+							{#if jp.status === 'DRAFT' && jp.rejectionReason}
+								<span class="block text-xs font-normal text-red-400"
+									>Sent back: {jp.rejectionReason}</span
+								>
+							{/if}
+						</td>
 						<td class="px-4 py-3 text-muted-foreground">{jp.department.name}</td>
 						<td class="px-4 py-3">{jp._count.applicants}</td>
 						<td class="px-4 py-3">
 							<span
 								class="rounded-full px-2 py-0.5 text-xs font-medium {jp.status === 'OPEN'
-									? 'bg-green-100 text-green-700'
+									? 'bg-green-500/15 text-green-400'
 									: jp.status === 'CLOSED'
-										? 'bg-gray-100 text-gray-600'
-										: 'bg-yellow-100 text-yellow-700'}"
+										? 'bg-gray-500/15 text-gray-400'
+										: jp.status === 'PENDING_APPROVAL'
+											? 'bg-blue-500/15 text-blue-400'
+											: 'bg-yellow-500/15 text-yellow-400'}"
 							>
-								{jp.status}
+								{jp.status.replace('_', ' ')}
 							</span>
 						</td>
 						<td class="px-4 py-3 text-muted-foreground"

@@ -36,6 +36,8 @@
 		mode: 'edit' | 'review'
 		isManager: boolean
 		isHrAdmin?: boolean
+		/** #165: false makes the edit surface strictly read-only (Employee role on /timesheets). */
+		canModify?: boolean
 		myEmployeeId?: string | null
 		form?: { error?: string } | null
 	}
@@ -45,6 +47,7 @@
 		mode,
 		isManager,
 		isHrAdmin = false,
+		canModify = true,
 		myEmployeeId = null,
 		form = null
 	}: Props = $props()
@@ -79,23 +82,30 @@
 	// Capabilities are gated by mode: edit surface can modify/delete/submit but never
 	// approve; review surface can only approve/reject and is read-only.
 	const isOwner = $derived(ts != null && ts.employeeId === myEmployeeId)
-	const canEdit = $derived(mode === 'edit' && isManager && ts != null && ts.status !== 'APPROVED')
+	// #165: canModify gates the whole edit surface, so a read-only viewer keeps the summary
+	// and entry table but loses every mutating control.
+	const canEdit = $derived(
+		mode === 'edit' && canModify && isManager && ts != null && ts.status !== 'APPROVED'
+	)
 	const canReview = $derived(mode === 'review' && ts != null && ts.status === 'SUBMITTED')
 	// Managers/HR may delete any of their scope; the owner may delete only their own draft/rejected.
 	const canDelete = $derived(
 		mode === 'edit' &&
+			canModify &&
 			ts != null &&
 			(isManager || (isOwner && (ts.status === 'DRAFT' || ts.status === 'REJECTED')))
 	)
-	const canSubmit = $derived(mode === 'edit' && isOwner && ts != null && ts.status === 'DRAFT')
+	const canSubmit = $derived(
+		mode === 'edit' && canModify && isOwner && ts != null && ts.status === 'DRAFT'
+	)
 	// Repopulate a draft's entries from attendance — owner (own draft) or a manager/HR.
 	const canSync = $derived(
-		mode === 'edit' && ts != null && ts.status === 'DRAFT' && (isOwner || isManager)
+		mode === 'edit' && canModify && ts != null && ts.status === 'DRAFT' && (isOwner || isManager)
 	)
 	// HR can submit someone else's aggregated draft on their behalf (canSubmit is
 	// owner-only). It lands in the review queue — the edit surface never approves.
 	const canSubmitForEmployee = $derived(
-		mode === 'edit' && isHrAdmin && !isOwner && ts != null && ts.status === 'DRAFT'
+		mode === 'edit' && canModify && isHrAdmin && !isOwner && ts != null && ts.status === 'DRAFT'
 	)
 
 	const totalReg = $derived(entries.reduce((s, e) => s + (Number(e.reg) || 0), 0))
@@ -532,7 +542,7 @@
 							action="?/delete"
 							title="Delete timesheet?"
 							message="This permanently deletes the timesheet and all its entries."
-							triggerClass="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+							triggerClass="rounded-md border border-red-500/20 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-500/10"
 							disabled={busy}
 							submit={closeOnSuccess}
 						>
@@ -554,7 +564,7 @@
 							type="button"
 							disabled={busy}
 							onclick={() => (rejecting = true)}
-							class="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+							class="rounded-md border border-red-500/20 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-500/10 disabled:opacity-50"
 							>Reject…</button
 						>
 						<form method="POST" action="?/review" use:enhance={closeOnSuccess}>

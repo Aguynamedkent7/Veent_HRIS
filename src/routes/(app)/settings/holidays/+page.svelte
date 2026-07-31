@@ -27,12 +27,14 @@
 	})
 
 	function typeBadgeClass(type: string) {
-		if (type === 'REGULAR') return 'bg-red-100 text-red-700'
-		return 'bg-blue-100 text-blue-700'
+		if (type === 'REGULAR') return 'bg-red-500/15 text-red-400'
+		if (type === 'SPECIAL_WORKING') return 'bg-green-500/15 text-green-400'
+		return 'bg-blue-500/15 text-blue-400'
 	}
 
 	function typeLabel(type: string) {
 		if (type === 'REGULAR') return 'Regular'
+		if (type === 'SPECIAL_WORKING') return 'Special Working'
 		return 'Special Non-Working'
 	}
 </script>
@@ -42,7 +44,7 @@
 </svelte:head>
 
 <div class="space-y-6">
-	<BackButton fallback="/settings" label="Settings" />
+	<BackButton fallback="/settings" label="Settings" preferFallback />
 
 	<div class="flex items-center justify-between">
 		<div>
@@ -114,6 +116,7 @@
 					>
 						<option value="REGULAR">Regular</option>
 						<option value="SPECIAL_NON_WORKING">Special Non-Working</option>
+						<option value="SPECIAL_WORKING">Special Working</option>
 					</select>
 				</div>
 			</div>
@@ -202,6 +205,9 @@
 												selected={holiday.type === 'SPECIAL_NON_WORKING'}
 												>Special Non-Working</option
 											>
+											<option value="SPECIAL_WORKING" selected={holiday.type === 'SPECIAL_WORKING'}
+												>Special Working</option
+											>
 										</select>
 									</div>
 									<div class="flex gap-2">
@@ -248,7 +254,7 @@
 										action="?/delete"
 										title="Delete holiday?"
 										message="“{holiday.name}” will be removed from the calendar."
-										triggerClass="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+										triggerClass="rounded-md border border-red-500/20 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-500/10"
 									>
 										<input type="hidden" name="id" value={holiday.id} />
 									</ConfirmButton>

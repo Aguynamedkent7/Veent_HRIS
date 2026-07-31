@@ -4,6 +4,7 @@ import { db } from '$lib/server/db'
 import { requireMinRole } from '$lib/server/rbac'
 import {
 	getReview,
+	redactHrAuthored,
 	saveSelfAssessment,
 	submitManagerReview,
 	acknowledgeReview
@@ -25,7 +26,11 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		requireMinRole(user.role, 'HR_ADMIN')
 	}
 
-	return { review, isSubject, isReviewer }
+	// #179: the reviewed employee never sees the HR-authored review — redact the manager
+	// comments and rating before they leave the server. The reviewer and HR still get them.
+	const visibleReview = isSubject && !isReviewer ? redactHrAuthored(review) : review
+
+	return { review: visibleReview, isSubject, isReviewer }
 }
 
 function ctxOf(locals: App.Locals, ip: string) {

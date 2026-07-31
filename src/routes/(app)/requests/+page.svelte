@@ -3,7 +3,7 @@
 	import { advanceTo } from '$lib/actions/dateRange'
 	import { goto } from '$app/navigation'
 	import { formatDateRange, formatShortDate } from '$lib/utils/format'
-	import { formatDateISO } from '$lib/utils/dates'
+	import { formatDateISO, tenureRequirement } from '$lib/utils/dates'
 	import Pagination from '$lib/components/Pagination.svelte'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
@@ -20,6 +20,10 @@
 		{ value: 'INFO_UPDATE', label: 'Info Update' }
 	]
 	const typeLabel = (t: string) => TYPES.find((x) => x.value === t)?.label ?? t
+
+	// Pre-select the first type the filer can actually use — defaulting to leaveTypes[0]
+	// would land on a disabled option when that type is tenure-gated (#137).
+	const defaultLeaveTypeId = $derived(data.leaveTypes.find((lt) => lt.eligible)?.id ?? '')
 
 	// Submitted values echoed back by a failed create action — re-populates the form
 	// on a non-enhanced (no-JS) rerender; with enhance the browser keeps the inputs,
@@ -69,11 +73,11 @@
 	const cancelGuard = rowGuards()
 
 	function statusClass(s: string) {
-		if (s === 'APPROVED') return 'bg-green-100 text-green-700'
-		if (s === 'REJECTED') return 'bg-red-100 text-red-700'
-		if (s === 'RETURNED') return 'bg-orange-100 text-orange-700'
-		if (s === 'CANCELLED') return 'bg-gray-100 text-gray-600'
-		return 'bg-yellow-100 text-yellow-700'
+		if (s === 'APPROVED') return 'bg-green-500/15 text-green-400'
+		if (s === 'REJECTED') return 'bg-red-500/15 text-red-400'
+		if (s === 'RETURNED') return 'bg-orange-500/15 text-orange-400'
+		if (s === 'CANCELLED') return 'bg-gray-500/15 text-gray-400'
+		return 'bg-yellow-500/15 text-yellow-400'
 	}
 </script>
 
@@ -103,18 +107,24 @@
 	</div>
 
 	{#if form?.error}
-		<div class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+		<div
+			class="rounded-md border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-600 dark:text-red-400"
+		>
 			{form.error}
 		</div>
 	{/if}
 	{#if form?.message}
-		<div class="rounded-md border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
+		<div
+			class="rounded-md border border-green-500/20 bg-green-500/10 px-4 py-2 text-sm text-green-600 dark:text-green-400"
+		>
 			{form.message}
 		</div>
 	{/if}
 
 	{#if !data.hasEmployee}
-		<div class="rounded-md border border-yellow-200 bg-yellow-50 px-4 py-2 text-sm text-yellow-800">
+		<div
+			class="rounded-md border border-yellow-500/20 bg-yellow-500/10 px-4 py-2 text-sm text-yellow-600 dark:text-yellow-400"
+		>
 			Your account has no employee profile, so you can't file requests.
 		</div>
 	{/if}
@@ -148,13 +158,17 @@
 						id="leaveTypeId"
 						name="leaveTypeId"
 						required
-						value={submitted?.leaveTypeId ?? data.leaveTypes[0]?.id ?? ''}
+						value={submitted?.leaveTypeId ?? defaultLeaveTypeId}
 						aria-invalid={invalid('leaveTypeId')}
 						aria-describedby={describedBy('leaveTypeId')}
 						class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 					>
 						{#each data.leaveTypes as lt (lt.id)}
-							<option value={lt.id}>{lt.name}</option>
+							<option value={lt.id} disabled={!lt.eligible}>
+								{lt.name}{lt.eligible
+									? ''
+									: ` — available after ${tenureRequirement(lt.minMonthsOfService)}`}
+							</option>
 						{/each}
 					</select>
 					{@render fieldError('leaveTypeId')}
@@ -433,7 +447,7 @@
 										<button
 											type="submit"
 											disabled={cancel.busy}
-											class="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:pointer-events-none disabled:opacity-50"
+											class="rounded-md border border-red-500/20 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-500/10 disabled:pointer-events-none disabled:opacity-50"
 											>{cancel.busy ? 'Cancelling…' : 'Cancel'}</button
 										>
 									</form>

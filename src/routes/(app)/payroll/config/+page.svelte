@@ -14,8 +14,6 @@
 	// svelte-ignore state_referenced_locally
 	const cfg = data.config
 	let payFrequency = $state(cfg?.payFrequency ?? 'SEMI_MONTHLY')
-	let philhealthRate = $state(Number(cfg?.philhealthRate ?? 0.05) * 100)
-	let pagibigRate = $state(Number(cfg?.pagibigRate ?? 0.02) * 100)
 	let cutoffDay1 = $state(cfg?.firstCutoff ?? 15)
 	let cutoffDay2 = $state(cfg?.secondCutoff ?? 30)
 </script>
@@ -28,7 +26,9 @@
 	<div>
 		<h1 class="text-2xl font-bold tracking-tight">Payroll Configuration</h1>
 		<p class="mt-1 text-sm text-muted-foreground">
-			Configure payroll frequency, statutory rates, and cutoff dates.
+			Configure payroll frequency and cutoff dates. Statutory rate tables live under
+			<a href="/payroll/statutory-rates" class="underline hover:text-foreground">Statutory Rates</a
+			>.
 		</p>
 	</div>
 
@@ -66,51 +66,6 @@
 				<option value="SEMI_MONTHLY">Semi-Monthly (twice a month)</option>
 				<option value="MONTHLY">Monthly (once a month)</option>
 			</select>
-		</div>
-
-		<!-- Statutory Rates -->
-		<div class="grid gap-4 sm:grid-cols-2">
-			<div class="space-y-2">
-				<label class="text-sm font-medium" for="philhealthRate"> PhilHealth Rate (%) </label>
-				<div class="relative">
-					<input
-						id="philhealthRate"
-						name="philhealthRate"
-						type="number"
-						min="0"
-						max="100"
-						step="0.05"
-						bind:value={philhealthRate}
-						class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pr-8"
-					/>
-					<span
-						class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"
-						>%</span
-					>
-				</div>
-				<p class="text-xs text-muted-foreground">Current statutory rate: 5%</p>
-			</div>
-
-			<div class="space-y-2">
-				<label class="text-sm font-medium" for="pagibigRate"> Pag-IBIG Rate (%) </label>
-				<div class="relative">
-					<input
-						id="pagibigRate"
-						name="pagibigRate"
-						type="number"
-						min="0"
-						max="100"
-						step="0.05"
-						bind:value={pagibigRate}
-						class="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pr-8"
-					/>
-					<span
-						class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground"
-						>%</span
-					>
-				</div>
-				<p class="text-xs text-muted-foreground">Standard employee contribution: 2%</p>
-			</div>
 		</div>
 
 		<!-- Cutoff Days (only shown for SEMI_MONTHLY) -->

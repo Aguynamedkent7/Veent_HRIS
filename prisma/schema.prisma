@@ -10,14 +10,14 @@ datasource db {
 // ─── Lucia Auth ──────────────────────────────────────────────────────────────
 
 model Session {
-  id        String   @id
-  userId    String
-  expiresAt DateTime
+  id           String   @id
+  userId       String
+  expiresAt    DateTime
   // Active org for cross-org members (#131). Null → fall back to User.organizationId.
   // Set at login to the user's primary org; changed only via the validated
   // /api/v1/session/switch-org endpoint.
   currentOrgId String?
-  user         User    @relation(references: [id], fields: [userId], onDelete: Cascade)
+  user         User     @relation(references: [id], fields: [userId], onDelete: Cascade)
 
   @@map("sessions")
 }
@@ -37,10 +37,17 @@ enum Role {
 }
 
 enum EmploymentType {
-  FULL_TIME
+  // FULL_TIME was renamed to REGULAR (#172) — payslips already printed it as "REGULAR", so the
+  // data model now matches the document. Renaming a Postgres enum value is NOT something
+  // `prisma db push` can do without dropping the type, so any existing database must run
+  // `pnpm tsx scripts/migrate-employment-type-regular.ts` BEFORE the push.
+  REGULAR
   PART_TIME
   CONTRACTUAL
   PROBATIONARY
+  // #187: branch crew who work called shifts, and interns.
+  ON_CALL
+  INTERN
 }
 
 enum EmploymentStatus {
@@ -49,10 +56,15 @@ enum EmploymentStatus {
   OFFBOARDED
 }
 
-// Client-confirmed (#122): employees are either on a fixed monthly salary or paid hourly.
-// There is no daily rate — DAILY was removed rather than left as an enum value the UI hides.
+// #122 removed DAILY on the basis that staff are either salaried or hourly; #189 reverses that
+// and restores it. Adding an enum value is something `db push` handles on its own — unlike the
+// FULL_TIME → REGULAR rename, no migration script is needed.
+//
+// HOURLY is restricted to PART_TIME and ON_CALL staff (#189); the rate/type pairing is enforced
+// in `$lib/utils/rate-basis`, which the create form, the edit form and the API all validate with.
 enum RateType {
   MONTHLY
+  DAILY
   HOURLY
 }
 
@@ -145,6 +157,7 @@ enum LoanStatus {
 
 enum JobPostingStatus {
   DRAFT
+  PENDING_APPROVAL
   OPEN
   CLOSED
 }
@@ -173,6 +186,9 @@ enum OfferStatus {
 enum HolidayType {
   REGULAR
   SPECIAL_NON_WORKING
+  // #199: a declared Special *Working* holiday is paid as an ordinary working day — no premium
+  // (cf. SPECIAL_NON_WORKING at +30%). Attendance maps it back to the schedule-based day type.
+  SPECIAL_WORKING
 }
 
 enum AuditAction {
@@ -263,35 +279,53 @@ enum DayType {
 // ─── Organization ─────────────────────────────────────────────────────────────
 
 model Organization {
-  id        String   @id @default(cuid())
-  name      String   @db.VarChar(200)
-  logoUrl   String?
+  id           String   @id @default(cuid())
+  name         String   @db.VarChar(200)
+  logoUrl      String?
   // Per-tenant brand colour as a raw HSL triple ("H S% L%", e.g. "142 71% 42%") so it can
   // be injected straight into the `--primary`/`--ring` CSS variables. Null → default palette.
   themePrimary String?
-  address   String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  address      String?
+  // Company Discord server invite link (#186). When set, onboarding emails new hires an
+  // invitation; null (most tenants) skips it. Only Veent has adopted Discord so far.
+  discordInviteUrl String?
+  // Prefix for generated employee numbers ("EMP" → EMP-015). Per-org because the branches
+  // number their staff separately: JoJo Potato uses JJ, Sweetleaf SL. The default backfills
+  // existing rows and keeps Veent on EMP.
+  employeeNumberPrefix String @default("EMP") @db.VarChar(8)
+  // Master switch for schedule-based tardiness (#190). Off → no employee is ever marked LATE,
+  // company-wide; ANDs with each WorkSchedule.trackTardiness. Default keeps current behavior.
+  trackTardiness Boolean @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  departments    Department[]
-  users          User[]
-  memberships    UserOrganization[]
-  leaveTypes     LeaveType[]
-  payrollConfig  PayrollConfig?
-  payrollRuns    PayrollRun[]
-  jobPostings    JobPosting[]
-  publicHolidays PublicHoliday[]
-  auditLogs      AuditLog[]
-  benefitPlans   BenefitPlan[]
-  reviewCycles   ReviewCycle[]
-  positions      Position[]
-  payrollPeriods PayrollPeriod[]
-  earningTypes   EarningType[]
-  deductionTypes DeductionType[]
-  payRateRule    PayRateRule?
-  workSchedules  WorkSchedule[]
-  salaryGrades   SalaryGrade[]
-  announcements  Announcement[]
+  departments              Department[]
+  users                    User[]
+  memberships              UserOrganization[]
+  leaveTypes               LeaveType[]
+  payrollConfig            PayrollConfig?
+  payrollRuns              PayrollRun[]
+  jobPostings              JobPosting[]
+  publicHolidays           PublicHoliday[]
+  auditLogs                AuditLog[]
+  benefitPlans             BenefitPlan[]
+  reviewCycles             ReviewCycle[]
+  positions                Position[]
+  payrollPeriods           PayrollPeriod[]
+  earningTypes             EarningType[]
+  deductionTypes           DeductionType[]
+  payRateRule              PayRateRule?
+  statutoryRateConfig      StatutoryRateConfig?
+  statutoryRateProposals   StatutoryRateProposal[]
+  workSchedules            WorkSchedule[]
+  salaryGrades             SalaryGrade[]
+  announcements            Announcement[]
+  onboardingChecklistItems OnboardingChecklistItem[]
+  offboardingChecklistItems OffboardingChecklistItem[]
+  postingApprovers         PostingApprover[]
+  jobBoards                JobBoard[]
+  inventoryItems           InventoryItem[]
+  branches                 Branch[]
 
   @@map("organizations")
 }
@@ -387,11 +421,19 @@ model Employee {
   jobTitle                 String
   employmentType           EmploymentType
   employmentStatus         EmploymentStatus @default(ACTIVE)
+  // Company email (#186). Real provisioning is deferred, so onboarding seeds this with the
+  // hire's working email; HR updates it to the real company address once provisioned.
+  companyEmail             String?
   startDate                DateTime
   endDate                  DateTime?
   reportsToId              String?
   positionId               String?
   workScheduleId           String?
+  // Store assignment. Nullable: only the food-service tenants use branches, and an employee
+  // can be unassigned (head office, new hire, floater). Postgres cannot express
+  // "branch.organizationId == employee.organizationId", so every write path to this column
+  // must verify it in the service layer (updateEmployee and branches.normalize both do).
+  branchId                 String?
   discordId                String?          @unique
   basicMonthlySalary       Decimal          @db.Decimal(12, 2)
   rateType                 RateType         @default(MONTHLY)
@@ -412,34 +454,102 @@ model Employee {
   createdAt                DateTime         @default(now())
   updatedAt                DateTime         @updatedAt
 
-  user               User                @relation(fields: [userId], references: [id])
-  department         Department          @relation(fields: [departmentId], references: [id])
-  position           Position?           @relation(fields: [positionId], references: [id])
-  reportsTo          Employee?           @relation("EmployeeHierarchy", fields: [reportsToId], references: [id])
-  directReports      Employee[]          @relation("EmployeeHierarchy")
-  timesheets         Timesheet[]
-  timeLogs           TimeLog[]
-  leaveBalances      LeaveBalance[]
-  leaveRequests      LeaveRequest[]
-  requests           Request[]
-  documents          EmployeeDocument[]
-  payrollEntries     PayrollEntry[]
-  convertedApplicant Applicant?          @relation("ConvertedEmployee")
-  benefitEnrollments BenefitEnrollment[]
-  performanceReviews PerformanceReview[] @relation("ReviewSubject")
-  reviewsGiven       PerformanceReview[] @relation("Reviewer")
-  goals              Goal[]
-  loans              Loan[]
-  cashAdvances       CashAdvance[]
-  recurringEarnings  EmployeeEarning[]
-  recurringDeductions EmployeeDeduction[]
-  workSchedule       WorkSchedule?       @relation(fields: [workScheduleId], references: [id])
-  attendanceDays     AttendanceDay[]
-  separations        SeparationRecord[]
-  emergencyContacts  EmergencyContact[]
+  user                  User                   @relation(fields: [userId], references: [id])
+  department            Department             @relation(fields: [departmentId], references: [id])
+  position              Position?              @relation(fields: [positionId], references: [id])
+  reportsTo             Employee?              @relation("EmployeeHierarchy", fields: [reportsToId], references: [id])
+  directReports         Employee[]             @relation("EmployeeHierarchy")
+  timesheets            Timesheet[]
+  timeLogs              TimeLog[]
+  leaveBalances         LeaveBalance[]
+  leaveRequests         LeaveRequest[]
+  requests              Request[]
+  documents             EmployeeDocument[]
+  payrollEntries        PayrollEntry[]
+  convertedApplicant    Applicant?             @relation("ConvertedEmployee")
+  benefitEnrollments    BenefitEnrollment[]
+  performanceReviews    PerformanceReview[]    @relation("ReviewSubject")
+  reviewsGiven          PerformanceReview[]    @relation("Reviewer")
+  goals                 Goal[]
+  loans                 Loan[]
+  cashAdvances          CashAdvance[]
+  recurringEarnings     EmployeeEarning[]
+  recurringDeductions   EmployeeDeduction[]
+  statutoryConfig       EmployeeStatutoryConfig[]
+  compensationHistory   EmployeeCompensation[]
+  employmentTypeHistory EmployeeEmploymentType[]
+  workSchedule          WorkSchedule?          @relation(fields: [workScheduleId], references: [id])
+  attendanceDays        AttendanceDay[]
+  separations           SeparationRecord[]
+  emergencyContacts     EmergencyContact[]
+  onboardingCompletions OnboardingCompletion[]
+  assignedInventory     InventoryItem[]
+  branch                Branch?                @relation("BranchRoster", fields: [branchId], references: [id], onDelete: SetNull)
+  managedBranches       Branch[]               @relation("BranchManager")
 
   @@unique([organizationId, employeeNumber])
+  @@index([organizationId, branchId])
   @@map("employees")
+}
+
+// #170/#171: effective-dated compensation snapshots. Each row is the FULL comp
+// ({basicMonthlySalary, rateType}) in effect from `effectiveDate`. `Employee.{basicMonthlySalary,
+// rateType}` stay the authoritative "current" cache (== the snapshot with the latest effectiveDate
+// ≤ today); this table is authoritative only for "as of date X", which the payroll engine reads to
+// split a run across a mid-period change. Future-dating is allowed: cache re-derivation is bounded to
+// effectiveDate ≤ today and healed on read (getEmployee), so a future row stays dormant until its date
+// arrives — no scheduler needed. Actor id is a plain String (no User relation) per StatutoryRateProposal precedent.
+model EmployeeCompensation {
+  id                 String   @id @default(cuid())
+  employeeId         String
+  basicMonthlySalary Decimal  @db.Decimal(12, 2)
+  rateType           RateType
+  effectiveDate      DateTime
+  note               String?
+  changedById        String
+  changedAt          DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId, effectiveDate])
+  @@map("employee_compensation_history")
+}
+
+// #222: effective-dated employment-type snapshots — the same shape and contract as
+// EmployeeCompensation above, so a promotion dated next Monday moves title, pay AND status on that
+// date rather than the moment HR typed it. `Employee.employmentType` stays the current cache (== the
+// snapshot with the latest effectiveDate ≤ today), healed on read; this table is authoritative for
+// "as of date X". Nothing in payroll math reads employment type (payslip label, dashboard alerts and
+// the rate-basis pairing do), so unlike comp it has no period resolver — just the as-of read.
+model EmployeeEmploymentType {
+  id             String         @id @default(cuid())
+  employeeId     String
+  employmentType EmploymentType
+  effectiveDate  DateTime
+  note           String?
+  changedById    String
+  changedAt      DateTime       @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId, effectiveDate])
+  @@map("employee_employment_type_history")
+}
+
+// Additional (secondary) supervisors (#176). An employee's primary manager stays on
+// Employee.reportsToId; this records the extra superiors they also report to, so team
+// rosters and manager views count someone under ANY of their supervisors. Plain employee-id
+// FKs (resolved in queries) keep it off the Employee relation graph.
+model EmployeeSupervisor {
+  id           String   @id @default(cuid())
+  employeeId   String
+  supervisorId String
+  createdAt    DateTime @default(now())
+
+  @@unique([employeeId, supervisorId])
+  @@index([supervisorId])
+  @@index([employeeId])
+  @@map("employee_supervisors")
 }
 
 // Emergency contact(s) on the 201 file (FR-047). An employee may have several.
@@ -455,6 +565,42 @@ model EmergencyContact {
 
   @@index([employeeId])
   @@map("emergency_contacts")
+}
+
+// Per-employee statutory enrollment (#173). One row per contribution the employee has been
+// individually exempted from — absence of a row means enrolled (the default). Designed to grow:
+// later features add employer-share/period-allocation columns alongside `exempt`.
+enum StatutoryContribution {
+  SSS
+  PHILHEALTH
+  PAGIBIG
+}
+
+// #173 (Feature E): which semi-monthly cutoff the EMPLOYEE share is deducted on. EVEN splits it
+// half-and-half (today's proration); FIRST takes the full monthly EE on the 1–15 cutoff, SECOND on
+// the 16–EOM cutoff. Employer share and tax keep their normal proration regardless.
+enum StatutoryAllocation {
+  EVEN
+  FIRST
+  SECOND
+}
+
+model EmployeeStatutoryConfig {
+  id           String                @id @default(cuid())
+  employeeId   String
+  contribution StatutoryContribution
+  exempt       Boolean               @default(false)
+  // #173 (Feature C): employer share is remitted elsewhere (e.g. primary employer / dual
+  // employment) — zero the ER share only; the EE share is still deducted. Independent of `exempt`.
+  employerSharePaidExternally Boolean @default(false)
+  // #173 (Feature E): per-employee EE-share cutoff choice. Default EVEN = today's behaviour.
+  allocation   StatutoryAllocation   @default(EVEN)
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  employee     Employee              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, contribution])
+  @@map("employee_statutory_config")
 }
 
 // ─── Timesheet ────────────────────────────────────────────────────────────────
@@ -508,6 +654,11 @@ model LeaveType {
   allowCarryOver     Boolean  @default(false)
   maxCarryOverDays   Decimal? @db.Decimal(5, 2)
   isActive           Boolean  @default(true)
+  // Tenure gate (#137). Filing is blocked until the employee has this many whole calendar
+  // months of service. 0 = available from day one (every type except SIL, which the Labor
+  // Code makes a 1-year entitlement). Kept as data rather than a name check so renaming a
+  // type in Settings can't silently switch a statutory gate off.
+  minMonthsOfService Int      @default(0)
 
   organization  Organization   @relation(fields: [organizationId], references: [id])
   leaveBalances LeaveBalance[]
@@ -531,6 +682,90 @@ model LeaveBalance {
 
   @@unique([employeeId, leaveTypeId, year])
   @@map("leave_balances")
+}
+
+// Onboarding checklist (#116). Org-scoped, ordered list HR configures in Settings.
+// DERIVED items are auto-checked from the employee's own 201-file record via a fixed
+// `derivedKey` (the "done" logic stays in code); MANUAL items are ticked off by HR and
+// their completion is stored per employee in OnboardingCompletion. When an org has no
+// rows configured, the 201 file falls back to the built-in default derived steps.
+enum OnboardingItemKind {
+  DERIVED
+  MANUAL
+}
+
+model OnboardingChecklistItem {
+  id             String             @id @default(cuid())
+  organizationId String
+  kind           OnboardingItemKind
+  // Non-null only for DERIVED items — identifies which built-in condition checks it off.
+  derivedKey     String?
+  label          String
+  hint           String             @default("")
+  order          Int
+  isActive       Boolean            @default(true)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  organization Organization           @relation(fields: [organizationId], references: [id])
+  completions  OnboardingCompletion[]
+
+  // A given derived condition is configured at most once per org.
+  @@unique([organizationId, derivedKey])
+  @@index([organizationId])
+  @@map("onboarding_checklist_items")
+}
+
+model OnboardingCompletion {
+  id            String   @id @default(cuid())
+  itemId        String
+  employeeId    String
+  completedAt   DateTime @default(now())
+  completedById String?
+
+  item     OnboardingChecklistItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  employee Employee                @relation(fields: [employeeId], references: [id])
+
+  @@unique([itemId, employeeId])
+  @@index([employeeId])
+  @@map("onboarding_completions")
+}
+
+// Offboarding checklist template (#192). Org-scoped, ordered list HR configures in
+// Settings, the mirror of the onboarding checklist. Each item names a clearance task and
+// the department that signs it off; opening a separation copies the active items into that
+// case's ClearanceItem rows, and the transition notice email (#185) lists them. An org
+// that has never configured one falls back to the built-in defaults.
+// Employee award / recognition (#180). HR grants these; they announce on the dashboard
+// feed and notify the recipient. Plain org/employee id FKs (resolved in queries) keep it
+// off the Employee relation graph.
+model Award {
+  id             String   @id @default(cuid())
+  organizationId String
+  employeeId     String
+  title          String
+  note           String?
+  awardedById    String
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId])
+  @@map("awards")
+}
+
+model OffboardingChecklistItem {
+  id             String   @id @default(cuid())
+  organizationId String
+  label          String
+  department     String
+  order          Int
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@map("offboarding_checklist_items")
 }
 
 model LeaveRequest {
@@ -583,7 +818,7 @@ model Request {
 }
 
 model ApprovalStep {
-  id String @id @default(cuid())
+  id           String            @id @default(cuid())
   // Polymorphic subject (#134): exactly one of requestId / timesheetId / payrollRunId is
   // set. The same maker-checker chain drives requests, timesheets, and payroll runs.
   requestId    String?
@@ -749,14 +984,27 @@ model Announcement {
   @@map("announcements")
 }
 
+// What a notification is about, so the activity feed can label it with an icon rather than
+// smuggling one into the message text as an emoji. GENERAL is the fallback for rows written
+// before this existed and for events that fit no bucket.
+enum NotificationKind {
+  GENERAL
+  ANNOUNCEMENT
+  AWARD
+  PAYSLIP
+  REQUEST
+  RECRUITMENT
+}
+
 // Per-user in-app notification. Surfaced as a toast on next load; readAt set once seen.
 model Notification {
-  id        String    @id @default(cuid())
+  id        String           @id @default(cuid())
   userId    String
   message   String
+  kind      NotificationKind @default(GENERAL)
   link      String?
   readAt    DateTime?
-  createdAt DateTime  @default(now())
+  createdAt DateTime         @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -788,11 +1036,9 @@ model PayrollConfig {
   firstCutoff       Int?
   secondCutoff      Int?
   sssTable          Json
-  philhealthRate    Decimal      @db.Decimal(5, 4)
-  philhealthFloor   Decimal      @db.Decimal(10, 2)
-  philhealthCeiling Decimal      @db.Decimal(10, 2)
-  pagibigRate       Decimal      @db.Decimal(5, 4)
-  pagibigCeiling    Decimal      @db.Decimal(10, 2)
+  // #220: statutory RATE fields removed — StatutoryRateConfig is now the authoritative,
+  // seeded source of PhilHealth/Pag-IBIG/SSS/BIR figures. This config keeps only frequency,
+  // cutoffs, and the (legacy, unused-by-engine) sssTable/birTaxTable placeholders.
   birTaxTable       Json
   updatedAt         DateTime     @updatedAt
 
@@ -866,14 +1112,90 @@ model JobPosting {
   postedAt       DateTime?
   closedAt       DateTime?
   createdById    String
+  // Approval trail (#195): who submitted for approval, who approved, and the reason a
+  // posting was sent back to draft. All null on a fresh draft.
+  submittedById  String?
+  approvedById   String?
+  rejectionReason String?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id])
-  department   Department   @relation(fields: [departmentId], references: [id])
+  organization Organization        @relation(fields: [organizationId], references: [id])
+  department   Department          @relation(fields: [departmentId], references: [id])
   applicants   Applicant[]
+  channels     JobPostingChannel[]
 
   @@map("job_postings")
+}
+
+// Per-department posting approver (#195). A job posting must be approved before it goes
+// OPEN; this maps each department to the employee who signs off its postings (e.g. the
+// Senior Developer for Software Developers). Departments with no mapping fall back to HR
+// in the service. A plain employee-id FK (resolved in queries) keeps the config table off
+// the Employee/Department relation graph.
+model PostingApprover {
+  id             String   @id @default(cuid())
+  organizationId String
+  departmentId   String
+  approverId     String // Employee.id who approves this department's postings
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, departmentId])
+  @@index([organizationId])
+  @@map("posting_approvers")
+}
+
+// Where a posting was published (#117). A manual tracking checklist — NOT an API
+// integration. Mirrors the DeductionType/EmployeeDeduction split: JobBoard is the
+// org catalog, JobPostingChannel is the per-posting assignment.
+enum JobChannelStatus {
+  NOT_POSTED
+  POSTED
+  EXPIRED
+  TAKEN_DOWN
+}
+
+// Org-scoped catalog of job boards (JobStreet, Indeed, LinkedIn, …). Deactivate rather
+// than delete so historical postings keep their context (same reasoning as DeductionType).
+model JobBoard {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization        @relation(fields: [organizationId], references: [id])
+  channels     JobPostingChannel[]
+
+  @@unique([organizationId, name])
+  @@map("job_boards")
+}
+
+// One row per (posting, board). Ticking a board on the posting creates/reactivates a
+// POSTED row; unticking flips it to TAKEN_DOWN (with takenDownAt) rather than deleting,
+// so the history of where a role was advertised survives.
+model JobPostingChannel {
+  id           String           @id @default(cuid())
+  jobPostingId String
+  jobBoardId   String
+  status       JobChannelStatus @default(POSTED)
+  url          String?
+  postedAt     DateTime?
+  takenDownAt  DateTime?
+  postedById   String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  jobPosting JobPosting @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+  jobBoard   JobBoard   @relation(fields: [jobBoardId], references: [id])
+
+  @@unique([jobPostingId, jobBoardId])
+  @@index([jobPostingId])
+  @@map("job_posting_channels")
 }
 
 model Applicant {
@@ -951,6 +1273,81 @@ model Offer {
   @@map("offers")
 }
 
+// ─── Inventory (#114) ─────────────────────────────────────────────────────────
+//
+// A simple org-scoped asset/equipment/supplies registry. v1 is pure tracking — no
+// barcodes, purchase orders, or stock-level alerts. An item may be assigned to an
+// employee (which ties into the 201 file / offboarding clearance later).
+enum InventoryStatus {
+  IN_STOCK
+  ASSIGNED
+  RETIRED
+}
+
+model InventoryItem {
+  id             String          @id @default(cuid())
+  organizationId String
+  name           String
+  category       String
+  quantity       Int             @default(1)
+  unit           String          @default("pc")
+  location       String?
+  status         InventoryStatus @default(IN_STOCK)
+  // Set only when status is ASSIGNED. SetNull so retiring an employee doesn't delete
+  // the asset row — it just becomes unassigned.
+  assignedToId   String?
+  serialNumber   String?
+  value          Decimal?        @db.Decimal(12, 2)
+  notes          String?         @db.Text
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  assignedTo   Employee?    @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([assignedToId])
+  @@map("inventory_items")
+}
+
+// ─── Branches ─────────────────────────────────────────────────────────────────
+//
+// A food-service tenant's physical stores (JoJo Potato / Sweetleaf outlets). NOTE ON THE
+// WORD: in this codebase a "branch" is THIS — a store. Older comments used it loosely for
+// the tenant itself; those say "tenant" now.
+//
+// Branches are CLOSED, never deleted, because Employee rows point at them (same reasoning
+// as JobBoard.isActive). Closing keeps the roster — a filled store's crew stays on record —
+// and only clears the manager.
+enum BranchStatus {
+  OPEN
+  CLOSED
+}
+
+model Branch {
+  id             String       @id @default(cuid())
+  organizationId String
+  name           String       @db.VarChar(120)
+  // The store's own street address. Organization.address stays the tenant's HQ address.
+  address        String?
+  contactPhone   String?
+  status         BranchStatus @default(OPEN)
+  // Branch manager, always a member of this branch's own roster — naming them assigns them
+  // (see resolveBranchManager). SetNull so removing an employee never deletes the store.
+  managerId      String?
+  notes          String?      @db.Text
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  manager      Employee?    @relation("BranchManager", fields: [managerId], references: [id], onDelete: SetNull)
+  employees    Employee[]   @relation("BranchRoster")
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("branches")
+}
+
 // ─── Audit Log ────────────────────────────────────────────────────────────────
 
 model AuditLog {
@@ -992,10 +1389,10 @@ model TimeLog {
   employee  Employee   @relation(fields: [employeeId], references: [id])
   timesheet Timesheet? @relation(fields: [timesheetId], references: [id])
 
+  @@unique([discordMessageId, employeeId])
   @@index([employeeId, timestamp])
   @@index([timesheetId])
   @@map("time_logs")
-  @@unique([discordMessageId, employeeId])
 }
 
 // ─── Benefits Administration ──────────────────────────────────────────────────
@@ -1263,6 +1660,59 @@ model PayRateRule {
   @@map("pay_rate_rules")
 }
 
+// Org-scoped overrides for the PH statutory rate tables (#220). Mirrors PayRateRule:
+// one optional row per org, overwrite-in-place (NOT effective-dated — approved runs are
+// frozen so history lives in the stored payslips). Every column is nullable; a null field
+// falls back to the hardcoded default in ph-statutory.ts, so an org with no row (or a row
+// with all-null fields) computes byte-for-byte today's statutory numbers. The bracket
+// tables are JSON arrays of the SSSBracket[] / TaxBracket[] shapes (open-ended last
+// ceiling stored as null, revived to Infinity on read), validated on save.
+model StatutoryRateConfig {
+  id             String @id @default(cuid())
+  organizationId String @unique
+
+  philhealthRate    Decimal? @db.Decimal(6, 4)
+  philhealthFloor   Decimal? @db.Decimal(12, 2)
+  philhealthCeiling Decimal? @db.Decimal(12, 2)
+
+  pagibigRate Decimal? @db.Decimal(6, 4)
+  pagibigCap  Decimal? @db.Decimal(12, 2)
+
+  sssBrackets Json?
+  taxBrackets Json?
+
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@map("statutory_rate_configs")
+}
+
+// #220: HR-propose / CEO-confirm approval trail for statutory rate changes. HR_ADMIN's save
+// creates a PENDING proposal (live StatutoryRateConfig unchanged); a CEO/SUPER_ADMIN confirm
+// applies the payload to the live config (status APPLIED) or rejects it (REJECTED).
+enum StatutoryRateProposalStatus {
+  PENDING
+  APPLIED
+  REJECTED
+}
+
+model StatutoryRateProposal {
+  id             String                      @id @default(cuid())
+  organizationId String
+  proposedById   String
+  payload        Json // the full proposed rate set (same shape StatutoryRateConfig stores)
+  status         StatutoryRateProposalStatus @default(PENDING)
+  decidedById    String?
+  decidedAt      DateTime?
+  createdAt      DateTime                    @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, status])
+  @@map("statutory_rate_proposals")
+}
+
 model Loan {
   id          String     @id @default(cuid())
   employeeId  String
@@ -1291,11 +1741,11 @@ model LoanPayment {
 
   loan Loan @relation(fields: [loanId], references: [id], onDelete: Cascade)
 
-  @@index([loanId])
   // Idempotency key for the amortization committed at period lock: one payment per
   // (loan, payroll entry). NULL payrollEntryId stays distinct in Postgres, so manual
   // off-payroll payments are unaffected.
   @@unique([loanId, payrollEntryId])
+  @@index([loanId])
   @@map("loan_payments")
 }
 
@@ -1350,6 +1800,9 @@ model WorkSchedule {
   organizationId String
   name           String
   isDefault      Boolean  @default(false)
+  // Per-schedule tardiness switch (#190). ANDs with Organization.trackTardiness; when either is
+  // off, employees on this schedule are never marked LATE. Default keeps current behavior.
+  trackTardiness Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

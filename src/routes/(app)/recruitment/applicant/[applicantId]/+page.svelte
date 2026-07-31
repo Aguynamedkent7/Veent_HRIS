@@ -279,10 +279,10 @@
 					<span class="text-sm font-medium">{offer.jobTitle}</span>
 					<span
 						class="rounded-full px-2 py-0.5 text-xs font-medium {offer.status === 'ACCEPTED'
-							? 'bg-green-100 text-green-700'
+							? 'bg-green-500/15 text-green-400'
 							: offer.status === 'DECLINED'
-								? 'bg-red-100 text-red-700'
-								: 'bg-yellow-100 text-yellow-700'}"
+								? 'bg-red-500/15 text-red-400'
+								: 'bg-yellow-500/15 text-yellow-400'}"
 					>
 						{offer.status === 'SENT' ? 'Pending' : offer.status}
 					</span>

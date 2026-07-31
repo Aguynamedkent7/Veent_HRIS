@@ -158,13 +158,13 @@
 							<td class="px-4 py-3 whitespace-nowrap">
 								<span
 									class="rounded px-2 py-0.5 text-xs font-medium {log.action === 'CREATE'
-										? 'bg-green-100 text-green-800'
+										? 'bg-green-500/15 text-green-400'
 										: log.action === 'DELETE'
-											? 'bg-red-100 text-red-800'
+											? 'bg-red-500/15 text-red-400'
 											: log.action === 'UPDATE'
-												? 'bg-blue-100 text-blue-800'
+												? 'bg-blue-500/15 text-blue-400'
 												: log.action === 'LOGIN_FAILED'
-													? 'bg-amber-100 text-amber-800'
+													? 'bg-amber-500/15 text-amber-400'
 													: 'bg-muted text-muted-foreground'}"
 								>
 									{log.action}

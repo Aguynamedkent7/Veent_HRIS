@@ -28,19 +28,19 @@
 
 	const goalStatusClass = (status: string) =>
 		status === 'COMPLETED'
-			? 'bg-green-100 text-green-700'
+			? 'bg-green-500/15 text-green-400'
 			: status === 'CANCELLED'
-				? 'bg-red-100 text-red-700'
+				? 'bg-red-500/15 text-red-400'
 				: status === 'DRAFT'
-					? 'bg-gray-100 text-gray-700'
-					: 'bg-blue-100 text-blue-700'
+					? 'bg-gray-500/15 text-gray-400'
+					: 'bg-blue-500/15 text-blue-400'
 
 	const reviewStatusClass = (status: string) =>
 		status === 'COMPLETED' || status === 'ACKNOWLEDGED'
-			? 'bg-green-100 text-green-700'
+			? 'bg-green-500/15 text-green-400'
 			: status === 'PENDING'
-				? 'bg-yellow-100 text-yellow-700'
-				: 'bg-blue-100 text-blue-700'
+				? 'bg-yellow-500/15 text-yellow-400'
+				: 'bg-blue-500/15 text-blue-400'
 </script>
 
 <svelte:head>
@@ -303,7 +303,7 @@
 														value="ACTIVE"
 													/><button
 														disabled={activateCycle.busy}
-														class="rounded-md border border-green-200 px-3 py-1 text-xs font-medium text-green-600 hover:bg-green-50 disabled:pointer-events-none disabled:opacity-50"
+														class="rounded-md border border-green-500/20 px-3 py-1 text-xs font-medium text-green-600 dark:text-green-400 hover:bg-green-500/10 disabled:pointer-events-none disabled:opacity-50"
 														>{activateCycle.busy ? 'Activating…' : 'Activate'}</button
 													>
 												</form>
@@ -331,7 +331,7 @@
 														value="CLOSED"
 													/><button
 														disabled={closeCycle.busy}
-														class="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:pointer-events-none disabled:opacity-50"
+														class="rounded-md border border-red-500/20 px-3 py-1 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-500/10 disabled:pointer-events-none disabled:opacity-50"
 														>{closeCycle.busy ? 'Closing…' : 'Close'}</button
 													>
 												</form>
@@ -344,7 +344,7 @@
 					</table>
 				</div>
 			{/if}
-			{#if form?.opened != null}<p class="text-xs text-green-600">
+			{#if form?.opened != null}<p class="text-xs text-green-600 dark:text-green-400">
 					Opened {form.opened} review(s).
 				</p>{/if}
 		</section>
@@ -359,7 +359,6 @@
 					<tr>
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Cycle</th>
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Reviewer</th>
-						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Rating</th>
 						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
 					</tr>
 				</thead>
@@ -375,7 +374,6 @@
 							<td class="px-4 py-3 text-muted-foreground">
 								{review.reviewer.lastName}, {review.reviewer.firstName}
 							</td>
-							<td class="px-4 py-3">{review.overallRating ?? '—'}</td>
 							<td class="px-4 py-3">
 								<span
 									class="rounded-full px-2 py-0.5 text-xs font-medium {reviewStatusClass(
@@ -388,7 +386,7 @@
 						</tr>
 					{:else}
 						<tr>
-							<td colspan="4" class="px-4 py-8 text-center text-muted-foreground">No reviews</td>
+							<td colspan="3" class="px-4 py-8 text-center text-muted-foreground">No reviews</td>
 						</tr>
 					{/each}
 				</tbody>

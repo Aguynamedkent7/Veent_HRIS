@@ -7,9 +7,11 @@
 
 ## POST /api/v1/timesheets
 
-Create or update a draft timesheet for the current employee.
+Create or update a draft timesheet. Since #165 `/timesheets` is view-only for the `EMPLOYEE`
+role — HR aggregates drafts from Discord punches and names the target employee explicitly — so
+creation is HR work, not self-service.
 
-**Roles**: `EMPLOYEE`, `MANAGER` (for own timesheet)
+**Roles**: `HR_ADMIN`+ (create for any employee); `MANAGER` (own timesheet). `EMPLOYEE`: read-only.
 
 **Request body**:
 
@@ -33,12 +35,17 @@ Create or update a draft timesheet for the current employee.
 
 ## POST /api/v1/timesheets/:id/submit
 
-Submit a draft timesheet for manager approval.
+Submit a draft timesheet into the three-stage maker-checker chain (MAKE → VERIFY → APPROVE, #134).
+How MAKE is seeded depends on who submits (#165/#214 — HR-as-maker is intended, not a skipped gate):
 
-**Roles**: `EMPLOYEE`, `MANAGER` (own)
+- **HR submits on an employee's behalf** → HR is the maker, **MAKE auto-completes**, the chain opens
+  at VERIFY. This is the normal lane for rank-and-file employees (who can no longer self-submit).
+- **Manager/HR submits their OWN sheet** → **MAKE stays pending** for a different checker to act on.
+
+**Roles**: `HR_ADMIN`+ (on behalf of any employee); `MANAGER` (own). `EMPLOYEE`: cannot submit (view-only since #165).
 
 **Response 200**: `{ "id": "uuid", "status": "SUBMITTED", "submittedAt": "..." }`
-**Side effect**: Manager notified; AuditLog `UPDATE` entry.
+**Side effect**: approval steps created; reviewers notified; AuditLog `UPDATE` entry.
 
 ---
 

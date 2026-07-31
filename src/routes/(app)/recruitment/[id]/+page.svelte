@@ -4,9 +4,9 @@
 	import { formatShortDate } from '$lib/utils/format'
 	import { can } from '$lib/rbac'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
-	import type { PageData } from './$types'
+	import type { PageData, ActionData } from './$types'
 
-	let { data }: { data: PageData } = $props()
+	let { data, form }: { data: PageData; form: ActionData } = $props()
 
 	// #108: the three status forms are mutually exclusive branches, so only one is ever
 	// mounted — a guard each is enough to stop a double-click re-firing the same transition.
@@ -21,7 +21,15 @@
 	const convertGuards: Record<string, ReturnType<typeof createSubmitGuard>> = {}
 	const convertGuard = (id: string) => (convertGuards[id] ??= createSubmitGuard())
 
-	const { posting, applicants, userRole } = $derived(data)
+	// One guard per board row (#117) so saving one channel doesn't freeze the others.
+	const channelGuards: Record<string, ReturnType<typeof createSubmitGuard>> = {}
+	const channelGuard = (id: string) => (channelGuards[id] ??= createSubmitGuard())
+
+	const { posting, applicants, userRole, boards, postedCount, boardCount, stillLive } =
+		$derived(data)
+
+	const channelInputClass =
+		'h-8 rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
 	// Mirror the server guard (MANAGE_HR) so promoted Managers (#133) see the HR controls
 	// they're actually allowed to use, not just HR_ADMIN/SUPER_ADMIN.
@@ -32,9 +40,9 @@
 	)
 
 	function statusBadgeClass(status: string) {
-		if (status === 'OPEN') return 'bg-green-100 text-green-700'
-		if (status === 'CLOSED') return 'bg-gray-100 text-gray-600'
-		return 'bg-yellow-100 text-yellow-700'
+		if (status === 'OPEN') return 'bg-green-500/15 text-green-400'
+		if (status === 'CLOSED') return 'bg-gray-500/15 text-gray-400'
+		return 'bg-yellow-500/15 text-yellow-400'
 	}
 </script>
 
@@ -63,6 +71,9 @@
 					{/if}
 					{#if posting.postedAt}
 						<span>Posted {formatShortDate(posting.postedAt)}</span>
+					{/if}
+					{#if boardCount > 0}
+						<span>Posted on {postedCount} of {boardCount} boards</span>
 					{/if}
 				</div>
 			</div>
@@ -124,6 +135,81 @@
 			</div>
 		{/if}
 	</div>
+
+	<!-- Posted on — manual job-board tracking (#117) -->
+	{#if isHrAdmin}
+		<div class="rounded-lg border p-4 space-y-3">
+			<div class="flex items-center justify-between gap-2">
+				<h2 class="text-sm font-semibold">Posted on</h2>
+				<a href="/settings/job-boards" class="text-xs text-muted-foreground hover:underline"
+					>Manage boards</a
+				>
+			</div>
+
+			<!-- Close-the-loop: a CLOSED role still live somewhere needs a takedown. -->
+			{#if stillLive.length > 0}
+				<div
+					class="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-600 dark:text-amber-400"
+				>
+					This posting is <span class="font-medium">closed</span> but still live on
+					{stillLive.map((b) => b.name).join(', ')}. Take it down there so a filled role stops
+					collecting applicants.
+				</div>
+			{/if}
+
+			{#if boards.length === 0}
+				<p class="text-sm text-muted-foreground">
+					No job boards yet — <a href="/settings/job-boards" class="underline"
+						>add some in Settings</a
+					>.
+				</p>
+			{:else}
+				<ul class="space-y-2">
+					{#each boards as b (b.boardId)}
+						{@const guard = channelGuard(b.boardId)}
+						<li>
+							<form method="POST" action="?/setChannel" use:enhance={guard.enhance}>
+								<input type="hidden" name="boardId" value={b.boardId} />
+								<div class="flex flex-wrap items-center gap-2">
+									<input
+										id="ch-{b.boardId}"
+										type="checkbox"
+										name="posted"
+										checked={b.live}
+										class="peer align-middle"
+									/>
+									<label for="ch-{b.boardId}" class="text-sm font-medium">{b.name}</label>
+									{#if b.live && b.postedAt}
+										<span class="text-xs text-muted-foreground"
+											>· posted {formatShortDate(b.postedAt)}</span
+										>
+									{:else if b.status === 'TAKEN_DOWN'}
+										<span class="text-xs text-muted-foreground">· taken down</span>
+									{/if}
+									<!-- URL field: a following sibling of the checkbox, revealed once ticked. -->
+									<input
+										name="url"
+										value={b.url ?? ''}
+										placeholder="https://…"
+										class="order-last hidden w-full flex-1 peer-checked:block sm:order-none sm:w-auto {channelInputClass}"
+									/>
+									<button
+										type="submit"
+										disabled={guard.busy}
+										class="rounded-md border px-3 py-1 text-xs font-medium hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+										>{guard.busy ? '…' : 'Save'}</button
+									>
+								</div>
+								{#if form && 'channelBoardId' in form && form.channelBoardId === b.boardId}
+									<p class="mt-1 text-xs text-red-600 dark:text-red-400">{form.error}</p>
+								{/if}
+							</form>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
+	{/if}
 
 	<!-- Hired Applicants — Convert to Employee -->
 	{#if isHrAdmin && hiredApplicants.length > 0}

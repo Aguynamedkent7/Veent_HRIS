@@ -95,3 +95,14 @@ test('stage move with a note shows on the applicant timeline', async ({ page }) 
 	await expect(entry).toContainText(NOTE_TEXT)
 	await expect(entry).toContainText(USERS.admin.email)
 })
+
+// Recruitment is HR-only. The posting-detail load was missing the capability gate its
+// actions already had, so a plain employee could read the applicant pipeline by id.
+test('a non-HR employee cannot open a job posting’s applicant pipeline', async ({ page }) => {
+	await login(page, USERS.employee)
+	const res = await page.request.get(`/recruitment/${postingId}`)
+	expect(res.status()).toBe(403)
+	const body = await res.text()
+	expect(body).not.toContain(APPLICANT_FIRST)
+	expect(body).not.toContain(APPLICANT_LAST)
+})

@@ -4,6 +4,8 @@ import { db } from '$lib/server/db'
 import { requireCapability } from '$lib/server/rbac'
 import { createEmployee } from '$lib/server/services/employees'
 import { sendWelcomeEmail } from '$lib/server/notifications'
+import { govIdSchema } from '$lib/utils/gov-ids'
+import { isRateBasisAllowed, RATE_BASIS_MISMATCH } from '$lib/utils/rate-basis'
 import type { Actions, PageServerLoad } from './$types'
 
 function generateTempPassword(): string {
@@ -44,58 +46,76 @@ export const load: PageServerLoad = async ({ locals }) => {
 		})
 	])
 
-	return { departments, employees, positions, workSchedules }
+	// orgId drives a {#key} remount of the form: switching tenants mid-onboard swaps the
+	// org-scoped selects (department, reports-to, position, schedule) under the live form,
+	// which would silently blank the required Department field and wedge the submit (#ceo-switch).
+	return { organizationId: orgId, departments, employees, positions, workSchedules }
 }
 
-const createSchema = z.object({
-	email: z.string().email(),
-	password: z
-		.string()
-		.min(8)
-		.optional()
-		.or(z.literal('').transform(() => undefined)),
-	firstName: z.string().min(1),
-	lastName: z.string().min(1),
-	middleName: z.string().optional(),
-	role: z.enum(['EMPLOYEE', 'MANAGER', 'HR_ADMIN']),
-	departmentId: z.string().min(1),
-	jobTitle: z.string().min(1),
-	employmentType: z.enum(['FULL_TIME', 'PROBATIONARY', 'CONTRACTUAL', 'PART_TIME']),
-	startDate: z.coerce.date(),
-	basicMonthlySalary: z.coerce.number().positive(),
-	// #120: how the amount above is read — a fixed monthly salary or a per-hour rate.
-	rateType: z.enum(['MONTHLY', 'HOURLY']).default('MONTHLY'),
-	sssNumber: z.string().optional(),
-	philhealthNumber: z.string().optional(),
-	pagibigNumber: z.string().optional(),
-	tinNumber: z.string().optional(),
-	emergencyContactName: z.string().optional(),
-	emergencyContactRelation: z.string().optional(),
-	emergencyContactPhone: z.string().optional(),
-	bankName: z.string().optional(),
-	bankAccountName: z.string().optional(),
-	bankAccountNumber: z.string().optional(),
-	gcashNumber: z.string().optional(),
-	reportsToId: z
-		.string()
-		.optional()
-		.or(z.literal('').transform(() => undefined)),
-	// Work schedule + position are optional at onboarding; empty select → unset (null).
-	workScheduleId: z
-		.string()
-		.optional()
-		.or(z.literal('').transform(() => undefined)),
-	positionId: z
-		.string()
-		.optional()
-		.or(z.literal('').transform(() => undefined)),
-	// Empty string leaves the Discord link unset; a value sets it (unique per employee).
-	discordId: z
-		.string()
-		.trim()
-		.optional()
-		.transform((v) => (v ? v : null))
-})
+const createSchema = z
+	.object({
+		email: z.string().email(),
+		password: z
+			.string()
+			.min(8)
+			.optional()
+			.or(z.literal('').transform(() => undefined)),
+		firstName: z.string().min(1),
+		lastName: z.string().min(1),
+		middleName: z.string().optional(),
+		role: z.enum(['EMPLOYEE', 'MANAGER', 'HR_ADMIN']),
+		departmentId: z.string().min(1),
+		jobTitle: z.string().min(1),
+		// New hires start probationary (#136/#188) unless HR picks otherwise; regularization to
+		// REGULAR is automatic once 6 months of service have elapsed (scripts/promote-probationary).
+		employmentType: z
+			.enum(['REGULAR', 'PROBATIONARY', 'CONTRACTUAL', 'PART_TIME', 'ON_CALL', 'INTERN'])
+			.default('PROBATIONARY'),
+		startDate: z.coerce.date(),
+		basicMonthlySalary: z.coerce.number().positive(),
+		// #120/#189: how the amount above is read — a fixed monthly salary, a per-day rate or a
+		// per-hour rate. The hourly/employment-type pairing is checked in the refine below.
+		rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).default('MONTHLY'),
+		// #191: format-checked and stored canonically. Every value here is new, so unlike the
+		// edit form there is nothing legacy to grandfather.
+		sssNumber: govIdSchema('sssNumber'),
+		philhealthNumber: govIdSchema('philhealthNumber'),
+		pagibigNumber: govIdSchema('pagibigNumber'),
+		tinNumber: govIdSchema('tinNumber'),
+		emergencyContactName: z.string().optional(),
+		emergencyContactRelation: z.string().optional(),
+		emergencyContactPhone: z.string().optional(),
+		bankName: z.string().optional(),
+		bankAccountName: z.string().optional(),
+		bankAccountNumber: govIdSchema('bankAccountNumber'),
+		gcashNumber: govIdSchema('gcashNumber'),
+		reportsToId: z
+			.string()
+			.optional()
+			.or(z.literal('').transform(() => undefined)),
+		// Work schedule + position are optional at onboarding; empty select → unset (null).
+		workScheduleId: z
+			.string()
+			.optional()
+			.or(z.literal('').transform(() => undefined)),
+		positionId: z
+			.string()
+			.optional()
+			.or(z.literal('').transform(() => undefined)),
+		// Empty string leaves the Discord link unset; a value sets it (unique per employee).
+		discordId: z
+			.string()
+			.trim()
+			.optional()
+			.transform((v) => (v ? v : null))
+	})
+	// #189: an hourly rate applies only to part-time and on-call staff. Refined on the whole
+	// object because it is a pairing, not a property of either field alone. Reported against
+	// rateType so the message lands on the control the user would change.
+	.refine((d) => isRateBasisAllowed(d.rateType, d.employmentType), {
+		message: RATE_BASIS_MISMATCH,
+		path: ['rateType']
+	})
 
 export const actions: Actions = {
 	create: async ({ request, locals, getClientAddress }) => {
@@ -141,12 +161,26 @@ export const actions: Actions = {
 					values: raw as Record<string, string>
 				})
 			}
-			// Unique constraint on Employee.discordId
+			// Employee has three unique constraints (userId, discordId, and
+			// organizationId+employeeNumber), so a bare P2002 says nothing about which one fired.
+			// Read meta.target — reporting a number clash as a Discord ID problem sends the user
+			// off to edit a field that was never the issue.
 			if (e && typeof e === 'object' && 'code' in e && (e as { code?: string }).code === 'P2002') {
-				return fail(409, {
-					error: 'That Discord ID is already linked to another employee.',
-					values: raw as Record<string, string>
-				})
+				const target = (e as { meta?: { target?: unknown } }).meta?.target
+				const fields = Array.isArray(target) ? (target as string[]) : []
+				if (fields.includes('discordId')) {
+					return fail(409, {
+						error: 'That Discord ID is already linked to another employee.',
+						values: raw as Record<string, string>
+					})
+				}
+				if (fields.includes('employeeNumber')) {
+					// createEmployee retries a lost race, so reaching here means it lost repeatedly.
+					return fail(409, {
+						error: 'Could not allocate an employee number just now. Please try again.',
+						values: raw as Record<string, string>
+					})
+				}
 			}
 			throw e
 		}

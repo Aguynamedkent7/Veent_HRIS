@@ -10,13 +10,14 @@
 
 import type {
 	AttendanceInput,
+	ComputeSegment,
 	EarningsResult,
 	EmployeeComp,
 	PayAdjustments,
 	PayComponent
 } from './types'
 import { basicPayBasis, hourlyRateOf } from './types'
-import { D, q2n, sumQ, type Money } from './money'
+import { D, q2n, sum, sumQ, type Money } from './money'
 import { resolveRates, type PayRates } from './rates'
 
 /** Quantize a component's exact amount once — this is the line's last step. */
@@ -29,7 +30,11 @@ export function computeEarnings(
 	att: AttendanceInput,
 	adjustments: PayAdjustments = {},
 	ratesOverride?: Partial<PayRates>,
-	opts: { periodShare?: number } = {}
+	opts: {
+		periodShare?: number
+		basicSegments?: { salary: Money; weight: Money }[]
+		segments?: ComputeSegment[]
+	} = {}
 ): EarningsResult {
 	const rates = resolveRates(ratesOverride)
 	const hr = hourlyRateOf(comp)
@@ -43,9 +48,27 @@ export function computeEarnings(
 	// not shrink with hours. Everyone else is paid for hours actually worked. The hourly rate is
 	// still needed either way — OT, night diff, holiday premiums and the tardiness valuation all
 	// derive from it.
-	const basicPay =
-		basicPayBasis(comp) === 'FIXED'
-			? D(comp.basicMonthlySalary).times(periodShare)
+	//
+	// #170: a mid-period salary change day-splits the fixed basic into weighted segments (Σ weight
+	// == periodShare, working-day weighted). Carried exact and quantized once at the line below, so
+	// a single full-period segment (weight == periodShare) reproduces the un-split figure byte for
+	// byte. Absent → today's `× periodShare`.
+	//
+	// #170 Stage 2: a mixed-basis split (hourly/daily rate change, or a MONTHLY↔hourly flip) values
+	// BASIC per segment by that segment's OWN basis — FIXED → salary × weight, hourly → segment hours
+	// × its hourly rate — summed exact, one q2 at the line. Premiums below stay valued from the
+	// AGGREGATE attendance at the period-end `hr` (decided; not split per segment).
+	const segBasic = (s: ComputeSegment): Money =>
+		basicPayBasis(s.comp) === 'FIXED'
+			? D(s.comp.basicMonthlySalary).times(s.weight)
+			: D(s.attendance.regularHours).times(hourlyRateOf(s.comp))
+
+	const basicPay = opts.segments
+		? sum(opts.segments.map(segBasic))
+		: basicPayBasis(comp) === 'FIXED'
+			? opts.basicSegments
+				? sum(opts.basicSegments.map((s) => s.salary.times(s.weight)))
+				: D(comp.basicMonthlySalary).times(periodShare)
 			: at(att.regularHours)
 
 	const candidates: PayComponent[] = [

@@ -8,6 +8,7 @@ import {
 	setRequestDocumentVerified
 } from '$lib/server/services/requests/documents'
 import { APPROVER_ROLES } from '$lib/server/services/approvals'
+import { getLeaveBalances } from '$lib/server/services/leave'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals, params }) => {
@@ -29,6 +30,19 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	// LEAVE requests store their leaveTypeId in the JSON payload (no relation); resolve it to a
 	// name for the details panel.
 	let leaveTypeName: string | null = null
+	// The filer's ledger for the year the leave falls in (#137). An approver deciding a leave
+	// request should not have to open the 201 file to see whether the days are actually there
+	// — and the balance is only deducted on final approval, so what is shown here is what the
+	// request will draw against.
+	let leaveBalances: {
+		id: string
+		name: string
+		allocated: number
+		used: number
+		remaining: number
+		isRequested: boolean
+	}[] = []
+
 	if (req.type === 'LEAVE') {
 		const leaveTypeId = ((req.payload ?? {}) as Record<string, unknown>).leaveTypeId
 		if (typeof leaveTypeId === 'string') {
@@ -38,9 +52,28 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 			})
 			leaveTypeName = lt?.name ?? null
 		}
+
+		// Year of the leave itself, not today's — a December filing for January leave draws
+		// on next year's allocation, and showing this year's would misinform the approver.
+		const year = (req.dateFrom ?? new Date()).getFullYear()
+		leaveBalances = (await getLeaveBalances(req.employeeId, year))
+			.map((b) => ({
+				id: b.id,
+				name: b.leaveType.name,
+				allocated: Number(b.allocated),
+				used: Number(b.used),
+				remaining: Number(b.remaining),
+				isRequested: b.leaveTypeId === leaveTypeId
+			}))
+			// The type being drawn against leads; the rest stay alphabetical as context.
+			// Otherwise the number the reviewer actually needs sits wherever the alphabet
+			// happens to put it.
+			.sort((a, b) =>
+				a.isRequested === b.isRequested ? a.name.localeCompare(b.name) : a.isRequested ? -1 : 1
+			)
 	}
 
-	return { request: req, isOwner, canReview, leaveTypeName }
+	return { request: req, isOwner, canReview, leaveTypeName, leaveBalances }
 }
 
 function ctxOf(locals: App.Locals, ip: string) {

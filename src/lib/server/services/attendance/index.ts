@@ -5,6 +5,7 @@ import { manilaDayKey } from '$lib/utils/dates'
 import { deriveAttendanceDay, type AttPunchType, type DayType, type ScheduleDay } from './derive'
 import { createTimesheet } from '../timesheets'
 import type { AuditContext } from '../types'
+import type { HolidayType } from '@prisma/client'
 
 /**
  * Attendance service (Slice 2): derive AttendanceDay records from TimeLog punches against each
@@ -20,7 +21,7 @@ import type { AuditContext } from '../types'
  * `isDefault` schedule was written, badged in settings and preselected on the create form, but
  * never actually read here. Employees with no explicit assignment were therefore derived against
  * a phantom shift — an 8–5 worker was charged 60 minutes of undertime every day, which feeds the
- * TARDINESS deduction and reaches payroll. Prefer `resolveDefaultScheduleDays` over this constant;
+ * TARDINESS deduction and reaches payroll. Prefer `resolveDefaultSchedule` over this constant;
  * it only applies when the organization genuinely has nothing configured.
  */
 export const FALLBACK_WEEKDAY_SHIFT: ScheduleDay = {
@@ -29,13 +30,12 @@ export const FALLBACK_WEEKDAY_SHIFT: ScheduleDay = {
 	breakMinutes: 60
 } // 08:00–17:00
 
-/** The org's designated default schedule days, or null when none is configured. */
-async function resolveDefaultScheduleDays(organizationId: string) {
-	const def = await db.workSchedule.findFirst({
+/** The org's designated default schedule (days + tardiness flag), or null when none is configured. */
+async function resolveDefaultSchedule(organizationId: string) {
+	return db.workSchedule.findFirst({
 		where: { organizationId, isDefault: true },
 		include: { days: true }
 	})
-	return def?.days ?? null
 }
 
 /**
@@ -54,6 +54,15 @@ export function scheduleDayFor(
 			: null
 	}
 	return weekday >= 1 && weekday <= 5 ? FALLBACK_WEEKDAY_SHIFT : null
+}
+
+/** Resolve a day's attendance day-type from its holiday type (if any) and whether it's a scheduled
+ *  workday. Only REGULAR (+100%) and SPECIAL_NON_WORKING (+30%) carry a premium; SPECIAL_WORKING
+ *  (#199) is an ordinary paid day, so it resolves like a non-holiday. */
+export function holidayDayType(holiday: HolidayType | undefined, scheduled: boolean): DayType {
+	if (holiday === 'REGULAR') return 'REGULAR_HOLIDAY'
+	if (holiday === 'SPECIAL_NON_WORKING') return 'SPECIAL_HOLIDAY'
+	return scheduled ? 'REGULAR' : 'REST_DAY'
 }
 
 /** Group punches into shifts, attributing an overnight OUT/breaks to the IN's PHT day. */
@@ -154,7 +163,15 @@ export async function deriveRange(
 
 	// Fetched once per run: employees without an explicit assignment derive against the org's
 	// designated default rather than a hardcoded shift.
-	const defaultScheduleDays = await resolveDefaultScheduleDays(organizationId)
+	const defaultSchedule = await resolveDefaultSchedule(organizationId)
+	const defaultScheduleDays = defaultSchedule?.days ?? null
+
+	// Org master tardiness switch (#190). ANDs with the employee's effective schedule flag below.
+	const org = await db.organization.findUnique({
+		where: { id: organizationId },
+		select: { trackTardiness: true }
+	})
+	const orgTracksTardiness = org?.trackTardiness ?? true
 
 	// PHT day range expressed as an absolute UTC window (PHT day D = [D 00:00+08:00, D+1 00:00+08:00)).
 	const phtStart = new Date(`${fromKey}T00:00:00+08:00`)
@@ -166,6 +183,11 @@ export async function deriveRange(
 
 	for (const emp of employees) {
 		const scheduleDays = emp.workSchedule ? emp.workSchedule.days : defaultScheduleDays
+		// Effective tardiness = org master AND the employee's effective-schedule flag (#190).
+		const scheduleTracksTardiness = emp.workSchedule
+			? emp.workSchedule.trackTardiness
+			: (defaultSchedule?.trackTardiness ?? true)
+		const enforceTardiness = orgTracksTardiness && scheduleTracksTardiness
 
 		const punches = await db.timeLog.findMany({
 			where: { employeeId: emp.id, timestamp: { gte: phtStart, lt: phtEndExclusive } },
@@ -212,13 +234,7 @@ export async function deriveRange(
 			const weekday = cur.getUTCDay()
 			const holiday = holidayByDay.get(dayKey)
 			const schedDay = scheduleDayFor(scheduleDays as never, weekday)
-			const dayType: DayType = holiday
-				? holiday === 'REGULAR'
-					? 'REGULAR_HOLIDAY'
-					: 'SPECIAL_HOLIDAY'
-				: schedDay
-					? 'REGULAR'
-					: 'REST_DAY'
+			const dayType: DayType = holidayDayType(holiday, Boolean(schedDay))
 			const onLeave = leaves.some(
 				(l) =>
 					l.startDate.toISOString().slice(0, 10) <= dayKey &&
@@ -243,7 +259,8 @@ export async function deriveRange(
 				schedule: dayType === 'REGULAR' ? schedDay : null,
 				dayType,
 				approvedOtHours: approvedOtByDay.get(dayKey) ?? 0,
-				onLeave
+				onLeave,
+				enforceTardiness
 			})
 
 			const data = {
@@ -392,15 +409,95 @@ export async function correctDay(
 	ctx: AuditContext
 ) {
 	const day = await db.attendanceDay.findFirst({
-		where: { id, employee: { user: { organizationId } } }
+		where: { id, employee: { user: { organizationId } } },
+		include: { employee: { include: { workSchedule: { include: { days: true } } } } }
 	})
 	if (!day) error(404, 'Attendance day not found')
 	if (day.isLocked) error(409, 'This attendance day is locked and cannot be edited')
 
+	// When HR sets the times, the times are the source of truth: re-derive status, worked/
+	// regular/OT hours, night differential, and late/undertime from them (against the employee's
+	// schedule + the day's stored day type) rather than storing stale hand values. A status the
+	// HR user explicitly changed in the dropdown still wins over the derived one, so ON_LEAVE /
+	// HOLIDAY / ABSENT can be forced. Days edited without touching the times keep the old raw path.
+	const editingTimes = 'timeIn' in data || 'timeOut' in data
+	let write: Record<string, unknown> = { ...data }
+
+	if (editingTimes) {
+		const assigned = day.employee.workSchedule
+		const defaultSchedule = assigned ? null : await resolveDefaultSchedule(organizationId)
+		const scheduleDays = assigned ? assigned.days : (defaultSchedule?.days ?? null)
+		const weekday = day.date.getUTCDay()
+		const schedDay = scheduleDayFor(scheduleDays as never, weekday)
+
+		// Effective tardiness = org master AND the employee's effective-schedule flag (#190), so an
+		// HR-corrected day honors the same setting as the batch derive.
+		const org = await db.organization.findUnique({
+			where: { id: organizationId },
+			select: { trackTardiness: true }
+		})
+		const enforceTardiness =
+			(org?.trackTardiness ?? true) &&
+			(assigned ? assigned.trackTardiness : (defaultSchedule?.trackTardiness ?? true))
+
+		// Mirror deriveRange's OT gating: worked overtime only pays up to the approved hours.
+		const dayKey = day.date.toISOString().slice(0, 10)
+		const otReqs = await db.request.findMany({
+			where: {
+				employeeId: day.employeeId,
+				type: 'OVERTIME',
+				status: 'APPROVED',
+				dateFrom: {
+					gte: new Date(`${dayKey}T00:00:00Z`),
+					lte: new Date(`${dayKey}T23:59:59Z`)
+				}
+			},
+			select: { hours: true }
+		})
+		const approvedOtHours = otReqs.reduce((s, o) => s + Number(o.hours ?? 0), 0)
+
+		const punches = []
+		if (data.timeIn) punches.push({ punchType: 'IN' as AttPunchType, timestamp: data.timeIn })
+		if (data.timeOut) punches.push({ punchType: 'OUT' as AttPunchType, timestamp: data.timeOut })
+
+		const r = deriveAttendanceDay({
+			punches,
+			schedule: day.dayType === 'REGULAR' ? schedDay : null,
+			dayType: day.dayType as DayType,
+			approvedOtHours,
+			enforceTardiness
+		})
+
+		// HR changing the dropdown to something other than the day's current status is an
+		// explicit override; otherwise the derived status stands.
+		const statusOverride = data.status && data.status !== day.status ? data.status : undefined
+
+		write = {
+			status: statusOverride ?? r.status,
+			timeIn: r.timeIn,
+			timeOut: r.timeOut,
+			workedHours: r.workedHours,
+			regularHours: r.regularHours,
+			overtimeHours: r.overtimeHours,
+			rawOvertimeHours: r.rawOvertimeHours,
+			nightDiffHours: r.nightDiffHours,
+			restDayHours: r.restDayHours,
+			restDayOtHours: r.restDayOtHours,
+			regularHolidayHours: r.regularHolidayHours,
+			regularHolidayOtHours: r.regularHolidayOtHours,
+			specialHolidayHours: r.specialHolidayHours,
+			specialHolidayOtHours: r.specialHolidayOtHours,
+			lateMinutes: r.lateMinutes,
+			undertimeMinutes: r.undertimeMinutes,
+			breakMinutes: r.breakMinutes,
+			...(data.note !== undefined ? { note: data.note } : {})
+		}
+	}
+
 	// Flag the day so a later re-derive (Refresh) won't overwrite this manual override.
 	const updated = await db.attendanceDay.update({
 		where: { id },
-		data: { ...data, manuallyEdited: true }
+		data: { ...write, manuallyEdited: true }
 	})
 	await writeAuditLog(ctx, {
 		action: 'UPDATE',
@@ -411,7 +508,7 @@ export async function correctDay(
 			overtimeHours: Number(day.overtimeHours),
 			status: day.status
 		},
-		newValue: data as Record<string, unknown>
+		newValue: write as Record<string, unknown>
 	})
 	return updated
 }

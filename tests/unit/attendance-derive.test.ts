@@ -19,6 +19,7 @@ function derive(
 		dayType?: DayType
 		approvedOtHours?: number
 		onLeave?: boolean
+		enforceTardiness?: boolean
 	} = {}
 ) {
 	return deriveAttendanceDay({
@@ -26,7 +27,8 @@ function derive(
 		schedule: opts.schedule === undefined ? SCHED : opts.schedule,
 		dayType: opts.dayType ?? 'REGULAR',
 		approvedOtHours: opts.approvedOtHours,
-		onLeave: opts.onLeave
+		onLeave: opts.onLeave,
+		enforceTardiness: opts.enforceTardiness
 	})
 }
 
@@ -188,6 +190,30 @@ describe('deriveAttendanceDay — unpaid meal break when breaks are not punched'
 	})
 })
 
+// #190: tardiness tracking can be switched off (org master AND per-schedule). The caller passes
+// the resolved flag; here we assert the pure gate. Only lateness is affected — undertime stays.
+describe('deriveAttendanceDay — tardiness tracking toggle', () => {
+	it('tracks lateness by default (enforceTardiness omitted)', () => {
+		const r = derive([p('IN', T('09:30')), p('OUT', T('18:00'))])
+		expect(r.lateMinutes).toBe(30)
+		expect(r.status).toBe('LATE')
+	})
+
+	it('never marks LATE when tardiness tracking is off', () => {
+		const r = derive([p('IN', T('09:30')), p('OUT', T('18:00'))], { enforceTardiness: false })
+		expect(r.lateMinutes).toBe(0)
+		expect(r.status).toBe('PRESENT')
+	})
+
+	it('still computes undertime when tardiness tracking is off (gate is late-only)', () => {
+		// Late in (09:30) AND early out (16:00): late is suppressed, undertime is not.
+		const r = derive([p('IN', T('09:30')), p('OUT', T('16:00'))], { enforceTardiness: false })
+		expect(r.lateMinutes).toBe(0)
+		expect(r.undertimeMinutes).toBe(120)
+		expect(r.status).toBe('PRESENT')
+	})
+})
+
 describe('deriveAttendanceDay — overtime is gated on approval', () => {
 	it('reports rawOvertime but pays 0 without approval', () => {
 		const r = derive([
@@ -244,6 +270,64 @@ describe('deriveAttendanceDay — night differential', () => {
 		})
 		expect(r.workedHours).toBeCloseTo(5, 2) // 6h at work − 1h lunch
 		expect(r.nightDiffHours).toBeCloseTo(5, 2) // not 6
+	})
+})
+
+// The AttendanceDay is keyed on the punch-in date, so a shift that runs past midnight keeps
+// ALL of its hours — regular, OT and night differential — on the day the employee clocked in.
+// Nothing is split at the calendar boundary (see the header comment in derive.ts).
+describe('deriveAttendanceDay — shifts crossing midnight stay on the punch-in day', () => {
+	// 08:00–16:00 straight, no meal break: the customer's 16h case expects the full clock
+	// time to count, so the threshold is 8h with nothing deducted.
+	const SCHED_8H_NO_BREAK: ScheduleDay = { startMinutes: 480, endMinutes: 960, breakMinutes: 0 }
+
+	it('16h shift (Mon 08:00 → Tue 00:00) = 8 regular + 8 OT + 2 night-diff, all on Monday', () => {
+		const r = derive([p('IN', T('08:00')), p('OUT', T2('00:00'))], {
+			schedule: SCHED_8H_NO_BREAK,
+			approvedOtHours: 8
+		})
+		expect(r.workedHours).toBeCloseTo(16, 2)
+		expect(r.regularHours).toBeCloseTo(8, 2)
+		expect(r.rawOvertimeHours).toBeCloseTo(8, 2)
+		expect(r.overtimeHours).toBeCloseTo(8, 2)
+		expect(r.nightDiffHours).toBeCloseTo(2, 2) // 22:00 Mon → 00:00 Tue
+		expect(r.status).toBe('PRESENT')
+		// One result, one day: the punch-out lands on Tuesday but the hours above are Monday's.
+		expect(r.timeIn?.toISOString()).toBe(new Date(T('08:00')).toISOString())
+		expect(r.timeOut?.toISOString()).toBe(new Date(T2('00:00')).toISOString())
+	})
+
+	it('20h shift (Mon 08:00 → Tue 04:00) = 8 regular + 12 OT + 6 night-diff', () => {
+		const r = derive([p('IN', T('08:00')), p('OUT', T2('04:00'))], {
+			schedule: SCHED_8H_NO_BREAK,
+			approvedOtHours: 12
+		})
+		expect(r.workedHours).toBeCloseTo(20, 2)
+		expect(r.regularHours).toBeCloseTo(8, 2)
+		expect(r.rawOvertimeHours).toBeCloseTo(12, 2)
+		expect(r.overtimeHours).toBeCloseTo(12, 2)
+		expect(r.nightDiffHours).toBeCloseTo(6, 2) // 22:00 Mon → 04:00 Tue
+	})
+
+	it('still deducts the unpaid meal break on a cross-midnight shift', () => {
+		// Same 16 clock hours, but on an 08:00–17:00 schedule the 1h lunch comes off: 15 paid.
+		const r = derive([p('IN', T('08:00')), p('OUT', T2('00:00'))], {
+			schedule: SCHED_8_5,
+			approvedOtHours: 8
+		})
+		expect(r.workedHours).toBeCloseTo(15, 2)
+		expect(r.regularHours).toBeCloseTo(8, 2)
+		expect(r.rawOvertimeHours).toBeCloseTo(7, 2)
+		expect(r.breakMinutes).toBe(60)
+	})
+
+	it('leaves the ordinary 8-hour day untouched — no OT, no night differential', () => {
+		const r = derive([p('IN', T('08:00')), p('OUT', T('17:00'))], { schedule: SCHED_8_5 })
+		expect(r.workedHours).toBeCloseTo(8, 2)
+		expect(r.regularHours).toBeCloseTo(8, 2)
+		expect(r.rawOvertimeHours).toBe(0)
+		expect(r.overtimeHours).toBe(0)
+		expect(r.nightDiffHours).toBe(0)
 	})
 })
 

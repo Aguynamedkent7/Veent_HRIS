@@ -6,6 +6,7 @@
 	import DevLoginSwitcher from '$lib/components/dev/DevLoginSwitcher.svelte' // TEMP DEV — remove before merge
 	import { addToast } from '$lib/stores/toast.svelte'
 	import { canAny } from '$lib/rbac'
+	import { isFoodServiceOrg } from '$lib/orgs'
 	import type { LayoutData } from './$types'
 
 	let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props()
@@ -20,6 +21,13 @@
 	// the default asset when the tenant has no logoUrl set.
 	const orgLogo = $derived(data.org?.logoUrl || '/veent-logo.png')
 	const orgName = $derived(data.org?.name || 'Veent HRIS')
+	// The Veent logo already carries the "Veent HRIS" wordmark; JoJo Potato and Sweetleaf
+	// use brand marks without it, so show a "{name} HRIS" wordmark beside their logo.
+	const showWordmark = $derived(isFoodServiceOrg(data.org?.id))
+	// Branches are the food-service tenants' physical stores, so the tab only exists for
+	// them. `data.org.id` is the ACTIVE org, so switching the CEO into JoJo reveals it with
+	// no CEO-specific code. The server guard (requireFoodServiceOrg) is the real enforcement.
+	const hasBranches = $derived(isFoodServiceOrg(data.org?.id))
 	// Per-org theme (#139): override the brand CSS variables for the active tenant. The
 	// value is a raw HSL triple; descendants' `bg-primary`/`ring` pick up the cascade.
 	const themeStyle = $derived(
@@ -92,8 +100,9 @@
 	// Payroll Officer manages payroll; Finance reads payroll reports only.
 	const isPayroll = $derived(canAny(roles, 'MANAGE_PAYROLL'))
 	const canViewReports = $derived(canAny(roles, 'VIEW_PAYROLL_REPORTS'))
-	// Sign-off roles (Verifier/Approver) reach Payroll read-only to verify/approve runs (#134).
-	const canSignOff = $derived(canAny(roles, 'VERIFY_REQUESTS') || canAny(roles, 'APPROVE_SIGNOFF'))
+	// Sign-off roles reach Payroll read-only to verify/approve runs (#134). Payroll is
+	// finance, so the approver is the CEO / Super Admin, not the generic Approver (#174).
+	const canSignOff = $derived(canAny(roles, 'VERIFY_REQUESTS') || canAny(roles, 'APPROVE_FINANCE'))
 	// Approvers (manager ladder + Payroll Officer + sign-off roles) get the dropdown.
 	const canApprove = $derived(canAny(roles, 'APPROVE_REQUESTS'))
 
@@ -149,7 +158,9 @@
 			},
 			{
 				href: '/team',
-				label: 'Team',
+				// Food-service tenants organise staff by branch, so the roster reads "Branches"
+				// there; the store registry below is relabelled "Stores" to avoid the clash (#182).
+				label: hasBranches ? 'Branches' : 'Team',
 				show: isManager,
 				icon: 'M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z'
 			},
@@ -164,6 +175,14 @@
 				label: 'Departments',
 				show: isAdmin,
 				icon: 'M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21'
+			},
+			{
+				href: '/branches',
+				// The physical-store registry. Called "Stores" so it doesn't collide with the
+				// roster tab, which reads "Branches" in these same food-service tenants (#182).
+				label: 'Stores',
+				show: isAdmin && hasBranches,
+				icon: 'M13.5 21v-7.5a.75.75 0 01.75-.75h3a.75.75 0 01.75.75V21m-4.5 0H2.36m11.14 0H18m0 0h3.64m-1.39 0V9.349M3.75 21V9.349m0 0a3.001 3.001 0 003.75-.615A2.993 2.993 0 009.75 9.75c.896 0 1.7-.393 2.25-1.016a2.993 2.993 0 002.25 1.016c.896 0 1.7-.393 2.25-1.015a3.001 3.001 0 003.75.614m-16.5 0a3.004 3.004 0 01-.621-4.72L4.318 3.44A1.5 1.5 0 015.378 3h13.243a1.5 1.5 0 011.06.44l1.19 1.189a3 3 0 01-.621 4.72M6.75 18h3.75a.75.75 0 00.75-.75V13.5a.75.75 0 00-.75-.75H6.75a.75.75 0 00-.75.75v3.75c0 .414.336.75.75.75z'
 			},
 			{
 				href: '/payroll',
@@ -194,6 +213,12 @@
 				label: 'Benefits',
 				show: isAdmin,
 				icon: 'M9 12.75l2.25 2.25 4.5-4.5m3.75 2.25c0 5.592-3.824 10.29-9 11.622C6.324 22.29 2.5 17.592 2.5 12V6.75c0-.621.504-1.125 1.125-1.125A9.735 9.735 0 0012 3.286a9.735 9.735 0 008.375 2.339c.621 0 1.125.504 1.125 1.125V12z'
+			},
+			{
+				href: '/inventory',
+				label: 'Inventory',
+				show: isAdmin,
+				icon: 'M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0l-3-3m3 3l3-3M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z'
 			}
 		].filter((i) => i.show)
 	)
@@ -201,6 +226,9 @@
 	// Settings is a collapsible group; its pages live in this dropdown, not the flat nav.
 	const settingsChildren = $derived(
 		[
+			// The group header is a toggle, not a link, so without this the settings index
+			// (which lists every card, including pages absent from this list) is unreachable.
+			{ href: '/settings', label: 'All settings', show: isAdmin },
 			{ href: '/settings/company', label: 'Company', show: isAdmin },
 			{ href: '/settings/pay-codes', label: 'Earnings & Deductions', show: isAdmin },
 			{ href: '/settings/salary-grades', label: 'Salary Grades', show: isAdmin },
@@ -305,8 +333,13 @@
 				/>
 			</svg>
 		</button>
-		<a href="/dashboard" class="flex items-center">
+		<a href="/dashboard" class="flex items-center gap-2">
 			<img src={orgLogo} alt={orgName} class="h-8 w-auto" />
+			{#if showWordmark}
+				<span class="text-sm font-semibold whitespace-nowrap"
+					>{orgName} <span class="font-normal text-muted-foreground">HRIS</span></span
+				>
+			{/if}
 		</a>
 	</header>
 
@@ -328,8 +361,13 @@
 	>
 		<!-- Logo -->
 		<div class="flex h-14 shrink-0 items-center justify-between border-b border-border px-5">
-			<a href="/dashboard" class="flex items-center">
+			<a href="/dashboard" class="flex items-center gap-2">
 				<img src={orgLogo} alt={orgName} class="h-9 w-auto" />
+				{#if showWordmark}
+					<span class="text-sm font-semibold whitespace-nowrap"
+						>{orgName} <span class="font-normal text-muted-foreground">HRIS</span></span
+					>
+				{/if}
 			</a>
 			<button
 				type="button"
@@ -651,7 +689,7 @@
 	<!-- Main content — offset by sidebar on lg+, cleared by the mobile top bar below lg.
 	     min-w-0 lets this flex child shrink below its content so inner overflow-x-auto works. -->
 	<div class="flex min-w-0 flex-1 flex-col lg:pl-60">
-		<main class="flex-1 p-4 pt-20 lg:p-8 lg:pt-8">
+		<main class="flex flex-1 flex-col p-4 pt-20 lg:p-8 lg:pt-8">
 			{@render children()}
 		</main>
 	</div>

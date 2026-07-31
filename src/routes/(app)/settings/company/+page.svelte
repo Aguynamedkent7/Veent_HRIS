@@ -19,6 +19,8 @@
 	let addressValue = $state(data.company.address ?? '')
 	// svelte-ignore state_referenced_locally
 	let logoUrlValue = $state(data.company.logoUrl ?? '')
+	// svelte-ignore state_referenced_locally
+	let discordInviteValue = $state(data.company.discordInviteUrl ?? '')
 
 	// After a save the server returns the persisted row; re-sync local state so
 	// the inputs show what actually got written (in case anything was normalized).
@@ -26,6 +28,7 @@
 		nameValue = data.company.name
 		addressValue = data.company.address ?? ''
 		logoUrlValue = data.company.logoUrl ?? ''
+		discordInviteValue = data.company.discordInviteUrl ?? ''
 	})
 </script>
 
@@ -35,18 +38,22 @@
 
 <div class="mx-auto max-w-2xl space-y-6">
 	<div>
-		<BackButton fallback="/settings" label="Settings" />
+		<BackButton fallback="/settings" label="Settings" preferFallback />
 		<h1 class="mt-1 text-2xl font-bold tracking-tight">Company Information</h1>
 		<p class="text-sm text-muted-foreground">Appears on payslips, reports, and the org header.</p>
 	</div>
 
 	{#if form?.success}
-		<div class="rounded-md border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
+		<div
+			class="rounded-md border border-green-500/20 bg-green-500/10 px-4 py-2 text-sm text-green-600 dark:text-green-400"
+		>
 			Company info saved.
 		</div>
 	{/if}
 	{#if form?.error}
-		<div class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+		<div
+			class="rounded-md border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-600 dark:text-red-400"
+		>
 			{form.error}
 		</div>
 	{/if}
@@ -99,6 +106,22 @@
 					class="mt-2 h-12 w-auto rounded border object-contain"
 				/>
 			{/if}
+		</div>
+		<div class="grid gap-1.5">
+			<label for="discordInviteUrl" class="text-sm font-medium"
+				>Discord invite URL <span class="text-muted-foreground">(optional)</span></label
+			>
+			<input
+				id="discordInviteUrl"
+				name="discordInviteUrl"
+				type="url"
+				bind:value={discordInviteValue}
+				placeholder="https://discord.gg/…"
+				class="h-9 rounded-md border border-input bg-background px-3 text-sm"
+			/>
+			<p class="text-xs text-muted-foreground">
+				When set, new hires are emailed an invitation to this Discord server during onboarding.
+			</p>
 		</div>
 		<button
 			type="submit"

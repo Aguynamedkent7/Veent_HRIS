@@ -7,7 +7,11 @@ import {
 	overridePayrollEntry,
 	computePayroll
 } from '$lib/server/services/payroll/index'
-import { livePayrollStage, decidePayrollRun, canActOnStage } from '$lib/server/services/approvals'
+import {
+	livePayrollStage,
+	decidePayrollRun,
+	canActOnPayrollStage
+} from '$lib/server/services/approvals'
 import type { Actions, PageServerLoad } from './$types'
 
 function ctxOf(locals: App.Locals, ip: string) {
@@ -30,11 +34,17 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	const roles = rolesOf(user)
 	// Payroll managers run/override; the sign-off roles (Verifier/Approver) need to see
 	// the run to check its numbers and act on their stage (#134). Everyone else is out.
-	const canManage = canAny(roles, 'MANAGE_PAYROLL')
-	const canSignOff = canAny(roles, 'VERIFY_REQUESTS') || canAny(roles, 'APPROVE_SIGNOFF')
-	if (!canManage && !canSignOff) error(403, 'Insufficient permissions')
+	const canManagePayroll = canAny(roles, 'MANAGE_PAYROLL')
+	const canSignOff = canAny(roles, 'VERIFY_REQUESTS') || canAny(roles, 'APPROVE_FINANCE')
+	if (!canManagePayroll && !canSignOff) error(403, 'Insufficient permissions')
 
-	const run = await getPayrollRun(params.id, user.organizationId)
+	// Finance approvers reach any tenant's run to sign it off (#174); managers/verifiers
+	// stay in their own org.
+	const run = await getPayrollRun(params.id, user.organizationId, roles)
+
+	// Managing (override/recompute) is only ever your own org's payroll — a finance approver
+	// reviewing another tenant's run gets a read-only view plus the sign-off action.
+	const canManage = canManagePayroll && run.organizationId === user.organizationId
 
 	// Whether the current user can act on the run's live maker-checker stage: only when
 	// the run is COMPUTED, a stage is open, they hold that stage's capability, and they
@@ -45,7 +55,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		: null
 	const canAct = Boolean(
 		live?.currentStep &&
-		canActOnStage(live.currentStep.stage, roles, null, null) &&
+		canActOnPayrollStage(live.currentStep.stage, roles) &&
 		makeActorId !== user.id
 	)
 

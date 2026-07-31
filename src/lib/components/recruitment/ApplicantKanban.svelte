@@ -47,12 +47,12 @@
 	}
 
 	const STAGE_HEADER_COLORS: Record<Stage, string> = {
-		APPLIED: 'bg-blue-100 text-blue-800',
-		SCREENING: 'bg-yellow-100 text-yellow-800',
-		INTERVIEW: 'bg-purple-100 text-purple-800',
-		OFFER: 'bg-orange-100 text-orange-800',
-		HIRED: 'bg-green-100 text-green-800',
-		REJECTED: 'bg-red-100 text-red-800'
+		APPLIED: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+		SCREENING: 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400',
+		INTERVIEW: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
+		OFFER: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
+		HIRED: 'bg-green-500/10 text-green-600 dark:text-green-400',
+		REJECTED: 'bg-red-500/10 text-red-600 dark:text-red-400'
 	}
 
 	function getNextStage(stage: Stage): Stage | null {
@@ -87,7 +87,9 @@
 					]}"
 				>
 					<span class="text-sm font-semibold">{STAGE_LABELS[stage]}</span>
-					<span class="rounded-full bg-white/60 px-2 py-0.5 text-xs font-medium">
+					<span
+						class="rounded-full bg-foreground/10 px-2 py-0.5 text-xs font-medium text-foreground"
+					>
 						{stageApplicants.length}
 					</span>
 				</div>

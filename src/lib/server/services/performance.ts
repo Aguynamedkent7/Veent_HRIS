@@ -1,6 +1,7 @@
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
+import { listReportIdsFor } from './supervisors'
 import type { AuditContext } from './types'
 
 // ── Review Cycles (org-scoped) ──────────────────────────────────────────────
@@ -37,6 +38,15 @@ export async function createReviewCycle(
 }
 
 // ── Performance Reviews (scoped by employee / reviewer) ──────────────────────
+
+// #179: the HR-authored parts of a review (manager comments + overall rating) are confidential
+// to the reviewer and HR. The reviewed employee must never receive them, so strip them before a
+// review is returned to a subject-only view (their list row or their detail page).
+export function redactHrAuthored<
+	T extends { managerComments: string | null; overallRating: number | null }
+>(review: T): T {
+	return { ...review, managerComments: null, overallRating: null }
+}
 
 export async function listReviewsForEmployee(employeeId: string) {
 	return db.performanceReview.findMany({
@@ -227,10 +237,12 @@ export async function openReviewsForCycle(
 
 // ── Goals (scoped by owning employee) ────────────────────────────────────────
 
-// Goals of a manager's direct reports (T154).
+// Goals of a manager's reports (T154) — primary or additional supervisor (#176).
 export async function listGoalsForManager(managerEmployeeId: string) {
+	const reportIds = await listReportIdsFor(managerEmployeeId)
+	if (!reportIds.length) return []
 	return db.goal.findMany({
-		where: { employee: { reportsToId: managerEmployeeId } },
+		where: { employeeId: { in: reportIds } },
 		include: { employee: { select: { firstName: true, lastName: true } } },
 		orderBy: [{ status: 'asc' }, { createdAt: 'desc' }]
 	})

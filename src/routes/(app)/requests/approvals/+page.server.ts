@@ -29,7 +29,64 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const pagination = paginate(url, actionable.length)
 	const pendingRequests = actionable.slice(pagination.skip, pagination.skip + pagination.take)
 
-	return { pendingRequests, pagination }
+	// Leave context for the cards (#137): the type name, the days being asked for, and what
+	// the filer has left. Without it an approver has to open each request — or worse, approve
+	// blind — to find out whether the days are even there. Two queries for the whole page,
+	// not one per card.
+	const leaveOf = new Map<string, { leaveTypeId: string; totalDays: number | null }>()
+	for (const r of pendingRequests) {
+		if (r.type !== 'LEAVE') continue
+		const payload = (r.payload ?? {}) as { leaveTypeId?: string; totalDays?: number }
+		if (typeof payload.leaveTypeId === 'string') {
+			leaveOf.set(r.id, { leaveTypeId: payload.leaveTypeId, totalDays: payload.totalDays ?? null })
+		}
+	}
+
+	let leaveContext: Record<
+		string,
+		{ typeName: string; totalDays: number | null; remaining: number | null }
+	> = {}
+
+	if (leaveOf.size > 0) {
+		const typeIds = [...new Set([...leaveOf.values()].map((v) => v.leaveTypeId))]
+		const leaveRows = pendingRequests.filter((r) => leaveOf.has(r.id))
+		const [types, balances] = await Promise.all([
+			db.leaveType.findMany({
+				where: { id: { in: typeIds }, organizationId: user.organizationId },
+				select: { id: true, name: true }
+			}),
+			db.leaveBalance.findMany({
+				where: {
+					employeeId: { in: [...new Set(leaveRows.map((r) => r.employeeId))] },
+					leaveTypeId: { in: typeIds }
+				},
+				select: { employeeId: true, leaveTypeId: true, year: true, remaining: true }
+			})
+		])
+		const typeName = new Map(types.map((t) => [t.id, t.name]))
+		const balanceOf = new Map(
+			balances.map((b) => [`${b.employeeId}:${b.leaveTypeId}:${b.year}`, Number(b.remaining)])
+		)
+
+		leaveContext = Object.fromEntries(
+			leaveRows.map((r) => {
+				const info = leaveOf.get(r.id)!
+				// Balances are per year, keyed on the year the leave falls in — a December
+				// filing for January leave draws on next year's allocation.
+				const year = (r.dateFrom ?? new Date()).getFullYear()
+				return [
+					r.id,
+					{
+						typeName: typeName.get(info.leaveTypeId) ?? 'Leave',
+						totalDays: info.totalDays,
+						remaining: balanceOf.get(`${r.employeeId}:${info.leaveTypeId}:${year}`) ?? null
+					}
+				]
+			})
+		)
+	}
+
+	return { pendingRequests, pagination, leaveContext }
 }
 
 export const actions: Actions = {

@@ -73,12 +73,12 @@
 	{@const ids = rows.map((t) => t.id)}
 	{@const selectedIds = selOf(kind)}
 	{@const allSelected = ids.length > 0 && ids.every((id) => selectedIds.includes(id))}
-	{@const cols = showEmployee ? 5 : 4}
+	{@const cols = (showEmployee ? 4 : 3) + (data.canModify ? 1 : 0)}
 	<section class="space-y-3">
 		<h2 class="text-lg font-semibold">{title}</h2>
 
 		<!-- Bulk actions for this section; appear when its rows are selected -->
-		{#if selectedIds.length}
+		{#if data.canModify && selectedIds.length}
 			<div
 				class="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-4 py-2"
 				transition:slide={{ duration: 120 }}
@@ -99,7 +99,7 @@
 							title="Delete selected timesheets?"
 							message="Draft and rejected timesheets you own will be permanently deleted; submitted and approved ones are skipped."
 							triggerLabel="Delete selected"
-							triggerClass="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+							triggerClass="rounded-md border border-red-500/20 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-500/10 disabled:opacity-50"
 							disabled={busy}
 							submit={clearOnSuccess('mine')}
 						>
@@ -113,7 +113,7 @@
 								? ''
 								: 's'} will be permanently deleted."
 							triggerLabel="Delete selected"
-							triggerClass="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+							triggerClass="rounded-md border border-red-500/20 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-500/10 disabled:opacity-50"
 							disabled={busy}
 							submit={clearOnSuccess('team')}
 						>
@@ -131,15 +131,17 @@
 			<table class="w-full min-w-[44rem] table-fixed text-sm">
 				<thead class="border-b bg-muted/50">
 					<tr>
-						<th class="w-12 px-4 py-3">
-							<input
-								type="checkbox"
-								checked={allSelected}
-								onchange={(e) => toggleAll(kind, ids, e.currentTarget.checked)}
-								aria-label="Select all"
-								class="align-middle"
-							/>
-						</th>
+						{#if data.canModify}
+							<th class="w-12 px-4 py-3">
+								<input
+									type="checkbox"
+									checked={allSelected}
+									onchange={(e) => toggleAll(kind, ids, e.currentTarget.checked)}
+									aria-label="Select all"
+									class="align-middle"
+								/>
+							</th>
+						{/if}
 						{#if showEmployee}
 							<th class="w-56 px-4 py-3 text-left font-medium text-muted-foreground">Employee</th>
 						{/if}
@@ -158,15 +160,17 @@
 							tabindex="0"
 							class={`cursor-pointer hover:bg-muted/30 focus:bg-muted/40 focus:outline-none ${selectedIds.includes(ts.id) ? 'bg-primary/5' : ''}`}
 						>
-							<td class="px-4 py-3" onclick={(e) => e.stopPropagation()}>
-								<input
-									type="checkbox"
-									checked={selectedIds.includes(ts.id)}
-									onchange={() => toggle(kind, ts.id)}
-									aria-label="Select timesheet"
-									class="align-middle"
-								/>
-							</td>
+							{#if data.canModify}
+								<td class="px-4 py-3" onclick={(e) => e.stopPropagation()}>
+									<input
+										type="checkbox"
+										checked={selectedIds.includes(ts.id)}
+										onchange={() => toggle(kind, ts.id)}
+										aria-label="Select timesheet"
+										class="align-middle"
+									/>
+								</td>
+							{/if}
 							{#if showEmployee}
 								<td class="truncate px-4 py-3">{ts.employee.lastName}, {ts.employee.firstName}</td>
 							{/if}
@@ -194,7 +198,7 @@
 <div class="space-y-8">
 	<div class="flex items-center justify-between">
 		<h1 class="text-2xl font-bold tracking-tight">Timesheets</h1>
-		{#if data.myEmployeeId}
+		{#if data.canCreate}
 			<button
 				onclick={() => (showCreate = true)}
 				class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
@@ -242,8 +246,11 @@
 	mode="edit"
 	isManager={data.isManager}
 	isHrAdmin={data.isHrAdmin}
+	canModify={data.canModify}
 	myEmployeeId={data.myEmployeeId}
 	{form}
 />
 
-<NewTimesheetDialog bind:open={showCreate} />
+{#if data.canCreate}
+	<NewTimesheetDialog bind:open={showCreate} employees={data.employees} />
+{/if}

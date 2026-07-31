@@ -4,15 +4,22 @@
 	import { fade, scale } from 'svelte/transition'
 	import PeriodPicker from '$lib/components/ui/PeriodPicker.svelte'
 
-	// Shared "New Timesheet" popup opened from both the dashboard quick-action and
-	// the /timesheets header. Posts to the /timesheets create action (cross-route
-	// from the dashboard), which seeds a DRAFT from the employee's punches and
-	// redirects to /timesheets — so both entry points produce the same record.
+	type Employee = { id: string; firstName: string; lastName: string; employeeNumber: string }
+
+	// "New Timesheet" popup, opened from the /timesheets header. Posts to the create
+	// action, which seeds a DRAFT from the chosen employee's punches and redirects back.
 	// The period is locked to the standard 1-15 / 16-EOM / whole-month shapes (#129).
-	let { open = $bindable() }: { open: boolean } = $props()
+	//
+	// HR names the employee here rather than the sheet implicitly belonging to whoever is
+	// signed in: since #165 employees no longer create their own, so every sheet made here
+	// is HR acting on someone's behalf. `employees` is the same org-wide active list the
+	// aggregate panel uses.
+	let { open = $bindable(), employees }: { open: boolean; employees: Employee[] } = $props()
 
 	let error = $state('')
 	let submitting = $state(false)
+	// No default: an unlabelled preselection is how you create a sheet for the wrong person.
+	let employeeId = $state('')
 
 	function close() {
 		open = false
@@ -22,6 +29,7 @@
 		if (open) {
 			error = ''
 			submitting = false
+			employeeId = ''
 		}
 	})
 	function onKeydown(e: KeyboardEvent) {
@@ -69,9 +77,9 @@
 				</div>
 				<h2 class="text-xl font-bold tracking-tight">New Timesheet</h2>
 				<p class="mx-auto max-w-md text-sm text-muted-foreground">
-					Pick a standard pay period. Hours are seeded from your recorded attendance punches —
-					adjust them afterward from the timesheet's row. The sheet is saved as a draft; submit it
-					for review separately.
+					Pick an employee and a standard pay period. Hours are seeded from that employee's recorded
+					attendance punches — adjust them afterward from the timesheet's row. The sheet is saved as
+					a draft; submit it for review separately.
 				</p>
 			</div>
 
@@ -103,6 +111,20 @@
 				}}
 				class="mt-6 space-y-5"
 			>
+				<div>
+					<label for="nt-employee" class="text-sm font-medium">Employee</label>
+					<select
+						id="nt-employee"
+						name="employeeId"
+						bind:value={employeeId}
+						class="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+					>
+						<option value="" disabled>Select an employee…</option>
+						{#each employees as e (e.id)}
+							<option value={e.id}>{e.lastName}, {e.firstName} ({e.employeeNumber})</option>
+						{/each}
+					</select>
+				</div>
 				<PeriodPicker />
 				<div class="flex gap-3">
 					<button
@@ -113,7 +135,7 @@
 					>
 					<button
 						type="submit"
-						disabled={submitting}
+						disabled={submitting || !employeeId}
 						class="flex-1 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
 						>{submitting ? 'Creating…' : 'Create timesheet'}</button
 					>

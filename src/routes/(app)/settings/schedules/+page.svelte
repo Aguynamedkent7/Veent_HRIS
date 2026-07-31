@@ -31,7 +31,7 @@
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
 		<div class="flex items-center gap-3">
-			<BackButton fallback="/settings" label="Settings" />
+			<BackButton fallback="/settings" label="Settings" preferFallback />
 			<h1 class="text-2xl font-bold tracking-tight">Work Schedules</h1>
 		</div>
 		<button
@@ -48,6 +48,26 @@
 			{form.error}
 		</div>
 	{/if}
+
+	<!-- #190: org-wide master switch. ANDs with each schedule's own flag in the table below. -->
+	<div class="flex items-center justify-between gap-4 rounded-lg border p-4">
+		<div>
+			<p class="text-sm font-medium">Track tardiness organization-wide</p>
+			<p class="text-xs text-muted-foreground">
+				When off, no employee is marked <span class="font-medium">Late</span> anywhere, regardless of
+				the per-schedule settings below.
+			</p>
+		</div>
+		<form method="POST" action="?/toggleOrgTardiness" use:enhance>
+			<input type="hidden" name="enabled" value={(!data.orgTracksTardiness).toString()} />
+			<button
+				type="submit"
+				class="rounded-full px-3 py-1 text-xs font-medium {data.orgTracksTardiness
+					? 'bg-green-500/15 text-green-400'
+					: 'bg-muted text-muted-foreground'}">{data.orgTracksTardiness ? 'On' : 'Off'}</button
+			>
+		</form>
+	</div>
 
 	{#if showCreate}
 		<form
@@ -117,6 +137,9 @@
 			<label class="flex items-center gap-2 text-sm"
 				><input type="checkbox" name="isDefault" /> Set as the organization default</label
 			>
+			<label class="flex items-center gap-2 text-sm"
+				><input type="checkbox" name="trackTardiness" checked /> Track tardiness for this schedule</label
+			>
 			<div class="flex justify-end gap-2">
 				<button
 					type="button"
@@ -140,6 +163,7 @@
 					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Name</th>
 					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Days</th>
 					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Shift</th>
+					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Tardiness</th>
 					<th class="px-4 py-3 text-right font-medium text-muted-foreground">Employees</th>
 				</tr>
 			</thead>
@@ -150,7 +174,7 @@
 						<td class="px-4 py-3 font-medium"
 							>{s.name}
 							{#if s.isDefault}<span
-									class="ml-1 rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700"
+									class="ml-1 rounded-full bg-green-500/15 px-2 py-0.5 text-xs text-green-400"
 									>default</span
 								>{/if}</td
 						>
@@ -162,11 +186,27 @@
 								? `${toHHMM(shift.startMinutes)}–${toHHMM(shift.endMinutes)} · ${shift.breakMinutes}m break`
 								: '—'}</td
 						>
+						<td class="px-4 py-3">
+							<form method="POST" action="?/toggleTardiness" use:enhance>
+								<input type="hidden" name="id" value={s.id} />
+								<input type="hidden" name="enabled" value={(!s.trackTardiness).toString()} />
+								<button
+									type="submit"
+									disabled={!data.orgTracksTardiness}
+									title={data.orgTracksTardiness
+										? 'Toggle tardiness tracking for this schedule'
+										: 'Turn on the org-wide setting in Company Info first'}
+									class="rounded-full px-2 py-0.5 text-xs font-medium disabled:opacity-50 {s.trackTardiness
+										? 'bg-green-500/15 text-green-400'
+										: 'bg-muted text-muted-foreground'}">{s.trackTardiness ? 'On' : 'Off'}</button
+								>
+							</form>
+						</td>
 						<td class="px-4 py-3 text-right">{s._count.employees}</td>
 					</tr>
 				{:else}
 					<tr
-						><td colspan="4" class="px-4 py-8 text-center text-muted-foreground"
+						><td colspan="5" class="px-4 py-8 text-center text-muted-foreground"
 							>No schedules yet. Until one is marked the organization default, unassigned employees
 							fall back to Mon–Fri 8:00–17:00.</td
 						></tr

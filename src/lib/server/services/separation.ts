@@ -4,17 +4,9 @@ import { error } from '@sveltejs/kit'
 import { Prisma } from '@prisma/client'
 import type { SeparationType } from '@prisma/client'
 import type { AuditContext } from './types'
-
-// Standard clearance checklist seeded on every new case. HR can sign each off
-// (and add notes) before the separation can be finalized.
-const DEFAULT_CLEARANCE_ITEMS: { label: string; department: string }[] = [
-	{ label: 'Return company equipment (laptop, phone, peripherals)', department: 'IT' },
-	{ label: 'Revoke systems & email access', department: 'IT' },
-	{ label: 'Settle outstanding loans & cash advances', department: 'Finance' },
-	{ label: 'Return ID, access cards & keys', department: 'Admin' },
-	{ label: 'Knowledge transfer & handover complete', department: 'Immediate Supervisor' },
-	{ label: '201 file & exit documents complete', department: 'HR' }
-]
+import { clearanceTemplateForOrg } from './offboarding'
+import { currentCompensation } from './payroll/compensation'
+import { sendOffboardingNoticeEmail } from '$lib/server/notifications'
 
 // Average paid working days per month — used to convert a monthly salary to a
 // daily rate for unused-leave conversion. A deliberate, adjustable simplification;
@@ -35,7 +27,13 @@ export async function createSeparation(
 ) {
 	const employee = await db.employee.findFirst({
 		where: { id: input.employeeId, organizationId },
-		select: { id: true, employmentStatus: true, firstName: true, lastName: true }
+		select: {
+			id: true,
+			employmentStatus: true,
+			firstName: true,
+			lastName: true,
+			user: { select: { email: true } }
+		}
 	})
 	if (!employee) error(404, 'Employee not found')
 	if (employee.employmentStatus === 'OFFBOARDED') error(409, 'Employee is already offboarded')
@@ -46,6 +44,10 @@ export async function createSeparation(
 	})
 	if (existing) error(409, 'An open separation case already exists for this employee')
 
+	// Seed the case's clearance items from the org's editable offboarding checklist (#192),
+	// falling back to the built-in defaults when none are configured.
+	const clearance = await clearanceTemplateForOrg(organizationId)
+
 	const record = await db.separationRecord.create({
 		data: {
 			organizationId,
@@ -53,7 +55,7 @@ export async function createSeparation(
 			type: input.type,
 			effectiveDate: input.effectiveDate,
 			reason: input.reason || null,
-			clearanceItems: { create: DEFAULT_CLEARANCE_ITEMS }
+			clearanceItems: { create: clearance }
 		}
 	})
 
@@ -63,6 +65,19 @@ export async function createSeparation(
 		entityId: record.id,
 		newValue: { employeeId: input.employeeId, type: input.type, effectiveDate: input.effectiveDate }
 	})
+
+	// Email the departing employee a due-diligence / transition-period notice with their
+	// effective date and the clearance checklist (#185). Best-effort: a notifier failure
+	// must not roll back an opened case.
+	try {
+		sendOffboardingNoticeEmail(employee.user.email, {
+			employeeName: `${employee.firstName} ${employee.lastName}`,
+			effectiveDate: input.effectiveDate,
+			checklist: clearance
+		})
+	} catch (e) {
+		console.error('[NOTIFY] Failed to email offboarding notice for', record.id, e)
+	}
 
 	return record
 }
@@ -159,10 +174,16 @@ export async function computeFinalPay(
 	const record = await getSeparation(separationId, organizationId)
 	const employeeId = record.employee.id
 
-	const [employee, leaveBalances, loans, cashAdvances] = await Promise.all([
+	const [employee, compHistory, leaveBalances, loans, cashAdvances] = await Promise.all([
 		db.employee.findUniqueOrThrow({
 			where: { id: employeeId },
-			select: { basicMonthlySalary: true }
+			select: { basicMonthlySalary: true, rateType: true }
+		}),
+		// #170 Stage 1.5: final pay reads salary directly (not via getEmployee), so resolve the comp in
+		// effect on the separation date from history — a raise effective by then must reach final pay.
+		db.employeeCompensation.findMany({
+			where: { employeeId },
+			select: { basicMonthlySalary: true, rateType: true, effectiveDate: true, changedAt: true }
 		}),
 		db.leaveBalance.findMany({
 			where: { employeeId, year: record.effectiveDate.getFullYear() },
@@ -175,8 +196,19 @@ export async function computeFinalPay(
 		})
 	])
 
-	const monthly = Number(employee.basicMonthlySalary)
-	const dailyRate = monthly / WORKING_DAYS_PER_MONTH
+	const comp = currentCompensation(compHistory, record.effectiveDate, {
+		basicMonthlySalary: employee.basicMonthlySalary,
+		rateType: employee.rateType
+	})
+	const rate = comp.salary.toNumber()
+	// #189: the stored figure means something different per basis (mirror payslip-document.ts). Dividing
+	// an hourly/daily rate by the monthly working days would understate the day value 176×/22×.
+	const dailyRate =
+		comp.rateType === 'HOURLY'
+			? rate * 8
+			: comp.rateType === 'DAILY'
+				? rate
+				: rate / WORKING_DAYS_PER_MONTH
 	const leaveDays = leaveBalances.reduce((sum, b) => sum + Number(b.remaining), 0)
 	const leaveConversion = round2(leaveDays * dailyRate)
 	const loanBalance = round2(loans.reduce((sum, l) => sum + Number(l.balance), 0))

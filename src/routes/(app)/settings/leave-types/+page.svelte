@@ -28,7 +28,7 @@
 
 <div class="mx-auto max-w-4xl space-y-6">
 	<div>
-		<BackButton fallback="/settings" label="Settings" />
+		<BackButton fallback="/settings" label="Settings" preferFallback />
 		<h1 class="mt-1 text-2xl font-bold tracking-tight">Leave Types</h1>
 		<p class="text-sm text-muted-foreground">
 			Master data for the leave/request flow: name, whether it's paid, the default yearly
@@ -38,7 +38,9 @@
 	</div>
 
 	{#if form?.error}
-		<div class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+		<div
+			class="rounded-md border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-600 dark:text-red-400"
+		>
 			{form.error}
 		</div>
 	{/if}
@@ -92,6 +94,22 @@
 					class="mt-1 {inputClass}"
 				/>
 			</div>
+			<div>
+				<label for="add-min-months" class="text-xs font-medium text-muted-foreground"
+					>Min. months of service</label
+				>
+				<input
+					id="add-min-months"
+					name="minMonthsOfService"
+					type="number"
+					min="0"
+					max="120"
+					step="1"
+					value="0"
+					class="mt-1 {inputClass}"
+				/>
+				<p class="mt-1 text-xs text-muted-foreground">0 = from day one. SIL is 12.</p>
+			</div>
 			<label class="flex items-center gap-2 text-sm">
 				<input type="checkbox" name="isPaid" checked class="align-middle" /> Paid
 			</label>
@@ -124,6 +142,9 @@
 							<th class="px-3 py-2 text-right font-medium text-muted-foreground">Days/yr</th>
 							<th class="px-3 py-2 text-center font-medium text-muted-foreground">Carry-over</th>
 							<th class="px-3 py-2 text-right font-medium text-muted-foreground">Max carry</th>
+							<th class="px-3 py-2 text-right font-medium text-muted-foreground"
+								>Min. months service</th
+							>
 							<th class="px-3 py-2"></th>
 							<th class="px-3 py-2"></th>
 						</tr>
@@ -181,6 +202,18 @@
 										max="365"
 										step="0.5"
 										value={lt.maxCarryOverDays == null ? '' : Number(lt.maxCarryOverDays)}
+										class="{inputClass} w-24 text-right"
+									/>
+								</td>
+								<td class="px-3 py-2 text-right">
+									<input
+										form="edit-{lt.id}"
+										name="minMonthsOfService"
+										type="number"
+										min="0"
+										max="120"
+										step="1"
+										value={lt.minMonthsOfService}
 										class="{inputClass} w-24 text-right"
 									/>
 								</td>

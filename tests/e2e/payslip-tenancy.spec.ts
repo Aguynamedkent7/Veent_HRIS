@@ -9,6 +9,11 @@ import { login, USERS } from './helpers'
 //
 // The seed ships a single org, so this spec builds a second one to have something
 // genuinely foreign to reach for, and removes it afterwards.
+//
+// Serial — beforeAll runs once per worker under fullyParallel, so without this the file's
+// tests land on different workers and race to create the same hard-coded FOREIGN org id
+// (Prisma unique-constraint failure in setup). Same reason pii/timesheet-punch are serial.
+test.describe.configure({ mode: 'serial' })
 
 const FOREIGN = 'e2e-tenancy-97'
 // Distinct period so it can't collide with @@unique([organizationId, periodStart, periodEnd]).
@@ -43,7 +48,7 @@ test.beforeAll(async () => {
 				lastName: 'Employee',
 				departmentId: dept.id,
 				jobTitle: 'Analyst',
-				employmentType: 'FULL_TIME',
+				employmentType: 'REGULAR',
 				startDate: new Date('2025-01-01'),
 				basicMonthlySalary: 99999
 			}
@@ -158,6 +163,54 @@ for (const role of ['admin', 'manager'] as const) {
 
 test('an in-org payslip is still readable — the scope did not over-block', async ({ page }) => {
 	await login(page, USERS.admin)
+	const response = await page.request.get(`/api/v1/payroll/payslips/${ownEntryId}`)
+	expect(response.status()).toBe(200)
+})
+
+// ─── #123: same-org privilege, not just cross-org ────────────────────────────
+// The tenancy fix above scoped the *query* to the caller's org. Inside the org the handler
+// still only checked ownership when role === 'EMPLOYEE', so any other authenticated role
+// could read any payslip by id. The PDF path already applied the right rule via
+// fetchPayslipDocument; the JSON endpoint had drifted away from it.
+//
+// ownEntryId belongs to employee@veent.ph, so for every role below it is someone else's.
+
+// Sign-off roles exist to advance the maker-checker chain (#134); they hold neither
+// MANAGE_PAYROLL nor VIEW_PAYROLL_REPORTS and have no business reading pay data.
+for (const role of ['verifier', 'approver'] as const) {
+	test(`${role} cannot read another employee's payslip in the same org`, async ({ page }) => {
+		await login(page, USERS[role])
+
+		const json = await page.request.get(`/api/v1/payroll/payslips/${ownEntryId}`)
+		expect(json.status(), 'JSON payslip').toBe(403)
+		const body = await json.text()
+		expect(body).not.toContain('30000') // gross / net
+		expect(body).not.toContain('Employee') // employee name
+		expect(body).not.toContain('philhealthEe') // nor the payload's field names
+		expect(body).not.toContain('grossPay')
+
+		// Same rule on the PDF sibling — one shared check, so neither is a way around the other.
+		const pdf = await page.request.get(`/api/v1/payroll/payslips/${ownEntryId}/pdf`)
+		expect(pdf.status(), 'PDF payslip').toBe(403)
+	})
+}
+
+test('the owning employee can still read their own payslip', async ({ page }) => {
+	// The ownership path is what the role check must not break: this is the whole reason the
+	// endpoint is reachable below the payroll roles at all.
+	await login(page, USERS.employee)
+	const response = await page.request.get(`/api/v1/payroll/payslips/${ownEntryId}`)
+	expect(response.status()).toBe(200)
+})
+
+test('a manager reads it — on-branch HR holds the payroll-report capability (#133)', async ({
+	page
+}) => {
+	// Asserted deliberately rather than left implicit: #123 was filed when MANAGER held no
+	// payroll capability and describes this as the leak. #133 then made MANAGER on-branch HR
+	// for the JoJo/Sweetleaf branches and added it to VIEW_PAYROLL_REPORTS, so access here is
+	// now intended. If MANAGER is ever narrowed again, this test should fail and be revisited.
+	await login(page, USERS.manager)
 	const response = await page.request.get(`/api/v1/payroll/payslips/${ownEntryId}`)
 	expect(response.status()).toBe(200)
 })

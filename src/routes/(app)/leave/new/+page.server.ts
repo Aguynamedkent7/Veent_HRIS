@@ -2,6 +2,7 @@ import { fail, isHttpError, redirect } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
 import { getLeaveBalances } from '$lib/server/services/leave'
 import { createRequest } from '$lib/server/services/requests'
+import { meetsLeaveTenure } from '$lib/server/services/requests/leave'
 import { requestSchema } from '$lib/server/schemas/requests'
 import type { Actions, PageServerLoad } from './$types'
 
@@ -20,7 +21,13 @@ export const load: PageServerLoad = async ({ locals }) => {
 	])
 
 	return {
-		leaveTypes,
+		// The tenure gate is enforced server-side in createRequest; this only pre-marks the
+		// ineligible options so the form can grey them out instead of letting someone fill in
+		// dates and get refused on submit (#137).
+		leaveTypes: leaveTypes.map((lt) => ({
+			...lt,
+			eligible: meetsLeaveTenure(employee!.startDate, lt.minMonthsOfService)
+		})),
 		// Coerce Decimal balance fields to numbers at the boundary so PageData matches
 		// BalanceSummary's numeric prop types (the transport hook serializes at runtime).
 		balances: balances.map((b) => ({

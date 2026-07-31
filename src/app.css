@@ -32,7 +32,9 @@
 		--border: 0 0% 89%;
 		--input: 0 0% 94%;
 		--ring: 0 79% 45%;
-		--radius: 0.375rem;
+		/* 10px — between the previous 6px and the ~14px of the BordUp reference. md/sm derive
+		   from this in tailwind.config.ts, so buttons and inputs stay proportionally crisper. */
+		--radius: 0.625rem;
 
 		--success: 142 71% 45%;
 		--success-foreground: 0 0% 100%;
@@ -42,10 +44,12 @@
 
 	/* Dark theme */
 	.dark {
-		--background: 0 0% 7%;
+		--background: 0 0% 6%;
 		--foreground: 0 0% 94%;
 
-		--card: 0 0% 10%;
+		/* Two steps above the background, not one: cards are separated by tone here because a
+		   drop shadow is invisible against a near-black page. */
+		--card: 0 0% 11%;
 		--card-foreground: 0 0% 94%;
 
 		--popover: 0 0% 12%;
@@ -119,26 +123,48 @@
 }
 
 @layer components {
-	/* Status badge variants */
+	/* Status badge variants.
+
+	   Each carries a leading dot in its own colour, per the BordUp reference: on a status
+	   column the dot is what the eye catches, and it survives at sizes where the tinted
+	   background alone is ambiguous. `bg-current` inherits the variant's text colour, so a new
+	   variant only has to set two classes. */
+	.badge {
+		@apply inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium;
+	}
+	.badge::before {
+		@apply h-1.5 w-1.5 shrink-0 rounded-full bg-current;
+		content: '';
+	}
 	.badge-green {
-		@apply rounded-full bg-green-500/15 px-2 py-0.5 text-xs font-medium text-green-400;
+		@apply badge bg-green-500/15 text-green-400;
 	}
 	.badge-red {
-		@apply rounded-full bg-red-500/15 px-2 py-0.5 text-xs font-medium text-red-400;
+		@apply badge bg-red-500/15 text-red-400;
 	}
 	.badge-yellow {
-		@apply rounded-full bg-yellow-500/15 px-2 py-0.5 text-xs font-medium text-yellow-400;
+		@apply badge bg-yellow-500/15 text-yellow-400;
 	}
 	.badge-blue {
-		@apply rounded-full bg-blue-500/15 px-2 py-0.5 text-xs font-medium text-blue-400;
+		@apply badge bg-blue-500/15 text-blue-400;
 	}
 	.badge-gray {
-		@apply rounded-full bg-white/10 px-2 py-0.5 text-xs font-medium text-white/50;
+		@apply badge bg-white/10 text-white/50;
 	}
 
 	/* Input base style */
 	.input {
 		@apply flex h-9 w-full rounded-md border border-input bg-input px-3 py-1 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50;
+	}
+
+	/* A missing or invalid form control is flagged with a red border + focus ring.
+	   Pair with `aria-invalid={...}` on the control and a per-field message. (#142)
+	   Element+attribute selector outranks the inline `border-input` utility so the
+	   red border wins regardless of Tailwind's layer order. */
+	input[aria-invalid='true'],
+	select[aria-invalid='true'],
+	textarea[aria-invalid='true'] {
+		@apply border-destructive focus-visible:ring-destructive;
 	}
 
 	/* Button variants */
@@ -173,9 +199,15 @@
 		@apply inline-flex items-center justify-center rounded-md border border-red-600/30 px-2.5 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-600/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 dark:text-red-400;
 	}
 
-	/* Card */
+	/* Card — separated by tone and elevation rather than a hard outline. The hairline ring
+	   keeps definition where tone alone is too subtle (light theme, overlapping surfaces);
+	   it is an order of magnitude softer than the old border. */
+	/* The card edge carries the grouping, so it has to be visible. On light the page is 98% and
+	   the card 100% — two percent of tone, which the ring alone has to make up for; a 5% black
+	   ring did not. Dark separates on tone as well as the ring, so it needs less, but the old
+	   6% was still under the threshold where an edge registers. */
 	.card {
-		@apply rounded-lg border border-border bg-card p-6;
+		@apply rounded-lg bg-card p-5 shadow-sm ring-1 ring-black/[0.12] dark:shadow-none dark:ring-white/10;
 	}
 
 	/* Data table */

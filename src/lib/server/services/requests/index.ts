@@ -10,7 +10,7 @@ import {
 } from '$lib/server/schemas/requests'
 import { buildApprovalChain } from './routing'
 import { canAny } from '$lib/server/rbac'
-import { computeLeaveTotalDays, assertLeaveBalance } from './leave'
+import { computeLeaveTotalDays, assertLeaveBalance, assertLeaveEligibility } from './leave'
 import type { AuditContext } from '../types'
 
 // The filer's live role set — approval-stage authority is multi-role aware (#133/#134).
@@ -32,14 +32,17 @@ export async function createRequest(
 
 	const employee = await db.employee.findFirst({
 		where: { id: employeeId, user: { organizationId } },
-		select: { id: true, reportsToId: true }
+		select: { id: true, reportsToId: true, startDate: true }
 	})
 	if (!employee) error(404, 'Employee not found')
 
-	// LEAVE carries balance semantics: compute workdays, verify balance up front, and
-	// stash totalDays into the payload so approval can deduct it later.
+	// LEAVE carries balance semantics: check the type's tenure gate, compute workdays,
+	// verify balance up front, and stash totalDays into the payload so approval can deduct
+	// it later. This is the only choke point all three filing paths (/leave/new, /requests,
+	// and the v1 API) share, so the gate belongs here rather than in any one route.
 	let payload: Record<string, unknown> = parsed
 	if (parsed.type === 'LEAVE') {
+		await assertLeaveEligibility(organizationId, parsed.leaveTypeId, employee.startDate)
 		const totalDays = await computeLeaveTotalDays(organizationId, parsed.startDate, parsed.endDate)
 		await assertLeaveBalance(
 			employeeId,

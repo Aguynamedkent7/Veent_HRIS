@@ -9,7 +9,7 @@ import type { AuditContext } from '../types'
 export async function getCompanyInfo(organizationId: string) {
 	const org = await db.organization.findUnique({
 		where: { id: organizationId },
-		select: { id: true, name: true, address: true, logoUrl: true }
+		select: { id: true, name: true, address: true, logoUrl: true, discordInviteUrl: true }
 	})
 	if (!org) error(404, 'Organization not found')
 	return org
@@ -17,7 +17,12 @@ export async function getCompanyInfo(organizationId: string) {
 
 export async function updateCompanyInfo(
 	organizationId: string,
-	input: { name: string; address?: string | null; logoUrl?: string | null },
+	input: {
+		name: string
+		address?: string | null
+		logoUrl?: string | null
+		discordInviteUrl?: string | null
+	},
 	ctx: AuditContext
 ) {
 	const updated = await db.organization.update({
@@ -25,9 +30,10 @@ export async function updateCompanyInfo(
 		data: {
 			name: input.name.trim(),
 			address: input.address ?? null,
-			logoUrl: input.logoUrl ?? null
+			logoUrl: input.logoUrl ?? null,
+			discordInviteUrl: input.discordInviteUrl ?? null
 		},
-		select: { id: true, name: true, address: true, logoUrl: true }
+		select: { id: true, name: true, address: true, logoUrl: true, discordInviteUrl: true }
 	})
 	await writeAuditLog(ctx, {
 		action: 'UPDATE',
@@ -230,6 +236,8 @@ export interface LeaveTypeInput {
 	defaultDaysPerYear: number
 	allowCarryOver: boolean
 	maxCarryOverDays: number | null
+	// Whole calendar months of service required before this type may be filed (#137).
+	minMonthsOfService: number
 }
 
 export async function listLeaveTypes(organizationId: string) {
@@ -247,12 +255,15 @@ function normalizeLeaveType(input: LeaveTypeInput) {
 	const maxCarryOverDays = input.allowCarryOver ? (input.maxCarryOverDays ?? 0) : null
 	if (maxCarryOverDays != null && maxCarryOverDays < 0)
 		error(400, 'Max carry-over days cannot be negative')
+	const minMonthsOfService = Math.trunc(input.minMonthsOfService ?? 0)
+	if (minMonthsOfService < 0) error(400, 'Minimum months of service cannot be negative')
 	return {
 		name,
 		isPaid: input.isPaid,
 		defaultDaysPerYear: input.defaultDaysPerYear,
 		allowCarryOver: input.allowCarryOver,
-		maxCarryOverDays
+		maxCarryOverDays,
+		minMonthsOfService
 	}
 }
 

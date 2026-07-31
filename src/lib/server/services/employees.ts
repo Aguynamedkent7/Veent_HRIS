@@ -4,6 +4,16 @@ import { ROLE_HIERARCHY } from '$lib/server/rbac'
 import { error } from '@sveltejs/kit'
 import bcrypt from 'bcrypt'
 import { Prisma } from '@prisma/client'
+import { ensureLeaveBalances } from './leave'
+import { sendDiscordInviteEmail } from '$lib/server/notifications'
+import { notify } from './notifications'
+import { maskEmployee, SENSITIVE_FIELDS } from '$lib/utils/format'
+import { utcMidnight } from '$lib/utils/pay-periods'
+import { isRateBasisAllowed, RATE_BASIS_MISMATCH } from '$lib/utils/rate-basis'
+import { employmentTypeAt } from '$lib/utils/employment-type'
+import { currentCompensation } from './payroll/compensation'
+import { bandStatus } from './settings/master'
+import { D } from './payroll/money'
 import type { AuditContext } from './types'
 import type { EmploymentType, EmploymentStatus, RateType, Gender, Role } from '@prisma/client'
 
@@ -24,10 +34,12 @@ interface CreateEmployeeInput {
 	startDate: Date
 	basicMonthlySalary: number
 	rateType?: RateType
-	sssNumber?: string
-	philhealthNumber?: string
-	pagibigNumber?: string
-	tinNumber?: string
+	// Nullable, not just optional: the #191 validators normalise an empty field to null, and
+	// Prisma reads null as "no value" for these optional columns.
+	sssNumber?: string | null
+	philhealthNumber?: string | null
+	pagibigNumber?: string | null
+	tinNumber?: string | null
 	reportsToId?: string
 	discordId?: string | null
 	workScheduleId?: string | null
@@ -37,8 +49,8 @@ interface CreateEmployeeInput {
 	emergencyContactPhone?: string
 	bankName?: string
 	bankAccountName?: string
-	bankAccountNumber?: string
-	gcashNumber?: string
+	bankAccountNumber?: string | null
+	gcashNumber?: string | null
 }
 
 interface UpdateEmployeeInput {
@@ -51,11 +63,16 @@ interface UpdateEmployeeInput {
 	contactAddress?: string
 	departmentId?: string
 	jobTitle?: string
-	employmentType?: EmploymentType
+	// #222: employment type is NOT editable here — it is effective-dated (EmployeeEmploymentType) and
+	// paired with the rate basis (#189), so it routes through `promoteEmployee`. Kept out of the type
+	// for the same reason pay is: no caller can write it onto the Employee row and desync the history
+	// or land an illegal HOURLY+REGULAR pairing.
 	employmentStatus?: EmploymentStatus
 	endDate?: Date
-	basicMonthlySalary?: number
-	rateType?: RateType
+	companyEmail?: string | null
+	// #170: pay is NOT editable here — salary/rateType route through `recordCompensationChange` so the
+	// effective-dated history stays authoritative for payroll. Kept out of the type so no caller can
+	// silently write pay onto the Employee row and have the run ignore it.
 	sssNumber?: string | null
 	philhealthNumber?: string | null
 	pagibigNumber?: string | null
@@ -68,6 +85,7 @@ interface UpdateEmployeeInput {
 	reportsToId?: string
 	discordId?: string | null
 	workScheduleId?: string | null
+	branchId?: string | null
 	emergencyContactName?: string
 	emergencyContactRelation?: string
 	emergencyContactPhone?: string
@@ -85,7 +103,8 @@ const HISTORY_FIELDS = [
 	'rateType',
 	'employmentType',
 	'employmentStatus',
-	'workScheduleId'
+	'workScheduleId',
+	'branchId'
 ] as const
 
 const HISTORY_LABELS: Record<(typeof HISTORY_FIELDS)[number], string> = {
@@ -96,13 +115,31 @@ const HISTORY_LABELS: Record<(typeof HISTORY_FIELDS)[number], string> = {
 	rateType: 'Rate basis',
 	employmentType: 'Employment type',
 	employmentStatus: 'Status',
-	workScheduleId: 'Work schedule'
+	workScheduleId: 'Work schedule',
+	branchId: 'Branch'
 }
 
 interface EmployeeListFilters {
 	status?: EmploymentStatus
+	// Split the roster into the active workforce and offboarded records (#184): `true`
+	// returns only OFFBOARDED, `false` everyone still on the books (ACTIVE / ON_LEAVE),
+	// `undefined` leaves the status unfiltered. Ignored when an exact `status` is given.
+	offboarded?: boolean
 	departmentId?: string
+	branchId?: string
 	search?: string
+	// #232: restrict the roster to a set of ids — a MANAGER sees only their own team and the
+	// branches they manage. `undefined` means unrestricted (HR/CEO/Super-Admin); an empty array
+	// means "nobody", which is the correct answer for a manager with no reports, not "everybody".
+	ids?: string[]
+}
+
+// The active roster is everyone still on the books (ACTIVE / ON_LEAVE); the offboarded
+// section is exactly OFFBOARDED. Exported for the roster-split test (#184).
+export function offboardedFilter(
+	offboarded: boolean
+): Prisma.EmployeeWhereInput['employmentStatus'] {
+	return offboarded ? 'OFFBOARDED' : { not: 'OFFBOARDED' }
 }
 
 function employeeListWhere(
@@ -111,8 +148,14 @@ function employeeListWhere(
 ): Prisma.EmployeeWhereInput {
 	return {
 		user: { organizationId },
-		...(filters?.status && { employmentStatus: filters.status }),
+		...(filters?.ids !== undefined && { id: { in: filters.ids } }),
+		...(filters?.status
+			? { employmentStatus: filters.status }
+			: filters?.offboarded !== undefined && {
+					employmentStatus: offboardedFilter(filters.offboarded)
+				}),
 		...(filters?.departmentId && { departmentId: filters.departmentId }),
+		...(filters?.branchId && { branchId: filters.branchId }),
 		...(filters?.search && {
 			OR: [
 				{ firstName: { contains: filters.search, mode: 'insensitive' } },
@@ -148,7 +191,10 @@ export async function listEmployees(
 			employmentType: true,
 			employmentStatus: true,
 			startDate: true,
+			// #136: tenure freezes at endDate for offboarded staff.
+			endDate: true,
 			department: { select: { id: true, name: true } },
+			branch: { select: { id: true, name: true } },
 			user: { select: { email: true, role: true, isActive: true } }
 		},
 		orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
@@ -156,7 +202,11 @@ export async function listEmployees(
 	})
 }
 
-export async function getEmployee(id: string, organizationId: string, viewerRole?: Role) {
+export async function getEmployee(
+	id: string,
+	organizationId: string,
+	opts?: { viewerRole?: Role; isSelf?: boolean }
+) {
 	const employee = await db.employee.findFirst({
 		where: { id, user: { organizationId } },
 		include: {
@@ -169,10 +219,61 @@ export async function getEmployee(id: string, organizationId: string, viewerRole
 	})
 	if (!employee) error(404, 'Employee not found')
 
-	// Compensation, government IDs, and disbursement details are HR-only. A MANAGER
-	// may view a report's record but must not see salary, tax/government identifiers,
-	// or bank/GCash details.
-	if (viewerRole && ROLE_HIERARCHY[viewerRole] < ROLE_HIERARCHY.HR_ADMIN) {
+	// ponytail: heal-on-read (#170 Stage 1.5). The effective-dated EmployeeCompensation history is the
+	// source of truth; Employee.{basicMonthlySalary,rateType} is a cache. Fetched with a SEPARATE query
+	// and kept strictly local — never added to the `include` or the returned object — so raw snapshot
+	// figures can't ride the return value past the #111 mask. When the cache is stale (e.g. the first
+	// read after a future-dated change's effective date has passed) we correct the column in place and
+	// use the healed RAW values below; otherwise nothing is written. No audit — the change was audited
+	// when the snapshot was inserted. Single indexed lookup (employeeId), so this is cheap.
+	// #222 adds the same heal for the effective-dated employment type, so both histories load
+	// concurrently and any stale column is corrected in ONE write.
+	const [compHistory, typeHistory] = await Promise.all([
+		db.employeeCompensation.findMany({
+			where: { employeeId: id },
+			select: { basicMonthlySalary: true, rateType: true, effectiveDate: true, changedAt: true }
+		}),
+		db.employeeEmploymentType.findMany({
+			where: { employeeId: id },
+			select: { employmentType: true, effectiveDate: true, changedAt: true }
+		})
+	])
+	const asOf = new Date()
+	const healed = currentCompensation(compHistory, asOf, {
+		basicMonthlySalary: employee.basicMonthlySalary,
+		rateType: employee.rateType
+	})
+	const healedType = employmentTypeAt(typeHistory, asOf, employee.employmentType)
+	const stale: Prisma.EmployeeUpdateInput = {}
+	if (
+		!D(employee.basicMonthlySalary).equals(healed.salary) ||
+		employee.rateType !== healed.rateType
+	) {
+		stale.basicMonthlySalary = healed.salary
+		stale.rateType = healed.rateType
+		employee.basicMonthlySalary = healed.salary
+		employee.rateType = healed.rateType
+	}
+	if (healedType !== employee.employmentType) {
+		stale.employmentType = healedType
+		employee.employmentType = healedType
+	}
+	if (Object.keys(stale).length > 0) await db.employee.update({ where: { id }, data: stale })
+
+	// Internal callers (updateEmployee, offboardEmployee) pass no opts and get the raw record —
+	// they need cleartext to diff and never hand it to a client. Every client-facing caller
+	// passes opts, so masking is inherited by default: nothing leaks by omission (#111).
+	if (!opts) return employee
+
+	// Compensation, government IDs, and disbursement details are HR-only: below the HR_ADMIN
+	// rank, and not the record's owner, they come back null. Note MANAGER is *not* below it —
+	// #133 made MANAGER on-branch HR and ranks it level with HR_ADMIN — so a manager falls
+	// through to the masked branch. Self always reaches masking too (own data, decision #2).
+	if (
+		!opts.isSelf &&
+		opts.viewerRole &&
+		ROLE_HIERARCHY[opts.viewerRole] < ROLE_HIERARCHY.HR_ADMIN
+	) {
 		return {
 			...employee,
 			basicMonthlySalary: null,
@@ -186,7 +287,97 @@ export async function getEmployee(id: string, organizationId: string, viewerRole
 			gcashNumber: null
 		}
 	}
+
+	// HR / MANAGER / self: masked by default. Full values only via revealEmployeeSensitive.
+	return maskEmployee(employee)
+}
+
+/**
+ * Full sensitive subset (government IDs, salary, disbursement) for one employee — the single
+ * path that returns these in cleartext (#111). Writes a VIEW audit entry unless `audit` is
+ * false; a self-reveal of one's own record is exempt (decision #2). The role gate lives at the
+ * call site (the UI button is cosmetic — Constitution P2).
+ */
+export async function revealEmployeeSensitive(
+	id: string,
+	organizationId: string,
+	ctx: AuditContext,
+	opts: { audit: boolean }
+) {
+	const employee = await db.employee.findFirst({
+		where: { id, user: { organizationId } },
+		select: {
+			id: true,
+			sssNumber: true,
+			philhealthNumber: true,
+			pagibigNumber: true,
+			tinNumber: true,
+			basicMonthlySalary: true,
+			bankName: true,
+			bankAccountName: true,
+			bankAccountNumber: true,
+			gcashNumber: true
+		}
+	})
+	if (!employee) error(404, 'Employee not found')
+
+	// Constitution P1/P4: reading PII is itself an auditable event.
+	if (opts.audit) {
+		await writeAuditLog(ctx, {
+			action: 'VIEW',
+			entityType: 'Employee',
+			entityId: employee.id,
+			newValue: { fields: [...SENSITIVE_FIELDS] }
+		})
+	}
+
 	return employee
+}
+
+/** Employee numbers are `PREFIX-NNN`; NNN is padded to at least this width. */
+const NUMBER_WIDTH = 3
+/** Attempts to allocate a free number before giving up (only a concurrent create can clash). */
+const ALLOCATION_ATTEMPTS = 5
+
+/**
+ * Next employee number for an org: the highest numeric suffix already in use, plus one.
+ *
+ * This used to be `count + 1`, which is not a sequence — it drifts from the numbers actually
+ * issued as soon as anyone is deleted, or when rows use different widths. Both were true here,
+ * which is how EMP-0013 came to be issued *after* EMP-0014 existed, and then how onboarding
+ * started failing outright against the (organizationId, employeeNumber) unique index.
+ *
+ * Reads through `tx` so the scan and the insert share one transaction. Scoped on
+ * Employee.organizationId — the column the unique index actually uses, not
+ * `user.organizationId`, which is a separate column that merely agrees today.
+ */
+async function nextEmployeeNumber(tx: Prisma.TransactionClient, organizationId: string) {
+	const org = await tx.organization.findUniqueOrThrow({
+		where: { id: organizationId },
+		select: { employeeNumberPrefix: true }
+	})
+
+	const rows = await tx.employee.findMany({
+		where: { organizationId },
+		select: { employeeNumber: true }
+	})
+
+	// Trailing digits only, so every historical shape reads correctly regardless of prefix or
+	// width (EMP-0014 → 14, JJ-004 → 4). Max across all of the org's numbers, not just those
+	// sharing the new prefix: conservative, and it cannot collide with an existing number.
+	const highest = rows.reduce((max, r) => {
+		const n = Number(r.employeeNumber.match(/(\d+)$/)?.[1] ?? NaN)
+		return Number.isFinite(n) && n > max ? n : max
+	}, 0)
+
+	return `${org.employeeNumberPrefix}-${String(highest + 1).padStart(NUMBER_WIDTH, '0')}`
+}
+
+/** True for a unique violation on (organizationId, employeeNumber) specifically. */
+function isEmployeeNumberConflict(e: unknown) {
+	if (!(e instanceof Prisma.PrismaClientKnownRequestError) || e.code !== 'P2002') return false
+	const target = e.meta?.target
+	return Array.isArray(target) && target.includes('employeeNumber')
 }
 
 export async function createEmployee(
@@ -197,70 +388,151 @@ export async function createEmployee(
 	const existingUser = await db.user.findUnique({ where: { email: input.email } })
 	if (existingUser) error(409, 'Email already in use')
 
-	const count = await db.employee.count({ where: { user: { organizationId } } })
-	const employeeNumber = `EMP-${String(count + 1).padStart(4, '0')}`
-
+	// Hashed once, outside the retry loop — bcrypt at cost 12 is by far the expensive part and
+	// the password does not change between attempts.
 	const passwordHash = await bcrypt.hash(input.password, 12)
 
-	const employee = await db.$transaction(async (tx: Prisma.TransactionClient) => {
-		const user = await tx.user.create({
-			data: {
-				organizationId,
-				email: input.email,
-				passwordHash,
-				role: input.role
-			}
-		})
-
-		return tx.employee.create({
-			data: {
-				userId: user.id,
-				organizationId,
-				employeeNumber,
-				firstName: input.firstName,
-				lastName: input.lastName,
-				middleName: input.middleName,
-				dateOfBirth: input.dateOfBirth,
-				gender: input.gender,
-				contactPhone: input.contactPhone,
-				contactAddress: input.contactAddress,
-				departmentId: input.departmentId,
-				jobTitle: input.jobTitle,
-				employmentType: input.employmentType,
-				startDate: input.startDate,
-				basicMonthlySalary: input.basicMonthlySalary,
-				rateType: input.rateType ?? 'MONTHLY',
-				sssNumber: input.sssNumber,
-				philhealthNumber: input.philhealthNumber,
-				pagibigNumber: input.pagibigNumber,
-				tinNumber: input.tinNumber,
-				emergencyContactName: input.emergencyContactName,
-				emergencyContactRelation: input.emergencyContactRelation,
-				emergencyContactPhone: input.emergencyContactPhone,
-				bankName: input.bankName,
-				bankAccountName: input.bankAccountName,
-				bankAccountNumber: input.bankAccountNumber,
-				gcashNumber: input.gcashNumber,
-				reportsToId: input.reportsToId,
-				discordId: input.discordId,
-				// Onboarding sets the work schedule (attendance derivation depends on it) and the
-				// position; both are optional. Coerce empty string → null (an empty <select> posts
-				// "", which is not a valid FK) so we don't hit a foreign-key violation.
-				workScheduleId: input.workScheduleId || null,
-				positionId: input.positionId || null
-			},
-			include: { department: true, user: { select: { email: true, role: true } } }
-		})
-	})
+	const employee = await allocateAndCreate(organizationId, input, passwordHash)
 
 	await writeAuditLog(ctx, {
 		action: 'CREATE',
 		entityType: 'Employee',
-		entityId: employee.id,
-		newValue: { employeeNumber, email: input.email }
+		// From the created row, not a variable computed up front: a retry changes the number.
+		newValue: { employeeNumber: employee.employeeNumber, email: input.email },
+		entityId: employee.id
 	})
 
+	// On onboarding, invite the new hire to the company Discord server (#186) — only when
+	// the org has configured an invite link (currently just Veent). Sent to their working
+	// email since company-email provisioning is deferred. Best-effort: never block a hire.
+	try {
+		const org = await db.organization.findUnique({
+			where: { id: organizationId },
+			select: { name: true, discordInviteUrl: true }
+		})
+		if (org?.discordInviteUrl) {
+			sendDiscordInviteEmail(input.email, {
+				firstName: input.firstName,
+				orgName: org.name,
+				inviteUrl: org.discordInviteUrl
+			})
+			await notify(
+				employee.userId,
+				`You've been invited to the ${org.name} Discord server — check your email.`,
+				'/dashboard'
+			)
+		}
+	} catch (e) {
+		console.error('[NOTIFY] Failed to send Discord invite for', employee.id, e)
+	}
+
 	return employee
+}
+
+/**
+ * Allocate a number and insert, retrying the whole transaction if a concurrent create took the
+ * number first. Only a genuine race can reach a second attempt — the number is read inside the
+ * transaction — so a handful of attempts is plenty.
+ */
+async function allocateAndCreate(
+	organizationId: string,
+	input: CreateEmployeeInput,
+	passwordHash: string
+) {
+	for (let attempt = 1; ; attempt++) {
+		try {
+			return await db.$transaction(async (tx: Prisma.TransactionClient) => {
+				const employeeNumber = await nextEmployeeNumber(tx, organizationId)
+				const user = await tx.user.create({
+					data: {
+						organizationId,
+						email: input.email,
+						passwordHash,
+						role: input.role
+					}
+				})
+
+				const created = await tx.employee.create({
+					data: {
+						userId: user.id,
+						organizationId,
+						employeeNumber,
+						firstName: input.firstName,
+						lastName: input.lastName,
+						middleName: input.middleName,
+						dateOfBirth: input.dateOfBirth,
+						gender: input.gender,
+						contactPhone: input.contactPhone,
+						contactAddress: input.contactAddress,
+						departmentId: input.departmentId,
+						jobTitle: input.jobTitle,
+						employmentType: input.employmentType,
+						startDate: input.startDate,
+						basicMonthlySalary: input.basicMonthlySalary,
+						rateType: input.rateType ?? 'MONTHLY',
+						sssNumber: input.sssNumber,
+						philhealthNumber: input.philhealthNumber,
+						pagibigNumber: input.pagibigNumber,
+						tinNumber: input.tinNumber,
+						emergencyContactName: input.emergencyContactName,
+						emergencyContactRelation: input.emergencyContactRelation,
+						emergencyContactPhone: input.emergencyContactPhone,
+						bankName: input.bankName,
+						bankAccountName: input.bankAccountName,
+						bankAccountNumber: input.bankAccountNumber,
+						gcashNumber: input.gcashNumber,
+						reportsToId: input.reportsToId,
+						discordId: input.discordId,
+						// #186: company-email provisioning is deferred, so seed it with the hire's working
+						// email; HR updates it once the real address exists.
+						companyEmail: input.email,
+						// Onboarding sets the work schedule (attendance derivation depends on it) and the
+						// position; both are optional. Coerce empty string → null (an empty <select> posts
+						// "", which is not a valid FK) so we don't hit a foreign-key violation.
+						workScheduleId: input.workScheduleId || null,
+						positionId: input.positionId || null
+					},
+					include: { department: true, user: { select: { email: true, role: true } } }
+				})
+
+				// Allocate this year's leave entitlement from the org's leave-type defaults (#137).
+				// Inside the transaction so a new hire is never left half-onboarded with no ledger —
+				// `assertLeaveBalance` reads a missing row as zero, so that state blocks their first
+				// filing outright. Re-run on a retry because the whole transaction is replayed.
+				await ensureLeaveBalances(created.id, organizationId, input.startDate.getFullYear(), tx)
+
+				// #170/#171: seed the effective-dated compensation baseline (current comp, effective
+				// since the hire date) so the mid-period payroll resolver always has a floor.
+				await tx.employeeCompensation.create({
+					data: {
+						employeeId: created.id,
+						basicMonthlySalary: created.basicMonthlySalary,
+						rateType: created.rateType,
+						effectiveDate: input.startDate,
+						changedById: 'system',
+						note: 'baseline (hire)'
+					}
+				})
+
+				// #222: same baseline for the effective-dated employment type.
+				await tx.employeeEmploymentType.create({
+					data: {
+						employeeId: created.id,
+						employmentType: created.employmentType,
+						effectiveDate: input.startDate,
+						changedById: 'system',
+						note: 'baseline (hire)'
+					}
+				})
+
+				return created
+			})
+		} catch (e) {
+			// Anything that is not a lost race on the number — a duplicate Discord ID, a bad FK —
+			// is the caller’s problem and must surface now rather than be retried.
+			if (!isEmployeeNumberConflict(e) || attempt >= ALLOCATION_ATTEMPTS) throw e
+		}
+	}
 }
 
 export async function updateEmployee(
@@ -270,6 +542,20 @@ export async function updateEmployee(
 	ctx: AuditContext
 ) {
 	const existing = await getEmployee(id, organizationId)
+
+	// A branch change is a store transfer. Postgres can't express "the branch belongs to the
+	// same org", so verify it here — a forged id from another tenant must not cross over.
+	// Re-saving an employee who already sits on a closed branch is allowed: the picker keeps
+	// their current branch selectable, and blocking it would fail every unrelated edit on
+	// that 201 file.
+	if (input.branchId && input.branchId !== existing.branchId) {
+		const branch = await db.branch.findFirst({
+			where: { id: input.branchId, organizationId },
+			select: { id: true, status: true }
+		})
+		if (!branch) error(404, 'Branch not found')
+		if (branch.status === 'CLOSED') error(400, 'That branch is closed — choose an open branch.')
+	}
 
 	const updated = await db.employee.update({
 		where: { id },
@@ -312,13 +598,378 @@ export async function updateEmployee(
 	return updated
 }
 
+/**
+ * Record an effective-dated compensation change (#170). Inserts an EmployeeCompensation snapshot,
+ * then re-derives the current cache — `Employee.{basicMonthlySalary, rateType}` = the snapshot with
+ * the latest effectiveDate ≤ today — so a correction backdated below a later change never moves it.
+ * `basicMonthlySalary`/`rateType` are HISTORY_FIELDS, so the 201 timeline picks the change up.
+ *
+ * Future-dating is allowed: the cache is re-derived as the snapshot with the latest effectiveDate ≤
+ * today and healed on read (getEmployee), so a future row stays dormant until its date arrives — no
+ * scheduler needed. A change backdated into an APPROVED run returns a non-fatal notice — the frozen-run guard makes it
+ * structurally safe (approved numbers are never recomputed), but it must not be silent.
+ */
+export async function recordCompensationChange(
+	id: string,
+	organizationId: string,
+	input: { basicMonthlySalary?: number; rateType?: RateType; effectiveDate: Date; note?: string },
+	ctx: AuditContext
+): Promise<{ notice?: string }> {
+	const employee = await getEmployee(id, organizationId)
+
+	// "Unchanged" is judged against the comp in effect on the effective date, not the current cache —
+	// otherwise a valid backdated correction whose value happens to equal today's figure is rejected.
+	// An empty salary/rateType carries whatever was in effect then (the reveal-to-edit form prefills
+	// current, which for the default today-dated change is the same figure).
+	const currentSalary = Number(employee.basicMonthlySalary)
+	const history = await db.employeeCompensation.findMany({
+		where: { employeeId: id },
+		select: { basicMonthlySalary: true, rateType: true, effectiveDate: true, changedAt: true }
+	})
+	const atEff = currentCompensation(history, input.effectiveDate, {
+		basicMonthlySalary: currentSalary,
+		rateType: employee.rateType
+	})
+	const basicMonthlySalary = input.basicMonthlySalary ?? atEff.salary.toNumber()
+	const rateType = input.rateType ?? atEff.rateType
+	if (basicMonthlySalary === atEff.salary.toNumber() && rateType === atEff.rateType) {
+		error(400, 'No change to record — enter a new salary or pay type.')
+	}
+
+	// A wrong pairing is a 176× payroll error (rate-basis.ts), so enforce it server-side even though
+	// the form filters the dropdown — the same guard the create form applies.
+	if (!isRateBasisAllowed(rateType, employee.employmentType)) error(400, RATE_BASIS_MISMATCH)
+
+	// Lower bound only: effectiveDate ≥ hire date (UTC-midnight). Future-dating is allowed (#170 Stage
+	// 1.5) — no scheduler needed: the insert below leaves the current cache untouched (its re-derivation
+	// is "max effectiveDate ≤ today"), and getEmployee heals the cache the first time it is read on or
+	// after the effective date.
+	const eff = utcMidnight(input.effectiveDate)
+	const today = utcMidnight(new Date())
+	const hired = utcMidnight(employee.startDate)
+	if (eff.getTime() < hired.getTime()) error(400, 'Effective date cannot be before the hire date.')
+
+	// Non-fatal notice when backdating into a frozen (APPROVED) run — those are never recomputed.
+	const frozen = await db.payrollRun.findFirst({
+		where: {
+			organizationId,
+			status: 'APPROVED',
+			periodStart: { lte: eff },
+			periodEnd: { gte: eff }
+		},
+		select: { id: true }
+	})
+	const notice = frozen
+		? `Backdated to ${eff.toISOString().slice(0, 10)}. Approved runs are not recalculated; applies to current and future open periods.`
+		: undefined
+
+	await db.$transaction(async (tx: Prisma.TransactionClient) => {
+		const current = await insertCompensationSnapshot(
+			tx,
+			id,
+			{ basicMonthlySalary, rateType, effectiveDate: eff, note: input.note },
+			ctx.actorId,
+			today
+		)
+		if (current) {
+			await tx.employee.update({
+				where: { id },
+				data: { basicMonthlySalary: current.basicMonthlySalary, rateType: current.rateType }
+			})
+		}
+		await writeAuditLog(
+			ctx,
+			{
+				action: 'UPDATE',
+				entityType: 'Employee',
+				entityId: id,
+				oldValue: { basicMonthlySalary: atEff.salary.toNumber(), rateType: atEff.rateType },
+				newValue: { basicMonthlySalary, rateType, effectiveDate: eff }
+			},
+			tx
+		)
+	})
+
+	return { notice }
+}
+
+/**
+ * Insert a compensation snapshot and re-derive the current cache — the snapshot with the max
+ * effectiveDate ≤ today (same-day tiebreak by changedAt), so a correction backdated below a later
+ * change leaves the cache put. Returns that row (null only if every snapshot is future-dated); the
+ * caller writes it onto the Employee row, which lets `promoteEmployee` fold it into its single update.
+ * Shared by `recordCompensationChange` (#170) and `promoteEmployee` (#222) so both write identically.
+ */
+async function insertCompensationSnapshot(
+	tx: Prisma.TransactionClient,
+	employeeId: string,
+	snap: { basicMonthlySalary: number; rateType: RateType; effectiveDate: Date; note?: string },
+	changedById: string,
+	today: Date
+) {
+	await tx.employeeCompensation.create({ data: { employeeId, ...snap, changedById } })
+	return tx.employeeCompensation.findFirst({
+		where: { employeeId, effectiveDate: { lte: today } },
+		orderBy: [{ effectiveDate: 'desc' }, { changedAt: 'desc' }]
+	})
+}
+
+/** The employment-type twin of `insertCompensationSnapshot` (#222) — same re-derivation rule. */
+async function insertEmploymentTypeSnapshot(
+	tx: Prisma.TransactionClient,
+	employeeId: string,
+	snap: { employmentType: EmploymentType; effectiveDate: Date; note?: string },
+	changedById: string,
+	today: Date
+) {
+	await tx.employeeEmploymentType.create({ data: { employeeId, ...snap, changedById } })
+	return tx.employeeEmploymentType.findFirst({
+		where: { employeeId, effectiveDate: { lte: today } },
+		orderBy: [{ effectiveDate: 'desc' }, { changedAt: 'desc' }]
+	})
+}
+
+/**
+ * Rejection when a promotion carries no actual change. Exported because the API PATCH swallows
+ * exactly this one (resending the current values is a no-op, not a failure) — matching on the
+ * constant means a reworded message can't silently turn no-ops back into 400s.
+ */
+export const NO_CHANGE_MESSAGE = 'No change to record — edit at least one field.'
+export const NO_CHANGE_STATUS = 400
+
+export interface PromoteEmployeeInput {
+	effectiveDate: Date
+	positionId?: string | null
+	jobTitle?: string
+	reportsToId?: string
+	employmentType?: EmploymentType
+	basicMonthlySalary?: number
+	rateType?: RateType
+	note?: string
+}
+
+/**
+ * Promote an employee (#222) — one atomic, audited career event covering position, title, reporting
+ * line, employment type and pay, instead of the field-by-field edits that used to scatter across
+ * several audit entries (and therefore several rows in the 201 timeline).
+ *
+ * Everything is optional; at least one field must actually change. Pay and employment type are
+ * recorded as effective-dated snapshots (the same writers `recordCompensationChange` uses), so a
+ * promotion dated ahead stays dormant until its date and needs no scheduler. The rest are plain
+ * columns, written in the same transaction as the snapshots and ONE audit entry — so the timeline
+ * renders "Position, Job title, Employment type, Basic salary" as a single event.
+ *
+ * Guards: the rate-basis pairing is checked against the RESULTING state (#189 — a PART_TIME/HOURLY
+ * hire promoted to REGULAR must move to a monthly or daily rate in the same call, which no split
+ * across two writers can validate); position and manager are re-checked to be in this org; an
+ * out-of-band salary comes back as a non-fatal notice (HR's call, not a block).
+ */
+export async function promoteEmployee(
+	id: string,
+	organizationId: string,
+	input: PromoteEmployeeInput,
+	ctx: AuditContext
+): Promise<{ notice?: string }> {
+	const employee = await getEmployee(id, organizationId)
+
+	const eff = utcMidnight(input.effectiveDate)
+	const today = utcMidnight(new Date())
+	if (eff.getTime() < utcMidnight(employee.startDate).getTime()) {
+		error(400, 'Effective date cannot be before the hire date.')
+	}
+
+	// Pay is judged against the comp in effect on the effective date, not today's cache — the same
+	// rule `recordCompensationChange` applies, so a backdated promotion compares like with like.
+	const compHistory = await db.employeeCompensation.findMany({
+		where: { employeeId: id },
+		select: { basicMonthlySalary: true, rateType: true, effectiveDate: true, changedAt: true }
+	})
+	const atEff = currentCompensation(compHistory, eff, {
+		basicMonthlySalary: Number(employee.basicMonthlySalary),
+		rateType: employee.rateType
+	})
+	const typeHistory = await db.employeeEmploymentType.findMany({
+		where: { employeeId: id },
+		select: { employmentType: true, effectiveDate: true, changedAt: true }
+	})
+	const typeAtEff = employmentTypeAt(typeHistory, eff, employee.employmentType)
+
+	const basicMonthlySalary = input.basicMonthlySalary ?? atEff.salary.toNumber()
+	const rateType = input.rateType ?? atEff.rateType
+	const employmentType = input.employmentType ?? typeAtEff
+	const payChanged = basicMonthlySalary !== atEff.salary.toNumber() || rateType !== atEff.rateType
+	const typeChanged = employmentType !== typeAtEff
+
+	// The pairing must hold on the resulting state, which is exactly why this writer exists: an
+	// employment-type change can invalidate a rate basis set long ago, and vice versa.
+	if (!isRateBasisAllowed(rateType, employmentType)) error(400, RATE_BASIS_MISMATCH)
+
+	// Plain columns. `undefined` means "not part of this promotion"; positionId accepts null (clear).
+	const columns: { positionId?: string | null; jobTitle?: string; reportsToId?: string } = {}
+	if (input.positionId !== undefined && input.positionId !== employee.positionId) {
+		if (input.positionId) {
+			// Postgres can't express "the position belongs to the same org" — a forged id from another
+			// tenant must not cross over (the same check `updateEmployee` runs for a branch).
+			const position = await db.position.findFirst({
+				where: { id: input.positionId, organizationId },
+				select: { id: true }
+			})
+			if (!position) error(404, 'Position not found')
+		}
+		columns.positionId = input.positionId
+	}
+	if (input.jobTitle !== undefined && input.jobTitle !== employee.jobTitle) {
+		columns.jobTitle = input.jobTitle
+	}
+	if (input.reportsToId !== undefined && input.reportsToId !== employee.reportsToId) {
+		if (input.reportsToId === id) error(400, 'An employee cannot report to themselves.')
+		const manager = await db.employee.findFirst({
+			where: { id: input.reportsToId, user: { organizationId } },
+			select: { id: true }
+		})
+		if (!manager) error(404, 'Manager not found')
+		columns.reportsToId = input.reportsToId
+	}
+
+	if (!payChanged && !typeChanged && Object.keys(columns).length === 0) {
+		error(NO_CHANGE_STATUS, NO_CHANGE_MESSAGE)
+	}
+
+	// Only pay and employment type are effective-dated; position, title and the reporting line are
+	// plain columns that would apply the moment this is saved. Rather than quietly applying half a
+	// promotion early, a future-dated one must be pay/type-only.
+	if (eff.getTime() > today.getTime() && Object.keys(columns).length > 0) {
+		error(
+			400,
+			'A future-dated promotion can only change pay and employment type. Position, job title and reporting line apply immediately — record those on or after the effective date.'
+		)
+	}
+
+	const messages: string[] = []
+
+	// Band check (T163): monthly bands only, so an hourly/daily rate is never scored against one.
+	// Warn, never block — out-of-band pay is a legitimate HR decision.
+	const targetPositionId =
+		columns.positionId !== undefined ? columns.positionId : employee.positionId
+	if (rateType === 'MONTHLY' && targetPositionId) {
+		const grade = await db.position
+			.findFirst({ where: { id: targetPositionId }, select: { salaryGrade: true } })
+			.then((p) => p?.salaryGrade ?? null)
+		if (grade) {
+			const status = bandStatus(
+				basicMonthlySalary,
+				Number(grade.minSalary),
+				Number(grade.maxSalary)
+			)
+			if (status !== 'within') {
+				messages.push(
+					`Heads up: the new salary is ${status} the ${grade.name} band (${Number(grade.minSalary).toLocaleString()}–${Number(grade.maxSalary).toLocaleString()}). Recorded anyway.`
+				)
+			}
+		}
+	}
+
+	// Same non-fatal notice `recordCompensationChange` gives when pay is backdated into a frozen
+	// (APPROVED) run — those are never recomputed, so the raise silently misses that period.
+	if (payChanged && eff.getTime() < today.getTime()) {
+		const frozen = await db.payrollRun.findFirst({
+			where: {
+				organizationId,
+				status: 'APPROVED',
+				periodStart: { lte: eff },
+				periodEnd: { gte: eff }
+			},
+			select: { id: true }
+		})
+		if (frozen) {
+			messages.push(
+				`Backdated to ${eff.toISOString().slice(0, 10)}. Approved runs are not recalculated; applies to current and future open periods.`
+			)
+		}
+	}
+
+	const notice = messages.length ? messages.join(' ') : undefined
+
+	await db.$transaction(async (tx: Prisma.TransactionClient) => {
+		const data: Prisma.EmployeeUpdateInput = { ...columns }
+
+		if (payChanged) {
+			const current = await insertCompensationSnapshot(
+				tx,
+				id,
+				{ basicMonthlySalary, rateType, effectiveDate: eff, note: input.note ?? 'promotion' },
+				ctx.actorId,
+				today
+			)
+			if (current) {
+				data.basicMonthlySalary = current.basicMonthlySalary
+				data.rateType = current.rateType
+			}
+		}
+		if (typeChanged) {
+			const current = await insertEmploymentTypeSnapshot(
+				tx,
+				id,
+				{ employmentType, effectiveDate: eff, note: input.note ?? 'promotion' },
+				ctx.actorId,
+				today
+			)
+			if (current) data.employmentType = current.employmentType
+		}
+
+		if (Object.keys(data).length > 0) await tx.employee.update({ where: { id }, data })
+
+		// ONE audit entry across every changed history field — this is what makes the 201 timeline
+		// render a promotion as a single event rather than N scattered edits.
+		const oldValue: Record<string, unknown> = {}
+		const newValue: Record<string, unknown> = { effectiveDate: eff }
+		if (columns.positionId !== undefined) {
+			oldValue.positionId = employee.positionId
+			newValue.positionId = columns.positionId
+		}
+		if (columns.jobTitle !== undefined) {
+			oldValue.jobTitle = employee.jobTitle
+			newValue.jobTitle = columns.jobTitle
+		}
+		if (typeChanged) {
+			oldValue.employmentType = typeAtEff
+			newValue.employmentType = employmentType
+		}
+		if (payChanged) {
+			oldValue.basicMonthlySalary = atEff.salary.toNumber()
+			oldValue.rateType = atEff.rateType
+			newValue.basicMonthlySalary = basicMonthlySalary
+			newValue.rateType = rateType
+		}
+		// reportsToId is not a HISTORY_FIELD (the timeline shows employment terms, not the org chart),
+		// so it rides along as a named-only change like every other non-history edit.
+		if (columns.reportsToId !== undefined) newValue._otherFields = ['reportsToId']
+
+		await writeAuditLog(
+			ctx,
+			{ action: 'UPDATE', entityType: 'Employee', entityId: id, oldValue, newValue },
+			tx
+		)
+	})
+
+	return { notice }
+}
+
 export async function offboardEmployee(
 	id: string,
 	organizationId: string,
 	endDate: Date,
 	ctx: AuditContext
 ) {
-	await getEmployee(id, organizationId)
+	const target = await getEmployee(id, organizationId)
+
+	// Refuse self-offboarding: the transaction below deactivates the target's
+	// user account, so an admin offboarding their own record would be locked out
+	// on their next request (hooks.server.ts redirects inactive users to /login).
+	// Guarding here covers both the form action and the v1 API in one place.
+	if (target.userId === ctx.actorId) {
+		error(400, 'You cannot offboard your own employee record — ask another admin to do it.')
+	}
 
 	const [employee] = await db.$transaction([
 		db.employee.update({
@@ -352,6 +1003,8 @@ export interface EmploymentHistoryEvent {
 	actorEmail: string | null
 	type: 'HIRED' | 'CHANGE'
 	changes: EmploymentHistoryChange[]
+	/** #170: when a compensation change takes effect (present only on comp-change events). */
+	effectiveDate?: string
 }
 
 // Surface an employee's employment history (FR-051) from the audit trail:
@@ -373,14 +1026,16 @@ export async function getEmploymentHistory(
 	})
 
 	// Resolve foreign-key ids to human-readable names for display.
-	const [departments, positions, schedules] = await Promise.all([
+	const [departments, positions, schedules, branches] = await Promise.all([
 		db.department.findMany({ where: { organizationId }, select: { id: true, name: true } }),
 		db.position.findMany({ where: { organizationId }, select: { id: true, title: true } }),
-		db.workSchedule.findMany({ where: { organizationId }, select: { id: true, name: true } })
+		db.workSchedule.findMany({ where: { organizationId }, select: { id: true, name: true } }),
+		db.branch.findMany({ where: { organizationId }, select: { id: true, name: true } })
 	])
 	const deptMap = new Map(departments.map((d) => [d.id, d.name]))
 	const posMap = new Map(positions.map((p) => [p.id, p.title]))
 	const schedMap = new Map(schedules.map((s) => [s.id, s.name]))
+	const branchMap = new Map(branches.map((b) => [b.id, b.name]))
 	const money = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' })
 
 	const display = (field: string, raw: unknown): string => {
@@ -388,6 +1043,7 @@ export async function getEmploymentHistory(
 		const v = String(raw)
 		if (field === 'departmentId') return deptMap.get(v) ?? '(removed)'
 		if (field === 'positionId') return posMap.get(v) ?? '(removed)'
+		if (field === 'branchId') return branchMap.get(v) ?? '(removed)'
 		if (field === 'workScheduleId') return schedMap.get(v) ?? 'Default schedule'
 		if (field === 'basicMonthlySalary') return money.format(Number(raw))
 		// The figure's basis (#120) — 'Monthly salary' / 'Hourly rate', not the raw enum.
@@ -419,12 +1075,16 @@ export async function getEmploymentHistory(
 			changes.push({ label: HISTORY_LABELS[field], from, to })
 		}
 		if (changes.length > 0) {
+			// #170: a comp change carries the effective date in newValue — surface it so the timeline
+			// can distinguish "recorded on" from "effective from" (a backdated raise differs).
+			const eff = newValue.effectiveDate
 			events.push({
 				id: log.id,
 				date: log.createdAt,
 				actorEmail: log.actor?.email ?? null,
 				type: 'CHANGE',
-				changes
+				changes,
+				...(eff ? { effectiveDate: String(eff) } : {})
 			})
 		}
 	}

@@ -40,11 +40,11 @@
 	}
 
 	function statusClass(s: string) {
-		if (s === 'APPROVED') return 'bg-green-100 text-green-700'
-		if (s === 'REJECTED') return 'bg-red-100 text-red-700'
-		if (s === 'RETURNED') return 'bg-orange-100 text-orange-700'
-		if (s === 'CANCELLED') return 'bg-gray-100 text-gray-600'
-		return 'bg-yellow-100 text-yellow-700'
+		if (s === 'APPROVED') return 'bg-green-500/15 text-green-400'
+		if (s === 'REJECTED') return 'bg-red-500/15 text-red-400'
+		if (s === 'RETURNED') return 'bg-orange-500/15 text-orange-400'
+		if (s === 'CANCELLED') return 'bg-gray-500/15 text-gray-400'
+		return 'bg-yellow-500/15 text-yellow-400'
 	}
 </script>
 
@@ -61,6 +61,14 @@
 				<a href="/requests" class="text-primary hover:underline">Requests/Approvals</a>.
 			</p>
 		</div>
+		{#if data.canViewOrgBalances}
+			<a
+				href="/leave/balances"
+				class="rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent"
+			>
+				View all balances
+			</a>
+		{/if}
 	</div>
 
 	<!-- Balances -->
@@ -101,7 +109,7 @@
 					title="Delete selected leave requests?"
 					message="Selected leave requests will be permanently deleted. Approved requests, and any you're not allowed to remove, are skipped."
 					triggerLabel="Delete selected"
-					triggerClass="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+					triggerClass="rounded-md border border-red-500/20 px-3 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-500/10 disabled:opacity-50"
 					disabled={busy}
 					submit={clearOnSuccess}
 				>

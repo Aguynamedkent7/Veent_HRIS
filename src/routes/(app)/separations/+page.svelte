@@ -11,11 +11,13 @@
 		(form as { fieldErrors?: Record<string, string[]> } | null)?.fieldErrors
 	)
 	const fe = (name: string) => fieldErrors?.[name]?.[0]
+	// Red-border the specific field(s) the server rejected (#142).
+	const invalid = (name: string) => (fe(name) ? true : undefined)
 
 	function statusClass(s: string) {
-		if (s === 'FINALIZED') return 'bg-gray-100 text-gray-600'
-		if (s === 'CLEARED') return 'bg-green-100 text-green-700'
-		return 'bg-yellow-100 text-yellow-700'
+		if (s === 'FINALIZED') return 'bg-gray-500/15 text-gray-400'
+		if (s === 'CLEARED') return 'bg-green-500/15 text-green-400'
+		return 'bg-yellow-500/15 text-yellow-400'
 	}
 	function clearedCount(items: { status: string }[]) {
 		return items.filter((i) => i.status === 'CLEARED').length
@@ -43,7 +45,9 @@
 	</div>
 
 	{#if form?.error}
-		<div class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+		<div
+			class="rounded-md border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-600 dark:text-red-400"
+		>
 			{form.error}
 		</div>
 	{/if}
@@ -69,6 +73,7 @@
 					<select
 						id="employeeId"
 						name="employeeId"
+						aria-invalid={invalid('employeeId')}
 						required
 						class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 					>
@@ -86,6 +91,7 @@
 					<select
 						id="type"
 						name="type"
+						aria-invalid={invalid('type')}
 						required
 						class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 					>
@@ -100,6 +106,7 @@
 					<input
 						id="effectiveDate"
 						name="effectiveDate"
+						aria-invalid={invalid('effectiveDate')}
 						type="date"
 						required
 						class="h-9 rounded-md border border-input bg-background px-3 text-sm"
@@ -114,6 +121,7 @@
 				<textarea
 					id="reason"
 					name="reason"
+					aria-invalid={invalid('reason')}
 					rows="2"
 					class="rounded-md border border-input bg-background px-3 py-2 text-sm"
 				></textarea>
@@ -159,7 +167,7 @@
 							>
 						</td>
 						<td class="px-4 py-3 text-right">
-							<a href="/separations/{s.id}" class="text-xs text-primary hover:underline">Open</a>
+							<a href="/separations/{s.id}" class="btn-row">Open</a>
 						</td>
 					</tr>
 				{:else}

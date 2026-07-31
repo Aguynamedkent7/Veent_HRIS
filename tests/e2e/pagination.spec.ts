@@ -47,7 +47,11 @@ test.beforeAll(async () => {
 					lastName: SURNAME,
 					departmentId: department.id,
 					jobTitle: 'Pagination Fixture',
-					employmentType: 'FULL_TIME',
+					// Deliberately ACTIVE: /employees defaults to the active tab, so offboarding these
+					// would hide them from the very list this test paginates. Payroll compute in
+					// another spec does sweep them in and attach entries, which is why teardown
+					// clears those first and is best-effort.
+					employmentType: 'REGULAR',
 					startDate: new Date('2026-01-05'),
 					basicMonthlySalary: 10000,
 					rateType: 'MONTHLY'
@@ -62,8 +66,15 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
 	const db = new PrismaClient()
 	try {
+		// These 25 fixtures are ACTIVE employees, so a payroll compute running in another spec
+		// sweeps them in and attaches payroll entries. That FK is RESTRICT, so deleting the
+		// employee first fails and takes the run down with it — the entries go first.
+		await db.payrollEntry.deleteMany({ where: { employee: { lastName: SURNAME } } })
 		await db.employee.deleteMany({ where: { lastName: SURNAME } })
 		await db.user.deleteMany({ where: { email: { startsWith: 'zzpagetest' } } })
+	} catch {
+		// Best-effort: a concurrent compute can attach another entry between the two deletes.
+		// Leftovers are swept by scripts/clean-e2e-employees.ts rather than failing teardown.
 	} finally {
 		await db.$disconnect()
 	}

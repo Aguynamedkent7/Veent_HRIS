@@ -14,7 +14,13 @@ export const load: PageServerLoad = async ({ locals }) => {
 const schema = z.object({
 	name: z.string().min(1, 'Company name is required').max(200),
 	address: z.string().max(500).optional(),
-	logoUrl: z.string().url('Logo URL must be a valid URL').max(500).optional().or(z.literal(''))
+	logoUrl: z.string().url('Logo URL must be a valid URL').max(500).optional().or(z.literal('')),
+	discordInviteUrl: z
+		.string()
+		.url('Discord invite must be a valid URL')
+		.max(200)
+		.optional()
+		.or(z.literal(''))
 })
 
 export const actions: Actions = {
@@ -32,7 +38,8 @@ export const actions: Actions = {
 				{
 					name: parsed.data.name,
 					address: parsed.data.address || null,
-					logoUrl: parsed.data.logoUrl || null
+					logoUrl: parsed.data.logoUrl || null,
+					discordInviteUrl: parsed.data.discordInviteUrl || null
 				},
 				{
 					organizationId: user.organizationId,

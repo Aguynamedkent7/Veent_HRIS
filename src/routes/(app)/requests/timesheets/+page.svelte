@@ -64,7 +64,9 @@
 	</div>
 
 	{#if form?.error}
-		<div class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+		<div
+			class="rounded-md border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-600 dark:text-red-400"
+		>
 			{form.error}
 		</div>
 	{/if}
@@ -166,7 +168,9 @@
 					<div class="rounded-md bg-muted/50 px-3 py-2 text-sm">
 						{Number(ts.totalHours).toFixed(1)} hrs · {ts.entries.length} entries
 					</div>
-					<p class="text-xs text-primary">Review →</p>
+					<div class="flex justify-end">
+						<span class="btn-row pointer-events-none">Review</span>
+					</div>
 				</div>
 			{/each}
 		</div>

@@ -1,12 +1,25 @@
-import { error, fail, isHttpError } from '@sveltejs/kit'
+import { fail, isHttpError } from '@sveltejs/kit'
 import { can, requireMinRole, requireCapability } from '$lib/server/rbac'
+import { failFromError } from '$lib/server/form-fail'
+import { assertCanTouchEmployee } from '$lib/server/services/employee-access'
 import {
 	getEmployee,
 	updateEmployee,
 	offboardEmployee,
-	getEmploymentHistory
+	revealEmployeeSensitive,
+	getEmploymentHistory,
+	recordCompensationChange,
+	promoteEmployee
 } from '$lib/server/services/employees'
 import { listPositions } from '$lib/server/services/settings/org'
+import { getLeaveBalances } from '$lib/server/services/leave'
+import { listEnrollmentsForEmployee } from '$lib/server/services/benefits'
+import { getEmployeeOnboarding, setManualCompletion } from '$lib/server/services/onboarding'
+import { listAssignableBranches, selectableBranches } from '$lib/server/services/branches'
+import { isFoodServiceOrg } from '$lib/orgs'
+import { govIdSchema } from '$lib/utils/gov-ids'
+import { LOAN_TYPES } from '$lib/utils/loan-types'
+import { EMPLOYMENT_TYPES } from '$lib/utils/employment-type'
 import {
 	listLoans,
 	listCashAdvances,
@@ -23,6 +36,12 @@ import {
 	createEmployeeDeduction,
 	endEmployeeDeduction
 } from '$lib/server/services/payroll/employee-deductions'
+import {
+	listStatutoryRows,
+	setStatutoryExemption,
+	setEmployerShareExternal,
+	setStatutoryAllocation
+} from '$lib/server/services/payroll/employee-statutory'
 import { listSchedules } from '$lib/server/services/attendance/schedules'
 import {
 	listEmployeeDocuments,
@@ -30,8 +49,10 @@ import {
 	deleteEmployeeDocument
 } from '$lib/server/services/documents'
 import { addEmergencyContact, deleteEmergencyContact } from '$lib/server/services/emergencyContacts'
-import { writeAuditLog } from '$lib/server/audit'
-import { maskAccountNumber } from '$lib/utils/format'
+import {
+	listAdditionalSupervisors,
+	setAdditionalSupervisors
+} from '$lib/server/services/supervisors'
 import { db } from '$lib/server/db'
 import { z } from 'zod'
 import type { Actions, PageServerLoad } from './$types'
@@ -54,95 +75,25 @@ function ctxOf(locals: App.Locals, ip: string) {
 	}
 }
 
-// Onboarding checklist (T178 / FR-071): derived from the employee's own record so
-// completing the 201 file *is* completing onboarding — no separate data entry, and
-// everything flows straight into payroll/attendance.
-type OnboardingStep = { key: string; label: string; done: boolean; hint: string }
-function buildOnboarding(
-	emp: Awaited<ReturnType<typeof getEmployee>>,
-	documents: { category: string }[]
-) {
-	const hasContract = documents.some((d) => d.category === 'CONTRACT')
-	const hasDisbursement = !!(
-		(emp.bankName && emp.bankAccountName && emp.bankAccountNumber) ||
-		emp.gcashNumber
-	)
-	const govComplete = !!(
-		emp.sssNumber &&
-		emp.philhealthNumber &&
-		emp.pagibigNumber &&
-		emp.tinNumber
-	)
-	const steps: OnboardingStep[] = [
-		{
-			key: 'account',
-			label: 'Company account created',
-			done: !!emp.user?.isActive,
-			hint: 'A login is generated with the employee record.'
-		},
-		{
-			key: 'position',
-			label: 'Position assigned',
-			done: !!emp.positionId,
-			hint: 'Set “Position” in Update Profile below.'
-		},
-		{
-			key: 'schedule',
-			// The organization's default schedule applies when none is explicitly
-			// assigned, so a schedule is always in effect and attendance always
-			// tracks — the default counts as satisfied here.
-			label: emp.workScheduleId ? 'Work schedule assigned' : 'Work schedule (default)',
-			done: true,
-			hint: 'Set “Work Schedule” below — this starts attendance tracking.'
-		},
-		{
-			key: 'salary',
-			label: 'Compensation set',
-			done: Number(emp.basicMonthlySalary ?? 0) > 0,
-			hint: 'Set “Basic Monthly Salary” below.'
-		},
-		{
-			key: 'disbursement',
-			label: 'Payroll disbursement registered',
-			done: hasDisbursement,
-			hint: 'Add bank or GCash details under Disbursement.'
-		},
-		{
-			key: 'govids',
-			label: 'Government IDs on file',
-			done: govComplete,
-			hint: 'SSS, PhilHealth, Pag-IBIG, and TIN.'
-		},
-		{
-			key: 'contract',
-			label: 'Signed contract uploaded',
-			done: hasContract,
-			hint: 'Upload a “Contract” document below.'
-		}
-	]
-	const doneCount = steps.filter((s) => s.done).length
-	return { steps, doneCount, total: steps.length, complete: doneCount === steps.length }
-}
+// Onboarding checklist (T178 / FR-071, now HR-configurable per org — #116): the derived
+// steps come straight from the employee's own record so completing the 201 file *is*
+// completing onboarding, and HR can add manual steps (orientation, equipment, …). The
+// merge + per-org config lives in $lib/server/services/onboarding.
 
 export const load: PageServerLoad = async ({ locals, params }) => {
 	requireMinRole(locals.user!.role, 'MANAGER')
 
 	const canManage = can(locals.user!.role, 'MANAGE_HR')
 
-	const employee = await getEmployee(params.id, locals.user!.organizationId, locals.user!.role)
+	const employee = await getEmployee(params.id, locals.user!.organizationId, {
+		viewerRole: locals.user!.role
+	})
 
-	// Object-level access control: a MANAGER may only open their own direct
-	// reports' 201 file. HR/Super-Admin are unrestricted. (Field-level masking of
-	// salary/government IDs/bank details is handled inside getEmployee.)
-	if (!canManage) {
-		const self = await db.employee.findUnique({
-			where: { userId: locals.user!.id },
-			select: { id: true }
-		})
-		if (!self || employee.reportsToId !== self.id) {
-			error(403, 'You can only view your own team members.')
-		}
-	}
+	// Object-level access control (#228): a MANAGER may only open a 201 file for their own team or
+	// a branch they manage; HR/CEO/Super-Admin are unrestricted. This used to be gated on
+	// `!canManage`, which was never true — MANAGER holds MANAGE_HR, so the check never ran.
+	// (Field-level masking of salary/government IDs/bank details is handled inside getEmployee.)
+	await assertCanTouchEmployee(locals.user!, employee.id)
 
 	const [
 		departments,
@@ -151,9 +102,12 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		recurringEarnings,
 		recurringDeductions,
 		deductionTypes,
+		statutoryConfig,
 		documents,
 		positions,
-		history
+		history,
+		leaveBalances,
+		benefits
 	] = await Promise.all([
 		db.department.findMany({
 			where: { organizationId: locals.user!.organizationId },
@@ -175,24 +129,62 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 					orderBy: { code: 'asc' }
 				})
 			: Promise.resolve([]),
+		// Per-employee statutory enrollment (#173): the three contributions with their exempt
+		// flag and current monthly EE amount, for the Recurring Deductions panel.
+		canManage ? listStatutoryRows(params.id, locals.user!.organizationId) : Promise.resolve([]),
 		canManage ? listEmployeeDocuments(params.id, locals.user!.organizationId) : Promise.resolve([]),
 		canManage ? listPositions(locals.user!.organizationId) : Promise.resolve([]),
-		canManage ? getEmploymentHistory(params.id, locals.user!.organizationId) : Promise.resolve([])
+		canManage ? getEmploymentHistory(params.id, locals.user!.organizationId) : Promise.resolve([]),
+		// Per-employee leave ledger (#137). A manager viewing a direct report sees it too —
+		// it carries no pay or government-ID data, and "how much leave do they have left" is
+		// exactly what a manager approving leave needs.
+		getLeaveBalances(params.id, new Date().getFullYear()),
+		// Benefits enrollments on the 201 file (#198). Carries no pay/government-ID data, so a
+		// manager viewing a direct report sees them like the leave ledger above.
+		listEnrollmentsForEmployee(params.id)
 	])
 	const schedules = canManage ? await listSchedules(locals.user!.organizationId) : []
-	const onboarding = canManage ? buildOnboarding(employee, documents) : null
+	// Branches only exist for the food-service tenants; elsewhere the picker is not rendered.
+	const showBranches = canManage && isFoodServiceOrg(locals.user!.organizationId)
+	const branches = showBranches
+		? selectableBranches(
+				await listAssignableBranches(locals.user!.organizationId),
+				employee.branchId
+			)
+		: []
+	const onboarding = canManage
+		? await getEmployeeOnboarding(
+				locals.user!.organizationId,
+				employee,
+				documents.map((d) => d.category)
+			)
+		: null
 
-	// #54: disbursement numbers leave the server masked — full values are only
-	// obtainable through the audited ?/revealDisbursement action below.
-	const canRevealDisbursement = can(locals.user!.role, 'MANAGE_HR')
+	// #111: every sensitive field (gov IDs, salary, disbursement) leaves the server masked —
+	// full values are only obtainable through the audited ?/reveal action below.
+	const canReveal = can(locals.user!.role, 'MANAGE_HR')
+
+	// Additional supervisors (#176) — shown to everyone, editable by HR. The picker offers
+	// every other active employee in the org (minus the primary manager, handled server-side).
+	const additionalSupervisors = await listAdditionalSupervisors(params.id)
+	const supervisorOptions = canManage
+		? await db.employee.findMany({
+				where: {
+					user: { organizationId: locals.user!.organizationId },
+					employmentStatus: 'ACTIVE',
+					id: { not: params.id }
+				},
+				select: { id: true, firstName: true, lastName: true },
+				orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }]
+			})
+		: []
 
 	return {
-		employee: {
-			...employee,
-			bankAccountNumber: maskAccountNumber(employee.bankAccountNumber),
-			gcashNumber: maskAccountNumber(employee.gcashNumber)
-		},
-		canRevealDisbursement,
+		additionalSupervisors,
+		supervisorOptions,
+		// Masked by getEmployee (#111) — the full values arrive only via the audited ?/reveal action.
+		employee,
+		canReveal,
 		departments,
 		canManage,
 		loans,
@@ -200,16 +192,37 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		recurringEarnings,
 		recurringDeductions,
 		deductionTypes,
+		statutoryConfig,
 		schedules,
+		branches,
+		showBranches,
 		documents,
 		positions,
 		history,
-		onboarding
+		onboarding,
+		leaveBalances: leaveBalances.map((b) => ({
+			id: b.id,
+			name: b.leaveType.name,
+			minMonthsOfService: b.leaveType.minMonthsOfService,
+			allocated: Number(b.allocated),
+			used: Number(b.used),
+			remaining: Number(b.remaining)
+		})),
+		benefits: benefits.map((b) => ({
+			id: b.id,
+			status: b.status,
+			coverageLevel: b.coverageLevel,
+			plan: {
+				name: b.plan.name,
+				type: b.plan.type,
+				employeeCost: b.plan.employeeCost != null ? Number(b.plan.employeeCost) : null
+			}
+		}))
 	}
 }
 
 const loanSchema = z.object({
-	type: z.string().optional(),
+	type: z.enum(LOAN_TYPES),
 	principal: z.coerce.number().positive(),
 	installment: z.coerce.number().positive()
 })
@@ -227,14 +240,33 @@ const deductionSchema = z.object({
 	label: z.string().max(100).optional(),
 	monthlyAmount: z.coerce.number().positive()
 })
+const statutoryToggleSchema = z.object({
+	contribution: z.enum(['SSS', 'PHILHEALTH', 'PAGIBIG']),
+	exempt: z.enum(['true', 'false']).transform((v) => v === 'true')
+})
+const employerShareExternalToggleSchema = z.object({
+	contribution: z.enum(['SSS', 'PHILHEALTH', 'PAGIBIG']),
+	external: z.enum(['true', 'false']).transform((v) => v === 'true')
+})
+const statutoryAllocationSchema = z.object({
+	contribution: z.enum(['SSS', 'PHILHEALTH', 'PAGIBIG']),
+	allocation: z.enum(['EVEN', 'FIRST', 'SECOND'])
+})
 
 const updateSchema = z.object({
 	jobTitle: z.string().min(1).optional(),
 	departmentId: z.string().optional(),
 	contactPhone: z.string().optional(),
 	contactAddress: z.string().optional(),
-	basicMonthlySalary: z.coerce.number().positive().optional(),
-	rateType: z.enum(['MONTHLY', 'HOURLY']).optional(),
+	// Company email (#186) — HR sets the real address once provisioned. Empty clears it.
+	companyEmail: z
+		.string()
+		.trim()
+		.optional()
+		.transform((v) => (v ? v : null)),
+	// #170: salary/rateType are NOT editable here — the quick-edit form must not write pay onto the
+	// Employee row (payroll now reads period-end salary from EmployeeCompensation history, so a bare
+	// write would be silently ignored). Pay changes go through the dated `?/changeCompensation` path.
 	// Empty string clears the link; a value sets it (unique per employee).
 	discordId: z
 		.string()
@@ -242,6 +274,12 @@ const updateSchema = z.object({
 		.optional()
 		.transform((v) => (v ? v : null)),
 	workScheduleId: z
+		.string()
+		.optional()
+		.transform((v) => (v ? v : null)),
+	// Store assignment. Empty string clears it. Only accepted for food-service tenants —
+	// the update action strips it elsewhere.
+	branchId: z
 		.string()
 		.optional()
 		.transform((v) => (v ? v : null)),
@@ -254,27 +292,13 @@ const updateSchema = z.object({
 		.string()
 		.optional()
 		.transform((v) => (v ? v : null)),
-	// Government / statutory IDs (payroll registration). Empty clears the field.
-	sssNumber: z
-		.string()
-		.trim()
-		.optional()
-		.transform((v) => (v ? v : null)),
-	philhealthNumber: z
-		.string()
-		.trim()
-		.optional()
-		.transform((v) => (v ? v : null)),
-	pagibigNumber: z
-		.string()
-		.trim()
-		.optional()
-		.transform((v) => (v ? v : null)),
-	tinNumber: z
-		.string()
-		.trim()
-		.optional()
-		.transform((v) => (v ? v : null)),
+	// Government / statutory IDs (payroll registration). #111 renders these masked, so the form
+	// never prefills them: an empty field means "unchanged", any value typed is new and is
+	// format-checked here — exactly the bank/GCash model below.
+	sssNumber: govIdSchema('sssNumber'),
+	philhealthNumber: govIdSchema('philhealthNumber'),
+	pagibigNumber: govIdSchema('pagibigNumber'),
+	tinNumber: govIdSchema('tinNumber'),
 	// Disbursement details (sensitive, HR-only). Empty string clears the field.
 	bankName: z
 		.string()
@@ -286,16 +310,65 @@ const updateSchema = z.object({
 		.trim()
 		.optional()
 		.transform((v) => (v ? v : null)),
-	bankAccountNumber: z
+	// #54 leaves these blank in the form, so empty means "unchanged"; any value typed is new
+	// and therefore always format-checked (#191).
+	bankAccountNumber: govIdSchema('bankAccountNumber'),
+	gcashNumber: govIdSchema('gcashNumber')
+})
+
+// #170: an effective-dated salary / pay-type change. Salary is masked (reveal-to-edit), so an empty
+// field means "unchanged", not 0 — same preprocess as the update form. At least one of salary /
+// rateType must actually be supplied; the service enforces the date bounds and the rate/type pairing.
+const changeCompensationSchema = z
+	.object({
+		basicMonthlySalary: z.preprocess(
+			(v) => (v === '' ? undefined : v),
+			z.coerce.number().positive().optional()
+		),
+		rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
+		effectiveDate: z.coerce.date(),
+		note: z
+			.string()
+			.trim()
+			.max(500)
+			.optional()
+			.transform((v) => (v ? v : undefined))
+	})
+	.refine((d) => d.basicMonthlySalary !== undefined || d.rateType !== undefined, {
+		message: 'Enter a new salary or pay type.'
+	})
+
+// #222: a promotion — one atomic career event. Every field is optional (the service requires at
+// least one real change); an empty positionId/jobTitle means "not part of this promotion", never
+// "clear it", so the promote form can never blank a field the HR user did not touch. Salary is
+// masked (reveal-to-edit), so an empty amount means unchanged — the same preprocess as above.
+const promoteSchema = z.object({
+	effectiveDate: z.coerce.date(),
+	positionId: z
+		.string()
+		.optional()
+		.transform((v) => (v ? v : undefined)),
+	jobTitle: z
 		.string()
 		.trim()
 		.optional()
-		.transform((v) => (v ? v : null)),
-	gcashNumber: z
+		.transform((v) => (v ? v : undefined)),
+	reportsToId: z
+		.string()
+		.optional()
+		.transform((v) => (v ? v : undefined)),
+	employmentType: z.enum(EMPLOYMENT_TYPES).optional(),
+	basicMonthlySalary: z.preprocess(
+		(v) => (v === '' ? undefined : v),
+		z.coerce.number().positive().optional()
+	),
+	rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
+	note: z
 		.string()
 		.trim()
+		.max(500)
 		.optional()
-		.transform((v) => (v ? v : null))
+		.transform((v) => (v ? v : undefined))
 })
 
 const emergencyContactSchema = z.object({
@@ -304,23 +377,81 @@ const emergencyContactSchema = z.object({
 	phone: z.string().trim().min(1)
 })
 
-export const actions: Actions = {
+/**
+ * #228: apply the object-level check to EVERY action on this page in one place. Each action here
+ * acts on the 201 file identified by `params.id`, so the guard is uniform — and doing it here rather
+ * than per-action means an action added later is scoped by default instead of by remembering. The
+ * role gate inside each action still runs; this only answers "may this actor touch THIS employee".
+ */
+function scopedToEmployee(actions: Actions): Actions {
+	return Object.fromEntries(
+		Object.entries(actions).map(([name, handler]) => [
+			name,
+			async (event: Parameters<NonNullable<Actions[string]>>[0]) => {
+				await assertCanTouchEmployee(event.locals.user!, event.params.id)
+				return handler!(event)
+			}
+		])
+	)
+}
+
+export const actions: Actions = scopedToEmployee({
+	// Set the employee's additional supervisors (#176). HR-only.
+	setSupervisors: async ({ request, locals, params, getClientAddress }) => {
+		requireCapability(locals.user!.role, 'MANAGE_HR')
+		const ids = (await request.formData()).getAll('supervisorIds').map(String).filter(Boolean)
+		try {
+			await setAdditionalSupervisors(
+				locals.user!.organizationId,
+				params.id, // the 201 file's subject
+				ids,
+				ctxOf(locals, getClientAddress())
+			)
+		} catch (e) {
+			return failFromError(e)
+		}
+		return { success: true }
+	},
+
 	update: async ({ request, locals, params, getClientAddress }) => {
 		requireMinRole(locals.user!.role, 'HR_ADMIN')
 		const user = locals.user!
 
 		const raw = Object.fromEntries(await request.formData())
 		const parsed = updateSchema.safeParse(raw)
-		if (!parsed.success) return fail(400, { error: 'Invalid input' })
+		if (!parsed.success) {
+			// Surface the field messages (the disbursement formats validate in the schema);
+			// fall back to the generic text when zod produced none.
+			const messages = parsed.error.errors.map((e) => e.message).filter(Boolean)
+			return fail(400, { error: messages.length ? messages.join(' · ') : 'Invalid input' })
+		}
 
-		// #54: the form never prefills the stored disbursement numbers (they render as
-		// placeholders), so an empty submission means "leave unchanged", not "clear".
+		// #111: the government IDs and disbursement numbers render masked and are never prefilled,
+		// so an empty submission means "leave unchanged", not "clear" — spread each only when the
+		// form actually carried a value. A malformed ID stored before validation existed is simply
+		// not re-submitted, so it never blocks an unrelated edit (a phone number, an address).
 		// Explicit clearing is deferred until a dedicated clear affordance exists.
-		const { bankAccountNumber, gcashNumber, ...rest } = parsed.data
+		const {
+			sssNumber,
+			philhealthNumber,
+			pagibigNumber,
+			tinNumber,
+			bankAccountNumber,
+			gcashNumber,
+			branchId,
+			...rest
+		} = parsed.data
 		const input = {
 			...rest,
+			...(sssNumber !== null && { sssNumber }),
+			...(philhealthNumber !== null && { philhealthNumber }),
+			...(pagibigNumber !== null && { pagibigNumber }),
+			...(tinNumber !== null && { tinNumber }),
 			...(bankAccountNumber !== null && { bankAccountNumber }),
-			...(gcashNumber !== null && { gcashNumber })
+			...(gcashNumber !== null && { gcashNumber }),
+			// Branches only exist for the food-service tenants; ignore a posted branchId
+			// anywhere else. updateEmployee still re-checks the branch is in this org.
+			...(isFoodServiceOrg(user.organizationId) && { branchId })
 		}
 
 		try {
@@ -341,32 +472,75 @@ export const actions: Actions = {
 		return { success: true }
 	},
 
-	// #54: audited reveal of the masked disbursement numbers. The role check runs
-	// server-side — the UI button is cosmetic gating only (Constitution P2).
-	revealDisbursement: async ({ locals, params, getClientAddress }) => {
-		requireCapability(locals.user!.role, 'MANAGE_HR')
-		const user = locals.user!
-
-		const employee = await db.employee.findFirst({
-			where: { id: params.id, user: { organizationId: user.organizationId } },
-			select: { id: true, bankAccountNumber: true, gcashNumber: true }
-		})
-		if (!employee) error(404, 'Employee not found')
-
-		// Constitution P1/P4: accessing PII is itself an auditable event.
-		await writeAuditLog(ctxOf(locals, getClientAddress()), {
-			action: 'VIEW',
-			entityType: 'Employee',
-			entityId: employee.id,
-			newValue: { fields: ['bankAccountNumber', 'gcashNumber'] }
-		})
-
-		return {
-			revealed: {
-				bankAccountNumber: employee.bankAccountNumber,
-				gcashNumber: employee.gcashNumber
-			}
+	// #170: record an effective-dated salary / pay-type change. HR_ADMIN and up (a MANAGER may edit
+	// their reports' profile but must not move pay). The service inserts the snapshot, re-derives the
+	// current cache and audits atomically; a backdate into an approved run comes back as a notice.
+	changeCompensation: async ({ request, locals, params, getClientAddress }) => {
+		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		// Discriminator: this form shares the page's single `form` prop with every other action, so its
+		// message block gates on `form.action` to ignore a sibling form's success/error.
+		const action = 'changeCompensation'
+		const parsed = changeCompensationSchema.safeParse(Object.fromEntries(await request.formData()))
+		if (!parsed.success) {
+			const messages = parsed.error.errors.map((e) => e.message).filter(Boolean)
+			return fail(400, { action, error: messages.length ? messages.join(' · ') : 'Invalid input' })
 		}
+		try {
+			const { notice } = await recordCompensationChange(
+				params.id,
+				locals.user!.organizationId,
+				parsed.data,
+				ctxOf(locals, getClientAddress())
+			)
+			return { action, success: true, notice }
+		} catch (e) {
+			const f = failFromError(e)
+			return fail(f.status, { action, ...f.data })
+		}
+	},
+
+	// #222: promote — position, title, reporting line, employment type and pay as ONE audited event.
+	// Same HR_ADMIN+ gate as changeCompensation: it moves pay, so a MANAGER must not reach it.
+	promote: async ({ request, locals, params, getClientAddress }) => {
+		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		const action = 'promote'
+		const parsed = promoteSchema.safeParse(Object.fromEntries(await request.formData()))
+		if (!parsed.success) {
+			const messages = parsed.error.errors.map((e) => e.message).filter(Boolean)
+			return fail(400, { action, error: messages.length ? messages.join(' · ') : 'Invalid input' })
+		}
+		try {
+			const { notice } = await promoteEmployee(
+				params.id,
+				locals.user!.organizationId,
+				parsed.data,
+				ctxOf(locals, getClientAddress())
+			)
+			return { action, success: true, notice }
+		} catch (e) {
+			const f = failFromError(e)
+			return fail(f.status, { action, ...f.data })
+		}
+	},
+
+	// #111: audited reveal of every masked sensitive field (gov IDs, salary, disbursement). The
+	// role check runs server-side — the UI button is cosmetic gating only (Constitution P2).
+	reveal: async ({ locals, params, getClientAddress }) => {
+		requireCapability(locals.user!.role, 'MANAGE_HR')
+		// A self-reveal (an HR user opening their own 201 file) is exempt from the audit log —
+		// own data, decision #2. Same identity comparison as load's object-level access check.
+		const self = await db.employee.findUnique({
+			where: { userId: locals.user!.id },
+			select: { id: true }
+		})
+		const isSelf = self?.id === params.id
+		const revealed = await revealEmployeeSensitive(
+			params.id,
+			locals.user!.organizationId,
+			ctxOf(locals, getClientAddress()),
+			{ audit: !isSelf }
+		)
+		return { revealed }
 	},
 
 	offboard: async ({ request, locals, params, getClientAddress }) => {
@@ -376,12 +550,16 @@ export const actions: Actions = {
 		const data = await request.formData()
 		const endDate = new Date(data.get('endDate') as string)
 
-		await offboardEmployee(params.id, user.organizationId, endDate, {
-			organizationId: user.organizationId,
-			actorId: user.id,
-			actorRole: user.role,
-			ipAddress: getClientAddress()
-		})
+		try {
+			await offboardEmployee(params.id, user.organizationId, endDate, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e) {
+			return failFromError(e)
+		}
 	},
 
 	addLoan: async ({ request, locals, params, getClientAddress }) => {
@@ -389,12 +567,16 @@ export const actions: Actions = {
 		const user = locals.user!
 		const parsed = loanSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid loan details' })
-		await createLoan(params.id, user.organizationId, parsed.data, {
-			organizationId: user.organizationId,
-			actorId: user.id,
-			actorRole: user.role,
-			ipAddress: getClientAddress()
-		})
+		try {
+			await createLoan(params.id, user.organizationId, parsed.data, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e) {
+			return failFromError(e)
+		}
 		return { success: true }
 	},
 
@@ -403,12 +585,16 @@ export const actions: Actions = {
 		const user = locals.user!
 		const parsed = cashAdvanceSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid cash-advance details' })
-		await createCashAdvance(params.id, user.organizationId, parsed.data, {
-			organizationId: user.organizationId,
-			actorId: user.id,
-			actorRole: user.role,
-			ipAddress: getClientAddress()
-		})
+		try {
+			await createCashAdvance(params.id, user.organizationId, parsed.data, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e) {
+			return failFromError(e)
+		}
 		return { success: true }
 	},
 
@@ -417,12 +603,16 @@ export const actions: Actions = {
 		const user = locals.user!
 		const parsed = earningSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid recurring earning details' })
-		await createEmployeeEarning(params.id, user.organizationId, parsed.data, {
-			organizationId: user.organizationId,
-			actorId: user.id,
-			actorRole: user.role,
-			ipAddress: getClientAddress()
-		})
+		try {
+			await createEmployeeEarning(params.id, user.organizationId, parsed.data, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e) {
+			return failFromError(e)
+		}
 		return { success: true }
 	},
 
@@ -476,6 +666,69 @@ export const actions: Actions = {
 				actorRole: user.role,
 				ipAddress: getClientAddress()
 			})
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
+		}
+		return { success: true }
+	},
+
+	// Exempt/restore an individual employee from a statutory contribution (#173). HR-only, audited.
+	toggleStatutoryExemption: async ({ request, locals, params, getClientAddress }) => {
+		requireCapability(locals.user!.role, 'MANAGE_HR')
+		const parsed = statutoryToggleSchema.safeParse(Object.fromEntries(await request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Invalid statutory toggle' })
+		try {
+			await setStatutoryExemption(
+				params.id,
+				locals.user!.organizationId,
+				parsed.data.contribution,
+				parsed.data.exempt,
+				ctxOf(locals, getClientAddress())
+			)
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
+		}
+		return { success: true }
+	},
+
+	// Toggle "employer share paid externally" for one contribution (#173, Feature C). Zeroes the ER
+	// share only; the EE share is still deducted. HR-only, audited.
+	toggleEmployerShareExternal: async ({ request, locals, params, getClientAddress }) => {
+		requireCapability(locals.user!.role, 'MANAGE_HR')
+		const parsed = employerShareExternalToggleSchema.safeParse(
+			Object.fromEntries(await request.formData())
+		)
+		if (!parsed.success) return fail(400, { error: 'Invalid statutory toggle' })
+		try {
+			await setEmployerShareExternal(
+				params.id,
+				locals.user!.organizationId,
+				parsed.data.contribution,
+				parsed.data.external,
+				ctxOf(locals, getClientAddress())
+			)
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
+		}
+		return { success: true }
+	},
+
+	// Set which semi-monthly cutoff the EE share is deducted on (#173, Feature E). HR-only, audited.
+	setStatutoryAllocation: async ({ request, locals, params, getClientAddress }) => {
+		requireCapability(locals.user!.role, 'MANAGE_HR')
+		const parsed = statutoryAllocationSchema.safeParse(Object.fromEntries(await request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Invalid statutory allocation' })
+		try {
+			await setStatutoryAllocation(
+				params.id,
+				locals.user!.organizationId,
+				parsed.data.contribution,
+				parsed.data.allocation,
+				ctxOf(locals, getClientAddress())
+			)
 		} catch (e: unknown) {
 			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
 			throw e
@@ -562,5 +815,28 @@ export const actions: Actions = {
 			throw e
 		}
 		return { success: true }
+	},
+
+	// Tick a MANUAL onboarding step on/off for this employee (#116). Derived steps are
+	// read-only — they check themselves off from the record — so only manual items post here.
+	toggleOnboardingStep: async ({ request, locals, params, getClientAddress }) => {
+		requireCapability(locals.user!.role, 'MANAGE_HR')
+		const data = await request.formData()
+		const itemId = data.get('itemId') as string
+		if (!itemId) return fail(400, { error: 'Missing item id.' })
+		const done = data.get('done') === 'true'
+		try {
+			await setManualCompletion(
+				locals.user!.organizationId,
+				itemId,
+				params.id,
+				done,
+				ctxOf(locals, getClientAddress())
+			)
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
+		}
+		return { success: true }
 	}
-}
+})

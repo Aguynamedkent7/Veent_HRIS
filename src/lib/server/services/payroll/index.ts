@@ -1,16 +1,24 @@
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
-import { Prisma } from '@prisma/client'
+import { Prisma, type Role } from '@prisma/client'
+import { canAny } from '$lib/rbac'
 import { computeEmployeeResult } from './calculator'
+import { compensationForPeriod, type CompSegment } from './compensation'
 import { ratesFromRule } from './rates'
+import { statutoryRatesFromConfig } from './statutory-rates'
 import { type AmortItem } from './deductions'
 import { recurringDeductionComponents } from './employee-deductions'
+import {
+	statutoryExemptions,
+	employerShareExternals,
+	statutoryAllocations
+} from './employee-statutory'
 import { D, q2n, sum, ZERO } from './money'
-import { emptyAttendance, round2, type EmployeeComp } from './types'
-import { buildAttendanceInput } from '../attendance/input'
+import { emptyAttendance, round2, type ComputeSegment, type EmployeeComp } from './types'
+import { buildAttendanceInput, buildSegmentAttendance } from '../attendance/input'
 import { computeWorkingDays } from '$lib/utils/dates'
-import { isValidStandardPeriod, periodShareOf } from '$lib/utils/pay-periods'
+import { describePeriod, isValidStandardPeriod, periodShareOf } from '$lib/utils/pay-periods'
 import { ensurePayrollApprovalChain } from '../approvals'
 import type { AuditContext } from '../types'
 
@@ -22,6 +30,42 @@ function groupByEmployee<T extends { employeeId: string }>(rows: T[]): Map<strin
 		map.set(row.employeeId, list)
 	}
 	return map
+}
+
+/**
+ * #170/#171 Stage 2: turn the resolver's day-split segments into engine `ComputeSegment`s — one per
+ * segment, carrying its own comp basis, working-day weight, attendance slice and holiday-aware
+ * `expectedHours`. Attendance comes from `buildSegmentAttendance` (real AttendanceDay rows bucketed
+ * by day); when there are none, the whole-period `regularHours` is split by working-day share, so the
+ * per-segment hours sum back to the period total. Comp uses the engine's default working-day/hours
+ * factors (same as the period-end comp), so `hourlyRateOf` matches across the split.
+ */
+export async function buildComputeSegments(
+	employeeId: string,
+	segments: CompSegment[],
+	regularHours: number,
+	workingDays: number,
+	holidayDates: Date[],
+	dailyHours: number
+): Promise<ComputeSegment[]> {
+	const perSegAtt = await buildSegmentAttendance(
+		employeeId,
+		segments.map((s) => ({ start: s.start, end: s.end }))
+	)
+	return segments.map((seg, i) => {
+		const wd = computeWorkingDays(seg.start, seg.end, holidayDates)
+		// ponytail: guard the degenerate zero-working-day period (share/expected collapse to 0 —
+		// no work, no basic — rather than NaN).
+		const share = workingDays > 0 ? wd / workingDays : 0
+		return {
+			comp: { basicMonthlySalary: seg.salary, rateType: seg.rateType },
+			weight: seg.weight,
+			attendance: perSegAtt
+				? perSegAtt[i]
+				: { ...emptyAttendance(), regularHours: regularHours * share },
+			expectedHours: wd * dailyHours
+		}
+	})
 }
 
 export async function createPayrollRun(
@@ -52,7 +96,13 @@ export async function createPayrollRun(
 		newValue: { periodStart, periodEnd }
 	})
 
-	return run
+	// Compute in the same request (#138): the numbers are deterministic given attendance, so
+	// making HR click a separate "Compute" was friction without a decision attached. The run
+	// comes back COMPUTED; "Recompute" on the detail page re-derives it after later edits
+	// (e.g. assigning a recurring allowance).
+	await computePayroll(run.id, organizationId, ctx)
+
+	return db.payrollRun.findUniqueOrThrow({ where: { id: run.id } })
 }
 
 /**
@@ -83,8 +133,13 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		advancesAll,
 		enrollmentsAll,
 		payRateRule,
+		statutoryRateConfig,
 		recurringAll,
 		recurringDeductionsAll,
+		statutoryExemptAll,
+		statutoryExternalAll,
+		statutoryAllocationAll,
+		compensationAll,
 		holidays
 	] = await Promise.all([
 		db.employee.findMany({ where: { user: { organizationId }, employmentStatus: 'ACTIVE' } }),
@@ -102,6 +157,8 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			select: { id: true, employeeId: true, plan: { select: { name: true, employeeCost: true } } }
 		}),
 		db.payRateRule.findUnique({ where: { organizationId } }),
+		// Org statutory rate overrides (#220) — one optional org row, resolved to effective rates below.
+		db.statutoryRateConfig.findUnique({ where: { organizationId } }),
 		// Recurring allowance/incentive assignments feed the adjustment buckets (#65).
 		db.employeeEarning.findMany({
 			where: { employee: { organizationId }, isActive: true }
@@ -110,6 +167,33 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		db.employeeDeduction.findMany({
 			where: { employee: { organizationId }, isActive: true, deductionType: { isActive: true } },
 			include: { deductionType: { select: { code: true, label: true } } }
+		}),
+		// Per-employee statutory exemptions (#173) — only the exempt rows matter; enrolled is
+		// the default (no row). Grouped by employee like the other per-employee data below.
+		db.employeeStatutoryConfig.findMany({
+			where: { employee: { organizationId }, exempt: true },
+			select: { employeeId: true, contribution: true }
+		}),
+		// Per-employee "employer share paid externally" (#173, Feature C) — zeroes the ER share only.
+		// Mirrors the exempt fetch/grouping; independent flag on the same config row.
+		db.employeeStatutoryConfig.findMany({
+			where: { employee: { organizationId }, employerSharePaidExternally: true },
+			select: { employeeId: true, contribution: true }
+		}),
+		// Per-employee EE-share cutoff allocation (#173, Feature E) — only non-EVEN rows matter; EVEN
+		// is the default (half split). Grouped by employee like the other per-employee data below.
+		db.employeeStatutoryConfig.findMany({
+			where: { employee: { organizationId }, allocation: { not: 'EVEN' } },
+			select: { employeeId: true, contribution: true, allocation: true }
+		}),
+		// #170: effective-dated compensation history for every employee, so the resolver can
+		// day-split a run that straddles a salary change and lag statutory to decision B. Ordered
+		// ascending so a same-day change's later `changedAt` wins the tiebreak; grouped by employee
+		// below like the other per-employee data. An employee with no rows falls back to their
+		// current cache, reproducing the pre-#170 numbers exactly.
+		db.employeeCompensation.findMany({
+			where: { employee: { organizationId } },
+			orderBy: [{ effectiveDate: 'asc' }, { changedAt: 'asc' }]
 		}),
 		// Public holidays inside the period — the scheduled-hours fallback below must not
 		// bill them as ordinary working days.
@@ -126,6 +210,9 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	const taxableByCode = new Map(earningTypes.map((e) => [e.code, e.taxable]))
 	// Premium-pay multipliers from PayRateRule (falls back to DOLE defaults when unset).
 	const rates = ratesFromRule(payRateRule)
+	// #220: statutory tables from StatutoryRateConfig (falls back to the hardcoded PH defaults when
+	// unset). Resolved once and threaded into the shared engine identically to the preview.
+	const statutoryRates = statutoryRatesFromConfig(statutoryRateConfig)
 	// Requirement #5 (review) + #129: prorate monthly statutory to the run's ACTUAL period
 	// shape — WHOLE_MONTH carries the full month (1), either half carries 0.5. This replaces
 	// reading the org-wide payFrequency, which mis-prorated an org that mixes half-month and
@@ -133,11 +220,19 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	// frequency-based share so their numbers don't shift.
 	const frequencyShare = (config?.payFrequency ?? 'SEMI_MONTHLY') === 'MONTHLY' ? 1 : 0.5
 	const periodShare = periodShareOf(run.periodStart, run.periodEnd, frequencyShare)
+	// #173 (Feature E): the run's cutoff kind, computed once, drives EE-share allocation in the
+	// engine. WHOLE_MONTH/legacy periods (null) make allocation moot — the engine falls back to
+	// `× periodShare` there.
+	const periodKind = describePeriod(run.periodStart, run.periodEnd).kind
 	const loansByEmp = groupByEmployee(loansAll)
 	const advancesByEmp = groupByEmployee(advancesAll)
 	const enrollmentsByEmp = groupByEmployee(enrollmentsAll)
 	const recurringByEmp = groupByEmployee(recurringAll)
 	const recurringDeductionsByEmp = groupByEmployee(recurringDeductionsAll)
+	const statutoryExemptByEmp = groupByEmployee(statutoryExemptAll)
+	const statutoryExternalByEmp = groupByEmployee(statutoryExternalAll)
+	const statutoryAllocationByEmp = groupByEmployee(statutoryAllocationAll)
+	const compensationByEmp = groupByEmployee(compensationAll)
 	// Holidays were previously passed as [], so a period containing public holidays
 	// counted them as ordinary working days. That inflates `scheduledHours` below, and
 	// since BASIC = regularHours * hourlyRate, it inflated basic pay for every employee
@@ -160,10 +255,43 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	let totalNet = ZERO
 
 	for (const emp of employees) {
+		// #170: resolve the period's compensation from the effective-dated history (holiday-aware
+		// working-day weighting). With no history it returns a single full-period segment whose
+		// weight is exactly `periodShare` and `statutoryBasis === periodEnd`, so everything below
+		// reduces to the pre-#170 behaviour.
+		const periodComp = compensationForPeriod(
+			compensationByEmp.get(emp.id) ?? [],
+			run.periodStart,
+			run.periodEnd,
+			periodShare,
+			{ basicMonthlySalary: emp.basicMonthlySalary, rateType: emp.rateType },
+			(s, e) =>
+				computeWorkingDays(
+					s,
+					e,
+					holidays.map((h) => h.date)
+				)
+		)
+		// Period-end comp drives basic/premium/tardiness rates — NOT the current cache, which for a
+		// past run with a later change would be too high.
 		const comp: EmployeeComp = {
-			basicMonthlySalary: emp.basicMonthlySalary,
-			rateType: emp.rateType
+			basicMonthlySalary: periodComp.periodEnd.salary,
+			rateType: periodComp.periodEnd.rateType
 		}
+		// Decision B: statutory always follows the day-1-of-month comp (every rate type).
+		const statutoryComp: EmployeeComp = {
+			basicMonthlySalary: periodComp.statutoryBasis.salary,
+			rateType: periodComp.statutoryBasis.rateType
+		}
+		// A pure MONTHLY salary-amount split takes the Stage 1 `basicSegments` path (unchanged); any
+		// other in-period split (hourly/daily rate change, or a MONTHLY↔hourly flip) is Stage 2 and
+		// goes through `segments` (built below). A single segment (no change) takes neither → parity.
+		const segments = periodComp.segments
+		const monthlyOnlySplit = segments.length > 1 && segments.every((s) => s.rateType === 'MONTHLY')
+		const stage2Split = segments.length > 1 && !monthlyOnlySplit
+		const basicSegments = monthlyOnlySplit ? segments : undefined
+		// A flip is a Stage 2 split whose segments don't all share one rateType — flag for manual review.
+		const isFlip = stage2Split && new Set(segments.map((s) => s.rateType)).size > 1
 
 		const timesheets = await db.timesheet.findMany({
 			where: {
@@ -221,13 +349,35 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			refId: e.id
 		}))
 
+		// #170/#171 Stage 2: for a mixed-basis split, resolve per-segment attendance + expected hours.
+		const computeSegments = stage2Split
+			? await buildComputeSegments(
+					emp.id,
+					segments,
+					regularHours,
+					workingDays,
+					holidays.map((h) => h.date),
+					comp.dailyWorkingHours ?? 8
+				)
+			: undefined
+
 		// Shared engine — identical to the Payroll Calculator for the same inputs.
 		const result = computeEmployeeResult(comp, attendance, adjustments, {
 			taxableByCode,
 			rates,
+			statutoryRates,
 			periodShare,
+			// #170: decision-B statutory basis (always), the MONTHLY day-split (Stage 1), and the
+			// mixed-basis segment split (Stage 2) — mutually exclusive; a single segment passes none.
+			statutoryComp,
+			basicSegments,
+			segments: computeSegments,
 			// Holiday-aware schedule for the period — values absences for fixed-basic staff (#121).
 			expectedHours: scheduledHours,
+			statutoryExemptions: statutoryExemptions(statutoryExemptByEmp.get(emp.id) ?? []),
+			employerShareExternal: employerShareExternals(statutoryExternalByEmp.get(emp.id) ?? []),
+			statutoryAllocations: statutoryAllocations(statutoryAllocationByEmp.get(emp.id) ?? []),
+			periodKind,
 			loans,
 			cashAdvances,
 			recurringDeductions: [
@@ -245,14 +395,18 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			attendance.specialHolidayHours +
 			attendance.specialHolidayOtHours
 		// #103: a floored net is never silent — it means deductions outran gross and someone has to
-		// look at it. Zero paid hours stays a separate, more specific reason.
-		const isFlagged = paidHours === 0 || result.uncollected > 0
+		// look at it. Zero paid hours stays a separate, more specific reason. #171: a mid-period
+		// pay-type flip mixes bases we value approximately (premiums stay at the period-end rate), so
+		// surface it for manual review — but never block the run.
+		const isFlagged = paidHours === 0 || result.uncollected > 0 || isFlip
 		const flagReason =
 			paidHours === 0
 				? 'No hours recorded for period'
 				: result.uncollected > 0
 					? `Deductions exceed pay — ₱${result.uncollected.toFixed(2)} uncollected`
-					: null
+					: isFlip
+						? 'Mid-period pay-type change — verify manually'
+						: null
 
 		perEmployee.push({
 			entry: {
@@ -398,16 +552,24 @@ export async function overridePayrollEntry(
 	return updated
 }
 
-export async function listPayrollRuns(organizationId: string) {
+// Finance approvers (CEO / Super Admin) are the company-wide finance authority and reach
+// every tenant's payroll to sign it off (#174); everyone else is scoped to their own org.
+// Passing no roles keeps the strict org filter — callers opt into the wider scope.
+export function payrollOrgFilter(organizationId: string, roles?: Role[]) {
+	return roles && canAny(roles, 'APPROVE_FINANCE') ? {} : { organizationId }
+}
+
+export async function listPayrollRuns(organizationId: string, roles?: Role[]) {
 	return db.payrollRun.findMany({
-		where: { organizationId },
-		orderBy: { periodStart: 'desc' }
+		where: payrollOrgFilter(organizationId, roles),
+		orderBy: { periodStart: 'desc' },
+		include: { organization: { select: { name: true } } }
 	})
 }
 
-export async function getPayrollRun(id: string, organizationId: string) {
+export async function getPayrollRun(id: string, organizationId: string, roles?: Role[]) {
 	const run = await db.payrollRun.findFirst({
-		where: { id, organizationId },
+		where: { id, ...payrollOrgFilter(organizationId, roles) },
 		include: {
 			entries: {
 				include: {

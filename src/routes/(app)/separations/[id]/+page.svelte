@@ -30,9 +30,9 @@
 	})
 
 	function statusClass(st: string) {
-		if (st === 'FINALIZED') return 'bg-gray-100 text-gray-600'
-		if (st === 'CLEARED') return 'bg-green-100 text-green-700'
-		return 'bg-yellow-100 text-yellow-700'
+		if (st === 'FINALIZED') return 'bg-gray-500/15 text-gray-400'
+		if (st === 'CLEARED') return 'bg-green-500/15 text-green-400'
+		return 'bg-yellow-500/15 text-yellow-400'
 	}
 </script>
 
@@ -46,12 +46,16 @@
 	</div>
 
 	{#if form?.error}
-		<div class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+		<div
+			class="rounded-md border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-600 dark:text-red-400"
+		>
 			{form.error}
 		</div>
 	{/if}
 	{#if form?.finalized}
-		<div class="rounded-md border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
+		<div
+			class="rounded-md border border-green-500/20 bg-green-500/10 px-4 py-2 text-sm text-green-600 dark:text-green-400"
+		>
 			Separation finalized. The employee is now offboarded and their login is disabled.
 		</div>
 	{/if}
@@ -93,8 +97,8 @@
 					{#if isFinalized}
 						<span
 							class="rounded-full px-2 py-0.5 text-xs font-medium {item.status === 'CLEARED'
-								? 'bg-green-100 text-green-700'
-								: 'bg-yellow-100 text-yellow-700'}">{item.status}</span
+								? 'bg-green-500/15 text-green-400'
+								: 'bg-yellow-500/15 text-yellow-400'}">{item.status}</span
 						>
 					{:else}
 						{@const toggle = clearanceGuard(item.id)}
@@ -110,7 +114,7 @@
 								disabled={toggle.busy}
 								class="rounded-md border px-3 py-1 text-xs font-medium hover:bg-accent disabled:pointer-events-none disabled:opacity-50 {item.status ===
 								'CLEARED'
-									? 'text-green-700'
+									? 'text-green-600 dark:text-green-400'
 									: 'text-muted-foreground'}"
 							>
 								{item.status === 'CLEARED' ? 'Cleared' : 'Mark cleared'}

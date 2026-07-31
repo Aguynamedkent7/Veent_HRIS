@@ -1,5 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit'
 import { z } from 'zod'
+import { can } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { getEmployee, updateEmployee } from '$lib/server/services/employees'
 import { listEmployeeDocuments } from '$lib/server/services/documents'
@@ -22,8 +23,11 @@ const PUNCH_LABELS: Record<string, string> = {
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!
 
-	const employeeRecord = await db.employee.findUnique({
-		where: { userId: user.id },
+	// Scope to the active org: a cross-org account (the CEO) carries one profile in its home
+	// tenant only, so in the others this finds nothing and we guard cleanly to the dashboard
+	// rather than letting getEmployee 404 on an org mismatch.
+	const employeeRecord = await db.employee.findFirst({
+		where: { userId: user.id, organizationId: user.organizationId },
 		select: { id: true }
 	})
 
@@ -32,7 +36,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 	const from = new Date(Date.now() - PUNCH_WINDOW_DAYS * 24 * 60 * 60 * 1000)
 
 	const [employee, documents, benefits, rawPunches] = await Promise.all([
-		getEmployee(employeeRecord.id, user.organizationId),
+		// #111: mask sensitive fields in the payload even for one's own record — the profile page
+		// renders none of them, so this only stops the raw values shipping in the load JSON.
+		getEmployee(employeeRecord.id, user.organizationId, { isSelf: true }),
 		listEmployeeDocuments(employeeRecord.id, user.organizationId),
 		listEnrollmentsForEmployee(employeeRecord.id),
 		listPunches(employeeRecord.id, { from })
@@ -50,7 +56,10 @@ export const load: PageServerLoad = async ({ locals }) => {
 		}))
 		.reverse()
 
-	return { employee, documents, benefits, punches, punchWindowDays: PUNCH_WINDOW_DAYS }
+	// Only HR may change employee details (#175); everyone else sees their profile read-only.
+	const canManage = can(user.role, 'MANAGE_HR')
+
+	return { employee, documents, benefits, punches, punchWindowDays: PUNCH_WINDOW_DAYS, canManage }
 }
 
 const updateSchema = z.object({
@@ -74,8 +83,14 @@ export const actions: Actions = {
 	update: async ({ request, locals }) => {
 		const user = locals.user!
 
-		const employeeRecord = await db.employee.findUnique({
-			where: { userId: user.id },
+		// Employee details are HR-managed (#175); block self-service edits even if the form is
+		// bypassed. HR edits any record (including their own) here or on /employees/[id].
+		if (!can(user.role, 'MANAGE_HR')) {
+			return fail(403, { error: 'Only HR can change employee details.' })
+		}
+
+		const employeeRecord = await db.employee.findFirst({
+			where: { userId: user.id, organizationId: user.organizationId },
 			select: { id: true }
 		})
 

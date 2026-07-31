@@ -1,11 +1,12 @@
 import { fail } from '@sveltejs/kit'
 import { requireMinRole } from '$lib/server/rbac'
+import { failFromError } from '$lib/server/form-fail'
 import { paginate } from '$lib/server/pagination'
 import {
 	countJobPostings,
 	listJobPostings,
 	createJobPosting,
-	publishJobPosting,
+	submitJobPostingForApproval,
 	advanceApplicant
 } from '$lib/server/services/recruitment'
 import { db } from '$lib/server/db'
@@ -48,33 +49,42 @@ export const actions: Actions = {
 		const parsed = createSchema.safeParse(raw)
 		if (!parsed.success) return fail(400, { error: 'Invalid input' })
 
-		await createJobPosting(user.organizationId, parsed.data, {
-			organizationId: user.organizationId,
-			actorId: user.id,
-			actorRole: user.role,
-			ipAddress: getClientAddress()
-		})
+		try {
+			await createJobPosting(user.organizationId, parsed.data, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e) {
+			return failFromError(e)
+		}
 		return { success: true, message: `Job posting “${parsed.data.title}” created as a draft.` }
 	},
 
-	publish: async ({ request, locals, getClientAddress }) => {
+	// Submit a draft for approval (#195); it goes OPEN only once its approver signs off.
+	submit: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
 		requireMinRole(user.role, 'HR_ADMIN')
 
 		const data = await request.formData()
 		const id = data.get('id') as string
 
-		await publishJobPosting(id, user.organizationId, {
-			organizationId: user.organizationId,
-			actorId: user.id,
-			actorRole: user.role,
-			ipAddress: getClientAddress()
-		})
-		return { success: true, message: 'Job posting published.' }
+		try {
+			await submitJobPostingForApproval(id, user.organizationId, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRole: user.role,
+				ipAddress: getClientAddress()
+			})
+		} catch (e) {
+			return failFromError(e)
+		}
+		return { success: true, message: 'Job posting submitted for approval.' }
 	},
 
-	// Bulk-publish selected draft postings (mass posting).
-	publishMany: async ({ request, locals, getClientAddress }) => {
+	// Bulk-submit selected draft postings for approval (mass posting).
+	submitMany: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
 		requireMinRole(user.role, 'HR_ADMIN')
 
@@ -87,20 +97,20 @@ export const actions: Actions = {
 			actorRole: user.role,
 			ipAddress: getClientAddress()
 		}
-		// Publish each; skip any that aren't drafts (already open/closed) rather than failing the batch.
-		let published = 0
+		// Submit each; skip any that aren't drafts rather than failing the batch.
+		let submitted = 0
 		for (const id of ids) {
 			try {
-				await publishJobPosting(id, user.organizationId, ctx)
-				published++
+				await submitJobPostingForApproval(id, user.organizationId, ctx)
+				submitted++
 			} catch {
-				// ignore individual failures (e.g. not a draft) so the rest still publish
+				// ignore individual failures (e.g. not a draft) so the rest still submit
 			}
 		}
 		return {
 			success: true,
-			published,
-			message: `${published} of ${ids.length} selected posting(s) published.`
+			submitted,
+			message: `${submitted} of ${ids.length} selected posting(s) submitted for approval.`
 		}
 	},
 

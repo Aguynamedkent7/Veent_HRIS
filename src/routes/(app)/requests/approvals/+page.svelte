@@ -47,13 +47,58 @@
 	}
 	const typeLabel = (t: string) => typeLabels[t] ?? t
 
+	// A colour per request type so a queue of mixed requests is scannable at a glance
+	// rather than a wall of identical grey cards.
+	const typeAccents: Record<string, string> = {
+		LEAVE: 'bg-sky-500/15 text-sky-500',
+		OVERTIME: 'bg-violet-500/15 text-violet-500',
+		UNDERTIME: 'bg-amber-500/15 text-amber-500',
+		OFFICIAL_BUSINESS: 'bg-teal-500/15 text-teal-500',
+		REST_DAY_WORK: 'bg-indigo-500/15 text-indigo-500',
+		HOLIDAY_WORK: 'bg-rose-500/15 text-rose-500',
+		INFO_UPDATE: 'bg-slate-500/15 text-slate-400'
+	}
+	const typeAccent = (t: string) => typeAccents[t] ?? 'bg-muted text-muted-foreground'
+
+	const initials = (first: string, last: string) =>
+		`${first.charAt(0)}${last.charAt(0)}`.toUpperCase()
+
+	// How long a request has been waiting. Approvers work oldest-first, and a request
+	// sitting for a week is the one worth surfacing.
+	function waitingFor(createdAt: Date | string): string {
+		const days = Math.floor((Date.now() - new Date(createdAt).getTime()) / 86_400_000)
+		if (days < 1) return 'today'
+		if (days === 1) return '1 day'
+		return `${days} days`
+	}
+	const isStale = (createdAt: Date | string) =>
+		Date.now() - new Date(createdAt).getTime() >= 3 * 86_400_000
+
+	// Roles reach the template as raw enum values (HR_ADMIN), which read as database
+	// internals on a card an HR user looks at all day.
+	const roleLabels: Record<string, string> = {
+		HR_ADMIN: 'HR',
+		SUPER_ADMIN: 'Admin',
+		MANAGER: 'Manager',
+		VERIFIER: 'Verifier',
+		APPROVER: 'Approver',
+		CEO: 'CEO',
+		PAYROLL_OFFICER: 'Payroll'
+	}
+	const roleLabel = (r: string) =>
+		roleLabels[r] ??
+		r
+			.toLowerCase()
+			.replace(/_/g, ' ')
+			.replace(/^\w/, (c) => c.toUpperCase())
+
 	function currentStageLabel(r: {
 		steps: { stageIndex: number; stageKind: string; role: string | null }[]
 		currentStage: number
 	}) {
 		const step = r.steps.find((s) => s.stageIndex === r.currentStage)
 		if (!step) return ''
-		return step.stageKind === 'SUPERVISOR' ? 'Supervisor' : (step.role ?? 'Approver')
+		return step.stageKind === 'SUPERVISOR' ? 'Supervisor' : roleLabel(step.role ?? 'APPROVER')
 	}
 
 	// Decision notes are collected in a popup (#70 follow-up) instead of inline
@@ -124,13 +169,22 @@
 </svelte:head>
 
 <div class="space-y-6">
-	<div>
-		<h1 class="text-2xl font-bold tracking-tight">Request Approvals</h1>
-		<p class="text-sm text-muted-foreground">Review requests awaiting your decision.</p>
+	<div class="flex flex-wrap items-center justify-between gap-3">
+		<div>
+			<h1 class="text-2xl font-bold tracking-tight">Request Approvals</h1>
+			<p class="text-sm text-muted-foreground">Review requests awaiting your decision.</p>
+		</div>
+		{#if data.pagination.total > 0}
+			<span class="rounded-full bg-primary/10 px-3 py-1 text-sm font-medium text-primary">
+				{data.pagination.total} awaiting you
+			</span>
+		{/if}
 	</div>
 
 	{#if form?.error}
-		<div class="rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+		<div
+			class="rounded-md border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-600 dark:text-red-400"
+		>
 			{form.error}
 		</div>
 	{/if}
@@ -186,42 +240,87 @@
 			No requests awaiting your decision.
 		</div>
 	{:else}
-		<!-- Uniform fixed-height cards: details clip inside (reason is clamped, full
-		     text lives on the detail page) and the decision buttons pin to the bottom.
-		     Safe now that notes are collected in a popup instead of an inline textarea. -->
-		<div class="flex flex-wrap items-start gap-4">
+		<!-- A real grid, so cards align in columns and share a row height instead of each
+		     being pinned to a hardcoded h-72. Details clip inside (reason is clamped, full
+		     text lives on the detail page) and the decision buttons pin to the bottom. -->
+		<div class="grid grid-cols-1 items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3">
 			{#each data.pendingRequests as req (req.id)}
 				{@const approve = approveGuard(req.id)}
+				{@const leave = data.leaveContext[req.id]}
+				{@const picked = selected.includes(req.id)}
 				<div
-					class="flex h-72 w-full min-w-[18rem] flex-col rounded-lg border bg-card p-4 sm:w-[22rem]"
+					class="flex flex-col rounded-lg border bg-card transition-colors {picked
+						? 'border-primary ring-1 ring-primary'
+						: 'hover:border-muted-foreground/30'}"
 				>
-					<div class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
-						<div class="flex items-center justify-between gap-2">
-							<div class="flex min-w-0 items-center gap-2">
-								<input
-									type="checkbox"
-									checked={selected.includes(req.id)}
-									onchange={() => toggle(req.id)}
-									aria-label="Select request"
-									class="align-middle"
-								/>
-								<span class="truncate font-medium">{typeLabel(req.type)}</span>
-							</div>
-							<span class="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-								>{currentStageLabel(req)}</span
+					<div class="flex min-h-0 flex-1 flex-col gap-3 p-4">
+						<!-- Person first: approvers scan by who, then by what. -->
+						<div class="flex items-start gap-3">
+							<input
+								type="checkbox"
+								checked={picked}
+								onchange={() => toggle(req.id)}
+								aria-label="Select request"
+								class="mt-1 align-middle"
+							/>
+							<div
+								class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold {typeAccent(
+									req.type
+								)}"
+								aria-hidden="true"
 							>
+								{initials(req.employee.firstName, req.employee.lastName)}
+							</div>
+							<div class="min-w-0 flex-1">
+								<!-- The full name gets the header width to itself; the type badge sits in the
+								     meta row below, where truncating it costs nothing. -->
+								<p class="font-medium leading-tight break-words">
+									{req.employee.lastName}, {req.employee.firstName}
+								</p>
+								<p class="mt-0.5 text-xs text-muted-foreground">
+									Waiting {waitingFor(req.createdAt)}
+									{#if isStale(req.createdAt)}
+										<span class="ml-1 font-medium text-amber-500">· overdue</span>
+									{/if}
+								</p>
+							</div>
 						</div>
-						<p class="text-sm text-muted-foreground">
-							{req.employee.lastName}, {req.employee.firstName}
-						</p>
-						<p class="text-sm">
-							{#if req.dateFrom}{formatDateRange(req.dateFrom, req.dateTo)}{/if}
+
+						<div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+							<span class="rounded-full px-2 py-0.5 text-xs font-medium {typeAccent(req.type)}"
+								>{leave?.typeName ?? typeLabel(req.type)}</span
+							>
+							{#if req.dateFrom}<span>{formatDateRange(req.dateFrom, req.dateTo)}</span>{/if}
+							{#if leave?.totalDays != null}
+								<span class="rounded bg-muted px-1.5 py-0.5 text-xs font-medium"
+									>{leave.totalDays}
+									{leave.totalDays === 1 ? 'day' : 'days'}</span
+								>
+							{/if}
 							{#if req.hours}
-								· {req.hours} hrs{/if}
-						</p>
-						{#if req.reason}
-							<p class="line-clamp-3 text-xs text-muted-foreground">{req.reason}</p>
+								<span class="rounded bg-muted px-1.5 py-0.5 text-xs font-medium"
+									>{req.hours} hrs</span
+								>
+							{/if}
+						</div>
+
+						<!-- The decision-critical number: can this request actually be covered? -->
+						{#if leave && leave.remaining != null}
+							{@const short = leave.totalDays != null && leave.remaining < leave.totalDays}
+							<p
+								class="rounded-md px-2 py-1 text-xs {short
+									? 'bg-red-500/10 font-medium text-red-500'
+									: 'bg-muted/60 text-muted-foreground'}"
+							>
+								{leave.remaining.toFixed(1)} of {leave.typeName} remaining
+								{#if short}· not enough to cover this request{/if}
+							</p>
 						{/if}
+
+						{#if req.reason}
+							<p class="line-clamp-2 text-xs text-muted-foreground">{req.reason}</p>
+						{/if}
+
 						{#if req.documents.length}
 							{@const unverified = unverifiedCount(req.documents)}
 							<p class="text-xs">
@@ -230,21 +329,24 @@
 								>
 								{#if unverified}
 									<span
-										class="ml-1 rounded-full bg-yellow-100 px-2 py-0.5 font-medium text-yellow-700"
+										class="ml-1 rounded-full bg-yellow-500/15 px-2 py-0.5 font-medium text-yellow-400"
 										>{unverified} unverified</span
 									>
 								{:else}
 									<span
-										class="ml-1 rounded-full bg-green-100 px-2 py-0.5 font-medium text-green-700"
+										class="ml-1 rounded-full bg-green-500/15 px-2 py-0.5 font-medium text-green-400"
 										>all verified</span
 									>
 								{/if}
 							</p>
 						{/if}
-						<a
-							href="/requests/{req.id}?from=/requests/approvals"
-							class="mt-auto text-xs text-primary hover:underline">View detail →</a
-						>
+
+						<div class="mt-auto flex items-center justify-between gap-2 pt-1">
+							<span class="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+								>Stage: {currentStageLabel(req)}</span
+							>
+							<a href="/requests/{req.id}?from=/requests/approvals" class="btn-row">View detail</a>
+						</div>
 					</div>
 					<!-- Approve posts directly; Return/Reject collect their required note in
 					     a popup (ReasonDialog) and submit through the hidden decide form. -->
@@ -252,7 +354,7 @@
 						method="POST"
 						action="?/decideRequest"
 						use:enhance={approve.enhance}
-						class="mt-3 flex shrink-0 gap-2 border-t pt-2"
+						class="flex shrink-0 gap-2 border-t bg-muted/20 p-3"
 					>
 						<input type="hidden" name="id" value={req.id} />
 						<button
