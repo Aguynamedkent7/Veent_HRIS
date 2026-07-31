@@ -3,13 +3,19 @@ import { failFromError } from '$lib/server/form-fail'
 import { paginate } from '$lib/server/pagination'
 import { countEmployees, listEmployees, offboardEmployee } from '$lib/server/services/employees'
 import { listAssignableBranches } from '$lib/server/services/branches'
+import {
+	assertCanTouchEmployee,
+	listVisibleEmployeeIds
+} from '$lib/server/services/employee-access'
 import { isFoodServiceOrg } from '$lib/orgs'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals, url }) => {
-	// The full roster is HR-only. Managers reach a report's 201 file via the Team
-	// tab (which links straight to /employees/[id]) — they must not see everyone.
-	requireMinRole(locals.user!.role, 'HR_ADMIN')
+	// #232: MANAGER ranks level with HR_ADMIN (#133), so the `requireMinRole('HR_ADMIN')` that
+	// used to stand here admitted every manager to the WHOLE roster — the same dead-guard shape
+	// #228 fixed on the 201 page. The floor now only keeps EMPLOYEE and the off-ladder roles out;
+	// who a manager actually sees is decided by the id filter below, not by rank.
+	requireMinRole(locals.user!.role, 'MANAGER')
 
 	const organizationId = locals.user!.organizationId
 	const search = url.searchParams.get('search') ?? undefined
@@ -23,7 +29,11 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	// the active workforce (default) and a dedicated Offboarded section. Both counts feed
 	// the tab labels; only the selected tab's page of rows is queried.
 	const tab = url.searchParams.get('status') === 'offboarded' ? 'offboarded' : 'active'
-	const baseFilters = { search, departmentId, branchId }
+	// `null` for HR/CEO/Super-Admin (unrestricted); an id list for a manager. Threaded into the
+	// counts as well as the rows, so the tab labels and pagination describe what they can see
+	// rather than the org's true headcount.
+	const visibleIds = await listVisibleEmployeeIds(locals.user!)
+	const baseFilters = { search, departmentId, branchId, ...(visibleIds && { ids: visibleIds }) }
 
 	// #64: counts are awaited (pagination meta + tab labels need them) while the page of
 	// rows still streams so the skeleton renders immediately.
@@ -56,12 +66,17 @@ export const actions: Actions = {
 	// Onboarding lives on the dedicated /employees/new page (full form + Discord ID); this
 	// list page only carries the offboard action for the table rows.
 	offboard: async ({ request, locals, getClientAddress }) => {
-		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		requireMinRole(locals.user!.role, 'MANAGER')
 		const user = locals.user!
 
 		const data = await request.formData()
 		const id = data.get('id') as string
 		const endDate = new Date(data.get('endDate') as string)
+
+		// #232: the scoped load hides rows, but a form action is reachable by direct POST whatever
+		// the page rendered — so the id has to be checked here, not just filtered upstream. This is
+		// the destructive half of the hole: offboarding was open to any manager, on anyone.
+		await assertCanTouchEmployee(user, id)
 
 		try {
 			await offboardEmployee(id, user.organizationId, endDate, {

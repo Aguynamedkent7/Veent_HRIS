@@ -14,7 +14,7 @@ import { ROLE_HIERARCHY, CAPABILITIES } from '$lib/rbac'
 const { dbMock, listReportIdsFor } = vi.hoisted(() => ({
 	listReportIdsFor: vi.fn(),
 	dbMock: {
-		employee: { findUnique: vi.fn(), findFirst: vi.fn() },
+		employee: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
 		branch: { findMany: vi.fn() }
 	}
 }))
@@ -22,12 +22,17 @@ const { dbMock, listReportIdsFor } = vi.hoisted(() => ({
 vi.mock('$lib/server/db', () => ({ db: dbMock }))
 vi.mock('$lib/server/services/supervisors', () => ({ listReportIdsFor }))
 
-const { canTouchEmployee, assertCanTouchEmployee } =
+const { canTouchEmployee, assertCanTouchEmployee, listVisibleEmployeeIds } =
 	await import('$lib/server/services/employee-access')
 
 const actor = (role: Role) => ({ id: 'user1', role, organizationId: 'org1' })
 /** The manager's own employee record. */
 const SELF = { id: 'mgr-emp' }
+
+/** Employees sitting in a branch the manager runs; only consulted when they manage one. */
+let branchStaff: { id: string }[] = []
+/** Ids the org filter rejects, standing in for a record in another tenant. */
+let foreignIds: string[] = []
 
 beforeEach(() => {
 	vi.clearAllMocks()
@@ -35,6 +40,20 @@ beforeEach(() => {
 	listReportIdsFor.mockResolvedValue([])
 	dbMock.branch.findMany.mockResolvedValue([])
 	dbMock.employee.findFirst.mockResolvedValue({ branchId: null })
+	branchStaff = []
+	foreignIds = []
+	// Two different findMany calls: "who is in my branches" (keyed by branchId) and the closing
+	// org filter (keyed by id). Discriminate on the where-shape rather than call order, so a
+	// manager with no branches — who skips the first call entirely — still resolves correctly.
+	dbMock.employee.findMany.mockImplementation(({ where }) =>
+		Promise.resolve(
+			where.branchId
+				? branchStaff
+				: (where.id?.in ?? [])
+						.filter((id: string) => !foreignIds.includes(id))
+						.map((id: string) => ({ id }))
+		)
+	)
 })
 
 describe('the capability split this fix depends on (#228)', () => {
@@ -104,6 +123,71 @@ describe('canTouchEmployee (#228)', () => {
 	it('fails closed when the actor has no employee record of their own', async () => {
 		dbMock.employee.findUnique.mockResolvedValue(null)
 		expect(await canTouchEmployee(actor('MANAGER'), 'anyone')).toBe(false)
+	})
+})
+
+/**
+ * #232 — the roster list. `requireMinRole('HR_ADMIN')` gated both the page and its offboard
+ * action, and MANAGER clears that floor (#133), so every manager saw the whole tenant and could
+ * offboard anyone in it. Same dead-guard shape as #228, one file over.
+ */
+describe('listVisibleEmployeeIds (#232)', () => {
+	it('returns null — unrestricted — for the org-wide roles, without querying', async () => {
+		for (const role of ['HR_ADMIN', 'CEO', 'SUPER_ADMIN'] as const) {
+			expect(await listVisibleEmployeeIds(actor(role))).toBeNull()
+		}
+		expect(dbMock.employee.findUnique).not.toHaveBeenCalled()
+	})
+
+	it('shows a MANAGER with no team only themselves', async () => {
+		expect(await listVisibleEmployeeIds(actor('MANAGER'))).toEqual([SELF.id])
+	})
+
+	it('shows a MANAGER their reports alongside themselves', async () => {
+		listReportIdsFor.mockResolvedValue(['report1', 'report2'])
+		const visible = await listVisibleEmployeeIds(actor('MANAGER'))
+		expect(visible).toEqual(expect.arrayContaining([SELF.id, 'report1', 'report2']))
+		expect(visible).toHaveLength(3)
+	})
+
+	it('shows a MANAGER everyone in a branch they run', async () => {
+		dbMock.branch.findMany.mockResolvedValue([{ id: 'br1' }])
+		branchStaff = [{ id: 'crew1' }, { id: 'crew2' }]
+		const visible = await listVisibleEmployeeIds(actor('MANAGER'))
+		expect(visible).toEqual(expect.arrayContaining([SELF.id, 'crew1', 'crew2']))
+	})
+
+	it('does not double-count someone who is both a report and in the branch', async () => {
+		listReportIdsFor.mockResolvedValue(['crew1'])
+		dbMock.branch.findMany.mockResolvedValue([{ id: 'br1' }])
+		branchStaff = [{ id: 'crew1' }]
+		expect(await listVisibleEmployeeIds(actor('MANAGER'))).toEqual([SELF.id, 'crew1'])
+	})
+
+	it('drops a report belonging to another organization', async () => {
+		listReportIdsFor.mockResolvedValue(['report1', 'foreign1'])
+		foreignIds = ['foreign1']
+		expect(await listVisibleEmployeeIds(actor('MANAGER'))).not.toContain('foreign1')
+	})
+
+	it('returns nobody — not everybody — when the actor has no employee record', async () => {
+		dbMock.employee.findUnique.mockResolvedValue(null)
+		// The dangerous failure would be `null`, which the callers read as "unrestricted".
+		expect(await listVisibleEmployeeIds(actor('MANAGER'))).toEqual([])
+	})
+
+	// The invariant that keeps the two halves honest: a roster must never list a row whose 201
+	// file then 403s. If one function's rule drifts from the other's, this fails.
+	it('agrees with canTouchEmployee on every id it returns', async () => {
+		listReportIdsFor.mockResolvedValue(['report1'])
+		dbMock.branch.findMany.mockResolvedValue([{ id: 'br1' }])
+		branchStaff = [{ id: 'crew1' }]
+		const visible = (await listVisibleEmployeeIds(actor('MANAGER')))!
+
+		for (const id of visible) {
+			dbMock.employee.findFirst.mockResolvedValue({ branchId: id === 'crew1' ? 'br1' : null })
+			expect(await canTouchEmployee(actor('MANAGER'), id)).toBe(true)
+		}
 	})
 })
 
