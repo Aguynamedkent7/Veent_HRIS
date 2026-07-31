@@ -18,6 +18,7 @@ import { listAssignableBranches, selectableBranches } from '$lib/server/services
 import { isFoodServiceOrg } from '$lib/orgs'
 import { govIdSchema } from '$lib/utils/gov-ids'
 import { LOAN_TYPES } from '$lib/utils/loan-types'
+import { EMPLOYMENT_TYPES } from '$lib/utils/employment-type'
 import {
 	listLoans,
 	listCashAdvances,
@@ -365,9 +366,7 @@ const promoteSchema = z.object({
 		.string()
 		.optional()
 		.transform((v) => (v ? v : undefined)),
-	employmentType: z
-		.enum(['REGULAR', 'PROBATIONARY', 'CONTRACTUAL', 'PART_TIME', 'ON_CALL', 'INTERN'])
-		.optional(),
+	employmentType: z.enum(EMPLOYMENT_TYPES).optional(),
 	basicMonthlySalary: z.preprocess(
 		(v) => (v === '' ? undefined : v),
 		z.coerce.number().positive().optional()

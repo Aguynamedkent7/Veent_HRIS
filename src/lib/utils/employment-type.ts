@@ -20,7 +20,13 @@ export const EMPLOYMENT_TYPE_OPTIONS = [
 	['PART_TIME', 'Part-time'],
 	['ON_CALL', 'On-call'],
 	['INTERN', 'Intern']
-] as const
+] as const satisfies readonly (readonly [EmploymentType, string])[]
+
+/** The bare values, for `z.enum` — so adding an enum member can't leave a validator behind. */
+export const EMPLOYMENT_TYPES = EMPLOYMENT_TYPE_OPTIONS.map(([value]) => value) as unknown as [
+	EmploymentType,
+	...EmploymentType[]
+]
 
 /** One persisted `EmployeeEmploymentType` row (loose shape — independent of the Prisma client type). */
 export interface EmploymentTypeRow {

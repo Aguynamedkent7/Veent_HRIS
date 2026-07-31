@@ -4,11 +4,15 @@ import {
 	getEmployee,
 	updateEmployee,
 	offboardEmployee,
-	promoteEmployee
+	promoteEmployee,
+	NO_CHANGE_MESSAGE,
+	NO_CHANGE_STATUS
 } from '$lib/server/services/employees'
 import { apiError } from '$lib/server/api-error'
 import { db } from '$lib/server/db'
 import { govIdSchema } from '$lib/utils/gov-ids'
+import { isRateBasisAllowed, RATE_BASIS_MISMATCH } from '$lib/utils/rate-basis'
+import { EMPLOYMENT_TYPES } from '$lib/utils/employment-type'
 import { z } from 'zod'
 import type { RequestHandler } from './$types'
 
@@ -20,9 +24,7 @@ const updateSchema = z.object({
 	contactAddress: z.string().optional(),
 	departmentId: z.string().optional(),
 	jobTitle: z.string().optional(),
-	employmentType: z
-		.enum(['REGULAR', 'PROBATIONARY', 'CONTRACTUAL', 'PART_TIME', 'ON_CALL', 'INTERN'])
-		.optional(),
+	employmentType: z.enum(EMPLOYMENT_TYPES).optional(),
 	employmentStatus: z.enum(['ACTIVE', 'ON_LEAVE', 'OFFBOARDED']).optional(),
 	basicMonthlySalary: z.coerce.number().positive().optional(),
 	rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
@@ -105,6 +107,18 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	}
 
 	try {
+		// The two writers below are separate transactions, so a pairing that promoteEmployee will
+		// reject must be caught BEFORE updateEmployee commits the unrelated fields — otherwise a
+		// rejected PATCH still half-applies. Cheap pre-check against the resulting state; the writer
+		// re-validates authoritatively.
+		if (employmentType !== undefined || rateType !== undefined) {
+			const current = await getEmployee(params.id, locals.user.organizationId)
+			if (
+				!isRateBasisAllowed(rateType ?? current.rateType, employmentType ?? current.employmentType)
+			) {
+				return apiError(400, RATE_BASIS_MISMATCH)
+			}
+		}
 		if (Object.keys(rest).length > 0) {
 			await updateEmployee(params.id, locals.user.organizationId, rest, ctx)
 		}
@@ -125,7 +139,9 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 				// swallow only the writer's "no change" 400 and let the (unchanged) record be returned. Any
 				// other 400 (e.g. an invalid rate/type pairing) still propagates to the client below.
 				const err = e as { status?: number; body?: { message?: string } }
-				if (!(err?.status === 400 && err.body?.message?.includes('No change'))) throw e
+				if (!(err?.status === NO_CHANGE_STATUS && err.body?.message === NO_CHANGE_MESSAGE)) {
+					throw e
+				}
 			}
 		}
 		// #111: re-fetch masked so the response reflects the new salary, never the pre-change record.

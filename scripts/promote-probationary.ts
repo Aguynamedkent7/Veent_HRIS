@@ -98,6 +98,10 @@ async function main() {
 		}
 
 		const done: typeof employees = []
+		// #222: promoteEmployee enforces the rate/type pairing, so a legacy PROBATIONARY employee on an
+		// hourly rate now fails to regularize instead of quietly landing an illegal pairing. That needs
+		// a human, so failures are notified alongside the successes rather than only logged.
+		const failed: { employee: (typeof employees)[number]; reason: string }[] = []
 		for (const e of employees) {
 			try {
 				// Effective on the day probation actually ended, not the night the sweep happened to
@@ -116,10 +120,13 @@ async function main() {
 				promoted++
 			} catch (err) {
 				// One bad row must not abort the whole sweep.
-				console.error(`  ! ${e.employeeNumber} ${e.lastName}: ${(err as Error).message}`)
+				const reason = ((err as { body?: { message?: string } })?.body?.message ??
+					(err as Error).message) as string
+				console.error(`  ! ${e.employeeNumber} ${e.lastName}: ${reason}`)
+				failed.push({ employee: e, reason })
 			}
 		}
-		if (done.length === 0) continue
+		if (done.length === 0 && failed.length === 0) continue
 
 		// Notify that org's HR so a status change nobody clicked is still visible to a human.
 		const hr = await db.user.findMany({
@@ -137,7 +144,16 @@ async function main() {
 				`/employees/${e.id}`
 			)
 		}
-		console.log(`  org ${organizationId}: ${done.length} promoted, ${hr.length} HR notified`)
+		for (const { employee: e, reason } of failed) {
+			await notifyMany(
+				hr.map((u) => u.id),
+				`${e.firstName} ${e.lastName} (${e.employeeNumber}) completed ${PROBATION_MONTHS} months but could NOT be regularized automatically: ${reason}`,
+				`/employees/${e.id}`
+			)
+		}
+		console.log(
+			`  org ${organizationId}: ${done.length} promoted, ${failed.length} failed, ${hr.length} HR notified`
+		)
 	}
 
 	console.log(`\nRegularized ${promoted} employee(s).`)

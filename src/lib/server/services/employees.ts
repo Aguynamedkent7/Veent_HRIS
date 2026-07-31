@@ -221,38 +221,39 @@ export async function getEmployee(
 	// read after a future-dated change's effective date has passed) we correct the column in place and
 	// use the healed RAW values below; otherwise nothing is written. No audit — the change was audited
 	// when the snapshot was inserted. Single indexed lookup (employeeId), so this is cheap.
-	const compHistory = await db.employeeCompensation.findMany({
-		where: { employeeId: id },
-		select: { basicMonthlySalary: true, rateType: true, effectiveDate: true, changedAt: true }
-	})
-	const healed = currentCompensation(compHistory, new Date(), {
+	// #222 adds the same heal for the effective-dated employment type, so both histories load
+	// concurrently and any stale column is corrected in ONE write.
+	const [compHistory, typeHistory] = await Promise.all([
+		db.employeeCompensation.findMany({
+			where: { employeeId: id },
+			select: { basicMonthlySalary: true, rateType: true, effectiveDate: true, changedAt: true }
+		}),
+		db.employeeEmploymentType.findMany({
+			where: { employeeId: id },
+			select: { employmentType: true, effectiveDate: true, changedAt: true }
+		})
+	])
+	const asOf = new Date()
+	const healed = currentCompensation(compHistory, asOf, {
 		basicMonthlySalary: employee.basicMonthlySalary,
 		rateType: employee.rateType
 	})
+	const healedType = employmentTypeAt(typeHistory, asOf, employee.employmentType)
+	const stale: Prisma.EmployeeUpdateInput = {}
 	if (
 		!D(employee.basicMonthlySalary).equals(healed.salary) ||
 		employee.rateType !== healed.rateType
 	) {
-		await db.employee.update({
-			where: { id },
-			data: { basicMonthlySalary: healed.salary, rateType: healed.rateType }
-		})
+		stale.basicMonthlySalary = healed.salary
+		stale.rateType = healed.rateType
 		employee.basicMonthlySalary = healed.salary
 		employee.rateType = healed.rateType
 	}
-
-	// #222: the same heal for the effective-dated employment type — a promotion dated ahead flips the
-	// column the first time the record is read on or after its date. Not sensitive, so no masking
-	// concern here; the snapshot row is truth, the column is the cache.
-	const typeHistory = await db.employeeEmploymentType.findMany({
-		where: { employeeId: id },
-		select: { employmentType: true, effectiveDate: true, changedAt: true }
-	})
-	const healedType = employmentTypeAt(typeHistory, new Date(), employee.employmentType)
 	if (healedType !== employee.employmentType) {
-		await db.employee.update({ where: { id }, data: { employmentType: healedType } })
+		stale.employmentType = healedType
 		employee.employmentType = healedType
 	}
+	if (Object.keys(stale).length > 0) await db.employee.update({ where: { id }, data: stale })
 
 	// Internal callers (updateEmployee, offboardEmployee) pass no opts and get the raw record —
 	// they need cleartext to diff and never hand it to a client. Every client-facing caller
@@ -723,6 +724,14 @@ async function insertEmploymentTypeSnapshot(
 	})
 }
 
+/**
+ * Rejection when a promotion carries no actual change. Exported because the API PATCH swallows
+ * exactly this one (resending the current values is a no-op, not a failure) — matching on the
+ * constant means a reworded message can't silently turn no-ops back into 400s.
+ */
+export const NO_CHANGE_MESSAGE = 'No change to record — edit at least one field.'
+export const NO_CHANGE_STATUS = 400
+
 export interface PromoteEmployeeInput {
 	effectiveDate: Date
 	positionId?: string | null
@@ -818,12 +827,23 @@ export async function promoteEmployee(
 	}
 
 	if (!payChanged && !typeChanged && Object.keys(columns).length === 0) {
-		error(400, 'No change to record — edit at least one field.')
+		error(NO_CHANGE_STATUS, NO_CHANGE_MESSAGE)
 	}
+
+	// Only pay and employment type are effective-dated; position, title and the reporting line are
+	// plain columns that would apply the moment this is saved. Rather than quietly applying half a
+	// promotion early, a future-dated one must be pay/type-only.
+	if (eff.getTime() > today.getTime() && Object.keys(columns).length > 0) {
+		error(
+			400,
+			'A future-dated promotion can only change pay and employment type. Position, job title and reporting line apply immediately — record those on or after the effective date.'
+		)
+	}
+
+	const messages: string[] = []
 
 	// Band check (T163): monthly bands only, so an hourly/daily rate is never scored against one.
 	// Warn, never block — out-of-band pay is a legitimate HR decision.
-	let notice: string | undefined
 	const targetPositionId =
 		columns.positionId !== undefined ? columns.positionId : employee.positionId
 	if (rateType === 'MONTHLY' && targetPositionId) {
@@ -837,10 +857,33 @@ export async function promoteEmployee(
 				Number(grade.maxSalary)
 			)
 			if (status !== 'within') {
-				notice = `Heads up: the new salary is ${status} the ${grade.name} band (${Number(grade.minSalary).toLocaleString()}–${Number(grade.maxSalary).toLocaleString()}). Recorded anyway.`
+				messages.push(
+					`Heads up: the new salary is ${status} the ${grade.name} band (${Number(grade.minSalary).toLocaleString()}–${Number(grade.maxSalary).toLocaleString()}). Recorded anyway.`
+				)
 			}
 		}
 	}
+
+	// Same non-fatal notice `recordCompensationChange` gives when pay is backdated into a frozen
+	// (APPROVED) run — those are never recomputed, so the raise silently misses that period.
+	if (payChanged && eff.getTime() < today.getTime()) {
+		const frozen = await db.payrollRun.findFirst({
+			where: {
+				organizationId,
+				status: 'APPROVED',
+				periodStart: { lte: eff },
+				periodEnd: { gte: eff }
+			},
+			select: { id: true }
+		})
+		if (frozen) {
+			messages.push(
+				`Backdated to ${eff.toISOString().slice(0, 10)}. Approved runs are not recalculated; applies to current and future open periods.`
+			)
+		}
+	}
+
+	const notice = messages.length ? messages.join(' ') : undefined
 
 	await db.$transaction(async (tx: Prisma.TransactionClient) => {
 		const data: Prisma.EmployeeUpdateInput = { ...columns }

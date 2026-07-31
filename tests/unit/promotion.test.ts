@@ -147,6 +147,25 @@ describe('promoteEmployee guards (#222)', () => {
 		).rejects.toMatchObject({ status: 400 })
 	})
 
+	it('refuses a manager from another tenant', async () => {
+		// getEmployee resolves the subject; the org-scoped manager lookup then finds nothing.
+		dbMock.employee.findFirst.mockResolvedValueOnce(PART_TIMER).mockResolvedValueOnce(null)
+		await expect(
+			promoteEmployee('emp1', 'org1', { reportsToId: 'emp-other-org', effectiveDate: TODAY }, CTX)
+		).rejects.toMatchObject({ status: 404 })
+	})
+
+	it('refuses an effective date before the hire date', async () => {
+		await expect(
+			promoteEmployee(
+				'emp1',
+				'org1',
+				{ jobTitle: 'Shift Lead', effectiveDate: new Date(Date.now() - 500 * DAY) },
+				CTX
+			)
+		).rejects.toMatchObject({ status: 400 })
+	})
+
 	it('warns but does not block when the new salary is outside the band', async () => {
 		dbMock.position.findFirst.mockResolvedValue({
 			id: 'pos2',
@@ -166,6 +185,42 @@ describe('promoteEmployee guards (#222)', () => {
 		)
 		expect(notice).toMatch(/below the SG-3 band/)
 		expect(txMock.employee.update).toHaveBeenCalled() // recorded anyway
+	})
+})
+
+describe('promoteEmployee future dating (#222)', () => {
+	const NEXT_WEEK = new Date(Date.now() + 7 * DAY)
+
+	it('refuses to future-date a change to position, title or reporting line', async () => {
+		// Those are plain columns — they would apply on save, i.e. a week early.
+		await expect(
+			promoteEmployee('emp1', 'org1', { jobTitle: 'Shift Lead', effectiveDate: NEXT_WEEK }, CTX)
+		).rejects.toMatchObject({ status: 400 })
+		expect(txMock.employee.update).not.toHaveBeenCalled()
+	})
+
+	it('allows a pay/type-only promotion to be future-dated, leaving the cache alone', async () => {
+		// Every snapshot is future-dated, so the re-derivation (effectiveDate ≤ today) finds nothing.
+		txMock.employeeCompensation.findFirst.mockResolvedValue(null)
+		txMock.employeeEmploymentType.findFirst.mockResolvedValue(null)
+		await promoteEmployee(
+			'emp1',
+			'org1',
+			{
+				employmentType: 'REGULAR',
+				rateType: 'MONTHLY',
+				basicMonthlySalary: 25000,
+				effectiveDate: NEXT_WEEK
+			},
+			CTX
+		)
+		expect(txMock.employeeCompensation.create).toHaveBeenCalledTimes(1)
+		expect(txMock.employeeEmploymentType.create).toHaveBeenCalledTimes(1)
+		// The row must not carry the future values forward before their date.
+		const data = txMock.employee.update.mock.calls[0]?.[0]?.data ?? {}
+		expect(data).not.toHaveProperty('basicMonthlySalary')
+		expect(data).not.toHaveProperty('rateType')
+		expect(data).not.toHaveProperty('employmentType')
 	})
 })
 
