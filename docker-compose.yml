@@ -51,9 +51,13 @@ services:
       db:
         # Wait until Postgres actually accepts connections, not just until it starts.
         condition: service_healthy
-    # Sync the schema, then start the server. prisma + tsx ship in the image. Swap
-    # `db push` for `migrate deploy` once you adopt real Prisma migrations.
-    command: sh -c "pnpm exec prisma db push --skip-generate && node build"
+    # Rename FULL_TIME → REGULAR before the push (#172), then sync the schema and start the
+    # server. The rename has to lead: `db push` cannot express one, so it sees a value dropped
+    # and another added and recreates the type — dropping the rows that use it, or refusing
+    # outright. Deploy is fully automatic (deploy.yml), so there is no window to run this by
+    # hand. Idempotent, and a no-op on every start after the first. prisma + tsx ship in the
+    # image. Swap `db push` for `migrate deploy` once you adopt real Prisma migrations.
+    command: sh -c "pnpm exec tsx scripts/migrate-employment-type-regular.ts && pnpm exec prisma db push --skip-generate && node build"
 
   # Discord time-tracking bot — a separate long-running process, not part of `node build`.
   # Reuses the app image (tsx + scripts/ are baked in). Requires DISCORD_BOT_TOKEN in

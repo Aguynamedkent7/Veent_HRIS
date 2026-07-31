@@ -15,16 +15,26 @@ import { PrismaClient } from '@prisma/client'
 const db = new PrismaClient()
 
 async function main() {
-	const [{ has_old, has_new }] = await db.$queryRawUnsafe<
-		{ has_old: boolean; has_new: boolean }[]
+	const [{ type_exists, has_old, has_new }] = await db.$queryRawUnsafe<
+		{ type_exists: boolean; has_old: boolean | null; has_new: boolean | null }[]
 	>(`
 		select
+			count(*) > 0                     as type_exists,
 			bool_or(enumlabel = 'FULL_TIME') as has_old,
 			bool_or(enumlabel = 'REGULAR')   as has_new
 		from pg_enum e
 		join pg_type t on t.oid = e.enumtypid
 		where t.typname = 'EmploymentType'
 	`)
+
+	// Nothing to rename on a database that has never been pushed to — the type is about to be
+	// created with REGULAR already in it. This runs as a deploy step ahead of `db push`
+	// (docker-compose.yml), so a fresh droplet or a recreated volume hits this path, and it must
+	// be a no-op rather than an error or the `&&` chain stops and the app never starts.
+	if (!type_exists) {
+		console.log('✔ EmploymentType does not exist yet — nothing to rename; db push will create it.')
+		return
+	}
 
 	if (!has_old && has_new) {
 		console.log('✔ Already migrated — EmploymentType has REGULAR and no FULL_TIME.')
