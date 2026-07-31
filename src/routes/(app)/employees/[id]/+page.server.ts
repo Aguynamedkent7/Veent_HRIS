@@ -1,6 +1,7 @@
-import { error, fail, isHttpError } from '@sveltejs/kit'
+import { fail, isHttpError } from '@sveltejs/kit'
 import { can, requireMinRole, requireCapability } from '$lib/server/rbac'
 import { failFromError } from '$lib/server/form-fail'
+import { assertCanTouchEmployee } from '$lib/server/services/employee-access'
 import {
 	getEmployee,
 	updateEmployee,
@@ -50,8 +51,7 @@ import {
 import { addEmergencyContact, deleteEmergencyContact } from '$lib/server/services/emergencyContacts'
 import {
 	listAdditionalSupervisors,
-	setAdditionalSupervisors,
-	listReportIdsFor
+	setAdditionalSupervisors
 } from '$lib/server/services/supervisors'
 import { db } from '$lib/server/db'
 import { z } from 'zod'
@@ -89,20 +89,11 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		viewerRole: locals.user!.role
 	})
 
-	// Object-level access control: a MANAGER may only open their own direct
-	// reports' 201 file. HR/Super-Admin are unrestricted. (Field-level masking of
-	// salary/government IDs/bank details is handled inside getEmployee.)
-	if (!canManage) {
-		const self = await db.employee.findUnique({
-			where: { userId: locals.user!.id },
-			select: { id: true }
-		})
-		// A manager may open anyone who reports to them as primary OR additional supervisor (#176).
-		const reportIds = self ? await listReportIdsFor(self.id) : []
-		if (!self || !reportIds.includes(employee.id)) {
-			error(403, 'You can only view your own team members.')
-		}
-	}
+	// Object-level access control (#228): a MANAGER may only open a 201 file for their own team or
+	// a branch they manage; HR/CEO/Super-Admin are unrestricted. This used to be gated on
+	// `!canManage`, which was never true — MANAGER holds MANAGE_HR, so the check never ran.
+	// (Field-level masking of salary/government IDs/bank details is handled inside getEmployee.)
+	await assertCanTouchEmployee(locals.user!, employee.id)
 
 	const [
 		departments,
@@ -386,7 +377,25 @@ const emergencyContactSchema = z.object({
 	phone: z.string().trim().min(1)
 })
 
-export const actions: Actions = {
+/**
+ * #228: apply the object-level check to EVERY action on this page in one place. Each action here
+ * acts on the 201 file identified by `params.id`, so the guard is uniform — and doing it here rather
+ * than per-action means an action added later is scoped by default instead of by remembering. The
+ * role gate inside each action still runs; this only answers "may this actor touch THIS employee".
+ */
+function scopedToEmployee(actions: Actions): Actions {
+	return Object.fromEntries(
+		Object.entries(actions).map(([name, handler]) => [
+			name,
+			async (event: Parameters<NonNullable<Actions[string]>>[0]) => {
+				await assertCanTouchEmployee(event.locals.user!, event.params.id)
+				return handler!(event)
+			}
+		])
+	)
+}
+
+export const actions: Actions = scopedToEmployee({
 	// Set the employee's additional supervisors (#176). HR-only.
 	setSupervisors: async ({ request, locals, params, getClientAddress }) => {
 		requireCapability(locals.user!.role, 'MANAGE_HR')
@@ -830,4 +839,4 @@ export const actions: Actions = {
 		}
 		return { success: true }
 	}
-}
+})

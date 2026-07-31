@@ -26,6 +26,9 @@ const ALL_ROLES: Role[] = [
 // deliberate authorization decision, so widening one fails this test on purpose.
 const EXPECTED: Record<string, Role[]> = {
 	MANAGE_HR: ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN', 'CEO'],
+	// #228: HR authority over the whole roster. Excludes MANAGER, who is scoped to their own
+	// branch and team — the distinction MANAGE_HR cannot express.
+	ADMINISTER_HR_ORGWIDE: ['HR_ADMIN', 'SUPER_ADMIN', 'CEO'],
 	VIEW_TEAM: ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN', 'CEO'],
 	ADMINISTER_SYSTEM: ['SUPER_ADMIN'],
 	MANAGE_USER_ROLES: ['CEO'],
@@ -51,7 +54,17 @@ const EXPECTED: Record<string, Role[]> = {
 // HR_ADMIN proposes. CEO/SUPER_ADMIN hold the superior MANAGE_STATUTORY_RATES (edit directly +
 // confirm) and MANAGER holds neither, so this capability is a deliberate exception to the "CEO and
 // MANAGER hold every HR_ADMIN capability" invariants below.
-const HR_ADMIN_SUPERSET_EXCEPTIONS: (keyof typeof CAPABILITIES)[] = ['PROPOSE_STATUTORY_RATES']
+//
+// ADMINISTER_HR_ORGWIDE is the second exception (#228). MANAGER holding every HR_ADMIN capability
+// is what made object-level scoping impossible to express: `requireMinRole('MANAGER')` plus
+// `!can(role,'MANAGE_HR')` described an empty set, so the guards meant to keep a manager to their
+// own team never ran and every MANAGER could read and edit the whole roster. This capability draws
+// the line the superset invariant otherwise forbids — HR authority over the WHOLE roster, versus a
+// manager's own branch and team. It is deliberately NOT held by MANAGER.
+const HR_ADMIN_SUPERSET_EXCEPTIONS: (keyof typeof CAPABILITIES)[] = [
+	'PROPOSE_STATUTORY_RATES',
+	'ADMINISTER_HR_ORGWIDE'
+]
 
 describe('capability table', () => {
 	it('covers every capability with no extras', () => {
