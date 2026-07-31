@@ -9,14 +9,13 @@ const roleSchema = z.object({
 })
 
 // PATCH /api/v1/settings/users/:id/role — set a user's role.
-// The last-active-super-admin guardrail lives in setUserRole (returns 409).
+// The last-active-super-admin (409) and self-role-change (403) guardrails both live in setUserRole,
+// so this handler and the roles form action enforce the same rules without restating them.
 export const PATCH: RequestHandler = async ({ locals, params, request, getClientAddress }) => {
 	if (!locals.user) error(401, 'Unauthorized')
 	const user = locals.user
 	// Role changes are CEO-exclusive (#132) — Super Admin / HR Admin no longer qualify.
 	requireCapability(user.role, 'MANAGE_USER_ROLES')
-
-	if (params.id === user.id) error(400, 'You cannot change your own role.')
 
 	const parsed = roleSchema.safeParse(await request.json())
 	if (!parsed.success) error(422, parsed.error.errors[0]?.message ?? 'Invalid role')
