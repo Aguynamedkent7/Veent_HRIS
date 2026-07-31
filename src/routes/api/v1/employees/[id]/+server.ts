@@ -4,7 +4,7 @@ import {
 	getEmployee,
 	updateEmployee,
 	offboardEmployee,
-	recordCompensationChange
+	promoteEmployee
 } from '$lib/server/services/employees'
 import { apiError } from '$lib/server/api-error'
 import { db } from '$lib/server/db'
@@ -90,12 +90,14 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 		return apiError(400, 'Invalid request body')
 	}
 
-	// #170: pay must never be written straight onto the Employee row — the payroll run reads
-	// period-end salary from EmployeeCompensation history, so a bare Employee write would be silently
-	// ignored. Split pay out: non-pay fields still go through updateEmployee; a salary/rateType change
-	// is recorded as an effective-today snapshot via recordCompensationChange (which also updates the
-	// cache). Resending the same salary is a no-op, not an error.
-	const { basicMonthlySalary, rateType, ...rest } = parsed.data
+	// #170/#222: pay and employment type must never be written straight onto the Employee row — both
+	// are effective-dated, so a bare Employee write would desync the history the payroll run reads.
+	// Split them out: everything else still goes through updateEmployee, while pay and type go to
+	// promoteEmployee, which records both as effective-today snapshots in ONE transaction. It has to
+	// be one call rather than two writers: the rate-basis pairing (#189) can only be validated on the
+	// resulting state, and a PART_TIME/HOURLY → REGULAR/MONTHLY change is invalid at every
+	// intermediate step. Resending the same values is a no-op, not an error.
+	const { basicMonthlySalary, rateType, employmentType, ...rest } = parsed.data
 	const ctx = {
 		organizationId: locals.user.organizationId,
 		actorId: locals.user.id,
@@ -106,18 +108,22 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 		if (Object.keys(rest).length > 0) {
 			await updateEmployee(params.id, locals.user.organizationId, rest, ctx)
 		}
-		if (basicMonthlySalary !== undefined || rateType !== undefined) {
+		if (
+			basicMonthlySalary !== undefined ||
+			rateType !== undefined ||
+			employmentType !== undefined
+		) {
 			try {
-				await recordCompensationChange(
+				await promoteEmployee(
 					params.id,
 					locals.user.organizationId,
-					{ basicMonthlySalary, rateType, effectiveDate: new Date() },
+					{ basicMonthlySalary, rateType, employmentType, effectiveDate: new Date() },
 					ctx
 				)
 			} catch (e: unknown) {
-				// A PATCH resending the current salary/pay type is a no-op, not a failure — swallow only
-				// the writer's "no change" 400 and let the (unchanged) record be returned. Any other 400
-				// (e.g. an invalid rate/type pairing) still propagates to the client below.
+				// A PATCH resending the current salary/pay type/employment type is a no-op, not a failure —
+				// swallow only the writer's "no change" 400 and let the (unchanged) record be returned. Any
+				// other 400 (e.g. an invalid rate/type pairing) still propagates to the client below.
 				const err = e as { status?: number; body?: { message?: string } }
 				if (!(err?.status === 400 && err.body?.message?.includes('No change'))) throw e
 			}

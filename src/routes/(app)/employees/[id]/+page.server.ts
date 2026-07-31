@@ -7,7 +7,8 @@ import {
 	offboardEmployee,
 	revealEmployeeSensitive,
 	getEmploymentHistory,
-	recordCompensationChange
+	recordCompensationChange,
+	promoteEmployee
 } from '$lib/server/services/employees'
 import { listPositions } from '$lib/server/services/settings/org'
 import { getLeaveBalances } from '$lib/server/services/leave'
@@ -345,6 +346,41 @@ const changeCompensationSchema = z
 		message: 'Enter a new salary or pay type.'
 	})
 
+// #222: a promotion — one atomic career event. Every field is optional (the service requires at
+// least one real change); an empty positionId/jobTitle means "not part of this promotion", never
+// "clear it", so the promote form can never blank a field the HR user did not touch. Salary is
+// masked (reveal-to-edit), so an empty amount means unchanged — the same preprocess as above.
+const promoteSchema = z.object({
+	effectiveDate: z.coerce.date(),
+	positionId: z
+		.string()
+		.optional()
+		.transform((v) => (v ? v : undefined)),
+	jobTitle: z
+		.string()
+		.trim()
+		.optional()
+		.transform((v) => (v ? v : undefined)),
+	reportsToId: z
+		.string()
+		.optional()
+		.transform((v) => (v ? v : undefined)),
+	employmentType: z
+		.enum(['REGULAR', 'PROBATIONARY', 'CONTRACTUAL', 'PART_TIME', 'ON_CALL', 'INTERN'])
+		.optional(),
+	basicMonthlySalary: z.preprocess(
+		(v) => (v === '' ? undefined : v),
+		z.coerce.number().positive().optional()
+	),
+	rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
+	note: z
+		.string()
+		.trim()
+		.max(500)
+		.optional()
+		.transform((v) => (v ? v : undefined))
+})
+
 const emergencyContactSchema = z.object({
 	name: z.string().trim().min(1),
 	relationship: z.string().trim().min(1),
@@ -443,6 +479,30 @@ export const actions: Actions = {
 		}
 		try {
 			const { notice } = await recordCompensationChange(
+				params.id,
+				locals.user!.organizationId,
+				parsed.data,
+				ctxOf(locals, getClientAddress())
+			)
+			return { action, success: true, notice }
+		} catch (e) {
+			const f = failFromError(e)
+			return fail(f.status, { action, ...f.data })
+		}
+	},
+
+	// #222: promote — position, title, reporting line, employment type and pay as ONE audited event.
+	// Same HR_ADMIN+ gate as changeCompensation: it moves pay, so a MANAGER must not reach it.
+	promote: async ({ request, locals, params, getClientAddress }) => {
+		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		const action = 'promote'
+		const parsed = promoteSchema.safeParse(Object.fromEntries(await request.formData()))
+		if (!parsed.success) {
+			const messages = parsed.error.errors.map((e) => e.message).filter(Boolean)
+			return fail(400, { action, error: messages.length ? messages.join(' · ') : 'Invalid input' })
+		}
+		try {
+			const { notice } = await promoteEmployee(
 				params.id,
 				locals.user!.organizationId,
 				parsed.data,

@@ -12,8 +12,9 @@ import type { AuditContext } from '$lib/server/services/types'
 const { dbMock } = vi.hoisted(() => ({
 	dbMock: {
 		employee: { findFirst: vi.fn(), update: vi.fn() },
-		// getEmployee's heal-on-read (#170 Stage 1.5) queries the comp history.
+		// getEmployee's heal-on-read (#170 Stage 1.5, #222) queries the comp + employment-type history.
 		employeeCompensation: { findMany: vi.fn().mockResolvedValue([]) },
+		employeeEmploymentType: { findMany: vi.fn().mockResolvedValue([]) },
 		user: { updateMany: vi.fn() },
 		$transaction: vi.fn()
 	}

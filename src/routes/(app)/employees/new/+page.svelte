@@ -7,6 +7,7 @@
 		isRateBasisAllowed,
 		type RateBasis
 	} from '$lib/utils/rate-basis'
+	import { EMPLOYMENT_TYPE_OPTIONS } from '$lib/utils/employment-type'
 	// Placeholders come from the same table the server validates against, so the example HR
 	// sees can never disagree with what is accepted (#191).
 	import { GOV_ID_FORMATS } from '$lib/utils/gov-ids'
@@ -17,15 +18,9 @@
 	// #108: a double-click here would create a duplicate employee + user + welcome email.
 	const create = createSubmitGuard()
 
-	// PROBATIONARY first so it is the browser's default selection (#136).
-	const EMPLOYMENT_TYPES = [
-		['PROBATIONARY', 'Probationary'],
-		['REGULAR', 'Regular'],
-		['CONTRACTUAL', 'Contractual'],
-		['PART_TIME', 'Part-time'],
-		['ON_CALL', 'On-call'],
-		['INTERN', 'Intern']
-	] as const
+	// PROBATIONARY first so it is the browser's default selection (#136). Shared with the promote
+	// form (#222) so the labels cannot drift apart.
+	const EMPLOYMENT_TYPES = EMPLOYMENT_TYPE_OPTIONS
 
 	// #120: the amount field means different things per basis, so its label follows the selection.
 	// Re-seeded from `form` so a failed submit redisplays the basis HR actually chose.

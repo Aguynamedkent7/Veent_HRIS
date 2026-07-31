@@ -20,8 +20,9 @@ const { dbMock, txMock } = vi.hoisted(() => {
 		dbMock: {
 			// getEmployee (raw + masked) reads this; updateEmployee would write here (must NOT for pay).
 			employee: { findFirst: vi.fn(), update: vi.fn() },
-			// getEmployee's heal-on-read (#170 Stage 1.5) queries the comp history.
+			// getEmployee's heal-on-read (#170 Stage 1.5, #222) queries the comp + type history.
 			employeeCompensation: { findMany: vi.fn() },
+			employeeEmploymentType: { findMany: vi.fn() },
 			payrollRun: { findFirst: vi.fn() },
 			$transaction: vi.fn(async (fn: (tx: typeof txMock) => unknown) => fn(txMock))
 		}
@@ -60,6 +61,7 @@ beforeEach(() => {
 	dbMock.employee.findFirst.mockResolvedValue(EMP)
 	dbMock.employee.update.mockResolvedValue(EMP) // updateEmployee still handles non-pay fields
 	dbMock.employeeCompensation.findMany.mockResolvedValue([]) // no history → getEmployee heal is a no-op
+	dbMock.employeeEmploymentType.findMany.mockResolvedValue([])
 	dbMock.payrollRun.findFirst.mockResolvedValue(null) // no frozen run in the way
 	dbMock.$transaction.mockImplementation(async (fn: (tx: typeof txMock) => unknown) => fn(txMock))
 	// the re-derived current cache after the change

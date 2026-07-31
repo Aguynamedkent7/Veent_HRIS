@@ -9,10 +9,12 @@
 // from inside the app, which has no scheduler.
 //
 // Two deliberate choices:
-//   • It delegates to updateEmployee() rather than writing the row itself, so the audit
-//     entry is byte-identical to a manual HR edit and therefore renders correctly in the
+//   • It delegates to promoteEmployee() rather than writing the row itself, so the audit
+//     entry is byte-identical to a manual HR promotion and therefore renders correctly in the
 //     201 file's Employment History timeline. Hand-rolling the write (as offboardEmployee
-//     does) omits oldValue and the timeline degrades to "— → FULL TIME".
+//     does) omits oldValue and the timeline degrades to "— → REGULAR". Since #222 the
+//     employment type is effective-dated, and promoteEmployee is the only writer that records
+//     the snapshot the as-of read needs.
 //   • It runs as the seeded system@veent.ph user. AuditLog.actorId is a non-nullable FK to
 //     User, so an automated actor is not optional — see seedProd in prisma/seed-core.ts.
 //
@@ -21,9 +23,9 @@
 
 import 'dotenv/config'
 import { PrismaClient } from '@prisma/client'
-import { updateEmployee } from '../src/lib/server/services/employees'
+import { promoteEmployee } from '../src/lib/server/services/employees'
 import { notifyMany } from '../src/lib/server/services/notifications'
-import { monthsOfService, tenureLabel } from '../src/lib/utils/dates'
+import { monthsOfService, regularizationStatus, tenureLabel } from '../src/lib/utils/dates'
 
 const PROBATION_MONTHS = 6
 const SYSTEM_EMAIL = 'system@veent.ph'
@@ -98,7 +100,18 @@ async function main() {
 		const done: typeof employees = []
 		for (const e of employees) {
 			try {
-				await updateEmployee(e.id, organizationId, { employmentType: 'REGULAR' }, ctx)
+				// Effective on the day probation actually ended, not the night the sweep happened to
+				// run — the snapshot is effective-dated, so a late cron backdates correctly.
+				await promoteEmployee(
+					e.id,
+					organizationId,
+					{
+						employmentType: 'REGULAR',
+						effectiveDate: regularizationStatus(e.startDate).date,
+						note: 'automatic regularization'
+					},
+					ctx
+				)
 				done.push(e)
 				promoted++
 			} catch (err) {
@@ -120,7 +133,7 @@ async function main() {
 		for (const e of done) {
 			await notifyMany(
 				hr.map((u) => u.id),
-				`${e.firstName} ${e.lastName} completed ${PROBATION_MONTHS} months and was regularized to Full Time.`,
+				`${e.firstName} ${e.lastName} completed ${PROBATION_MONTHS} months and was regularized to Regular.`,
 				`/employees/${e.id}`
 			)
 		}
