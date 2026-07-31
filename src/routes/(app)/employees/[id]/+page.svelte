@@ -3,7 +3,13 @@
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
 	import { tenureLabel, tenureRequirement, monthsOfService } from '$lib/utils/dates'
-	import { rateBasisOptionsFor, rateBasisCopy, type RateBasis } from '$lib/utils/rate-basis'
+	import {
+		rateBasisOptionsFor,
+		rateBasisCopy,
+		isRateBasisAllowed,
+		type RateBasis
+	} from '$lib/utils/rate-basis'
+	import { EMPLOYMENT_TYPE_OPTIONS } from '$lib/utils/employment-type'
 	import { isValidGovId, govIdError, type GovIdField } from '$lib/utils/gov-ids'
 	import { LOAN_TYPES } from '$lib/utils/loan-types'
 	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
@@ -58,6 +64,20 @@
 	let compRateType = $state<RateBasis>(employee.rateType as RateBasis)
 	const compRate = $derived(rateBasisCopy(compRateType))
 	const compRateOptions = $derived(rateBasisOptionsFor(employee.employmentType))
+	// #222: the promote form carries its own type/basis pair, because a promotion is exactly where the
+	// #189 pairing breaks (a PART_TIME hourly crew member made REGULAR). The dropdown follows the type
+	// picked here, not the saved one, and an now-invalid basis resets — the same guard the create form
+	// applies, and the server validates the resulting pair regardless.
+	// svelte-ignore state_referenced_locally
+	let promoType = $state<string>(employee.employmentType)
+	// svelte-ignore state_referenced_locally
+	let promoRateType = $state<RateBasis>(employee.rateType as RateBasis)
+	const promoRateOptions = $derived(rateBasisOptionsFor(promoType))
+	const promoRate = $derived(rateBasisCopy(promoRateType))
+	$effect(() => {
+		if (!isRateBasisAllowed(promoRateType, promoType)) promoRateType = 'MONTHLY'
+	})
+
 	// Effective date is lower-bounded at the hire date; today is the default. Backdating and
 	// future-dating are both allowed (the cache heals on read — no scheduler).
 	const todayInput = new Date().toISOString().slice(0, 10)
@@ -96,6 +116,7 @@
 	const toggleErExternal = createSubmitGuard()
 	const setAllocation = createSubmitGuard()
 	const changeCompensation = createSubmitGuard()
+	const promote = createSubmitGuard()
 	const STATUTORY_LABELS: Record<string, string> = {
 		SSS: 'SSS',
 		PHILHEALTH: 'PhilHealth',
@@ -1496,6 +1517,155 @@
 					disabled={changeCompensation.busy}
 					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
 					>{changeCompensation.busy ? 'Recording…' : 'Record change'}</button
+				>
+			</form>
+		{/if}
+
+		<!-- #222: promotion — position, title, reporting line, employment type and pay recorded as ONE
+		     audited career event. Pay and type are effective-dated, so a promotion dated ahead applies
+		     on its date. Empty fields mean "not part of this promotion", never "clear". -->
+		{#if canManage && employee.employmentStatus === 'ACTIVE'}
+			<form
+				method="POST"
+				action="?/promote"
+				use:enhance={promote.enhance}
+				class="rounded-lg border p-6 space-y-4 lg:col-span-2"
+			>
+				<h2 class="font-semibold">
+					Promote
+					<span class="text-xs font-normal text-muted-foreground"
+						>(one audited event — leave anything unchanged blank)</span
+					>
+				</h2>
+				{#if form?.action === 'promote' && form?.notice}
+					<div
+						class="rounded-md border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-400"
+					>
+						{form.notice}
+					</div>
+				{:else if form?.action === 'promote' && form?.success}
+					<div
+						class="rounded-md border border-green-500/20 bg-green-500/10 px-3 py-2 text-sm text-green-400"
+					>
+						Promotion recorded.
+					</div>
+				{:else if form?.action === 'promote' && form?.error}
+					<div
+						class="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-red-400"
+					>
+						{form.error}
+					</div>
+				{/if}
+				<div class="grid gap-3 sm:grid-cols-3">
+					<div>
+						<label for="promoEffectiveDate" class="text-sm font-medium">Effective Date</label>
+						<input
+							id="promoEffectiveDate"
+							name="effectiveDate"
+							type="date"
+							required
+							value={todayInput}
+							min={hireInput}
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+					</div>
+					<div>
+						<label for="promoPosition" class="text-sm font-medium">Position</label>
+						<select
+							id="promoPosition"
+							name="positionId"
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						>
+							<option value="">— unchanged —</option>
+							{#each data.positions as p (p.id)}
+								<option value={p.id} selected={employee.positionId === p.id}>{p.title}</option>
+							{/each}
+						</select>
+					</div>
+					<div>
+						<label for="promoJobTitle" class="text-sm font-medium">Job Title</label>
+						<input
+							id="promoJobTitle"
+							name="jobTitle"
+							value={employee.jobTitle}
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+					</div>
+					<div>
+						<label for="promoType" class="text-sm font-medium">Employment Type</label>
+						<select
+							id="promoType"
+							name="employmentType"
+							bind:value={promoType}
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						>
+							{#each EMPLOYMENT_TYPE_OPTIONS as [val, label] (val)}
+								<option value={val}>{label}</option>
+							{/each}
+						</select>
+					</div>
+					<div>
+						<label for="promoRateType" class="text-sm font-medium">Rate Basis</label>
+						<select
+							id="promoRateType"
+							name="rateType"
+							bind:value={promoRateType}
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						>
+							{#each promoRateOptions as opt (opt.value)}
+								<option value={opt.value}>{opt.label}</option>
+							{/each}
+						</select>
+					</div>
+					<div>
+						<label for="promoSalary" class="text-sm font-medium">{promoRate.label}</label>
+						<input
+							id="promoSalary"
+							name="basicMonthlySalary"
+							type="number"
+							step={promoRate.step}
+							min="0"
+							value={revealed?.basicMonthlySalary ?? ''}
+							placeholder={String(employee.basicMonthlySalary ?? '')}
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+						<p class="mt-1 text-xs text-muted-foreground">
+							Masked; reveal above to edit, or leave blank to keep the current amount.
+						</p>
+					</div>
+					<div>
+						<label for="promoReportsTo" class="text-sm font-medium">Reports To</label>
+						<select
+							id="promoReportsTo"
+							name="reportsToId"
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						>
+							<option value="">— unchanged —</option>
+							{#each data.supervisorOptions as s (s.id)}
+								<option value={s.id} selected={employee.reportsToId === s.id}
+									>{s.lastName}, {s.firstName}</option
+								>
+							{/each}
+						</select>
+					</div>
+					<div class="sm:col-span-2">
+						<label for="promoNote" class="text-sm font-medium"
+							>Note <span class="text-muted-foreground">(optional)</span></label
+						>
+						<input
+							id="promoNote"
+							name="note"
+							maxlength="500"
+							placeholder="e.g. Promoted to Shift Lead"
+							class="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						/>
+					</div>
+				</div>
+				<button
+					type="submit"
+					disabled={promote.busy}
+					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+					>{promote.busy ? 'Recording…' : 'Record promotion'}</button
 				>
 			</form>
 		{/if}

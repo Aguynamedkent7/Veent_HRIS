@@ -477,6 +477,7 @@ model Employee {
   recurringDeductions   EmployeeDeduction[]
   statutoryConfig       EmployeeStatutoryConfig[]
   compensationHistory   EmployeeCompensation[]
+  employmentTypeHistory EmployeeEmploymentType[]
   workSchedule          WorkSchedule?          @relation(fields: [workScheduleId], references: [id])
   attendanceDays        AttendanceDay[]
   separations           SeparationRecord[]
@@ -512,6 +513,27 @@ model EmployeeCompensation {
 
   @@index([employeeId, effectiveDate])
   @@map("employee_compensation_history")
+}
+
+// #222: effective-dated employment-type snapshots — the same shape and contract as
+// EmployeeCompensation above, so a promotion dated next Monday moves title, pay AND status on that
+// date rather than the moment HR typed it. `Employee.employmentType` stays the current cache (== the
+// snapshot with the latest effectiveDate ≤ today), healed on read; this table is authoritative for
+// "as of date X". Nothing in payroll math reads employment type (payslip label, dashboard alerts and
+// the rate-basis pairing do), so unlike comp it has no period resolver — just the as-of read.
+model EmployeeEmploymentType {
+  id             String         @id @default(cuid())
+  employeeId     String
+  employmentType EmploymentType
+  effectiveDate  DateTime
+  note           String?
+  changedById    String
+  changedAt      DateTime       @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId, effectiveDate])
+  @@map("employee_employment_type_history")
 }
 
 // Additional (secondary) supervisors (#176). An employee's primary manager stays on

@@ -22,6 +22,7 @@ const { dbMock, txMock } = vi.hoisted(() => {
 		dbMock: {
 			employee: { findFirst: vi.fn(), update: vi.fn() },
 			employeeCompensation: { findMany: vi.fn() },
+			employeeEmploymentType: { findMany: vi.fn() },
 			payrollRun: { findFirst: vi.fn() },
 			$transaction: vi.fn(async (fn: (tx: typeof txMock) => unknown) => fn(txMock))
 		}
@@ -41,6 +42,7 @@ beforeEach(() => {
 	dbMock.$transaction.mockImplementation(async (fn: (tx: typeof txMock) => unknown) => fn(txMock))
 	dbMock.payrollRun.findFirst.mockResolvedValue(null)
 	dbMock.employeeCompensation.findMany.mockResolvedValue([])
+	dbMock.employeeEmploymentType.findMany.mockResolvedValue([])
 })
 
 describe('getEmployee heal-on-read (#170 Stage 1.5)', () => {

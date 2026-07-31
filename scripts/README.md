@@ -201,9 +201,11 @@ origin/main`, which will **not** create them — they must be installed once, by
 
 ## Automatic regularization — `promote-probationary.ts`
 
-PH probation caps at 6 months. This flips ACTIVE `PROBATIONARY` employees to `FULL_TIME` once
-6 whole calendar months of service have elapsed, writes the same audit entry a manual HR edit
-would (so it shows in the 201 file's Employment History), and notifies that org's HR.
+PH probation caps at 6 months. This flips ACTIVE `PROBATIONARY` employees to `REGULAR` once
+6 whole calendar months of service have elapsed, writes the same audit entry a manual HR
+promotion would (so it shows in the 201 file's Employment History), and notifies that org's HR.
+Since #222 it goes through `promoteEmployee`, effective on the day probation actually ended —
+so a cron that missed a few nights backdates correctly instead of dating the change to the sweep.
 
 ```
 0 1 * * *  cd ~/repos/Veent_HRIS && docker compose run --rm app pnpm exec tsx scripts/promote-probationary.ts >> /var/log/veent-regularize.log 2>&1

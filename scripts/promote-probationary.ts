@@ -9,10 +9,12 @@
 // from inside the app, which has no scheduler.
 //
 // Two deliberate choices:
-//   • It delegates to updateEmployee() rather than writing the row itself, so the audit
-//     entry is byte-identical to a manual HR edit and therefore renders correctly in the
+//   • It delegates to promoteEmployee() rather than writing the row itself, so the audit
+//     entry is byte-identical to a manual HR promotion and therefore renders correctly in the
 //     201 file's Employment History timeline. Hand-rolling the write (as offboardEmployee
-//     does) omits oldValue and the timeline degrades to "— → FULL TIME".
+//     does) omits oldValue and the timeline degrades to "— → REGULAR". Since #222 the
+//     employment type is effective-dated, and promoteEmployee is the only writer that records
+//     the snapshot the as-of read needs.
 //   • It runs as the seeded system@veent.ph user. AuditLog.actorId is a non-nullable FK to
 //     User, so an automated actor is not optional — see seedProd in prisma/seed-core.ts.
 //
@@ -21,9 +23,9 @@
 
 import 'dotenv/config'
 import { PrismaClient } from '@prisma/client'
-import { updateEmployee } from '../src/lib/server/services/employees'
+import { promoteEmployee } from '../src/lib/server/services/employees'
 import { notifyMany } from '../src/lib/server/services/notifications'
-import { monthsOfService, tenureLabel } from '../src/lib/utils/dates'
+import { monthsOfService, regularizationStatus, tenureLabel } from '../src/lib/utils/dates'
 
 const PROBATION_MONTHS = 6
 const SYSTEM_EMAIL = 'system@veent.ph'
@@ -96,17 +98,35 @@ async function main() {
 		}
 
 		const done: typeof employees = []
+		// #222: promoteEmployee enforces the rate/type pairing, so a legacy PROBATIONARY employee on an
+		// hourly rate now fails to regularize instead of quietly landing an illegal pairing. That needs
+		// a human, so failures are notified alongside the successes rather than only logged.
+		const failed: { employee: (typeof employees)[number]; reason: string }[] = []
 		for (const e of employees) {
 			try {
-				await updateEmployee(e.id, organizationId, { employmentType: 'REGULAR' }, ctx)
+				// Effective on the day probation actually ended, not the night the sweep happened to
+				// run — the snapshot is effective-dated, so a late cron backdates correctly.
+				await promoteEmployee(
+					e.id,
+					organizationId,
+					{
+						employmentType: 'REGULAR',
+						effectiveDate: regularizationStatus(e.startDate).date,
+						note: 'automatic regularization'
+					},
+					ctx
+				)
 				done.push(e)
 				promoted++
 			} catch (err) {
 				// One bad row must not abort the whole sweep.
-				console.error(`  ! ${e.employeeNumber} ${e.lastName}: ${(err as Error).message}`)
+				const reason = ((err as { body?: { message?: string } })?.body?.message ??
+					(err as Error).message) as string
+				console.error(`  ! ${e.employeeNumber} ${e.lastName}: ${reason}`)
+				failed.push({ employee: e, reason })
 			}
 		}
-		if (done.length === 0) continue
+		if (done.length === 0 && failed.length === 0) continue
 
 		// Notify that org's HR so a status change nobody clicked is still visible to a human.
 		const hr = await db.user.findMany({
@@ -120,11 +140,20 @@ async function main() {
 		for (const e of done) {
 			await notifyMany(
 				hr.map((u) => u.id),
-				`${e.firstName} ${e.lastName} completed ${PROBATION_MONTHS} months and was regularized to Full Time.`,
+				`${e.firstName} ${e.lastName} completed ${PROBATION_MONTHS} months and was regularized to Regular.`,
 				`/employees/${e.id}`
 			)
 		}
-		console.log(`  org ${organizationId}: ${done.length} promoted, ${hr.length} HR notified`)
+		for (const { employee: e, reason } of failed) {
+			await notifyMany(
+				hr.map((u) => u.id),
+				`${e.firstName} ${e.lastName} (${e.employeeNumber}) completed ${PROBATION_MONTHS} months but could NOT be regularized automatically: ${reason}`,
+				`/employees/${e.id}`
+			)
+		}
+		console.log(
+			`  org ${organizationId}: ${done.length} promoted, ${failed.length} failed, ${hr.length} HR notified`
+		)
 	}
 
 	console.log(`\nRegularized ${promoted} employee(s).`)
