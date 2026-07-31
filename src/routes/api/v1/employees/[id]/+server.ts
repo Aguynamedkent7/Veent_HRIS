@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit'
-import { can, requireCapability, requireMinRole } from '$lib/server/rbac'
+import { requireCapability, requireMinRole } from '$lib/server/rbac'
 import {
 	getEmployee,
 	updateEmployee,
@@ -8,8 +8,8 @@ import {
 	NO_CHANGE_MESSAGE,
 	NO_CHANGE_STATUS
 } from '$lib/server/services/employees'
+import { canTouchEmployee } from '$lib/server/services/employee-access'
 import { apiError } from '$lib/server/api-error'
-import { db } from '$lib/server/db'
 import { govIdSchema } from '$lib/utils/gov-ids'
 import { isRateBasisAllowed, RATE_BASIS_MISMATCH } from '$lib/utils/rate-basis'
 import { EMPLOYMENT_TYPES } from '$lib/utils/employment-type'
@@ -55,18 +55,11 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 			viewerRole: locals.user.role
 		})
 
-		// Object-level access control: a MANAGER may only read their own direct
-		// reports. HR/Super-Admin are unrestricted. Mirrors the 201-file page load.
-		// Negated capability, not role equality: anyone who clears the MANAGER floor
-		// without holding MANAGE_HR is scoped to their reports rather than unrestricted.
-		if (!can(locals.user.role, 'MANAGE_HR')) {
-			const self = await db.employee.findUnique({
-				where: { userId: locals.user.id },
-				select: { id: true }
-			})
-			if (!self || employee.reportsToId !== self.id) {
-				return apiError(403, 'You can only view your own team members.')
-			}
+		// Object-level access control (#228): a MANAGER is scoped to their own team and the branches
+		// they manage; HR/CEO/Super-Admin are unrestricted. This was gated on `!can(role,'MANAGE_HR')`,
+		// which is never true — MANAGER holds MANAGE_HR — so the check never ran.
+		if (!(await canTouchEmployee(locals.user, params.id))) {
+			return apiError(403, 'You can only view your own team members.')
 		}
 		return json({ data: employee })
 	} catch (e: unknown) {
@@ -83,6 +76,12 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 		requireCapability(locals.user.role, 'MANAGE_HR')
 	} catch {
 		return apiError(403, 'Insufficient permissions')
+	}
+
+	// #228: same object-level scoping as the 201 page — a MANAGER may only write to their own team
+	// or a branch they manage. Before any parsing, so a rejected caller learns nothing.
+	if (!(await canTouchEmployee(locals.user, params.id))) {
+		return apiError(403, 'You can only edit your own team members.')
 	}
 
 	const body = await request.json()
@@ -167,6 +166,10 @@ export const POST: RequestHandler = async ({ locals, params, request, url }) => 
 			requireCapability(locals.user.role, 'MANAGE_HR')
 		} catch {
 			return apiError(403, 'Insufficient permissions')
+		}
+		// #228: offboarding is the most destructive write here — scope it like the rest.
+		if (!(await canTouchEmployee(locals.user, params.id))) {
+			return apiError(403, 'You can only offboard your own team members.')
 		}
 
 		const body = await request.json()

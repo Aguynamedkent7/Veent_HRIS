@@ -53,6 +53,16 @@ export function hasAnyMinRole(userRoles: Role[], minimumRole: Role): boolean {
 export const CAPABILITIES = {
 	/** Org-wide HR administration: rosters, settings, attendance, disbursement reveal. */
 	MANAGE_HR: ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN', 'CEO'],
+	/**
+	 * HR authority over the WHOLE roster, as opposed to one's own branch and team (#228).
+	 *
+	 * MANAGE_HR holds MANAGER (#133 made them on-branch HR), and MANAGER also ranks level with
+	 * HR_ADMIN — so `requireMinRole('MANAGER')` + `if (!can(role,'MANAGE_HR'))` describes an empty
+	 * set, and every object-level check written that way silently never ran. This capability is the
+	 * one that actually excludes MANAGER; use it, never MANAGE_HR, to decide "may reach any
+	 * employee record" — `assertCanTouchEmployee` is the enforcement point.
+	 */
+	ADMINISTER_HR_ORGWIDE: ['HR_ADMIN', 'SUPER_ADMIN', 'CEO'],
 	/** The manager ladder: sees a team, approves timesheets. */
 	VIEW_TEAM: ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN', 'CEO'],
 	/** System administration: payroll config, unlocking locked days. Super Admin only. */
