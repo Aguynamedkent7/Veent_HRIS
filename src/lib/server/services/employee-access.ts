@@ -69,6 +69,53 @@ export async function canTouchEmployee(
 	return isReport || managedBranches.some((b) => b.id === target.branchId)
 }
 
+/**
+ * The employee ids this actor may see in a roster, or `null` for "everyone in the org" — the
+ * list-shaped counterpart to `canTouchEmployee`, for filtering rather than admitting one record.
+ *
+ * `null` rather than "all the ids" on purpose: HR reads the roster unfiltered, and materialising
+ * every id just to feed it back as an `IN (…)` would scale with headcount for no benefit.
+ *
+ * Kept in step with `canTouchEmployee` by construction — same three clauses, same order — so the
+ * list can never show a row whose 201 file then 403s. `employee-access.test.ts` pins that.
+ */
+export async function listVisibleEmployeeIds(user: EmployeeAccessActor): Promise<string[] | null> {
+	if (can(user.role, 'ADMINISTER_HR_ORGWIDE')) return null
+
+	const self = await db.employee.findUnique({
+		where: { userId: user.id },
+		select: { id: true }
+	})
+	if (!self) return []
+
+	const [reportIds, managedBranches] = await Promise.all([
+		listReportIdsFor(self.id),
+		db.branch.findMany({
+			where: { managerId: self.id, organizationId: user.organizationId },
+			select: { id: true }
+		})
+	])
+
+	const visible = new Set([self.id, ...reportIds])
+	if (managedBranches.length > 0) {
+		const staff = await db.employee.findMany({
+			where: {
+				branchId: { in: managedBranches.map((b) => b.id) },
+				user: { organizationId: user.organizationId }
+			},
+			select: { id: true }
+		})
+		for (const e of staff) visible.add(e.id)
+	}
+	// Org-scoped: a report row can point across tenants (createEmployee takes reportsToId as
+	// given), and the roster must not surface an employee from another organization.
+	const inOrg = await db.employee.findMany({
+		where: { id: { in: [...visible] }, user: { organizationId: user.organizationId } },
+		select: { id: true }
+	})
+	return inOrg.map((e) => e.id)
+}
+
 /** Throwing form for route guards. 403 — the record may well exist, the actor just can't have it. */
 export async function assertCanTouchEmployee(
 	user: EmployeeAccessActor,

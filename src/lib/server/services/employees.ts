@@ -128,6 +128,10 @@ interface EmployeeListFilters {
 	departmentId?: string
 	branchId?: string
 	search?: string
+	// #232: restrict the roster to a set of ids — a MANAGER sees only their own team and the
+	// branches they manage. `undefined` means unrestricted (HR/CEO/Super-Admin); an empty array
+	// means "nobody", which is the correct answer for a manager with no reports, not "everybody".
+	ids?: string[]
 }
 
 // The active roster is everyone still on the books (ACTIVE / ON_LEAVE); the offboarded
@@ -144,6 +148,7 @@ function employeeListWhere(
 ): Prisma.EmployeeWhereInput {
 	return {
 		user: { organizationId },
+		...(filters?.ids !== undefined && { id: { in: filters.ids } }),
 		...(filters?.status
 			? { employmentStatus: filters.status }
 			: filters?.offboarded !== undefined && {
