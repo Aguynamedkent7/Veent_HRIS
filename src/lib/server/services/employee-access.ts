@@ -53,14 +53,20 @@ export async function canTouchEmployee(
 			select: { id: true }
 		})
 	])
-	if (reportIds.includes(employeeId)) return true
-	if (managedBranches.length === 0) return false
+	const isReport = reportIds.includes(employeeId)
+	if (!isReport && managedBranches.length === 0) return false
 
+	// Org-scoped for BOTH paths, not just the branch one. `listReportIdsFor` matches on
+	// `reportsToId`/`EmployeeSupervisor` alone, and while `updateEmployee` validates a new
+	// `reportsToId` against the org, `createEmployee` does not — a hire POST takes the id as given.
+	// So a report row can point across tenants, and without this it would become a reach into
+	// another organization. An employee outside the actor's org is unreachable however they relate.
 	const target = await db.employee.findFirst({
 		where: { id: employeeId, user: { organizationId: user.organizationId } },
 		select: { branchId: true }
 	})
-	return !!target?.branchId && managedBranches.some((b) => b.id === target.branchId)
+	if (!target) return false
+	return isReport || managedBranches.some((b) => b.id === target.branchId)
 }
 
 /** Throwing form for route guards. 403 — the record may well exist, the actor just can't have it. */

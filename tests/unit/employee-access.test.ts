@@ -87,6 +87,14 @@ describe('canTouchEmployee (#228)', () => {
 		expect(await canTouchEmployee(actor('MANAGER'), 'crew1')).toBe(true)
 	})
 
+	it('refuses a report who belongs to another organization', async () => {
+		// createEmployee takes reportsToId as given, so a cross-tenant report row is writable.
+		// The relationship must not survive the org filter.
+		listReportIdsFor.mockResolvedValue(['report1'])
+		dbMock.employee.findFirst.mockResolvedValue(null)
+		expect(await canTouchEmployee(actor('MANAGER'), 'report1')).toBe(false)
+	})
+
 	it('refuses a MANAGER on someone in a branch they do NOT manage', async () => {
 		dbMock.branch.findMany.mockResolvedValue([{ id: 'br1' }])
 		dbMock.employee.findFirst.mockResolvedValue({ branchId: 'br2' })
