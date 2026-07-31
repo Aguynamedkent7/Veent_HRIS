@@ -19,7 +19,7 @@ export const POST: RequestHandler = async ({ locals, params, request, url, getCl
 	const action = url.searchParams.get('action')
 
 	try {
-		if (action === 'void') requireCapability(locals.user.role, 'ADMINISTER_SYSTEM')
+		if (action === 'void') requireCapability(locals.user.role, 'OVERRIDE_FINALIZED')
 		else requirePayrollManage(locals.user.role)
 	} catch {
 		return forbidden()

@@ -65,8 +65,28 @@ export const CAPABILITIES = {
 	ADMINISTER_HR_ORGWIDE: ['HR_ADMIN', 'SUPER_ADMIN', 'CEO'],
 	/** The manager ladder: sees a team, approves timesheets. */
 	VIEW_TEAM: ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN', 'CEO'],
-	/** System administration: payroll config, unlocking locked days. Super Admin only. */
-	ADMINISTER_SYSTEM: ['SUPER_ADMIN'],
+	/**
+	 * System administration: payroll config, user provisioning, role activation, the settings
+	 * surface. Held by Super Admin and — since #224 — the CEO.
+	 *
+	 * This used to be the Super Admin's alone, which made it do double duty: it named routine
+	 * administration AND stood in for "the operations nobody should be able to undo". Granting
+	 * it to the CEO forced those apart; the irreversible half now lives in OVERRIDE_FINALIZED
+	 * and is NOT included here.
+	 */
+	ADMINISTER_SYSTEM: ['SUPER_ADMIN', 'CEO'],
+	/**
+	 * Overriding a record the system already finalized: voiding a payroll run or period, and
+	 * reopening attendance days that were locked. Super Admin only, deliberately (#224).
+	 *
+	 * These are the operations that survive separation of duties even after the CEO gained
+	 * system administration. Each one unmakes a record some earlier step signed off, and leaves
+	 * nothing behind to approve — so the authority to perform it must not sit with the authority
+	 * that finalized it. The CEO approves payroll (APPROVE_FINANCE) and runs it (MANAGE_PAYROLL);
+	 * letting the same role also void it would close the loop and leave no second pair of eyes.
+	 * Add a role here only if it holds neither side of the record it would be overriding.
+	 */
+	OVERRIDE_FINALIZED: ['SUPER_ADMIN'],
 	/** Changing a user's role — CEO exclusively (#132), across every tenant. */
 	MANAGE_USER_ROLES: ['CEO'],
 	/** Reaches the approvals surface — HR ladder, Payroll stage owner, and sign-off roles. */

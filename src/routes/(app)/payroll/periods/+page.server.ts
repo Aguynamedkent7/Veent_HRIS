@@ -16,7 +16,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	requirePayrollManage(locals.user!.role)
 	return {
 		periods: await listPeriods(locals.user!.organizationId),
-		isSuperAdmin: can(locals.user!.role, 'ADMINISTER_SYSTEM')
+		canVoid: can(locals.user!.role, 'OVERRIDE_FINALIZED')
 	}
 }
 
@@ -110,7 +110,7 @@ export const actions: Actions = {
 	},
 
 	void: async (event) => {
-		requireCapability(event.locals.user!.role, 'ADMINISTER_SYSTEM')
+		requireCapability(event.locals.user!.role, 'OVERRIDE_FINALIZED')
 		const id = (await event.request.formData()).get('id') as string
 		try {
 			await voidPeriod(id, event.locals.user!.organizationId, ctxOf(event))

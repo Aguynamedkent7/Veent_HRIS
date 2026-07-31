@@ -47,7 +47,7 @@ export const POST: RequestHandler = async ({ locals, params, url, request }) => 
 
 	if (action === 'void') {
 		try {
-			requireCapability(user.role, 'ADMINISTER_SYSTEM')
+			requireCapability(user.role, 'OVERRIDE_FINALIZED')
 		} catch {
 			return apiError(403, 'Insufficient permissions')
 		}
