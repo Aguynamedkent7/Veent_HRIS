@@ -1,6 +1,7 @@
-import { fail, isHttpError, error } from '@sveltejs/kit'
+import { fail, error } from '@sveltejs/kit'
 import { z } from 'zod'
 import { can, requireCapability } from '$lib/server/rbac'
+import { failFromError } from '$lib/server/form-fail'
 import { listOrgUsers, setUserRole, setUserActive } from '$lib/server/services/settings/org'
 import type { Actions, PageServerLoad } from './$types'
 
@@ -43,11 +44,6 @@ export const actions: Actions = {
 			})
 		}
 
-		// GUARDRAIL: a SUPER_ADMIN cannot change their own role.
-		if (parsed.data.userId === user.id) {
-			return fail(400, { error: 'You cannot change your own role.' })
-		}
-
 		const ctx = {
 			organizationId: user.organizationId,
 			actorId: user.id,
@@ -58,9 +54,9 @@ export const actions: Actions = {
 		try {
 			await setUserRole(parsed.data.userId, user.organizationId, parsed.data.role, ctx)
 		} catch (err) {
-			// Surface the last-super-admin guardrail as an inline error, not a 409 page.
-			if (isHttpError(err) && err.status === 409) return fail(409, { error: err.body.message })
-			throw err
+			// Surface the service's guardrails — last-super-admin (409) and self-role-change (403) —
+			// as inline errors rather than error pages.
+			return failFromError(err)
 		}
 	},
 
@@ -73,11 +69,6 @@ export const actions: Actions = {
 
 		if (!parsed.success) {
 			return fail(400, { error: 'Invalid input. Please check the form fields.' })
-		}
-
-		// GUARDRAIL: a SUPER_ADMIN cannot deactivate their own account.
-		if (parsed.data.userId === user.id) {
-			return fail(400, { error: 'You cannot deactivate your own account.' })
 		}
 
 		const ctx = {
@@ -95,8 +86,7 @@ export const actions: Actions = {
 				ctx
 			)
 		} catch (err) {
-			if (isHttpError(err) && err.status === 409) return fail(409, { error: err.body.message })
-			throw err
+			return failFromError(err)
 		}
 	}
 }
