@@ -2,6 +2,7 @@ import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import type { EmployeeEarningKind } from '@prisma/client'
+import { assertNotSelf } from '../employee-access'
 import type { AuditContext } from '../types'
 
 /**
@@ -13,7 +14,7 @@ import type { AuditContext } from '../types'
 async function requireEmployee(employeeId: string, organizationId: string) {
 	const e = await db.employee.findFirst({
 		where: { id: employeeId, user: { organizationId } },
-		select: { id: true }
+		select: { id: true, userId: true }
 	})
 	if (!e) error(404, 'Employee not found')
 	return e
@@ -29,7 +30,7 @@ export async function createEmployeeEarning(
 	data: { kind: EmployeeEarningKind; label: string; monthlyAmount: number },
 	ctx: AuditContext
 ) {
-	await requireEmployee(employeeId, organizationId)
+	assertNotSelf(ctx.actorId, await requireEmployee(employeeId, organizationId))
 	if (data.monthlyAmount <= 0) error(400, 'Monthly amount must be positive')
 
 	const earning = await db.employeeEarning.create({
@@ -52,9 +53,11 @@ export async function createEmployeeEarning(
 // Deactivate instead of delete so already-generated payslips keep their context.
 export async function endEmployeeEarning(id: string, organizationId: string, ctx: AuditContext) {
 	const earning = await db.employeeEarning.findFirst({
-		where: { id, employee: { user: { organizationId } } }
+		where: { id, employee: { user: { organizationId } } },
+		include: { employee: { select: { userId: true } } }
 	})
 	if (!earning) error(404, 'Recurring earning not found')
+	assertNotSelf(ctx.actorId, earning.employee)
 	if (!earning.isActive) error(409, 'Recurring earning is already ended')
 
 	const updated = await db.employeeEarning.update({ where: { id }, data: { isActive: false } })

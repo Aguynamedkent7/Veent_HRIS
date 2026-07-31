@@ -2,6 +2,7 @@ import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import type { LoanStatus } from '@prisma/client'
+import { assertNotSelf } from '../employee-access'
 import type { AuditContext } from '../types'
 
 /**
@@ -13,7 +14,7 @@ import type { AuditContext } from '../types'
 async function requireEmployee(employeeId: string, organizationId: string) {
 	const e = await db.employee.findFirst({
 		where: { id: employeeId, user: { organizationId } },
-		select: { id: true }
+		select: { id: true, userId: true }
 	})
 	if (!e) error(404, 'Employee not found')
 	return e
@@ -39,7 +40,7 @@ export async function createLoan(
 	data: { type?: string; principal: number; installment: number },
 	ctx: AuditContext
 ) {
-	await requireEmployee(employeeId, organizationId)
+	assertNotSelf(ctx.actorId, await requireEmployee(employeeId, organizationId))
 	if (data.installment <= 0 || data.principal <= 0)
 		error(400, 'Principal and installment must be positive')
 
@@ -87,7 +88,7 @@ export async function createCashAdvance(
 	data: { amount: number; installment: number },
 	ctx: AuditContext
 ) {
-	await requireEmployee(employeeId, organizationId)
+	assertNotSelf(ctx.actorId, await requireEmployee(employeeId, organizationId))
 	if (data.installment <= 0 || data.amount <= 0)
 		error(400, 'Amount and installment must be positive')
 
