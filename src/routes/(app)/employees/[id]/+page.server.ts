@@ -16,6 +16,7 @@ import { getEmployeeOnboarding, setManualCompletion } from '$lib/server/services
 import { listAssignableBranches, selectableBranches } from '$lib/server/services/branches'
 import { isFoodServiceOrg } from '$lib/orgs'
 import { govIdSchema } from '$lib/utils/gov-ids'
+import { LOAN_TYPES } from '$lib/utils/loan-types'
 import {
 	listLoans,
 	listCashAdvances,
@@ -228,7 +229,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 }
 
 const loanSchema = z.object({
-	type: z.string().optional(),
+	type: z.enum(LOAN_TYPES),
 	principal: z.coerce.number().positive(),
 	installment: z.coerce.number().positive()
 })
