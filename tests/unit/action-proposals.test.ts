@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import type { Role } from '@prisma/client'
 import type { AuditContext } from '$lib/server/services/types'
 
 /**
@@ -20,6 +21,7 @@ const { dbMock } = vi.hoisted(() => ({
 		actionProposal: {
 			create: vi.fn(),
 			findFirst: vi.fn(),
+			findMany: vi.fn(),
 			findUniqueOrThrow: vi.fn(),
 			updateMany: vi.fn()
 		},
@@ -35,8 +37,14 @@ vi.mock('$lib/server/services/notifications', () => ({
 	notifyMany: vi.fn().mockResolvedValue(undefined)
 }))
 
-const { createProposal, confirmProposal, rejectProposal, confirmerCapabilityFor } =
-	await import('$lib/server/services/action-proposals')
+const { writeAuditLog } = await import('$lib/server/audit')
+const {
+	createProposal,
+	confirmProposal,
+	rejectProposal,
+	confirmerCapabilityFor,
+	listActionableProposals
+} = await import('$lib/server/services/action-proposals')
 
 const CEO_USER = 'user-ceo'
 const TARGET_EMP = 'emp-ceo'
@@ -266,6 +274,31 @@ describe('filing a proposal', () => {
 		)
 	})
 
+	/**
+	 * The audit entry names the fields that moved, never their values. `AuditLog.newValue` is
+	 * rendered by `/reports/audit-log` to every ADMINISTER_SYSTEM holder with no record of the read,
+	 * so storing the raw payload would put the cleartext salary of every proposed raise on a page
+	 * outside #111's audited reveal — #242's leak class, introduced by this feature.
+	 *
+	 * Asserting the figure's absence from the serialized entry, not just the presence of `fields`:
+	 * adding `fields` while leaving `payload` in place would pass a presence-only check.
+	 */
+	it('records which fields a proposal touches, never the salary itself', async () => {
+		await createProposal(
+			'org1',
+			{
+				targetEmployeeId: TARGET_EMP,
+				targetUserId: CEO_USER,
+				domain: 'COMPENSATION',
+				payload: { basicMonthlySalary: 987654, effectiveDate: '2026-01-01' }
+			},
+			ctxOf({ actorId: CEO_USER, actorRole: 'CEO' })
+		)
+		const entry = vi.mocked(writeAuditLog).mock.calls[0][1]
+		expect(entry.newValue).toMatchObject({ fields: ['basicMonthlySalary', 'effectiveDate'] })
+		expect(JSON.stringify(entry.newValue)).not.toContain('987654')
+	})
+
 	it('looks for a finance confirmer on a self-action and an HR one otherwise', async () => {
 		const rolesUsed = async (targetUserId: string) => {
 			dbMock.user.findMany.mockClear()
@@ -278,6 +311,115 @@ describe('filing a proposal', () => {
 		}
 		expect(await rolesUsed(CEO_USER)).not.toContain('HR_ADMIN') // self → APPROVE_FINANCE
 		expect(await rolesUsed('user-other')).toContain('HR_ADMIN') // on behalf → HR org-wide
+	})
+})
+
+/**
+ * The queue and `assertMayDecide` must describe the same set. A list that shows more than the guard
+ * allows is #228 with a nicer front end; a list that shows less is a page of buttons that 403.
+ *
+ * Rows are shaped as `listActionableProposals` returns them — the target joined in, so the
+ * self-action test is a comparison between two columns and never a stored flag.
+ */
+const SELF_ROW = {
+	id: 'p-self',
+	initiatorId: CEO_USER,
+	target: { id: TARGET_EMP, userId: CEO_USER } // initiator IS the target
+}
+const ON_BEHALF_ROW = {
+	id: 'p-behalf',
+	initiatorId: 'user-manager',
+	target: { id: 'emp-crew', userId: 'user-crew' }
+}
+
+describe('the actionable queue', () => {
+	beforeEach(() => {
+		dbMock.actionProposal.findMany.mockResolvedValue([SELF_ROW, ON_BEHALF_ROW])
+	})
+
+	const idsFor = async (actorId: string, roles: Role[]) =>
+		(await listActionableProposals('org1', { actorId, roles })).map((r) => r.id)
+
+	// The rule with no exceptions, and the one the database can express — so it is asserted on the
+	// query rather than on the result, where a mocked findMany would answer for it.
+	it('never returns rows the actor filed', async () => {
+		await listActionableProposals('org1', { actorId: 'user-hr', roles: ['HR_ADMIN'] })
+		expect(dbMock.actionProposal.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					organizationId: 'org1',
+					status: 'PENDING',
+					initiatorId: { not: 'user-hr' }
+				})
+			})
+		)
+	})
+
+	// #243's bug shape expressed as a list: MANAGER ranks level with HR_ADMIN, so any rank floor
+	// here would hand a manager the queue of proposals that exist because managers must not act
+	// alone. MANAGER holds neither confirmer capability, so the queue is empty by construction.
+	it('shows a MANAGER nothing at all', async () => {
+		expect(await idsFor('user-manager-2', ['MANAGER'])).toEqual([])
+	})
+
+	// Both halves matter: a filter that returned everything would pass the first assertion alone.
+	it('shows an HR_ADMIN the on-behalf row and NOT the CEO’s self-action', async () => {
+		expect(await idsFor('user-hr', ['HR_ADMIN'])).toEqual(['p-behalf'])
+	})
+
+	it('shows APPROVE_FINANCE holders both shapes', async () => {
+		expect(await idsFor('user-sa', ['SUPER_ADMIN'])).toEqual(['p-self', 'p-behalf'])
+		expect(await idsFor('user-ceo-2', ['CEO'])).toEqual(['p-self', 'p-behalf'])
+	})
+
+	// The confirmer≠target rule, which `initiatorId: { not: … }` does not cover: a proposal someone
+	// else filed FOR an HR_ADMIN looks like an ordinary on-behalf row, and without this the target
+	// would be offered a Confirm button on their own raise (the hole 427d564 closed in the guard).
+	it('drops a row whose target is the viewer, even holding the capability', async () => {
+		dbMock.actionProposal.findMany.mockResolvedValue([
+			{ id: 'p-mine', initiatorId: 'user-manager', target: { id: 'emp-hr', userId: 'user-hr' } }
+		])
+		expect(await idsFor('user-hr', ['HR_ADMIN'])).toEqual([])
+	})
+
+	/**
+	 * The property that stops the list and the guard drifting apart — the failure mode behind #228.
+	 * For every role × row shape, "is it in the queue" and "does confirming it 403" must be the same
+	 * answer. Table-driven, so a new role or a new rule has to satisfy both sides at once.
+	 */
+	it('agrees with the confirm guard on every role × shape', async () => {
+		const actors = [
+			{ id: 'user-manager-2', roles: ['MANAGER'] },
+			{ id: 'user-hr', roles: ['HR_ADMIN'] },
+			{ id: 'user-ceo-2', roles: ['CEO'] },
+			{ id: 'user-sa', roles: ['SUPER_ADMIN'] }
+		] as const
+
+		for (const actor of actors) {
+			const visible = await idsFor(actor.id, [...actor.roles])
+
+			for (const row of [SELF_ROW, ON_BEHALF_ROW]) {
+				dbMock.actionProposal.findFirst.mockResolvedValue({
+					id: row.id,
+					organizationId: 'org1',
+					initiatorId: row.initiatorId,
+					targetEmployeeId: row.target.id,
+					domain: 'COMPENSATION',
+					payload: {},
+					status: 'PENDING'
+				})
+				dbMock.employee.findUnique.mockResolvedValue({ userId: row.target.userId })
+
+				const confirming = confirmProposal(
+					'org1',
+					row.id,
+					vi.fn().mockResolvedValue(undefined),
+					ctxOf({ actorId: actor.id, actorRole: actor.roles[0], actorRoles: [...actor.roles] })
+				)
+				if (visible.includes(row.id)) await expect(confirming).resolves.toBeDefined()
+				else await expect(confirming).rejects.toMatchObject({ status: 403 })
+			}
+		}
 	})
 })
 

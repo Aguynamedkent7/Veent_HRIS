@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit'
-import { Prisma, type ProposalDomain } from '@prisma/client'
+import { Prisma, type ProposalDomain, type Role } from '@prisma/client'
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { canAny, CAPABILITIES, type Capability } from '$lib/server/rbac'
@@ -73,6 +73,21 @@ async function assertMayDecide(
 	}
 }
 
+/**
+ * Load a PENDING proposal and assert this actor may act on it. Shared by confirm, reject and the
+ * audited amount reveal so all three answer "may you act on this row" with one implementation — a
+ * reveal on a looser rule would hand the figure to someone who cannot decide it.
+ */
+export async function assertMayConfirmProposal(
+	organizationId: string,
+	proposalId: string,
+	ctx: AuditContext
+) {
+	const pending = await requirePending(organizationId, proposalId)
+	await assertMayDecide(pending, ctx)
+	return pending
+}
+
 /** User ids in the org who could confirm a proposal of this shape, excluding the initiator. */
 async function eligibleConfirmerIds(
 	organizationId: string,
@@ -133,18 +148,22 @@ export async function createProposal(
 		action: 'CREATE',
 		entityType: 'ActionProposal',
 		entityId: proposal.id,
+		// Field NAMES, never their values: the payload of a compensation proposal is the salary in
+		// cleartext, and `/reports/audit-log` renders `newValue` to every ADMINISTER_SYSTEM holder
+		// with no record of the read. Same shape `revealEmployeeSensitive` uses (#111/#242). The
+		// values themselves stay on the proposal row, behind the audited reveal.
 		newValue: {
 			domain: input.domain,
 			targetEmployeeId: input.targetEmployeeId,
 			isSelfAction,
-			payload: input.payload
+			fields: Object.keys((input.payload ?? {}) as Record<string, unknown>)
 		}
 	})
 
 	await notifyMany(
 		confirmers,
 		'A pay change is waiting for your confirmation.',
-		'/approvals/proposals'
+		'/requests/proposals'
 	)
 
 	return proposal
@@ -166,8 +185,7 @@ export async function confirmProposal(
 	) => Promise<unknown>,
 	ctx: AuditContext
 ) {
-	const pending = await requirePending(organizationId, proposalId)
-	await assertMayDecide(pending, ctx)
+	const pending = await assertMayConfirmProposal(organizationId, proposalId, ctx)
 
 	const applied = await db.$transaction(async (tx) => {
 		// Status-guarded claim: exactly one confirmer can move PENDING → APPLIED, so two racing
@@ -210,8 +228,7 @@ export async function rejectProposal(
 ) {
 	if (!note.trim()) error(400, 'A reason is required to reject a proposal.')
 
-	const pending = await requirePending(organizationId, proposalId)
-	await assertMayDecide(pending, ctx)
+	const pending = await assertMayConfirmProposal(organizationId, proposalId, ctx)
 
 	const claim = await db.actionProposal.updateMany({
 		where: { id: proposalId, organizationId, status: 'PENDING' },
@@ -231,19 +248,56 @@ export async function rejectProposal(
 		oldValue: { status: 'PENDING' },
 		newValue: { status: 'REJECTED', decidedById: ctx.actorId, note }
 	})
-	await notifyMany([pending.initiatorId], `Your proposed pay change was returned: ${note}`)
+	// "rejected", matching the REJECTED status the row actually carries — there is no RETURNED
+	// state here, and the old wording read as one to anyone comparing the audit log to the message.
+	await notifyMany([pending.initiatorId], `Your proposed pay change was rejected: ${note}`)
 
 	return { id: proposalId }
 }
 
-export function listPendingProposals(organizationId: string) {
-	return db.actionProposal.findMany({
-		where: { organizationId, status: 'PENDING' },
+/**
+ * The PENDING proposals this actor can actually decide.
+ *
+ * Filtered here rather than in the route so the queue and `assertMayDecide` can never disagree —
+ * a list that shows rows the guard refuses is a page of buttons that 403, and a list that shows
+ * MORE than the guard allows is #228 with a nicer front end. The three rules are the same three,
+ * in the same order, deliberately: not the initiator, not the target, and holding the capability
+ * this row's SHAPE demands (re-derived from initiator vs target, never stored).
+ *
+ * `initiatorId` is excluded in SQL because it is the one rule the database can express; the
+ * capability filter runs in JS because `isSelfAction` compares two columns. `/requests/approvals`
+ * paginates a JS-filtered set the same way (#64).
+ */
+export async function listActionableProposals(
+	organizationId: string,
+	actor: { actorId: string; roles: Role[] }
+) {
+	const rows = await db.actionProposal.findMany({
+		where: { organizationId, status: 'PENDING', initiatorId: { not: actor.actorId } },
 		include: {
-			target: { select: { id: true, firstName: true, lastName: true, employeeNumber: true } }
+			target: {
+				select: {
+					id: true,
+					userId: true,
+					firstName: true,
+					lastName: true,
+					employeeNumber: true,
+					jobTitle: true,
+					positionId: true,
+					reportsToId: true,
+					rateType: true,
+					employmentType: true
+				}
+			}
 		},
 		orderBy: { createdAt: 'desc' }
 	})
+
+	return rows.filter(
+		(r) =>
+			r.target.userId !== actor.actorId &&
+			canAny(actor.roles, confirmerCapabilityFor(r.target.userId === r.initiatorId))
+	)
 }
 
 async function requirePending(organizationId: string, proposalId: string) {

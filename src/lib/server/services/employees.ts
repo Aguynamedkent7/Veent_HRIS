@@ -14,7 +14,7 @@ import { isRateBasisAllowed, RATE_BASIS_MISMATCH } from '$lib/utils/rate-basis'
 import { employmentTypeAt, EMPLOYMENT_TYPES } from '$lib/utils/employment-type'
 import { currentCompensation } from './payroll/compensation'
 import { assertNotSelf } from './employee-access'
-import { createProposal } from './action-proposals'
+import { assertMayConfirmProposal, createProposal } from './action-proposals'
 import { bandStatus } from './settings/master'
 import { D } from './payroll/money'
 import type { AuditContext } from './types'
@@ -1063,7 +1063,7 @@ export async function promoteEmployee(
 }
 
 /** Union of both writers' inputs — the promotion input is a superset of the compensation one. */
-const proposalPayloadSchema = z.object({
+export const proposalPayloadSchema = z.object({
 	effectiveDate: z.coerce.date(),
 	basicMonthlySalary: z.number().optional(),
 	rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
@@ -1110,6 +1110,36 @@ export async function applyProposedChange(
 		await promoteEmployee(proposal.targetEmployeeId, organizationId, payload, ctx, {
 			confirmTx: tx
 		})
+	}
+}
+
+/**
+ * The salary figures behind a pending proposal, in cleartext, for a confirmer who is about to
+ * decide it (#111's audited reveal, applied to the queue).
+ *
+ * Lives here rather than in `action-proposals.ts` because it goes through
+ * `revealEmployeeSensitive` — the one path that returns these values — and because employees.ts
+ * already imports action-proposals.ts, so the reverse would be a cycle.
+ *
+ * Authority is the authority to DECIDE the row, asserted before anything is read: if you cannot
+ * act on it you cannot read its figure. A reveal that audited and then refused would already have
+ * read the data.
+ */
+export async function revealProposalAmount(
+	organizationId: string,
+	proposalId: string,
+	ctx: AuditContext
+): Promise<{ current: Prisma.Decimal | null; proposed: number | null }> {
+	const proposal = await assertMayConfirmProposal(organizationId, proposalId, ctx)
+	const employee = await revealEmployeeSensitive(proposal.targetEmployeeId, organizationId, ctx, {
+		audit: true
+	})
+	// The proposal is only as good as its payload; an unreadable one still has to be rejectable,
+	// so a parse failure reveals the current figure and no proposed one rather than 500ing.
+	const parsed = proposalPayloadSchema.safeParse(proposal.payload)
+	return {
+		current: employee.basicMonthlySalary,
+		proposed: parsed.success ? (parsed.data.basicMonthlySalary ?? null) : null
 	}
 }
 

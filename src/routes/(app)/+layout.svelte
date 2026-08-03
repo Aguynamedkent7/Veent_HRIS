@@ -105,6 +105,11 @@
 	const canSignOff = $derived(canAny(roles, 'VERIFY_REQUESTS') || canAny(roles, 'APPROVE_FINANCE'))
 	// Approvers (manager ladder + Payroll Officer + sign-off roles) get the dropdown.
 	const canApprove = $derived(canAny(roles, 'APPROVE_REQUESTS'))
+	// Pay-change confirmers (#224 Part 2 / #243) — the same two capabilities the route gates on,
+	// so a nav row is never shown to someone the server would redirect away.
+	const canConfirmPayChanges = $derived(
+		canAny(roles, 'ADMINISTER_HR_ORGWIDE') || canAny(roles, 'APPROVE_FINANCE')
+	)
 
 	const navItems = $derived(
 		[
@@ -267,6 +272,14 @@
 				label: 'Requests',
 				show: canApprove,
 				badge: data.pendingApprovals.requests
+			},
+			{
+				// Pay changes needing a second qualified person (#224 Part 2 / #243). Capability-keyed,
+				// never a rank floor — MANAGER ranks level with HR_ADMIN and must not reach this queue.
+				href: '/requests/proposals',
+				label: 'Pay changes',
+				show: canConfirmPayChanges,
+				badge: data.pendingApprovals.proposals
 			},
 			{
 				// Sign-off roles reach payroll runs to verify/approve here (#134); managers
