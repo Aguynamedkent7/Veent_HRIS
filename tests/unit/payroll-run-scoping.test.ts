@@ -31,6 +31,7 @@ vi.mock('$lib/server/audit', () => ({ writeAuditLog }))
 
 const { listVisiblePayEmployeeIds } = await import('$lib/server/services/employee-access')
 const { overridePayrollEntry, getPayrollRun } = await import('$lib/server/services/payroll/index')
+const { getRunWithEntries } = await import('$lib/server/services/payroll/runs')
 
 const ACTOR = 'user1'
 const SELF = { id: 'mgr-emp' }
@@ -207,5 +208,52 @@ describe('getPayrollRun — the entry filter and its totals', () => {
 		const run = await getPayrollRun('run1', 'org1', ['HR_ADMIN'], null)
 		expect(Number(run.totalGross)).toBe(999_999)
 		expect(Number(run.totalNet)).toBe(888_888)
+	})
+})
+
+/**
+ * The API twin, and the bug that got past every test above.
+ *
+ * `getRunWithEntries` is a SEPARATE function from `getPayrollRun`, serving `/api/v1/payroll/[id]`.
+ * The entry filter was added to both, but the totals recompute only to the first — so the endpoint
+ * returned two rows totalling ~38k beside the run's stored org-wide 184k, disclosing the whole
+ * organization's payroll cost to a scoped manager.
+ *
+ * Nothing caught it: the tests above assert on the QUERY (`include.entries.where`), which was
+ * correct, not on the response body, where the leak was. Found by reading the live endpoint. These
+ * assert what ships.
+ */
+describe('getRunWithEntries — the API twin', () => {
+	const RUN = {
+		id: 'run1',
+		organizationId: 'org1',
+		totalGross: 184_100,
+		totalDeductions: 35_446,
+		totalNet: 148_653,
+		entries: [
+			{ employeeId: REPORT_EMP, grossPay: 15_350, totalDeductions: 1_656, netPay: 13_693 },
+			{ employeeId: SELF.id, grossPay: 22_500, totalDeductions: 3_542, netPay: 18_957 }
+		]
+	}
+
+	beforeEach(() => dbMock.payrollRun.findFirst.mockResolvedValue(RUN))
+
+	it('filters the entries to the allow-list', async () => {
+		await getRunWithEntries('run1', 'org1', [REPORT_EMP, SELF.id])
+		const { include } = dbMock.payrollRun.findFirst.mock.calls[0][0]
+		expect(include.entries.where).toEqual({ employeeId: { in: [REPORT_EMP, SELF.id] } })
+	})
+
+	it('returns totals over the visible entries, not the run’s org-wide figures', async () => {
+		const run = await getRunWithEntries('run1', 'org1', [REPORT_EMP, SELF.id])
+		expect(Number(run.totalGross)).toBe(37_850)
+		expect(Number(run.totalNet)).toBe(32_650)
+		// The specific leak: the org-wide figure must not survive anywhere in the payload.
+		expect(JSON.stringify(run)).not.toContain('184100')
+	})
+
+	it('keeps the run’s own totals when unrestricted', async () => {
+		const run = await getRunWithEntries('run1', 'org1', null)
+		expect(Number(run.totalGross)).toBe(184_100)
 	})
 })

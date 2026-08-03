@@ -2,6 +2,7 @@ import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import { requireCapability } from '$lib/server/rbac'
+import { sum } from './money'
 import type { AuditContext } from '../types'
 
 /**
@@ -67,7 +68,18 @@ export async function getRunWithEntries(
 		}
 	})
 	if (!run) error(404, 'Payroll run not found')
-	return run
+	if (visibleEmployeeIds == null) return run
+	// The stored totals are ORG-WIDE. Filtering the entries and returning them unchanged would hand
+	// a scoped caller the organization's whole payroll cost beside their own two rows — the leak
+	// this scoping exists to close, surviving in the aggregate. `getPayrollRun` does the same for
+	// the page; caught here by reading the endpoint's actual response, which the unit tests could
+	// not, because they assert on the query rather than on what ships.
+	return {
+		...run,
+		totalGross: sum(run.entries.map((e) => e.grossPay)),
+		totalDeductions: sum(run.entries.map((e) => e.totalDeductions)),
+		totalNet: sum(run.entries.map((e) => e.netPay))
+	}
 }
 
 export async function approveRun(
