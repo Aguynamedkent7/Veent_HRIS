@@ -36,8 +36,9 @@ async function assertMayWriteLoan(
 	ctx: AuditContext
 ): Promise<void> {
 	assertNotSelf(ctx.actorId, await requireEmployee(employeeId, organizationId))
-	// Absent actorRoles falls back to the primary role — fail-closed, and #247 tracks the routes
-	// that omit it.
+	// Absent actorRoles falls back to the primary role — fail-closed. Every route that reaches this
+	// guard passes the full set as of #247; the fallback stays for the audit-only callers whose ctx
+	// legitimately carries no roles.
 	const actorRoles = ctx.actorRoles?.length ? ctx.actorRoles : [ctx.actorRole]
 	if (!canAny(actorRoles, 'VIEW_PAY_ORGWIDE')) {
 		await assertCanTouchEmployee(

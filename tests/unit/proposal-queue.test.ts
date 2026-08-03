@@ -11,9 +11,9 @@ import { Prisma, type Role } from '@prisma/client'
  *   - **the route re-implements authority** — so nothing here mocks the proposal service. The load
  *     and the three actions run against the real guards, and a route that "helpfully" checked a
  *     rank floor of its own would show up as a wrong message, not merely a wrong status.
- *   - **the route drops part of the context** — `ctxOf` on the 201 file omits `actorRoles`, and
- *     `assertMayDecide` falls back to `[actorRole]`. Copying it here would refuse a
- *     [MANAGER, HR_ADMIN] user a confirmation they hold (#133), so that is asserted directly.
+ *   - **the route drops part of the context** — `ctxOf` on the 201 file used to omit `actorRoles`,
+ *     leaving `assertMayDecide` to fall back to `[actorRole]` and refuse a [MANAGER, HR_ADMIN] user
+ *     a confirmation they hold (#133). Fixed in #247; asserted directly so it stays fixed.
  *
  * Messages are asserted, not just statuses: three separate rules in `assertMayDecide` all answer
  * 403, and the route can produce a 400 from two different places. A status-only assertion would let
@@ -244,10 +244,10 @@ describe('?/confirm', () => {
 	})
 
 	/**
-	 * The 201 file's `ctxOf` omits `actorRoles`, and `assertMayDecide` then falls back to
-	 * `[actorRole]`. Copying it here would refuse a [MANAGER, HR_ADMIN] user a confirmation they are
-	 * entitled to (#133) — silently, and only for multi-role users. Both halves are asserted, since
-	 * the pass alone would also pass if the route ignored roles and let everyone through.
+	 * The 201 file's `ctxOf` used to omit `actorRoles`, leaving `assertMayDecide` to fall back to
+	 * `[actorRole]` and refuse a [MANAGER, HR_ADMIN] user a confirmation they are entitled to (#133)
+	 * — silently, and only for multi-role users. Fixed in #247. Both halves are asserted, since the
+	 * pass alone would also pass if the route ignored roles and let everyone through.
 	 */
 	it('reads the full role set, not just the primary role', async () => {
 		const refused = await actions.confirm!(

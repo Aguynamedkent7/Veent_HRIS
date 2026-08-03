@@ -30,6 +30,7 @@ export const PATCH: RequestHandler = async ({ locals, params, request, getClient
 		organizationId: locals.user.organizationId,
 		actorId: locals.user.id,
 		actorRole: locals.user.role,
+		actorRoles: locals.user.roles,
 		ipAddress: getClientAddress()
 	}
 	try {

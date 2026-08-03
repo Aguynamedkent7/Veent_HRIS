@@ -48,6 +48,11 @@ export const PATCH: RequestHandler = async ({ params, request, locals, getClient
 				organizationId: user.organizationId,
 				actorId: user.id,
 				actorRole: user.role,
+				// #247: `reviewTimesheet` resolves stage authority through `rolesOf`, so a
+				// [MANAGER, VERIFIER] user was denied the VERIFY stage they hold. The page twin
+				// (`(app)/requests/timesheets/+page.server.ts:66`) already passed this — guarding one
+				// door and leaving its twin open is what this issue keeps finding.
+				actorRoles: user.roles,
 				ipAddress: getClientAddress()
 			}
 		)

@@ -103,7 +103,8 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	const ctx = {
 		organizationId: locals.user.organizationId,
 		actorId: locals.user.id,
-		actorRole: locals.user.role
+		actorRole: locals.user.role,
+		actorRoles: locals.user.roles
 	}
 
 	try {
