@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit'
 import { z } from 'zod'
 import { requireCapability, requirePayrollReports } from '$lib/server/rbac'
+import { listVisiblePayEmployeeIds } from '$lib/server/services/employee-access'
 import {
 	generateHeadcount,
 	generateAttendance,
@@ -52,8 +53,19 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
 		error(404, 'Unknown report type')
 	}
 
+	// #249: MANAGER holds VIEW_PAYROLL_REPORTS (#133), so it clears the gate for every payroll report
+	// — and each of them is built from per-employee pay. Resolve the allow-list once here and hand it
+	// to all five, so no report can be added to the list above and quietly ship unscoped. `null` =
+	// unrestricted. The `export=csv` branch below serializes this same `results`, so it is covered.
+	let visiblePayIds: string[] | null = null
 	if (PAYROLL_REPORT_TYPES.includes(type as (typeof PAYROLL_REPORT_TYPES)[number])) {
 		requirePayrollReports(user.role)
+		visiblePayIds = await listVisiblePayEmployeeIds({
+			id: user.id,
+			role: user.role,
+			roles: user.roles,
+			organizationId: user.organizationId
+		})
 	} else {
 		requireCapability(user.role, 'MANAGE_HR')
 	}
@@ -90,21 +102,33 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
 	} else if (type === 'attendance') {
 		results = await generateAttendance(user.organizationId, { startDate, endDate, departmentId })
 	} else if (type === 'payroll-costs') {
-		results = await generatePayrollCosts(user.organizationId, { startDate, endDate })
+		results = await generatePayrollCosts(user.organizationId, { startDate, endDate }, visiblePayIds)
 	} else if (type === 'leave-utilization') {
 		results = await generateLeaveUtilization(user.organizationId, { startDate, endDate })
 	} else if (type === 'payroll-register') {
-		results = await generatePayrollRegister(user.organizationId, { startDate, endDate })
+		results = await generatePayrollRegister(
+			user.organizationId,
+			{ startDate, endDate },
+			visiblePayIds
+		)
 	} else if (type === 'tardiness') {
 		results = await generateTardiness(user.organizationId, { startDate, endDate, departmentId })
 	} else if (type === 'overtime') {
 		results = await generateOvertime(user.organizationId, { startDate, endDate, departmentId })
 	} else if (type === 'loan-summary') {
-		results = await generateLoanSummary(user.organizationId, { startDate, endDate })
+		results = await generateLoanSummary(user.organizationId, { startDate, endDate }, visiblePayIds)
 	} else if (type === 'government-remittance') {
-		results = await generateGovernmentRemittance(user.organizationId, { startDate, endDate })
+		results = await generateGovernmentRemittance(
+			user.organizationId,
+			{ startDate, endDate },
+			visiblePayIds
+		)
 	} else if (type === 'bir-withholding') {
-		results = await generateBIRWithholding(user.organizationId, { startDate, endDate })
+		results = await generateBIRWithholding(
+			user.organizationId,
+			{ startDate, endDate },
+			visiblePayIds
+		)
 	} else if (type === 'separation') {
 		results = await generateSeparationReport(user.organizationId, { startDate, endDate })
 	}

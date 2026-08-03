@@ -2,6 +2,7 @@ import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import { requireCapability } from '$lib/server/rbac'
+import { sum } from './money'
 import type { AuditContext } from '../types'
 
 /**
@@ -35,11 +36,24 @@ export async function listRuns(organizationId: string, filters?: { status?: stri
 	})
 }
 
-export async function getRunWithEntries(id: string, organizationId: string) {
+/**
+ * #249: `visibleEmployeeIds` restricts which entries come back (`null`/omitted = all). The API twin
+ * of the run-detail page, and MANAGE_PAYROLL holds MANAGER — so this returned every employee's
+ * gross and net to a branch manager exactly as the page did. Same allow-list, from
+ * `listVisiblePayEmployeeIds`, so the two surfaces cannot disagree.
+ */
+export async function getRunWithEntries(
+	id: string,
+	organizationId: string,
+	visibleEmployeeIds?: string[] | null
+) {
 	const run = await db.payrollRun.findFirst({
 		where: { id, organizationId },
 		include: {
 			entries: {
+				...(visibleEmployeeIds != null && {
+					where: { employeeId: { in: visibleEmployeeIds } }
+				}),
 				include: {
 					employee: {
 						select: {
@@ -54,7 +68,18 @@ export async function getRunWithEntries(id: string, organizationId: string) {
 		}
 	})
 	if (!run) error(404, 'Payroll run not found')
-	return run
+	if (visibleEmployeeIds == null) return run
+	// The stored totals are ORG-WIDE. Filtering the entries and returning them unchanged would hand
+	// a scoped caller the organization's whole payroll cost beside their own two rows — the leak
+	// this scoping exists to close, surviving in the aggregate. `getPayrollRun` does the same for
+	// the page; caught here by reading the endpoint's actual response, which the unit tests could
+	// not, because they assert on the query rather than on what ships.
+	return {
+		...run,
+		totalGross: sum(run.entries.map((e) => e.grossPay)),
+		totalDeductions: sum(run.entries.map((e) => e.totalDeductions)),
+		totalNet: sum(run.entries.map((e) => e.netPay))
+	}
 }
 
 export async function approveRun(

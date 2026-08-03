@@ -20,6 +20,7 @@ import { buildAttendanceInput, buildSegmentAttendance } from '../attendance/inpu
 import { computeWorkingDays } from '$lib/utils/dates'
 import { describePeriod, isValidStandardPeriod, periodShareOf } from '$lib/utils/pay-periods'
 import { ensurePayrollApprovalChain } from '../approvals'
+import { assertCanTouchEmployee } from '../employee-access'
 import type { AuditContext } from '../types'
 
 function groupByEmployee<T extends { employeeId: string }>(rows: T[]): Map<string, T[]> {
@@ -531,6 +532,26 @@ export async function overridePayrollEntry(
 	if (!entry) error(404, 'Payroll entry not found')
 	if (entry.payrollRun.status === 'APPROVED') error(400, 'Cannot override approved payroll')
 
+	// #249: object-level scoping on the WRITE path, and the reason it matters more than the read.
+	// `requirePayrollManage` admits MANAGER (#133), and until now the only other filter was the
+	// organization — so a manager could post any employee's entryId and set their net pay, for
+	// people they cannot see and do not manage. Scoping the run view without scoping this would be
+	// worse than not scoping at all: the UI would imply a boundary the server does not enforce.
+	//
+	// In the service, not the action, because `overridePayrollEntry` is reachable from the run page
+	// and any future API twin alike — the same rule #243 settled for the pay writers.
+	//
+	// The capability arm comes first and is not optional: `assertCanTouchEmployee` opens up only for
+	// ADMINISTER_HR_ORGWIDE, which PAYROLL_OFFICER does not hold, so delegating to it alone would
+	// scope the one role whose job is running payroll down to a reporting line it does not have.
+	const actorRoles = ctx.actorRoles?.length ? ctx.actorRoles : [ctx.actorRole]
+	if (!canAny(actorRoles, 'VIEW_PAY_ORGWIDE')) {
+		await assertCanTouchEmployee(
+			{ id: ctx.actorId, role: ctx.actorRole, organizationId },
+			entry.employeeId
+		)
+	}
+
 	const updated = await db.payrollEntry.update({
 		where: { id: entryId },
 		data: { ...overrides, isFlagged: false }
@@ -567,11 +588,38 @@ export async function listPayrollRuns(organizationId: string, roles?: Role[]) {
 	})
 }
 
-export async function getPayrollRun(id: string, organizationId: string, roles?: Role[]) {
+/**
+ * A payroll run with its entries.
+ *
+ * `visibleEmployeeIds` restricts which entries come back — `null`/omitted means every entry in the
+ * run. #249: a MANAGER holds MANAGE_PAYROLL (#133 made them on-branch HR), so they reach this run,
+ * but a run carries every employee's gross, itemized statutory deductions and net. Without the
+ * filter a branch manager reads the whole organization's pay here, which is the same leak the
+ * payslip doors were narrowed to close — reached by another road.
+ *
+ * The caller supplies the list via `listVisiblePayEmployeeIds` rather than this function deriving
+ * it, because the callers already know the actor and one of them (the register) scopes a different
+ * query with the same allow-list.
+ *
+ * When the entries ARE scoped, the run's stored `totalGross` / `totalDeductions` / `totalNet` are
+ * replaced by totals over the visible entries. Those columns are org-wide, so returning them beside
+ * a filtered list would render as "this is the whole run" over rows that are not — and the run
+ * header displays exactly those three figures. Done here rather than in each caller so no caller
+ * can forget and show a total that contradicts its own table.
+ */
+export async function getPayrollRun(
+	id: string,
+	organizationId: string,
+	roles?: Role[],
+	visibleEmployeeIds?: string[] | null
+) {
 	const run = await db.payrollRun.findFirst({
 		where: { id, ...payrollOrgFilter(organizationId, roles) },
 		include: {
 			entries: {
+				...(visibleEmployeeIds != null && {
+					where: { employeeId: { in: visibleEmployeeIds } }
+				}),
 				include: {
 					employee: {
 						select: {
@@ -597,5 +645,11 @@ export async function getPayrollRun(id: string, organizationId: string, roles?: 
 		}
 	})
 	if (!run) error(404, 'Payroll run not found')
-	return run
+	if (visibleEmployeeIds == null) return run
+	return {
+		...run,
+		totalGross: sum(run.entries.map((e) => e.grossPay)),
+		totalDeductions: sum(run.entries.map((e) => e.totalDeductions)),
+		totalNet: sum(run.entries.map((e) => e.netPay))
+	}
 }

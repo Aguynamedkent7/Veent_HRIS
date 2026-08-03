@@ -120,7 +120,20 @@ export const CAPABILITIES = {
 	/** Runs payroll: periods, runs, loans, cash advances, calculator. */
 	MANAGE_PAYROLL: ['MANAGER', 'SUPER_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER', 'CEO'],
 	/** Reads payroll reports — adds read-only Finance. */
-	VIEW_PAYROLL_REPORTS: ['MANAGER', 'SUPER_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER', 'FINANCE', 'CEO']
+	VIEW_PAYROLL_REPORTS: ['MANAGER', 'SUPER_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER', 'FINANCE', 'CEO'],
+	/**
+	 * Reads ANY employee's payslip, as opposed to one's own team's (#249).
+	 *
+	 * VIEW_PAYROLL_REPORTS holds MANAGER (#133 made them on-branch HR), so it cannot express "may
+	 * read a stranger's compensation" — the same shape ADMINISTER_HR_ORGWIDE exists to fix for
+	 * employee records (#228). MANAGER is the only holder of VIEW_PAYROLL_REPORTS missing here, and
+	 * is scoped to their reporting line by `canTouchEmployee`.
+	 *
+	 * Deliberately a SUPERSET of ADMINISTER_HR_ORGWIDE — `canReadPayslip` checks this capability
+	 * before delegating, so every org-wide HR holder is admitted before `canTouchEmployee`'s
+	 * single-role short-circuit is ever reached. `payslip-access.test.ts` pins that containment.
+	 */
+	VIEW_PAY_ORGWIDE: ['HR_ADMIN', 'SUPER_ADMIN', 'PAYROLL_OFFICER', 'FINANCE', 'CEO']
 } as const satisfies Record<string, readonly Role[]>
 
 export type Capability = keyof typeof CAPABILITIES

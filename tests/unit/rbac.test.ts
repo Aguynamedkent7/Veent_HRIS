@@ -50,7 +50,10 @@ const EXPECTED: Record<string, Role[]> = {
 	MANAGE_STATUTORY_RATES: ['CEO', 'SUPER_ADMIN'],
 	PROPOSE_STATUTORY_RATES: ['HR_ADMIN'],
 	MANAGE_PAYROLL: ['MANAGER', 'SUPER_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER', 'CEO'],
-	VIEW_PAYROLL_REPORTS: ['MANAGER', 'SUPER_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER', 'FINANCE', 'CEO']
+	VIEW_PAYROLL_REPORTS: ['MANAGER', 'SUPER_ADMIN', 'HR_ADMIN', 'PAYROLL_OFFICER', 'FINANCE', 'CEO'],
+	// #249: reads anyone's payslip. VIEW_PAYROLL_REPORTS minus MANAGER, who is scoped to their
+	// reporting line — the same distinction ADMINISTER_HR_ORGWIDE draws for employee records.
+	VIEW_PAY_ORGWIDE: ['HR_ADMIN', 'SUPER_ADMIN', 'PAYROLL_OFFICER', 'FINANCE', 'CEO']
 }
 
 // PROPOSE_STATUTORY_RATES is the MAKER leg of the statutory-rate maker-checker (#220): only
@@ -64,9 +67,13 @@ const EXPECTED: Record<string, Role[]> = {
 // own team never ran and every MANAGER could read and edit the whole roster. This capability draws
 // the line the superset invariant otherwise forbids — HR authority over the WHOLE roster, versus a
 // manager's own branch and team. It is deliberately NOT held by MANAGER.
+// VIEW_PAY_ORGWIDE is the third exception (#249), and for the same reason as the second: a
+// payslip is employee data, so MANAGER reads their reporting line and nobody else. It exists because
+// VIEW_PAYROLL_REPORTS gained MANAGER in #133 and could no longer express "a stranger's pay".
 const HR_ADMIN_SUPERSET_EXCEPTIONS: (keyof typeof CAPABILITIES)[] = [
 	'PROPOSE_STATUTORY_RATES',
-	'ADMINISTER_HR_ORGWIDE'
+	'ADMINISTER_HR_ORGWIDE',
+	'VIEW_PAY_ORGWIDE'
 ]
 
 describe('capability table', () => {

@@ -5,7 +5,9 @@
  */
 
 import { db } from '$lib/server/db'
+import { canAny } from '$lib/rbac'
 import { canViewPayrollReports } from '$lib/server/rbac'
+import { canTouchEmployee } from '$lib/server/services/employee-access'
 import type { Role } from '@prisma/client'
 import { isPayslipVisible } from './runs'
 import {
@@ -17,7 +19,41 @@ import {
 export interface FetchPayslipContext {
 	userId: string
 	role: Role
+	roles: Role[]
 	organizationId: string
+}
+
+/**
+ * May this user read this payslip? (#249)
+ *
+ * The single implementation behind every payslip door — the JSON endpoint, the PDF, and the
+ * `/payslips/[id]` page. #249 exists precisely because two of those drifted apart and a third
+ * carried its own hardcoded role list, so a second copy of this rule is the bug, not the fix.
+ *
+ * Owner → org-wide payroll roles → a manager's own reporting line → denied.
+ */
+export async function canReadPayslip(
+	user: { id: string; role: Role; roles?: Role[]; organizationId: string },
+	target: { id: string; userId: string | null }
+): Promise<boolean> {
+	if (target.userId === user.id) return true
+
+	const roles = user.roles?.length ? user.roles : [user.role]
+	if (canAny(roles, 'VIEW_PAY_ORGWIDE')) return true
+
+	// Load-bearing, not redundant: without it any EMPLOYEE who happens to supervise someone would
+	// reach their report's payslip through `canTouchEmployee`, which knows about reporting lines but
+	// nothing about payroll.
+	if (!canAny(roles, 'VIEW_PAYROLL_REPORTS')) return false
+
+	// MANAGER is the only role that gets here — see VIEW_PAY_ORGWIDE's docblock. Scoped to the
+	// reporting line, the same rule the 201 file and the roster enforce (#228/#234).
+	//
+	// `canTouchEmployee` takes ONE role, but that role only decides its ADMINISTER_HR_ORGWIDE
+	// short-circuit, and every holder of that capability was already admitted by the arm above —
+	// VIEW_PAY_ORGWIDE is a superset of it. So the multi-role gap (#133) cannot change the
+	// answer at this call site, and widening the signature would loosen #228's surface instead.
+	return canTouchEmployee(user, target.id)
 }
 
 export type FetchResult =
@@ -64,16 +100,20 @@ export async function fetchPayslipDocument(
 		return { ok: false, status: 404, message: 'Payslip not found' }
 	}
 
-	// #123: caller either owns the payslip or has a payroll-report capability
-	// (SUPER_ADMIN / HR_ADMIN / PAYROLL_OFFICER / FINANCE). MANAGER stays blocked
-	// from peers' compensation, in line with #95.
-	const isOwn = entry.employee.userId === ctx.userId
+	// #249: one shared rule with the JSON endpoint and the /payslips page. This previously read
+	// `canViewPayrollReports` alone, with a comment claiming "MANAGER stays blocked from peers'
+	// compensation" — the opposite of what it did, since #133 put MANAGER in VIEW_PAYROLL_REPORTS.
+	const allowed = await canReadPayslip(
+		{ id: ctx.userId, role: ctx.role, roles: ctx.roles, organizationId: ctx.organizationId },
+		{ id: entry.employeeId, userId: entry.employee.userId }
+	)
+	if (!allowed) return { ok: false, status: 403, message: 'Access denied' }
+
+	// Draft visibility is a separate question from access and keeps its old, broader rule: the
+	// "not-yet-approved" gate applies to owners so an employee can't preview an unreleased run,
+	// while payroll-report roles inspect drafts. Narrowing this too would be a second behaviour
+	// change — a MANAGER can already read an unapproved run wholesale at /payroll/[id].
 	const isPrivileged = canViewPayrollReports(ctx.role)
-	if (!isOwn && !isPrivileged) {
-		return { ok: false, status: 403, message: 'Access denied' }
-	}
-	// The "not-yet-approved" gate still applies to owners so an employee can't
-	// preview an unreleased run; privileged roles can inspect drafts.
 	if (!isPrivileged && !isPayslipVisible(entry.payrollRun)) {
 		return { ok: false, status: 403, message: 'Payslip not yet available' }
 	}
