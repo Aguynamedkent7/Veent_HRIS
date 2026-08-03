@@ -82,58 +82,12 @@ export async function getRunWithEntries(
 	}
 }
 
-export async function approveRun(
-	id: string,
-	organizationId: string,
-	overrideNote: string | undefined,
-	ctx: AuditContext
-) {
-	const run = await db.payrollRun.findFirst({
-		where: { id, organizationId },
-		include: { entries: { select: { isFlagged: true } } }
-	})
-	if (!run) error(404, 'Payroll run not found')
-	// COMPUTED, matching approvePayroll in ./index (the UI action's path). This required
-	// DRAFT, which meant the two entry points disagreed: the API could approve a
-	// never-computed run with zero entries, while a genuinely COMPUTED run was rejected
-	// here. The two remain separate functions because only this one carries the
-	// flagged-entry override policy, which the UI has no field to supply.
-	if (run.status !== 'COMPUTED') error(400, 'Only computed payroll runs can be approved')
-
-	const hasFlagged = run.entries.some((e) => e.isFlagged)
-	if (hasFlagged && !overrideNote) {
-		error(400, 'Override note required for flagged entries')
-	}
-
-	const updated = await db.payrollRun.update({
-		where: { id },
-		data: {
-			status: 'APPROVED',
-			approvedAt: new Date(),
-			approvedById: ctx.actorId,
-			...(overrideNote && { overrideNote, hasOverride: true })
-		}
-	})
-
-	await writeAuditLog(ctx, {
-		action: 'UPDATE',
-		entityType: 'PayrollRun',
-		entityId: id,
-		oldValue: { status: run.status },
-		newValue: { status: 'APPROVED', approvedAt: updated.approvedAt }
-	})
-
-	if (overrideNote) {
-		await writeAuditLog(ctx, {
-			action: 'PAYROLL_OVERRIDE',
-			entityType: 'PayrollRun',
-			entityId: id,
-			newValue: { overrideNote }
-		})
-	}
-
-	return updated
-}
+// `approveRun` lived here: a second approve implementation that wrote `status: 'APPROVED'` directly,
+// gated on MANAGE_PAYROLL (which holds MANAGER) and skipping the #134 chain entirely — no stage
+// capability, no separation of duties, and the run's approval step left open on an approved run.
+// Deleted; `decidePayrollRun` in `../approvals` is the one approve path for both the UI action and
+// the v1 API. Its flagged-entry `overrideNote` went with it: no UI ever supplied one, and silently
+// approving flagged entries is the opposite of what the flag is for.
 
 export async function voidRun(id: string, organizationId: string, ctx: AuditContext) {
 	requireCapability(ctx.actorRole, 'OVERRIDE_FINALIZED')
