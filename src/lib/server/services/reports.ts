@@ -315,11 +315,17 @@ export async function generateLeaveUtilization(
 
 export async function generatePayrollRegister(
 	organizationId: string,
-	{ startDate, endDate }: { startDate: Date; endDate: Date }
+	{ startDate, endDate }: { startDate: Date; endDate: Date },
+	// #249: `null`/omitted = every employee. VIEW_PAYROLL_REPORTS holds MANAGER (#133), so this
+	// report handed a branch manager the whole organization's gross, statutory and net — the same
+	// leak as the run-detail page, on the reporting surface. Callers pass the allow-list from
+	// `listVisiblePayEmployeeIds` so the register and the run agree on who a manager's team is.
+	visibleEmployeeIds?: string[] | null
 ) {
 	const entries = await db.payrollEntry.findMany({
 		where: {
-			payrollRun: { organizationId, periodStart: { gte: startDate }, periodEnd: { lte: endDate } }
+			payrollRun: { organizationId, periodStart: { gte: startDate }, periodEnd: { lte: endDate } },
+			...(visibleEmployeeIds != null && { employeeId: { in: visibleEmployeeIds } })
 		},
 		select: {
 			grossPay: true,

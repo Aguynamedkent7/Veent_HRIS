@@ -35,11 +35,24 @@ export async function listRuns(organizationId: string, filters?: { status?: stri
 	})
 }
 
-export async function getRunWithEntries(id: string, organizationId: string) {
+/**
+ * #249: `visibleEmployeeIds` restricts which entries come back (`null`/omitted = all). The API twin
+ * of the run-detail page, and MANAGE_PAYROLL holds MANAGER — so this returned every employee's
+ * gross and net to a branch manager exactly as the page did. Same allow-list, from
+ * `listVisiblePayEmployeeIds`, so the two surfaces cannot disagree.
+ */
+export async function getRunWithEntries(
+	id: string,
+	organizationId: string,
+	visibleEmployeeIds?: string[] | null
+) {
 	const run = await db.payrollRun.findFirst({
 		where: { id, organizationId },
 		include: {
 			entries: {
+				...(visibleEmployeeIds != null && {
+					where: { employeeId: { in: visibleEmployeeIds } }
+				}),
 				include: {
 					employee: {
 						select: {

@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit'
 import { requireCapability } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
+import { listVisiblePayEmployeeIds } from '$lib/server/services/employee-access'
 import {
 	generateHeadcount,
 	generateAttendance,
@@ -82,7 +83,18 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		results = await generateLeaveUtilization(user.organizationId, { startDate, endDate })
 		columns = ['LeaveType', 'TotalDaysUsed', 'EmployeeCount']
 	} else if (type === 'payroll-register') {
-		results = await generatePayrollRegister(user.organizationId, { startDate, endDate })
+		results = await generatePayrollRegister(
+			user.organizationId,
+			{ startDate, endDate },
+			// #249: a MANAGER holds VIEW_PAYROLL_REPORTS (#133) and reaches this report, so scope it
+			// to their own team exactly as the run-detail page is scoped. `null` = unrestricted.
+			await listVisiblePayEmployeeIds({
+				id: user.id,
+				role: user.role,
+				roles: user.roles,
+				organizationId: user.organizationId
+			})
+		)
 		columns = [
 			'Employee',
 			'Period',

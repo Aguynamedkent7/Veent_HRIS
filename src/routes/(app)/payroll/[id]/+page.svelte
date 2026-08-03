@@ -110,6 +110,18 @@
 		</div>
 	{/if}
 
+	<!-- #249: the figures below and the table are this viewer's team only, not the run. Said out
+	     loud because the totals were recomputed to match the rows, which makes a scoped view look
+	     exactly like a complete one. -->
+	{#if data.scopedToTeam}
+		<p
+			class="rounded-md border border-sky-500/20 bg-sky-500/10 px-4 py-2 text-sm text-sky-600 dark:text-sky-400"
+		>
+			Showing your team only — employees who report to you or work in a branch you manage. Totals
+			cover these entries, not the whole run.
+		</p>
+	{/if}
+
 	<div class="grid gap-4 sm:grid-cols-3">
 		<div class="rounded-lg border bg-card p-4">
 			<p class="text-sm text-muted-foreground">Total Gross</p>

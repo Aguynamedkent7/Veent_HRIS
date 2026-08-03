@@ -20,6 +20,7 @@ import { error } from '@sveltejs/kit'
 import type { Role } from '@prisma/client'
 import { db } from '$lib/server/db'
 import { can } from '$lib/server/rbac'
+import { canAny } from '$lib/rbac'
 import { listReportIdsFor } from './supervisors'
 
 const DENIED = 'You can only manage your own team or a branch you manage.'
@@ -154,4 +155,25 @@ export async function assertCanTouchEmployee(
 	employeeId: string
 ): Promise<void> {
 	if (!(await canTouchEmployee(user, employeeId))) error(403, DENIED)
+}
+
+/**
+ * The employee ids whose PAY this actor may see — payroll run entries, the payroll register, and
+ * anything else that lists compensation per employee (#249).
+ *
+ * `null` means unrestricted; an array is the exact allow-list. Same contract as
+ * `listVisibleEmployeeIds`, and it delegates there for the scoped case, so a manager's pay view and
+ * their roster view can never disagree about who their team is.
+ *
+ * The one difference is who counts as unrestricted. `listVisibleEmployeeIds` opens up for
+ * `ADMINISTER_HR_ORGWIDE` (HR_ADMIN / CEO / SUPER_ADMIN), which would leave PAYROLL_OFFICER and
+ * FINANCE — the two roles that exist to read payroll — scoped down to a reporting line they do not
+ * have, locking them out of every run. `VIEW_PAY_ORGWIDE` is that set plus those two.
+ */
+export async function listVisiblePayEmployeeIds(
+	user: EmployeeAccessActor & { roles?: Role[] }
+): Promise<string[] | null> {
+	const roles = user.roles?.length ? user.roles : [user.role]
+	if (canAny(roles, 'VIEW_PAY_ORGWIDE')) return null
+	return listVisibleEmployeeIds(user)
 }

@@ -2,6 +2,7 @@ import { json } from '@sveltejs/kit'
 import { requireCapability, requirePayrollManage } from '$lib/server/rbac'
 import { getRunWithEntries, approveRun, voidRun } from '$lib/server/services/payroll/runs'
 import { apiError } from '$lib/server/api-error'
+import { listVisiblePayEmployeeIds } from '$lib/server/services/employee-access'
 import type { RequestHandler } from './$types'
 
 export const GET: RequestHandler = async ({ locals, params }) => {
@@ -13,7 +14,15 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 		return apiError(403, 'Insufficient permissions')
 	}
 
-	const run = await getRunWithEntries(params.id, locals.user.organizationId)
+	// #249: same scoping as the run-detail page — a MANAGER sees their own team's entries, not the
+	// whole organization's pay. Guarding only the page would leave this endpoint as the way around.
+	const visibleEmployeeIds = await listVisiblePayEmployeeIds({
+		id: locals.user.id,
+		role: locals.user.role,
+		roles: locals.user.roles,
+		organizationId: locals.user.organizationId
+	})
+	const run = await getRunWithEntries(params.id, locals.user.organizationId, visibleEmployeeIds)
 	return json({ data: run })
 }
 

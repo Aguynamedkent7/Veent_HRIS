@@ -2,6 +2,7 @@ import { error, fail, isHttpError } from '@sveltejs/kit'
 import { z } from 'zod'
 import { requirePayrollManage } from '$lib/server/rbac'
 import { canAny } from '$lib/rbac'
+import { listVisiblePayEmployeeIds } from '$lib/server/services/employee-access'
 import {
 	getPayrollRun,
 	overridePayrollEntry,
@@ -38,9 +39,19 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	const canSignOff = canAny(roles, 'VERIFY_REQUESTS') || canAny(roles, 'APPROVE_FINANCE')
 	if (!canManagePayroll && !canSignOff) error(403, 'Insufficient permissions')
 
+	// #249: a run carries every employee's gross, itemized statutory deductions and net, and
+	// MANAGE_PAYROLL holds MANAGER — so without this a branch manager reads the whole org's pay
+	// here, the same leak the payslip doors were narrowed to close. `null` = unrestricted.
+	const visibleEmployeeIds = await listVisiblePayEmployeeIds({
+		id: user.id,
+		role: user.role,
+		roles,
+		organizationId: user.organizationId
+	})
+
 	// Finance approvers reach any tenant's run to sign it off (#174); managers/verifiers
 	// stay in their own org.
-	const run = await getPayrollRun(params.id, user.organizationId, roles)
+	const run = await getPayrollRun(params.id, user.organizationId, roles, visibleEmployeeIds)
 
 	// Managing (override/recompute) is only ever your own org's payroll — a finance approver
 	// reviewing another tenant's run gets a read-only view plus the sign-off action.
@@ -59,7 +70,15 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		makeActorId !== user.id
 	)
 
-	return { run, liveStage: live?.currentStep?.stage ?? null, canAct, canManage }
+	// Tells the page its table is a slice, not the run — the totals above it were recomputed to
+	// match, so without this the view is honest but indistinguishable from the full run.
+	return {
+		run,
+		liveStage: live?.currentStep?.stage ?? null,
+		canAct,
+		canManage,
+		scopedToTeam: visibleEmployeeIds != null
+	}
 }
 
 // `finite()` matters as much as `min(0)`: z.coerce.number() turns "" into 0 and

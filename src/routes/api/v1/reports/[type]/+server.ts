@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit'
 import { z } from 'zod'
 import { requireCapability, requirePayrollReports } from '$lib/server/rbac'
+import { listVisiblePayEmployeeIds } from '$lib/server/services/employee-access'
 import {
 	generateHeadcount,
 	generateAttendance,
@@ -94,7 +95,18 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
 	} else if (type === 'leave-utilization') {
 		results = await generateLeaveUtilization(user.organizationId, { startDate, endDate })
 	} else if (type === 'payroll-register') {
-		results = await generatePayrollRegister(user.organizationId, { startDate, endDate })
+		results = await generatePayrollRegister(
+			user.organizationId,
+			{ startDate, endDate },
+			// #249: a MANAGER holds VIEW_PAYROLL_REPORTS (#133) and reaches this report, so scope it
+			// to their own team exactly as the run-detail page is scoped. `null` = unrestricted.
+			await listVisiblePayEmployeeIds({
+				id: user.id,
+				role: user.role,
+				roles: user.roles,
+				organizationId: user.organizationId
+			})
+		)
 	} else if (type === 'tardiness') {
 		results = await generateTardiness(user.organizationId, { startDate, endDate, departmentId })
 	} else if (type === 'overtime') {
