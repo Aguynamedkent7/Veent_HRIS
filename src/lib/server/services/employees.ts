@@ -1,22 +1,31 @@
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
-import { ROLE_HIERARCHY } from '$lib/server/rbac'
+import { canAny, ROLE_HIERARCHY } from '$lib/server/rbac'
 import { error } from '@sveltejs/kit'
 import bcrypt from 'bcrypt'
 import { Prisma } from '@prisma/client'
+import { z } from 'zod'
 import { ensureLeaveBalances } from './leave'
 import { sendDiscordInviteEmail } from '$lib/server/notifications'
 import { notify } from './notifications'
 import { maskEmployee, SENSITIVE_FIELDS } from '$lib/utils/format'
 import { utcMidnight } from '$lib/utils/pay-periods'
 import { isRateBasisAllowed, RATE_BASIS_MISMATCH } from '$lib/utils/rate-basis'
-import { employmentTypeAt } from '$lib/utils/employment-type'
+import { employmentTypeAt, EMPLOYMENT_TYPES } from '$lib/utils/employment-type'
 import { currentCompensation } from './payroll/compensation'
 import { assertNotSelf } from './employee-access'
+import { createProposal } from './action-proposals'
 import { bandStatus } from './settings/master'
 import { D } from './payroll/money'
 import type { AuditContext } from './types'
-import type { EmploymentType, EmploymentStatus, RateType, Gender, Role } from '@prisma/client'
+import type {
+	EmploymentType,
+	EmploymentStatus,
+	ProposalDomain,
+	RateType,
+	Gender,
+	Role
+} from '@prisma/client'
 
 interface CreateEmployeeInput {
 	email: string
@@ -612,6 +621,69 @@ export async function updateEmployee(
 }
 
 /**
+ * What the pay writers return. `proposalId` is set only when the change was FILED rather than
+ * applied (#224 Part 2 / #243) — callers that report success must surface that, or an unconfirmed
+ * change reads as a saved one.
+ */
+export interface PayWriteResult {
+	notice?: string
+	proposalId?: string
+}
+
+export const AWAITING_CONFIRMATION =
+	'Submitted for confirmation — this change takes effect once another authorized person confirms it.'
+
+/**
+ * Options only the proposal-confirm path passes.
+ *
+ * `confirmTx` is the claim's transaction client, and its presence carries BOTH meanings: write on
+ * that client (Prisma has no nested interactive transactions, and `confirmProposal` runs `apply`
+ * inside the claim so a failed apply rolls the claim back to PENDING), and skip the propose branch
+ * below (re-proposing an already-confirmed change would loop forever). Deliberately one field
+ * rather than a client plus a boolean: the two can never drift apart, and no caller can skip the
+ * separation-of-duties routing without actually being inside `confirmProposal`'s transaction.
+ *
+ * Same shape as `writeAuditLog(ctx, payload, client = db)`: an optional client that defaults to the
+ * global `db`, so the direct path is byte-identical to what it did before.
+ */
+export interface ProposalWriteOpts {
+	confirmTx?: Prisma.TransactionClient
+}
+
+/**
+ * Separation of duties for the two writers that move pay (#224 Part 2, #243).
+ *
+ * Returns the "awaiting confirmation" result when this actor may not make this change alone, having
+ * filed a PENDING proposal; `null` when they may, and the caller writes as it always has.
+ *
+ * Two shapes route here, and `createProposal` re-derives which from initiator vs target so the
+ * confirmer requirement can't be understated:
+ *   - the actor IS the target — self-dealing, needs `APPROVE_FINANCE` to confirm;
+ *   - the actor lacks `ADMINISTER_HR_ORGWIDE` — i.e. a MANAGER, who clears the route's
+ *     `requireMinRole('HR_ADMIN')` because `ROLE_HIERARCHY` ranks them level with HR_ADMIN (#243).
+ *
+ * Capability-keyed, never a rank floor, for exactly that reason. And in the service rather than the
+ * route, so the form action and its v1 API twin are covered by one check.
+ */
+async function proposeIfRequired(
+	organizationId: string,
+	employee: { id: string; userId: string },
+	domain: ProposalDomain,
+	payload: unknown,
+	ctx: AuditContext
+): Promise<PayWriteResult | null> {
+	const roles = ctx.actorRoles?.length ? ctx.actorRoles : [ctx.actorRole]
+	if (employee.userId !== ctx.actorId && canAny(roles, 'ADMINISTER_HR_ORGWIDE')) return null
+
+	const proposal = await createProposal(
+		organizationId,
+		{ targetEmployeeId: employee.id, targetUserId: employee.userId, domain, payload },
+		ctx
+	)
+	return { notice: AWAITING_CONFIRMATION, proposalId: proposal.id }
+}
+
+/**
  * Record an effective-dated compensation change (#170). Inserts an EmployeeCompensation snapshot,
  * then re-derives the current cache — `Employee.{basicMonthlySalary, rateType}` = the snapshot with
  * the latest effectiveDate ≤ today — so a correction backdated below a later change never moves it.
@@ -626,10 +698,10 @@ export async function recordCompensationChange(
 	id: string,
 	organizationId: string,
 	input: { basicMonthlySalary?: number; rateType?: RateType; effectiveDate: Date; note?: string },
-	ctx: AuditContext
-): Promise<{ notice?: string }> {
+	ctx: AuditContext,
+	opts?: ProposalWriteOpts
+): Promise<PayWriteResult> {
 	const employee = await getEmployee(id, organizationId)
-	assertNotSelf(ctx.actorId, employee)
 
 	// "Unchanged" is judged against the comp in effect on the effective date, not the current cache —
 	// otherwise a valid backdated correction whose value happens to equal today's figure is rejected.
@@ -677,7 +749,17 @@ export async function recordCompensationChange(
 		? `Backdated to ${eff.toISOString().slice(0, 10)}. Approved runs are not recalculated; applies to current and future open periods.`
 		: undefined
 
-	await db.$transaction(async (tx: Prisma.TransactionClient) => {
+	// #224 Part 2 / #243. Placed after validation and before the first write: the initiator gets the
+	// same immediate 400s they always did rather than discovering them when someone else confirms,
+	// and nothing has landed yet, so filing instead of writing leaves the record untouched. Storing
+	// `input` verbatim — not the values resolved above — keeps the proposal meaning what was typed,
+	// so confirming re-runs every check on the state as it stands then.
+	if (!opts?.confirmTx) {
+		const proposed = await proposeIfRequired(organizationId, employee, 'COMPENSATION', input, ctx)
+		if (proposed) return proposed
+	}
+
+	const write = async (tx: Prisma.TransactionClient) => {
 		const current = await insertCompensationSnapshot(
 			tx,
 			id,
@@ -702,7 +784,10 @@ export async function recordCompensationChange(
 			},
 			tx
 		)
-	})
+	}
+	// Join the confirm transaction when applying a proposal; own it otherwise (Prisma has no nested
+	// interactive transactions, and the claim must roll back with a failed apply).
+	await (opts?.confirmTx ? write(opts.confirmTx) : db.$transaction(write))
 
 	return { notice }
 }
@@ -782,10 +867,10 @@ export async function promoteEmployee(
 	id: string,
 	organizationId: string,
 	input: PromoteEmployeeInput,
-	ctx: AuditContext
-): Promise<{ notice?: string }> {
+	ctx: AuditContext,
+	opts?: ProposalWriteOpts
+): Promise<PayWriteResult> {
 	const employee = await getEmployee(id, organizationId)
-	assertNotSelf(ctx.actorId, employee)
 
 	const eff = utcMidnight(input.effectiveDate)
 	const today = utcMidnight(new Date())
@@ -905,7 +990,13 @@ export async function promoteEmployee(
 
 	const notice = messages.length ? messages.join(' ') : undefined
 
-	await db.$transaction(async (tx: Prisma.TransactionClient) => {
+	// #224 Part 2 / #243 — same routing, same placement, as `recordCompensationChange`.
+	if (!opts?.confirmTx) {
+		const proposed = await proposeIfRequired(organizationId, employee, 'PROMOTION', input, ctx)
+		if (proposed) return proposed
+	}
+
+	const write = async (tx: Prisma.TransactionClient) => {
 		const data: Prisma.EmployeeUpdateInput = { ...columns }
 
 		if (payChanged) {
@@ -965,9 +1056,61 @@ export async function promoteEmployee(
 			{ action: 'UPDATE', entityType: 'Employee', entityId: id, oldValue, newValue },
 			tx
 		)
-	})
+	}
+	await (opts?.confirmTx ? write(opts.confirmTx) : db.$transaction(write))
 
 	return { notice }
+}
+
+/** Union of both writers' inputs — the promotion input is a superset of the compensation one. */
+const proposalPayloadSchema = z.object({
+	effectiveDate: z.coerce.date(),
+	basicMonthlySalary: z.number().optional(),
+	rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
+	employmentType: z.enum(EMPLOYMENT_TYPES).optional(),
+	positionId: z.string().nullable().optional(),
+	jobTitle: z.string().optional(),
+	reportsToId: z.string().optional(),
+	note: z.string().optional()
+})
+
+/**
+ * The `apply` callback for `confirmProposal` — re-enters the writer that filed the proposal, on the
+ * claim's transaction client and with the propose branch bypassed.
+ *
+ * Re-entering the writer rather than replaying a stored diff is the point: every guard the writer
+ * has (no-change, rate-basis pairing, hire-date floor, org-scoped position and manager, frozen-run
+ * notice) re-runs against the state as it stands NOW, so a payload that went stale while the
+ * proposal sat pending throws — and because this runs inside the claim, the claim rolls back and
+ * the proposal is still PENDING rather than burnt.
+ *
+ * The audit row names the confirmer, not the initiator: they are the one who caused the write. The
+ * initiator is on record in the proposal's own CREATE entry.
+ */
+export async function applyProposedChange(
+	organizationId: string,
+	proposal: { targetEmployeeId: string; domain: ProposalDomain; payload: unknown },
+	tx: Prisma.TransactionClient,
+	ctx: AuditContext
+): Promise<void> {
+	// The payload is `Json` read back as `unknown`, so dates arrive as ISO strings — parse rather
+	// than cast, or `utcMidnight` would silently receive a string.
+	const payload = proposalPayloadSchema.parse(proposal.payload)
+
+	if (proposal.domain === 'COMPENSATION') {
+		const { basicMonthlySalary, rateType, effectiveDate, note } = payload
+		await recordCompensationChange(
+			proposal.targetEmployeeId,
+			organizationId,
+			{ basicMonthlySalary, rateType, effectiveDate, note },
+			ctx,
+			{ confirmTx: tx }
+		)
+	} else {
+		await promoteEmployee(proposal.targetEmployeeId, organizationId, payload, ctx, {
+			confirmTx: tx
+		})
+	}
 }
 
 export async function offboardEmployee(
