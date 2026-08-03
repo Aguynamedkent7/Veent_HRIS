@@ -1,5 +1,6 @@
 import { canAny, CAPABILITIES } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
+import { listActionableProposals } from './action-proposals'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import type { ApprovalDecision, ApprovalStage, Role } from '@prisma/client'
@@ -234,6 +235,8 @@ export interface PendingApprovalCounts {
 	timesheets: number
 	requests: number
 	payrollRuns: number
+	/** Pay changes awaiting this user's confirmation (#224 Part 2 / #243). */
+	proposals: number
 	total: number
 }
 
@@ -247,8 +250,11 @@ export async function countPendingApprovals(user: {
 	organizationId: string
 }): Promise<PendingApprovalCounts> {
 	const roles = user.roles?.length ? user.roles : [user.role]
+	// Harmless for proposals too: every confirmer capability (ADMINISTER_HR_ORGWIDE /
+	// APPROVE_FINANCE) is held only by HR_ADMIN, CEO and SUPER_ADMIN, all of whom hold
+	// APPROVE_REQUESTS — so no confirmer is short-circuited here.
 	if (!canAny(roles, 'APPROVE_REQUESTS'))
-		return { timesheets: 0, requests: 0, payrollRuns: 0, total: 0 }
+		return { timesheets: 0, requests: 0, payrollRuns: 0, proposals: 0, total: 0 }
 
 	const myEmployee = await db.employee.findUnique({
 		where: { userId: user.id },
@@ -262,19 +268,24 @@ export async function countPendingApprovals(user: {
 		canAny(roles, 'VERIFY_REQUESTS') ||
 		canAny(roles, 'APPROVE_SIGNOFF')
 
-	const [requests, timesheetCount, payrollRunCount] = await Promise.all([
+	const [requests, timesheetCount, payrollRunCount, proposals] = await Promise.all([
 		listPendingRequestsForApprover(user.organizationId, roles, myEmployee?.id ?? null),
 		canReviewTimesheets
 			? countActionableTimesheets(user.organizationId, roles, myEmployee?.id ?? null)
 			: Promise.resolve(0),
-		countActionablePayrollRuns(user.organizationId, roles, user.id)
+		countActionablePayrollRuns(user.organizationId, roles, user.id),
+		// Same "run the filtered list, take .length" shape as requests. Notifications are one-shot
+		// toasts marked read on the next page load, so without this badge a proposal filed while the
+		// confirmer was away leaves no standing trace anywhere in the UI.
+		listActionableProposals(user.organizationId, { actorId: user.id, roles })
 	])
 
 	return {
 		timesheets: timesheetCount,
 		requests: requests.length,
 		payrollRuns: payrollRunCount,
-		total: timesheetCount + requests.length + payrollRunCount
+		proposals: proposals.length,
+		total: timesheetCount + requests.length + payrollRunCount + proposals.length
 	}
 }
 
