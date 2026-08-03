@@ -196,7 +196,13 @@ export async function generateAttendance(
 
 export async function generatePayrollCosts(
 	organizationId: string,
-	{ startDate, endDate }: { startDate: Date; endDate: Date }
+	{ startDate, endDate }: { startDate: Date; endDate: Date },
+	// #249: same allow-list contract as `generatePayrollRegister` (`null` = every employee).
+	// No per-employee row leaves this function, but every figure in it is built from `run.entries`,
+	// so unfiltered it hands a manager the organization's payroll cost broken out by department —
+	// the aggregate form of the leak `getRunWithEntries` had to close after its entry filter landed.
+	// Filtered on the include rather than the top-level where, because the rows come from entries.
+	visibleEmployeeIds: string[] | null
 ) {
 	const runs = await db.payrollRun.findMany({
 		where: {
@@ -210,6 +216,9 @@ export async function generatePayrollCosts(
 			totalGross: true,
 			totalNet: true,
 			entries: {
+				...(visibleEmployeeIds != null && {
+					where: { employeeId: { in: visibleEmployeeIds } }
+				}),
 				select: {
 					grossPay: true,
 					netPay: true,
@@ -316,11 +325,15 @@ export async function generateLeaveUtilization(
 export async function generatePayrollRegister(
 	organizationId: string,
 	{ startDate, endDate }: { startDate: Date; endDate: Date },
-	// #249: `null`/omitted = every employee. VIEW_PAYROLL_REPORTS holds MANAGER (#133), so this
-	// report handed a branch manager the whole organization's gross, statutory and net — the same
-	// leak as the run-detail page, on the reporting surface. Callers pass the allow-list from
+	// #249: `null` = every employee. VIEW_PAYROLL_REPORTS holds MANAGER (#133), so this report
+	// handed a branch manager the whole organization's gross, statutory and net — the same leak as
+	// the run-detail page, on the reporting surface. Callers pass the allow-list from
 	// `listVisiblePayEmployeeIds` so the register and the run agree on who a manager's team is.
-	visibleEmployeeIds?: string[] | null
+	//
+	// Required rather than optional, here and on the four reports below: this one was scoped first
+	// and the others kept the old two-argument shape, which compiled fine and shipped unscoped.
+	// A missing allow-list is now a type error instead of a silent disclosure.
+	visibleEmployeeIds: string[] | null
 ) {
 	const entries = await db.payrollEntry.findMany({
 		where: {
@@ -455,9 +468,21 @@ export async function generateOvertime(
 // ─── generateLoanSummary ──────────────────────────────────────────────────────
 // Outstanding loans per employee (defaults to active; date range is ignored).
 
-export async function generateLoanSummary(organizationId: string, _range: DateRangeFilter) {
+export async function generateLoanSummary(
+	organizationId: string,
+	_range: DateRangeFilter,
+	// #249: same allow-list contract as `generatePayrollRegister` (`null` = every employee).
+	// A loan's principal, balance and installment are that employee's pay data, and MANAGER reaches
+	// this report through VIEW_PAYROLL_REPORTS just as it reaches the register. The filter hangs off
+	// `Loan.employeeId` — this is the one payroll report that does not query `PayrollEntry`.
+	visibleEmployeeIds: string[] | null
+) {
 	const loans = await db.loan.findMany({
-		where: { employee: { user: { organizationId } }, status: 'ACTIVE' },
+		where: {
+			employee: { user: { organizationId } },
+			status: 'ACTIVE',
+			...(visibleEmployeeIds != null && { employeeId: { in: visibleEmployeeIds } })
+		},
 		select: {
 			principal: true,
 			balance: true,
@@ -483,11 +508,17 @@ export async function generateLoanSummary(organizationId: string, _range: DateRa
 
 export async function generateGovernmentRemittance(
 	organizationId: string,
-	{ startDate, endDate }: { startDate: Date; endDate: Date }
+	{ startDate, endDate }: { startDate: Date; endDate: Date },
+	// #249: same allow-list contract as `generatePayrollRegister`. Aggregate-only output, but the
+	// aggregate IS the organization's statutory bill, and the employer shares scale with total
+	// payroll — so unfiltered it discloses org-wide cost to a scoped manager. The roles that actually
+	// file remittances (PAYROLL_OFFICER, FINANCE, HR_ADMIN, CEO) pass `null` and see the whole org.
+	visibleEmployeeIds: string[] | null
 ) {
 	const entries = await db.payrollEntry.findMany({
 		where: {
-			payrollRun: { organizationId, periodStart: { gte: startDate }, periodEnd: { lte: endDate } }
+			payrollRun: { organizationId, periodStart: { gte: startDate }, periodEnd: { lte: endDate } },
+			...(visibleEmployeeIds != null && { employeeId: { in: visibleEmployeeIds } })
 		},
 		select: {
 			sssEe: true,
@@ -539,11 +570,16 @@ export async function generateGovernmentRemittance(
 
 export async function generateBIRWithholding(
 	organizationId: string,
-	{ startDate, endDate }: { startDate: Date; endDate: Date }
+	{ startDate, endDate }: { startDate: Date; endDate: Date },
+	// #249: same allow-list contract as `generatePayrollRegister`. This is the register's own data
+	// under another heading — per-employee gross and tax withheld — plus the TIN, so it leaked a
+	// government ID alongside the pay. Same query shape as the register, same filter.
+	visibleEmployeeIds: string[] | null
 ) {
 	const entries = await db.payrollEntry.findMany({
 		where: {
-			payrollRun: { organizationId, periodStart: { gte: startDate }, periodEnd: { lte: endDate } }
+			payrollRun: { organizationId, periodStart: { gte: startDate }, periodEnd: { lte: endDate } },
+			...(visibleEmployeeIds != null && { employeeId: { in: visibleEmployeeIds } })
 		},
 		select: {
 			grossPay: true,

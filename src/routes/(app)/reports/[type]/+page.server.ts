@@ -47,8 +47,19 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 	if (!VALID_TYPES.includes(type as (typeof VALID_TYPES)[number])) error(404, 'Unknown report type')
 
 	// Payroll reports open to Payroll Officer / Finance; everything else HR-only.
+	// #249: MANAGER holds VIEW_PAYROLL_REPORTS (#133), so it clears the gate above for every payroll
+	// report — and each of them is built from per-employee pay. Resolve the allow-list once here and
+	// hand it to all five, so no report can be added to the list above and quietly ship unscoped.
+	// `null` = unrestricted, which is what the org-wide payroll roles get.
+	let visiblePayIds: string[] | null = null
 	if (PAYROLL_REPORT_TYPES.includes(type)) {
 		if (!canViewPayrollReports(user.role)) error(403, 'Insufficient permissions')
+		visiblePayIds = await listVisiblePayEmployeeIds({
+			id: user.id,
+			role: user.role,
+			roles: user.roles,
+			organizationId: user.organizationId
+		})
 	} else {
 		requireCapability(user.role, 'MANAGE_HR')
 	}
@@ -77,7 +88,7 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		results = await generateAttendance(user.organizationId, { startDate, endDate, departmentId })
 		columns = ['Employee', 'Period', 'TotalHours', 'Status']
 	} else if (type === 'payroll-costs') {
-		results = await generatePayrollCosts(user.organizationId, { startDate, endDate })
+		results = await generatePayrollCosts(user.organizationId, { startDate, endDate }, visiblePayIds)
 		columns = ['Period', 'Department', 'TotalGross', 'TotalNet', 'HeadCount']
 	} else if (type === 'leave-utilization') {
 		results = await generateLeaveUtilization(user.organizationId, { startDate, endDate })
@@ -86,14 +97,7 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		results = await generatePayrollRegister(
 			user.organizationId,
 			{ startDate, endDate },
-			// #249: a MANAGER holds VIEW_PAYROLL_REPORTS (#133) and reaches this report, so scope it
-			// to their own team exactly as the run-detail page is scoped. `null` = unrestricted.
-			await listVisiblePayEmployeeIds({
-				id: user.id,
-				role: user.role,
-				roles: user.roles,
-				organizationId: user.organizationId
-			})
+			visiblePayIds
 		)
 		columns = [
 			'Employee',
@@ -113,13 +117,21 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		results = await generateOvertime(user.organizationId, { startDate, endDate, departmentId })
 		columns = ['Employee', 'OvertimeHours', 'RawOvertimeHours', 'NightDiffHours']
 	} else if (type === 'loan-summary') {
-		results = await generateLoanSummary(user.organizationId, { startDate, endDate })
+		results = await generateLoanSummary(user.organizationId, { startDate, endDate }, visiblePayIds)
 		columns = ['Employee', 'Principal', 'Balance', 'Installment', 'Status']
 	} else if (type === 'government-remittance') {
-		results = await generateGovernmentRemittance(user.organizationId, { startDate, endDate })
+		results = await generateGovernmentRemittance(
+			user.organizationId,
+			{ startDate, endDate },
+			visiblePayIds
+		)
 		columns = ['Contribution', 'EmployeeShare', 'EmployerShare', 'Total']
 	} else if (type === 'bir-withholding') {
-		results = await generateBIRWithholding(user.organizationId, { startDate, endDate })
+		results = await generateBIRWithholding(
+			user.organizationId,
+			{ startDate, endDate },
+			visiblePayIds
+		)
 		columns = ['Employee', 'TIN', 'Gross', 'TaxWithheld']
 	} else if (type === 'separation') {
 		results = await generateSeparationReport(user.organizationId, { startDate, endDate })
