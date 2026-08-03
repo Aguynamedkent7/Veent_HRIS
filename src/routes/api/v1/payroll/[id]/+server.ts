@@ -52,8 +52,9 @@ export const POST: RequestHandler = async ({ locals, params, url }) => {
 				actorRole: user.role,
 				// Load-bearing, unlike the fail-closed omissions #247 tracks: `decidePayrollRun`
 				// resolves stage authority from the full role set, so dropping it would deny a
-				// [MANAGER, APPROVER] user the stage they legitimately hold.
-				actorRoles: user.roles
+				// [MANAGER, APPROVER] user the stage they legitimately hold. Pass the same
+				// normalized `roles` the gate above used, so the two cannot diverge.
+				actorRoles: roles
 			})
 			return json({ data: result })
 		} catch (e: unknown) {
