@@ -12,6 +12,7 @@ import { utcMidnight } from '$lib/utils/pay-periods'
 import { isRateBasisAllowed, RATE_BASIS_MISMATCH } from '$lib/utils/rate-basis'
 import { employmentTypeAt } from '$lib/utils/employment-type'
 import { currentCompensation } from './payroll/compensation'
+import { assertNotSelf } from './employee-access'
 import { bandStatus } from './settings/master'
 import { D } from './payroll/money'
 import type { AuditContext } from './types'
@@ -543,6 +544,18 @@ export async function updateEmployee(
 ) {
 	const existing = await getEmployee(id, organizationId)
 
+	// Separation of duties: contact details ARE self-serviceable — `/profile`'s update action routes
+	// here and sends only name/contact/birthdate — but employment terms are HR's to set, so nobody
+	// sets their own. Field-scoped rather than a blanket self-block for exactly that reason.
+	if (
+		input.jobTitle !== undefined ||
+		input.departmentId !== undefined ||
+		input.employmentStatus !== undefined ||
+		input.endDate !== undefined
+	) {
+		assertNotSelf(ctx.actorId, existing)
+	}
+
 	// A branch change is a store transfer. Postgres can't express "the branch belongs to the
 	// same org", so verify it here — a forged id from another tenant must not cross over.
 	// Re-saving an employee who already sits on a closed branch is allowed: the picker keeps
@@ -616,6 +629,7 @@ export async function recordCompensationChange(
 	ctx: AuditContext
 ): Promise<{ notice?: string }> {
 	const employee = await getEmployee(id, organizationId)
+	assertNotSelf(ctx.actorId, employee)
 
 	// "Unchanged" is judged against the comp in effect on the effective date, not the current cache —
 	// otherwise a valid backdated correction whose value happens to equal today's figure is rejected.
@@ -771,6 +785,7 @@ export async function promoteEmployee(
 	ctx: AuditContext
 ): Promise<{ notice?: string }> {
 	const employee = await getEmployee(id, organizationId)
+	assertNotSelf(ctx.actorId, employee)
 
 	const eff = utcMidnight(input.effectiveDate)
 	const today = utcMidnight(new Date())

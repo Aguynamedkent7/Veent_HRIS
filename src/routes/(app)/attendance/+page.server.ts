@@ -34,7 +34,7 @@ function clampRange(fromKey: string, toKey: string) {
 export const load: PageServerLoad = async ({ locals, url, getClientAddress }) => {
 	const user = locals.user!
 	const canManage = can(user.role, 'MANAGE_HR')
-	const canUnlock = can(user.role, 'ADMINISTER_SYSTEM') // reopening locked days is privileged
+	const canUnlock = can(user.role, 'OVERRIDE_FINALIZED') // reopening locked days is privileged
 
 	const today = manilaDayKey(new Date())
 	const rawFrom = url.searchParams.get('from') ?? manilaDayKey(new Date(Date.now() - 13 * DAY_MS))
@@ -226,9 +226,9 @@ export const actions: Actions = {
 		}
 	},
 
-	// Reopening locked days is privileged (super admin only).
+	// Reopening locked days overrides a finalized record — Super Admin only, not the CEO (#224).
 	unlock: async (event) => {
-		requireCapability(event.locals.user!.role, 'ADMINISTER_SYSTEM')
+		requireCapability(event.locals.user!.role, 'OVERRIDE_FINALIZED')
 		const parsed = rangeSchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid range' })
 		if (spanExceeded(parsed.data.from, parsed.data.to))
@@ -245,7 +245,7 @@ export const actions: Actions = {
 	},
 
 	unlockTeam: async (event) => {
-		requireCapability(event.locals.user!.role, 'ADMINISTER_SYSTEM')
+		requireCapability(event.locals.user!.role, 'OVERRIDE_FINALIZED')
 		const parsed = teamDaySchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid date' })
 		try {

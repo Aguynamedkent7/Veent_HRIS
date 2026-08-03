@@ -30,7 +30,10 @@ const EXPECTED: Record<string, Role[]> = {
 	// branch and team — the distinction MANAGE_HR cannot express.
 	ADMINISTER_HR_ORGWIDE: ['HR_ADMIN', 'SUPER_ADMIN', 'CEO'],
 	VIEW_TEAM: ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN', 'CEO'],
-	ADMINISTER_SYSTEM: ['SUPER_ADMIN'],
+	// #224: the CEO gained system administration. The irreversible half moved out to
+	// OVERRIDE_FINALIZED rather than following it.
+	ADMINISTER_SYSTEM: ['SUPER_ADMIN', 'CEO'],
+	OVERRIDE_FINALIZED: ['SUPER_ADMIN'],
 	MANAGE_USER_ROLES: ['CEO'],
 	APPROVE_REQUESTS: [
 		'MANAGER',
@@ -100,8 +103,9 @@ describe('capability table', () => {
 		}
 	})
 
-	// CEO's contract (#132): every capability HR_ADMIN holds, plus the exclusive
-	// role-changer — but NOT system administration (that stays Super Admin).
+	// CEO's contract (#132, widened by #224): every capability HR_ADMIN holds, plus the
+	// exclusive role-changer and system administration — but NOT the irreversible
+	// overrides, which stay Super Admin.
 	describe('CEO', () => {
 		it('holds every capability HR_ADMIN holds', () => {
 			for (const capability of Object.keys(CAPABILITIES) as (keyof typeof CAPABILITIES)[]) {
@@ -118,8 +122,18 @@ describe('capability table', () => {
 			}
 		})
 
-		it('does not administer the system', () => {
-			expect(can('CEO', 'ADMINISTER_SYSTEM')).toBe(false)
+		// Inverted by #224. This previously asserted `can('CEO','ADMINISTER_SYSTEM') === false`.
+		// That assertion was load-bearing for the wrong reason: while ADMINISTER_SYSTEM was Super
+		// Admin's alone it doubled as the guard on the irreversible operations (voiding a payroll
+		// run or period, reopening locked attendance days), so denying it to the CEO happened to
+		// enforce separation of duties. #224 grants the CEO the routine administration it always
+		// needed and splits the irreversible half into OVERRIDE_FINALIZED, which is what the
+		// separation actually depends on — so that is what this now pins.
+		it('administers the system but cannot override finalized records (#224)', () => {
+			expect(can('CEO', 'ADMINISTER_SYSTEM')).toBe(true)
+			expect(can('CEO', 'OVERRIDE_FINALIZED')).toBe(false)
+			expect(can('SUPER_ADMIN', 'ADMINISTER_SYSTEM')).toBe(true)
+			expect(can('SUPER_ADMIN', 'OVERRIDE_FINALIZED')).toBe(true)
 		})
 	})
 })

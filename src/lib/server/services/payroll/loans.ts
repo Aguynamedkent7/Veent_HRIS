@@ -2,6 +2,7 @@ import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import type { LoanStatus } from '@prisma/client'
+import { assertNotSelf, requireEmployee } from '../employee-access'
 import type { AuditContext } from '../types'
 
 /**
@@ -9,15 +10,6 @@ import type { AuditContext } from '../types'
  * lock, reverse on void) lives in the payroll engine + period lifecycle — this just maintains the
  * records HR sets up. All mutations are org-scoped and audited.
  */
-
-async function requireEmployee(employeeId: string, organizationId: string) {
-	const e = await db.employee.findFirst({
-		where: { id: employeeId, user: { organizationId } },
-		select: { id: true }
-	})
-	if (!e) error(404, 'Employee not found')
-	return e
-}
 
 export function listLoans(employeeId: string, organizationId: string) {
 	return db.loan.findMany({
@@ -39,7 +31,7 @@ export async function createLoan(
 	data: { type?: string; principal: number; installment: number },
 	ctx: AuditContext
 ) {
-	await requireEmployee(employeeId, organizationId)
+	assertNotSelf(ctx.actorId, await requireEmployee(employeeId, organizationId))
 	if (data.installment <= 0 || data.principal <= 0)
 		error(400, 'Principal and installment must be positive')
 
@@ -87,7 +79,7 @@ export async function createCashAdvance(
 	data: { amount: number; installment: number },
 	ctx: AuditContext
 ) {
-	await requireEmployee(employeeId, organizationId)
+	assertNotSelf(ctx.actorId, await requireEmployee(employeeId, organizationId))
 	if (data.installment <= 0 || data.amount <= 0)
 		error(400, 'Amount and installment must be positive')
 

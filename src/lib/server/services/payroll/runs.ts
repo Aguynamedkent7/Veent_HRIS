@@ -111,7 +111,7 @@ export async function approveRun(
 }
 
 export async function voidRun(id: string, organizationId: string, ctx: AuditContext) {
-	requireCapability(ctx.actorRole, 'ADMINISTER_SYSTEM')
+	requireCapability(ctx.actorRole, 'OVERRIDE_FINALIZED')
 
 	const run = await db.payrollRun.findFirst({ where: { id, organizationId } })
 	if (!run) error(404, 'Payroll run not found')

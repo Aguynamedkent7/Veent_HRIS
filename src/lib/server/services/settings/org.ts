@@ -195,6 +195,12 @@ export async function setUserRole(
 	newRole: Role,
 	ctx: AuditContext
 ) {
+	// GUARDRAIL: separation of duties — nobody sets their own role. This lived in the roles form
+	// action and again in the v1 PATCH twin, but never in this writer, so the protection was two
+	// copies of a rule the service itself did not know: a third caller would have inherited none of
+	// it. Enforced here, both routes are covered once and any future caller is covered by default.
+	if (userId === ctx.actorId) error(403, 'You cannot change your own role.')
+
 	// GUARDRAIL: user must belong to the same organization.
 	const existing = await db.user.findFirst({
 		where: { id: userId, organizationId }
@@ -228,6 +234,11 @@ export async function setUserActive(
 	isActive: boolean,
 	ctx: AuditContext
 ) {
+	// GUARDRAIL: as with setUserRole — nobody flips their own account. Blocks both directions, as
+	// the route check it replaces did; self-reactivation is unreachable anyway, since an inactive
+	// user cannot hold a session to make the call.
+	if (userId === ctx.actorId) error(403, 'You cannot deactivate your own account.')
+
 	const existing = await db.user.findFirst({
 		where: { id: userId, organizationId }
 	})

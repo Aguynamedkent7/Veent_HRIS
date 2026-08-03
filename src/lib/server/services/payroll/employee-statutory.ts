@@ -6,6 +6,7 @@ import { computePagibig, computePhilhealth, computeSSS } from './ph-statutory'
 import { getStatutoryRateConfig, statutoryRatesFromConfig } from './statutory-rates'
 import { monthlyBasisOf } from './types'
 import { q2 } from './money'
+import { assertNotSelf } from '../employee-access'
 import type { AuditContext } from '../types'
 
 /**
@@ -20,7 +21,7 @@ const CONTRIBUTIONS = ['SSS', 'PHILHEALTH', 'PAGIBIG'] as const satisfies Statut
 async function requireEmployee(employeeId: string, organizationId: string) {
 	const e = await db.employee.findFirst({
 		where: { id: employeeId, user: { organizationId } },
-		select: { id: true, basicMonthlySalary: true, rateType: true }
+		select: { id: true, userId: true, basicMonthlySalary: true, rateType: true }
 	})
 	if (!e) error(404, 'Employee not found')
 	return e
@@ -113,7 +114,7 @@ export async function setStatutoryExemption(
 	exempt: boolean,
 	ctx: AuditContext
 ) {
-	await requireEmployee(employeeId, organizationId)
+	assertNotSelf(ctx.actorId, await requireEmployee(employeeId, organizationId))
 	const row = await db.employeeStatutoryConfig.upsert({
 		where: { employeeId_contribution: { employeeId, contribution } },
 		create: { employeeId, contribution, exempt },
@@ -140,7 +141,7 @@ export async function setEmployerShareExternal(
 	external: boolean,
 	ctx: AuditContext
 ) {
-	await requireEmployee(employeeId, organizationId)
+	assertNotSelf(ctx.actorId, await requireEmployee(employeeId, organizationId))
 	const row = await db.employeeStatutoryConfig.upsert({
 		where: { employeeId_contribution: { employeeId, contribution } },
 		create: { employeeId, contribution, employerSharePaidExternally: external },
@@ -167,7 +168,7 @@ export async function setStatutoryAllocation(
 	allocation: StatutoryAllocation,
 	ctx: AuditContext
 ) {
-	await requireEmployee(employeeId, organizationId)
+	assertNotSelf(ctx.actorId, await requireEmployee(employeeId, organizationId))
 	const row = await db.employeeStatutoryConfig.upsert({
 		where: { employeeId_contribution: { employeeId, contribution } },
 		create: { employeeId, contribution, allocation },

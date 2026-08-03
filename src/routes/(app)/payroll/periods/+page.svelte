@@ -184,7 +184,7 @@
 								{#if run}
 									<a href="/payroll/{run.id}" class="btn-row">Detail</a>
 								{/if}
-								{#if data.isSuperAdmin && p.status !== 'VOIDED'}
+								{#if data.canVoid && p.status !== 'VOIDED'}
 									{@const voidG = guard(`${p.id}:void`)}
 									<form method="POST" action="?/void" use:enhance={voidG.enhance}>
 										<input type="hidden" name="id" value={p.id} />

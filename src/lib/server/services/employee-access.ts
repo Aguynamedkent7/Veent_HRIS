@@ -116,6 +116,38 @@ export async function listVisibleEmployeeIds(user: EmployeeAccessActor): Promise
 	return inOrg.map((e) => e.id)
 }
 
+export const SELF_ACTION_DENIED =
+	'You cannot record pay or employment changes on your own record — ask another admin to do it.'
+
+/**
+ * Separation of duties: nobody writes their own pay or employment terms.
+ *
+ * A different question from `canTouchEmployee`, which asks whether a record is in the actor's
+ * *scope* and deliberately answers yes to one's own file — and which HR_ADMIN / CEO / SUPER_ADMIN
+ * skip entirely via `ADMINISTER_HR_ORGWIDE`. So scope never blocked self-dealing, and because
+ * MANAGER ranks level with HR_ADMIN in `ROLE_HIERARCHY`, every `requireMinRole('HR_ADMIN')` writer
+ * on the 201 file was reachable by any manager against their own record.
+ *
+ * Enforced in the service, not the route, so the form action and the v1 API twin are covered by one
+ * check — the same placement `offboardEmployee` already uses for the self-offboard case.
+ */
+export function assertNotSelf(actorUserId: string, target: { userId: string }): void {
+	if (target.userId === actorUserId) error(403, SELF_ACTION_DENIED)
+}
+
+/**
+ * Org-scoped employee lookup returning just what `assertNotSelf` needs. Shared by the pay writers
+ * (earnings, deductions, loans), which each carried a byte-identical copy.
+ */
+export async function requireEmployee(employeeId: string, organizationId: string) {
+	const e = await db.employee.findFirst({
+		where: { id: employeeId, user: { organizationId } },
+		select: { id: true, userId: true }
+	})
+	if (!e) error(404, 'Employee not found')
+	return e
+}
+
 /** Throwing form for route guards. 403 — the record may well exist, the actor just can't have it. */
 export async function assertCanTouchEmployee(
 	user: EmployeeAccessActor,

@@ -3,6 +3,7 @@ import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import { D, q2n, type MoneyLike } from './money'
 import { type PayComponent } from './types'
+import { assertNotSelf, requireEmployee } from '../employee-access'
 import type { AuditContext } from '../types'
 
 /**
@@ -12,15 +13,6 @@ import type { AuditContext } from '../types'
  * computed automatically and assigning them would double-deduct. All mutations are org-scoped
  * and audited.
  */
-
-async function requireEmployee(employeeId: string, organizationId: string) {
-	const e = await db.employee.findFirst({
-		where: { id: employeeId, user: { organizationId } },
-		select: { id: true }
-	})
-	if (!e) error(404, 'Employee not found')
-	return e
-}
 
 export function listEmployeeDeductions(employeeId: string) {
 	return db.employeeDeduction.findMany({
@@ -36,7 +28,7 @@ export async function createEmployeeDeduction(
 	data: { deductionTypeId: string; label?: string; monthlyAmount: number },
 	ctx: AuditContext
 ) {
-	await requireEmployee(employeeId, organizationId)
+	assertNotSelf(ctx.actorId, await requireEmployee(employeeId, organizationId))
 	if (data.monthlyAmount <= 0) error(400, 'Monthly amount must be positive')
 
 	const type = await db.deductionType.findFirst({
@@ -66,9 +58,13 @@ export async function createEmployeeDeduction(
 // Deactivate instead of delete so already-generated payslips keep their context.
 export async function endEmployeeDeduction(id: string, organizationId: string, ctx: AuditContext) {
 	const deduction = await db.employeeDeduction.findFirst({
-		where: { id, employee: { user: { organizationId } } }
+		where: { id, employee: { user: { organizationId } } },
+		include: { employee: { select: { userId: true } } }
 	})
 	if (!deduction) error(404, 'Recurring deduction not found')
+	// Ending one's own deduction cancels one's own repayment — the same self-dealing as granting a
+	// raise, so it is guarded even though creating a deduction only ever costs the actor money.
+	assertNotSelf(ctx.actorId, deduction.employee)
 	if (!deduction.isActive) error(409, 'Recurring deduction is already ended')
 
 	const updated = await db.employeeDeduction.update({ where: { id }, data: { isActive: false } })
