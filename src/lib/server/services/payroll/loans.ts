@@ -41,8 +41,12 @@ async function assertMayWriteLoan(
 	// legitimately carries no roles.
 	const actorRoles = ctx.actorRoles?.length ? ctx.actorRoles : [ctx.actorRole]
 	if (!canAny(actorRoles, 'VIEW_PAY_ORGWIDE')) {
+		// ponytail: `roles` is a no-op here today — the arm above already admits every
+		// ADMINISTER_HR_ORGWIDE holder, so the delegation can only ever see an actor who holds
+		// neither capability. Passed anyway so reordering the two arms cannot silently reintroduce
+		// the single-role bug.
 		await assertCanTouchEmployee(
-			{ id: ctx.actorId, role: ctx.actorRole, organizationId },
+			{ id: ctx.actorId, role: ctx.actorRole, roles: actorRoles, organizationId },
 			employeeId
 		)
 	}

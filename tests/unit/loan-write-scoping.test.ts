@@ -78,10 +78,11 @@ beforeEach(() => {
 
 describe('the capability containment the loan guard depends on', () => {
 	/**
-	 * `assertCanTouchEmployee` is called with a single `role` even where the full set is available.
-	 * Safe only because every `ADMINISTER_HR_ORGWIDE` holder is admitted by the `VIEW_PAY_ORGWIDE`
-	 * arm BEFORE the delegation, so the single-role short-circuit can never decide the answer. Same
-	 * containment `payslip-access.test.ts` pins, relied on again here.
+	 * `assertCanTouchEmployee` now receives the full role set (#247), so this no longer licenses a
+	 * single-role delegation. What it still pins is the ORDER of `assertMayWriteLoan`'s two arms:
+	 * the capability check runs first, and if `VIEW_PAY_ORGWIDE` ever stopped containing
+	 * `ADMINISTER_HR_ORGWIDE`, an org-wide HR holder would fall through to a reporting-line check
+	 * they may not satisfy. Same containment `payslip-access.test.ts` pins, relied on again here.
 	 */
 	it('VIEW_PAY_ORGWIDE contains every ADMINISTER_HR_ORGWIDE holder', () => {
 		for (const role of CAPABILITIES.ADMINISTER_HR_ORGWIDE) {

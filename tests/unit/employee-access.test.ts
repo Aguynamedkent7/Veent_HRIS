@@ -25,7 +25,8 @@ vi.mock('$lib/server/services/supervisors', () => ({ listReportIdsFor }))
 const { canTouchEmployee, assertCanTouchEmployee, listVisibleEmployeeIds } =
 	await import('$lib/server/services/employee-access')
 
-const actor = (role: Role) => ({ id: 'user1', role, organizationId: 'org1' })
+/** `roles` omitted leaves it undefined, so the fallback reproduces the single-role rule exactly. */
+const actor = (role: Role, roles?: Role[]) => ({ id: 'user1', role, roles, organizationId: 'org1' })
 /** The manager's own employee record. */
 const SELF = { id: 'mgr-emp' }
 
@@ -201,5 +202,56 @@ describe('assertCanTouchEmployee (#228)', () => {
 	it('resolves quietly for an allowed pairing', async () => {
 		listReportIdsFor.mockResolvedValue(['report1'])
 		await expect(assertCanTouchEmployee(actor('MANAGER'), 'report1')).resolves.toBeUndefined()
+	})
+})
+
+/**
+ * #247 — both functions read the FULL role set, not just the primary one.
+ *
+ * `can(user.role, 'ADMINISTER_HR_ORGWIDE')` saw only the primary role, so a [MANAGER, HR_ADMIN]
+ * user — org-wide HR on their second role — was scoped to a reporting line and denied 201 files and
+ * roster rows they are entitled to. Fail-closed, so nobody gained reach; they simply lost it.
+ *
+ * This is the one fail-OPEN change in #247, which is why each case asserts BOTH halves: the
+ * single-role actor must still be refused. The trust source is unchanged — `User.roles`, the same
+ * column `auth.ts` already reads, and `MANAGE_USER_ROLES` is CEO-only, so nobody can widen
+ * themselves.
+ */
+describe('the full role set decides, not the primary role (#247)', () => {
+	it('canTouchEmployee: admits [MANAGER, HR_ADMIN] on a stranger, refuses a bare [MANAGER]', async () => {
+		expect(await canTouchEmployee(actor('MANAGER', ['MANAGER', 'HR_ADMIN']), 'stranger')).toBe(true)
+		// Admitted BY THE CAPABILITY, not by accident of the fixtures: the org-wide arm returns
+		// before any team is looked up. Asserted first, on untouched mocks — without it, a mutation
+		// returning true unconditionally would also pass.
+		expect(dbMock.employee.findUnique).not.toHaveBeenCalled()
+
+		expect(await canTouchEmployee(actor('MANAGER', ['MANAGER']), 'stranger')).toBe(false)
+	})
+
+	it('listVisibleEmployeeIds: unrestricted for [MANAGER, HR_ADMIN], scoped for a bare [MANAGER]', async () => {
+		expect(await listVisibleEmployeeIds(actor('MANAGER', ['MANAGER']))).toEqual([SELF.id])
+
+		expect(await listVisibleEmployeeIds(actor('MANAGER', ['MANAGER', 'HR_ADMIN']))).toBeNull()
+	})
+
+	/**
+	 * The lockstep invariant, which the single-role version of this test could not catch: widening
+	 * one function and not the other leaves a roster that hides people whose 201 files open fine.
+	 * `null` is the unrestricted contract, so the assertion is that contract — anyone is reachable.
+	 */
+	it('the two stay in step for a multi-role actor', async () => {
+		const multi = actor('MANAGER', ['MANAGER', 'HR_ADMIN'])
+		expect(await listVisibleEmployeeIds(multi)).toBeNull()
+		expect(await canTouchEmployee(multi, 'anyone-at-all')).toBe(true)
+	})
+
+	it('assertCanTouchEmployee surfaces it through the throwing wrapper', async () => {
+		await expect(
+			assertCanTouchEmployee(actor('MANAGER', ['MANAGER']), 'stranger')
+		).rejects.toMatchObject({ status: 403 })
+
+		await expect(
+			assertCanTouchEmployee(actor('MANAGER', ['MANAGER', 'HR_ADMIN']), 'stranger')
+		).resolves.toBeUndefined()
 	})
 })
