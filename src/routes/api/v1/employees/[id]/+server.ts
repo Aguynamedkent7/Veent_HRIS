@@ -5,6 +5,7 @@ import {
 	updateEmployee,
 	offboardEmployee,
 	promoteEmployee,
+	AWAITING_CONFIRMATION,
 	NO_CHANGE_MESSAGE,
 	NO_CHANGE_STATUS
 } from '$lib/server/services/employees'
@@ -118,21 +119,26 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 				return apiError(400, RATE_BASIS_MISMATCH)
 			}
 		}
-		if (Object.keys(rest).length > 0) {
-			await updateEmployee(params.id, locals.user.organizationId, rest, ctx)
-		}
+		// #224 Part 2 / #243: set when the pay change was filed for confirmation instead of applied.
+		//
+		// Runs BEFORE updateEmployee for the same reason as the pairing pre-check above, which the
+		// pre-check alone no longer covers: promoteEmployee can now refuse for reasons that have
+		// nothing to do with the values (a 409 when no one in the org could confirm the proposal).
+		// Committing `rest` first would leave those rejections half-applied. Neither writer reads the
+		// other's fields, so the order is free.
+		let proposalId: string | undefined
 		if (
 			basicMonthlySalary !== undefined ||
 			rateType !== undefined ||
 			employmentType !== undefined
 		) {
 			try {
-				await promoteEmployee(
+				;({ proposalId } = await promoteEmployee(
 					params.id,
 					locals.user.organizationId,
 					{ basicMonthlySalary, rateType, employmentType, effectiveDate: new Date() },
 					ctx
-				)
+				))
 			} catch (e: unknown) {
 				// A PATCH resending the current salary/pay type/employment type is a no-op, not a failure —
 				// swallow only the writer's "no change" 400 and let the (unchanged) record be returned. Any
@@ -143,15 +149,26 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 				}
 			}
 		}
+		if (Object.keys(rest).length > 0) {
+			await updateEmployee(params.id, locals.user.organizationId, rest, ctx)
+		}
 		// #111: re-fetch masked so the response reflects the new salary, never the pre-change record.
 		const employee = await getEmployee(params.id, locals.user.organizationId, {
 			viewerRole: locals.user.role
 		})
+		// 202, not 200: the pay change is on file awaiting a second authorized person, so `data` does
+		// NOT yet reflect it. Returning 200 would tell the caller their raise landed when it has not.
+		// Any non-pay fields in the same PATCH did apply — they are not routed through proposals.
+		if (proposalId) {
+			return json({ data: employee, proposalId, notice: AWAITING_CONFIRMATION }, { status: 202 })
+		}
 		return json({ data: employee })
 	} catch (e: unknown) {
 		const err = e as { status?: number; body?: { message?: string } }
 		if (err?.status === 404) return apiError(404, 'Employee not found')
 		if (err?.status === 400) return apiError(400, err.body?.message ?? 'Bad request')
+		// createProposal refuses up front when nobody else in the org could ever confirm it.
+		if (err?.status === 409) return apiError(409, err.body?.message ?? 'Conflict')
 		throw e
 	}
 }

@@ -279,53 +279,54 @@ enum DayType {
 // ─── Organization ─────────────────────────────────────────────────────────────
 
 model Organization {
-  id           String   @id @default(cuid())
-  name         String   @db.VarChar(200)
-  logoUrl      String?
+  id                   String   @id @default(cuid())
+  name                 String   @db.VarChar(200)
+  logoUrl              String?
   // Per-tenant brand colour as a raw HSL triple ("H S% L%", e.g. "142 71% 42%") so it can
   // be injected straight into the `--primary`/`--ring` CSS variables. Null → default palette.
-  themePrimary String?
-  address      String?
+  themePrimary         String?
+  address              String?
   // Company Discord server invite link (#186). When set, onboarding emails new hires an
   // invitation; null (most tenants) skips it. Only Veent has adopted Discord so far.
-  discordInviteUrl String?
+  discordInviteUrl     String?
   // Prefix for generated employee numbers ("EMP" → EMP-015). Per-org because the branches
   // number their staff separately: JoJo Potato uses JJ, Sweetleaf SL. The default backfills
   // existing rows and keeps Veent on EMP.
-  employeeNumberPrefix String @default("EMP") @db.VarChar(8)
+  employeeNumberPrefix String   @default("EMP") @db.VarChar(8)
   // Master switch for schedule-based tardiness (#190). Off → no employee is ever marked LATE,
   // company-wide; ANDs with each WorkSchedule.trackTardiness. Default keeps current behavior.
-  trackTardiness Boolean @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  trackTardiness       Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
-  departments              Department[]
-  users                    User[]
-  memberships              UserOrganization[]
-  leaveTypes               LeaveType[]
-  payrollConfig            PayrollConfig?
-  payrollRuns              PayrollRun[]
-  jobPostings              JobPosting[]
-  publicHolidays           PublicHoliday[]
-  auditLogs                AuditLog[]
-  benefitPlans             BenefitPlan[]
-  reviewCycles             ReviewCycle[]
-  positions                Position[]
-  payrollPeriods           PayrollPeriod[]
-  earningTypes             EarningType[]
-  deductionTypes           DeductionType[]
-  payRateRule              PayRateRule?
-  statutoryRateConfig      StatutoryRateConfig?
-  statutoryRateProposals   StatutoryRateProposal[]
-  workSchedules            WorkSchedule[]
-  salaryGrades             SalaryGrade[]
-  announcements            Announcement[]
-  onboardingChecklistItems OnboardingChecklistItem[]
+  departments               Department[]
+  users                     User[]
+  memberships               UserOrganization[]
+  leaveTypes                LeaveType[]
+  payrollConfig             PayrollConfig?
+  payrollRuns               PayrollRun[]
+  jobPostings               JobPosting[]
+  publicHolidays            PublicHoliday[]
+  auditLogs                 AuditLog[]
+  benefitPlans              BenefitPlan[]
+  reviewCycles              ReviewCycle[]
+  positions                 Position[]
+  payrollPeriods            PayrollPeriod[]
+  earningTypes              EarningType[]
+  deductionTypes            DeductionType[]
+  payRateRule               PayRateRule?
+  statutoryRateConfig       StatutoryRateConfig?
+  statutoryRateProposals    StatutoryRateProposal[]
+  actionProposals           ActionProposal[]
+  workSchedules             WorkSchedule[]
+  salaryGrades              SalaryGrade[]
+  announcements             Announcement[]
+  onboardingChecklistItems  OnboardingChecklistItem[]
   offboardingChecklistItems OffboardingChecklistItem[]
-  postingApprovers         PostingApprover[]
-  jobBoards                JobBoard[]
-  inventoryItems           InventoryItem[]
-  branches                 Branch[]
+  postingApprovers          PostingApprover[]
+  jobBoards                 JobBoard[]
+  inventoryItems            InventoryItem[]
+  branches                  Branch[]
 
   @@map("organizations")
 }
@@ -454,11 +455,11 @@ model Employee {
   createdAt                DateTime         @default(now())
   updatedAt                DateTime         @updatedAt
 
-  user                  User                   @relation(fields: [userId], references: [id])
-  department            Department             @relation(fields: [departmentId], references: [id])
-  position              Position?              @relation(fields: [positionId], references: [id])
-  reportsTo             Employee?              @relation("EmployeeHierarchy", fields: [reportsToId], references: [id])
-  directReports         Employee[]             @relation("EmployeeHierarchy")
+  user                  User                      @relation(fields: [userId], references: [id])
+  department            Department                @relation(fields: [departmentId], references: [id])
+  position              Position?                 @relation(fields: [positionId], references: [id])
+  reportsTo             Employee?                 @relation("EmployeeHierarchy", fields: [reportsToId], references: [id])
+  directReports         Employee[]                @relation("EmployeeHierarchy")
   timesheets            Timesheet[]
   timeLogs              TimeLog[]
   leaveBalances         LeaveBalance[]
@@ -466,10 +467,10 @@ model Employee {
   requests              Request[]
   documents             EmployeeDocument[]
   payrollEntries        PayrollEntry[]
-  convertedApplicant    Applicant?             @relation("ConvertedEmployee")
+  convertedApplicant    Applicant?                @relation("ConvertedEmployee")
   benefitEnrollments    BenefitEnrollment[]
-  performanceReviews    PerformanceReview[]    @relation("ReviewSubject")
-  reviewsGiven          PerformanceReview[]    @relation("Reviewer")
+  performanceReviews    PerformanceReview[]       @relation("ReviewSubject")
+  reviewsGiven          PerformanceReview[]       @relation("Reviewer")
   goals                 Goal[]
   loans                 Loan[]
   cashAdvances          CashAdvance[]
@@ -478,14 +479,15 @@ model Employee {
   statutoryConfig       EmployeeStatutoryConfig[]
   compensationHistory   EmployeeCompensation[]
   employmentTypeHistory EmployeeEmploymentType[]
-  workSchedule          WorkSchedule?          @relation(fields: [workScheduleId], references: [id])
+  actionProposals       ActionProposal[]
+  workSchedule          WorkSchedule?             @relation(fields: [workScheduleId], references: [id])
   attendanceDays        AttendanceDay[]
   separations           SeparationRecord[]
   emergencyContacts     EmergencyContact[]
   onboardingCompletions OnboardingCompletion[]
   assignedInventory     InventoryItem[]
-  branch                Branch?                @relation("BranchRoster", fields: [branchId], references: [id], onDelete: SetNull)
-  managedBranches       Branch[]               @relation("BranchManager")
+  branch                Branch?                   @relation("BranchRoster", fields: [branchId], references: [id], onDelete: SetNull)
+  managedBranches       Branch[]                  @relation("BranchManager")
 
   @@unique([organizationId, employeeNumber])
   @@index([organizationId, branchId])
@@ -586,18 +588,18 @@ enum StatutoryAllocation {
 }
 
 model EmployeeStatutoryConfig {
-  id           String                @id @default(cuid())
-  employeeId   String
-  contribution StatutoryContribution
-  exempt       Boolean               @default(false)
+  id                          String                @id @default(cuid())
+  employeeId                  String
+  contribution                StatutoryContribution
+  exempt                      Boolean               @default(false)
   // #173 (Feature C): employer share is remitted elsewhere (e.g. primary employer / dual
   // employment) — zero the ER share only; the EE share is still deducted. Independent of `exempt`.
-  employerSharePaidExternally Boolean @default(false)
+  employerSharePaidExternally Boolean               @default(false)
   // #173 (Feature E): per-employee EE-share cutoff choice. Default EVEN = today's behaviour.
-  allocation   StatutoryAllocation   @default(EVEN)
-  createdAt    DateTime              @default(now())
-  updatedAt    DateTime              @updatedAt
-  employee     Employee              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  allocation                  StatutoryAllocation   @default(EVEN)
+  createdAt                   DateTime              @default(now())
+  updatedAt                   DateTime              @updatedAt
+  employee                    Employee              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([employeeId, contribution])
   @@map("employee_statutory_config")
@@ -1030,17 +1032,17 @@ model PublicHoliday {
 // ─── Payroll ──────────────────────────────────────────────────────────────────
 
 model PayrollConfig {
-  id                String       @id @default(cuid())
-  organizationId    String       @unique
-  payFrequency      PayFrequency @default(SEMI_MONTHLY)
-  firstCutoff       Int?
-  secondCutoff      Int?
-  sssTable          Json
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  payFrequency   PayFrequency @default(SEMI_MONTHLY)
+  firstCutoff    Int?
+  secondCutoff   Int?
+  sssTable       Json
   // #220: statutory RATE fields removed — StatutoryRateConfig is now the authoritative,
   // seeded source of PhilHealth/Pag-IBIG/SSS/BIR figures. This config keeps only frequency,
   // cutoffs, and the (legacy, unused-by-engine) sssTable/birTaxTable placeholders.
-  birTaxTable       Json
-  updatedAt         DateTime     @updatedAt
+  birTaxTable    Json
+  updatedAt      DateTime     @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id])
 
@@ -1103,22 +1105,22 @@ model PayrollEntry {
 // ─── Recruitment ──────────────────────────────────────────────────────────────
 
 model JobPosting {
-  id             String           @id @default(cuid())
-  organizationId String
-  departmentId   String
-  title          String
-  description    String           @db.Text
-  status         JobPostingStatus @default(DRAFT)
-  postedAt       DateTime?
-  closedAt       DateTime?
-  createdById    String
+  id              String           @id @default(cuid())
+  organizationId  String
+  departmentId    String
+  title           String
+  description     String           @db.Text
+  status          JobPostingStatus @default(DRAFT)
+  postedAt        DateTime?
+  closedAt        DateTime?
+  createdById     String
   // Approval trail (#195): who submitted for approval, who approved, and the reason a
   // posting was sent back to draft. All null on a fresh draft.
-  submittedById  String?
-  approvedById   String?
+  submittedById   String?
+  approvedById    String?
   rejectionReason String?
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   organization Organization        @relation(fields: [organizationId], references: [id])
   department   Department          @relation(fields: [departmentId], references: [id])
@@ -1711,6 +1713,44 @@ model StatutoryRateProposal {
 
   @@index([organizationId, status])
   @@map("statutory_rate_proposals")
+}
+
+// ─── Action Proposals (#224 Part 2 / #243) ────────────────────────────────────
+// Separation of duties for pay writes that must not be unilateral: the initiator files a PENDING
+// proposal and a *different* qualified user applies it. Generalizes StatutoryRateProposal, which
+// models only two parties (proposer, decider) — here the TARGET is a third, because the same table
+// carries both a CEO proposing for themselves (#224) and a manager proposing for a report (#243).
+// Who may confirm is derived from that distinction, not stored: see `confirmerCapabilityFor`.
+model ActionProposal {
+  id               String               @id @default(cuid())
+  organizationId   String
+  initiatorId      String // User.id who filed it
+  targetEmployeeId String // Employee.id the change lands on
+  domain           ProposalDomain
+  payload          Json // the writer's own input object, re-validated at apply time
+  status           ActionProposalStatus @default(PENDING)
+  decidedById      String?
+  decidedAt        DateTime?
+  decisionNote     String? // required on reject, so the initiator knows what to fix
+  createdAt        DateTime             @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  target       Employee     @relation(fields: [targetEmployeeId], references: [id])
+
+  @@index([organizationId, status])
+  @@index([targetEmployeeId])
+  @@map("action_proposals")
+}
+
+enum ProposalDomain {
+  COMPENSATION
+  PROMOTION
+}
+
+enum ActionProposalStatus {
+  PENDING
+  APPLIED
+  REJECTED
 }
 
 model Loan {

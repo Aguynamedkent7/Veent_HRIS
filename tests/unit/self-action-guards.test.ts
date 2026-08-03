@@ -12,6 +12,12 @@ import type { AuditContext } from '$lib/server/services/types'
  *
  * The guard sits in each service so the form action and the v1 API twin are covered by one check.
  * DB and audit are mocked: only the guard is under test, not what happens after it.
+ *
+ * #224 Part 2 / #243 moved TWO of these writers off the hard 403: `recordCompensationChange` and
+ * `promoteEmployee` now file a proposal for a second authorized person to confirm, because a CEO
+ * with nobody above them could otherwise never record their own contractual raise. Their cases live
+ * in `pay-proposal-routing.test.ts`. Everything still listed here keeps the hard 403 deliberately —
+ * a proposal path on role or account changes would be a privilege-escalation surface.
  */
 
 const { dbMock } = vi.hoisted(() => ({
@@ -38,8 +44,7 @@ vi.mock('$lib/server/services/notifications', () => ({
 }))
 
 const { SELF_ACTION_DENIED } = await import('$lib/server/services/employee-access')
-const { updateEmployee, recordCompensationChange, promoteEmployee } =
-	await import('$lib/server/services/employees')
+const { updateEmployee } = await import('$lib/server/services/employees')
 const { createLoan, createCashAdvance } = await import('$lib/server/services/payroll/loans')
 const { createEmployeeEarning, endEmployeeEarning } =
 	await import('$lib/server/services/payroll/employee-earnings')
@@ -93,27 +98,8 @@ async function clearsGuard(fn: () => Promise<unknown>) {
 	})
 }
 
-describe('compensation and employment writers refuse the actor’s own record', () => {
+describe('employment-terms writers refuse the actor’s own record', () => {
 	beforeEach(() => dbMock.employee.findFirst.mockResolvedValue(own))
-
-	it('recordCompensationChange — no recording your own raise', async () => {
-		await refusesSelf(() =>
-			recordCompensationChange(
-				'emp-self',
-				'org1',
-				{ basicMonthlySalary: 99000, effectiveDate: EFF },
-				CTX
-			)
-		)
-		expect(dbMock.employeeCompensation.create).not.toHaveBeenCalled()
-	})
-
-	it('promoteEmployee — no promoting yourself', async () => {
-		await refusesSelf(() =>
-			promoteEmployee('emp-self', 'org1', { effectiveDate: EFF, jobTitle: 'CFO' }, CTX)
-		)
-		expect(dbMock.$transaction).not.toHaveBeenCalled()
-	})
 
 	it('updateEmployee — no setting your own title, department, status or end date', async () => {
 		for (const terms of [
@@ -232,14 +218,6 @@ describe('the same writers still work on somebody else', () => {
 		await clearsGuard(() => endEmployeeEarning('ee1', 'org1', CTX))
 		await clearsGuard(() => setStatutoryExemption('emp-other', 'org1', 'SSS', true, CTX))
 		await clearsGuard(() => updateEmployee('emp-other', 'org1', { jobTitle: 'CFO' }, CTX))
-		await clearsGuard(() =>
-			recordCompensationChange(
-				'emp-other',
-				'org1',
-				{ basicMonthlySalary: 99000, effectiveDate: EFF },
-				CTX
-			)
-		)
 
 		expect(dbMock.loan.create).toHaveBeenCalled()
 		expect(dbMock.employeeStatutoryConfig.upsert).toHaveBeenCalled()
