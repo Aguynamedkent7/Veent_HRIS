@@ -33,11 +33,15 @@ vi.mock('$lib/server/db', () => ({ db: dbMock }))
 vi.mock('$lib/server/audit', () => ({ writeAuditLog: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('bcrypt', () => ({ default: { hash: vi.fn().mockResolvedValue('hashed') } }))
 vi.mock('$lib/server/services/action-proposals', () => ({
-	createProposal: vi.fn().mockResolvedValue({ id: 'prop-1' })
+	createProposal: vi.fn().mockResolvedValue({ id: 'prop-1' }),
+	// Imported by employees.ts for the audited reveal. Unused here, but a factory mock replaces the
+	// whole module, so omitting it makes the import undefined rather than absent.
+	assertMayConfirmProposal: vi.fn()
 }))
 
 const { PATCH } = await import('../../src/routes/api/v1/employees/[id]/+server')
 const { AWAITING_CONFIRMATION } = await import('$lib/server/services/employees')
+const { createProposal } = await import('$lib/server/services/action-proposals')
 
 const HR_USER = { id: 'u1', organizationId: 'org1', role: 'HR_ADMIN' as Role }
 
@@ -152,5 +156,23 @@ describe('PATCH /api/v1/employees/[id] — a routed pay change answers 202', () 
 		// must not be 200.
 		expect(txMock.employeeCompensation.create).not.toHaveBeenCalled()
 		assertNoBarePayWrite()
+	})
+
+	/**
+	 * The pay writer runs BEFORE the non-pay one. It can now refuse for reasons the value pre-check
+	 * cannot see — a 409 when nobody in the org could confirm the proposal, a 403 from the
+	 * object-level guard — and the two writers are separate transactions. In the old order those
+	 * rejections left the non-pay fields of the same PATCH committed: a half-applied request that
+	 * answered with an error.
+	 */
+	it('leaves non-pay fields untouched when the pay half is refused', async () => {
+		vi.mocked(createProposal).mockRejectedValueOnce(
+			Object.assign(new Error('no confirmer'), { status: 409, body: { message: 'no confirmer' } })
+		)
+
+		const res = await patch({ basicMonthlySalary: 50000, jobTitle: 'Team Lead' })
+
+		expect(res.status).toBe(409)
+		expect(dbMock.employee.update).not.toHaveBeenCalled()
 	})
 })

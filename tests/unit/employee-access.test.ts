@@ -127,11 +127,11 @@ describe('canTouchEmployee (#228)', () => {
 })
 
 /**
- * #232 — the roster list. `requireMinRole('HR_ADMIN')` gated both the page and its offboard
+ * #234 — the roster list. `requireMinRole('HR_ADMIN')` gated both the page and its offboard
  * action, and MANAGER clears that floor (#133), so every manager saw the whole tenant and could
  * offboard anyone in it. Same dead-guard shape as #228, one file over.
  */
-describe('listVisibleEmployeeIds (#232)', () => {
+describe('listVisibleEmployeeIds (#234)', () => {
 	it('returns null — unrestricted — for the org-wide roles, without querying', async () => {
 		for (const role of ['HR_ADMIN', 'CEO', 'SUPER_ADMIN'] as const) {
 			expect(await listVisibleEmployeeIds(actor(role))).toBeNull()

@@ -138,7 +138,7 @@ interface EmployeeListFilters {
 	departmentId?: string
 	branchId?: string
 	search?: string
-	// #232: restrict the roster to a set of ids — a MANAGER sees only their own team and the
+	// #234: restrict the roster to a set of ids — a MANAGER sees only their own team and the
 	// branches they manage. `undefined` means unrestricted (HR/CEO/Super-Admin); an empty array
 	// means "nobody", which is the correct answer for a manager with no reports, not "everybody".
 	ids?: string[]
@@ -1062,17 +1062,26 @@ export async function promoteEmployee(
 	return { notice }
 }
 
-/** Union of both writers' inputs — the promotion input is a superset of the compensation one. */
-export const proposalPayloadSchema = z.object({
-	effectiveDate: z.coerce.date(),
-	basicMonthlySalary: z.number().optional(),
-	rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
-	employmentType: z.enum(EMPLOYMENT_TYPES).optional(),
-	positionId: z.string().nullable().optional(),
-	jobTitle: z.string().optional(),
-	reportsToId: z.string().optional(),
-	note: z.string().optional()
-})
+/**
+ * Union of both writers' inputs — the promotion input is a superset of the compensation one.
+ *
+ * `.strict()` so the two cannot drift apart silently: a field added to `PromoteEmployeeInput` and
+ * not to this schema would otherwise be stripped at apply time, and the proposal would apply a
+ * QUIETER change than the one that was reviewed. Strict turns that into a 400 that rolls the claim
+ * back and leaves the row PENDING — loud, and recoverable.
+ */
+export const proposalPayloadSchema = z
+	.object({
+		effectiveDate: z.coerce.date(),
+		basicMonthlySalary: z.number().optional(),
+		rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
+		employmentType: z.enum(EMPLOYMENT_TYPES).optional(),
+		positionId: z.string().nullable().optional(),
+		jobTitle: z.string().optional(),
+		reportsToId: z.string().optional(),
+		note: z.string().optional()
+	})
+	.strict()
 
 /**
  * The `apply` callback for `confirmProposal` — re-enters the writer that filed the proposal, on the
@@ -1106,10 +1115,15 @@ export async function applyProposedChange(
 			ctx,
 			{ confirmTx: tx }
 		)
-	} else {
+	} else if (proposal.domain === 'PROMOTION') {
 		await promoteEmployee(proposal.targetEmployeeId, organizationId, payload, ctx, {
 			confirmTx: tx
 		})
+	} else {
+		// Named, not a catch-all: a third ProposalDomain routed here by default would be applied as a
+		// promotion — the wrong writer, on a pay record, silently. Throwing keeps a new domain
+		// unconfirmable until someone wires it up deliberately.
+		error(400, `Unsupported proposal domain: ${proposal.domain}`)
 	}
 }
 
@@ -1129,7 +1143,7 @@ export async function revealProposalAmount(
 	organizationId: string,
 	proposalId: string,
 	ctx: AuditContext
-): Promise<{ current: Prisma.Decimal | null; proposed: number | null }> {
+): Promise<{ current: number | null; proposed: number | null }> {
 	const proposal = await assertMayConfirmProposal(organizationId, proposalId, ctx)
 	const employee = await revealEmployeeSensitive(proposal.targetEmployeeId, organizationId, ctx, {
 		audit: true
@@ -1138,7 +1152,9 @@ export async function revealProposalAmount(
 	// so a parse failure reveals the current figure and no proposed one rather than 500ing.
 	const parsed = proposalPayloadSchema.safeParse(proposal.payload)
 	return {
-		current: employee.basicMonthlySalary,
+		// A number, matching `proposed` — this is a form-action payload, and the two figures are
+		// rendered side by side, so returning one as a Prisma.Decimal makes the client coerce.
+		current: employee.basicMonthlySalary?.toNumber() ?? null,
 		proposed: parsed.success ? (parsed.data.basicMonthlySalary ?? null) : null
 	}
 }

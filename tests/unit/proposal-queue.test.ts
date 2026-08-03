@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { Role } from '@prisma/client'
+import { Prisma, type Role } from '@prisma/client'
 
 /**
  * #224 Part 2 / #243 — the review surface at `/requests/proposals`.
@@ -180,6 +180,21 @@ describe('what the page hands to the client', () => {
 		const data = await loadPage({ id: HR, role: 'HR_ADMIN' })
 		expect(data.proposals[0].initiator).toBe('Reyes, Ana')
 	})
+
+	/**
+	 * A payload that no longer parses — a schema tightened under a row that was already PENDING — must
+	 * still reach the page. Dropping it would strand the proposal: it cannot be confirmed (apply
+	 * re-parses and throws) and nobody could see it to reject it. So the row stays, flagged, with
+	 * nothing claimed about its contents.
+	 */
+	it('keeps a proposal whose payload no longer parses, flagged and empty', async () => {
+		dbMock.actionProposal.findMany.mockResolvedValue([
+			{ ...onBehalf, payload: { effectiveDate: 'not-a-date' }, createdAt: new Date(), target: crew }
+		])
+		const data = await loadPage({ id: HR, role: 'HR_ADMIN' })
+		expect(data.proposals).toHaveLength(1)
+		expect(data.proposals[0]).toMatchObject({ unreadable: true, hasAmount: false, changes: [] })
+	})
 })
 
 describe('?/confirm', () => {
@@ -319,12 +334,18 @@ describe('?/revealAmount', () => {
 	 * `revealEmployeeSensitive` writes — a bespoke audit line inside the proposal service would be a
 	 * second masking pattern, free to drift from SENSITIVE_FIELDS.
 	 */
-	it('returns both figures and audits the read as a VIEW on the employee', async () => {
-		dbMock.employee.findFirst.mockResolvedValue({ id: CREW_EMP, basicMonthlySalary: 30000 })
+	it('returns both figures as numbers and audits the read as a VIEW on the employee', async () => {
+		// A Decimal, as Prisma actually returns it — the action serializes it to a number so the two
+		// figures it renders side by side are the same type.
+		dbMock.employee.findFirst.mockResolvedValue({
+			id: CREW_EMP,
+			basicMonthlySalary: new Prisma.Decimal(30000)
+		})
 		const res = await actions.revealAmount!(
 			event({ id: HR, role: 'HR_ADMIN' }, { proposalId: 'p1' })
 		)
 		expect(res).toMatchObject({ revealedId: 'p1', amounts: { current: 30000, proposed: 45000 } })
+		expect(typeof (res as { amounts: { current: unknown } }).amounts.current).toBe('number')
 		expect(writeAuditLog).toHaveBeenCalledWith(
 			expect.objectContaining({ actorId: HR }),
 			expect.objectContaining({

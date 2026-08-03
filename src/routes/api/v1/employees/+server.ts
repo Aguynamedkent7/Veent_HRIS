@@ -17,7 +17,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	const search = url.searchParams.get('search') ?? undefined
 	const departmentId = url.searchParams.get('departmentId') ?? undefined
 
-	// #232: same scoping as the roster page. This endpoint is explicitly reachable at MANAGER,
+	// #234: same scoping as the roster page. This endpoint is explicitly reachable at MANAGER,
 	// so leaving it unfiltered would hand back through the API exactly the org-wide list the page
 	// no longer renders.
 	const visibleIds = await listVisibleEmployeeIds(locals.user)

@@ -299,18 +299,37 @@ describe('filing a proposal', () => {
 		expect(JSON.stringify(entry.newValue)).not.toContain('987654')
 	})
 
+	const whereUsed = async (targetUserId: string) => {
+		dbMock.user.findMany.mockClear()
+		await createProposal(
+			'org1',
+			{ targetEmployeeId: TARGET_EMP, targetUserId, domain: 'COMPENSATION', payload: {} },
+			ctxOf({ actorId: CEO_USER, actorRole: 'CEO' })
+		)
+		return dbMock.user.findMany.mock.calls[0][0].where
+	}
+
 	it('looks for a finance confirmer on a self-action and an HR one otherwise', async () => {
-		const rolesUsed = async (targetUserId: string) => {
-			dbMock.user.findMany.mockClear()
-			await createProposal(
-				'org1',
-				{ targetEmployeeId: TARGET_EMP, targetUserId, domain: 'COMPENSATION', payload: {} },
-				ctxOf({ actorId: CEO_USER, actorRole: 'CEO' })
-			)
-			return dbMock.user.findMany.mock.calls[0][0].where.role.in
-		}
+		// Read off the multi-role branch: `roles` is the set `assertMayDecide` judges against, so it
+		// is the one that has to carry the right capability's roles.
+		const rolesUsed = async (t: string) => (await whereUsed(t)).OR[0].roles.hasSome
 		expect(await rolesUsed(CEO_USER)).not.toContain('HR_ADMIN') // self → APPROVE_FINANCE
 		expect(await rolesUsed('user-other')).toContain('HR_ADMIN') // on behalf → HR org-wide
+	})
+
+	/**
+	 * A [MANAGER, HR_ADMIN] user CAN confirm — `assertMayDecide` reads `ctx.actorRoles` (#133) — so
+	 * the eligibility query has to find them too. Matching on the primary `role` column alone would
+	 * miss them, and the `confirmers.length === 0` guard would then 409 a proposal as unconfirmable
+	 * while a qualified confirmer was sitting right there.
+	 */
+	it('finds confirmers by their full role set, not just their primary role', async () => {
+		const where = await whereUsed('user-other')
+		expect(where.OR).toEqual([
+			{ roles: { hasSome: expect.arrayContaining(['HR_ADMIN']) } },
+			// The primary column still answers for single-role users, whose `roles` defaults to [].
+			{ roles: { isEmpty: true }, role: { in: expect.arrayContaining(['HR_ADMIN']) } }
+		])
 	})
 })
 
@@ -437,5 +456,27 @@ describe('rejecting', () => {
 			rejectProposal('org1', 'p1', 'not budgeted', ctxOf({ actorRole: 'MANAGER' }))
 		).rejects.toMatchObject({ status: 403 })
 		expect(dbMock.actionProposal.updateMany).not.toHaveBeenCalled()
+	})
+
+	/**
+	 * The rejection reason is free text one person typed about another's pay. It goes on the proposal
+	 * row and to the initiator, but NOT into `AuditLog.newValue` — the same leak class the CREATE
+	 * entry avoids, and for the same reason: `/reports/audit-log` renders it to every
+	 * ADMINISTER_SYSTEM holder with no record of the read (#111/#242).
+	 */
+	it('keeps the rejection reason out of the audit entry', async () => {
+		pendOnBehalf()
+		dbMock.actionProposal.updateMany.mockResolvedValue({ count: 1 })
+		await rejectProposal('org1', 'p1', 'over the band for this grade', ctxOf())
+
+		const entry = vi.mocked(writeAuditLog).mock.calls.at(-1)![1]
+		expect(entry.newValue).toEqual({ status: 'REJECTED', decidedById: expect.any(String) })
+		expect(JSON.stringify(entry.newValue)).not.toContain('over the band')
+		// Still persisted where it belongs, so the omission is not data loss.
+		expect(dbMock.actionProposal.updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ decisionNote: 'over the band for this grade' })
+			})
+		)
 	})
 })

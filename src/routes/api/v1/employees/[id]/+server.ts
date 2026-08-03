@@ -119,10 +119,13 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 				return apiError(400, RATE_BASIS_MISMATCH)
 			}
 		}
-		if (Object.keys(rest).length > 0) {
-			await updateEmployee(params.id, locals.user.organizationId, rest, ctx)
-		}
 		// #224 Part 2 / #243: set when the pay change was filed for confirmation instead of applied.
+		//
+		// Runs BEFORE updateEmployee for the same reason as the pairing pre-check above, which the
+		// pre-check alone no longer covers: promoteEmployee can now refuse for reasons that have
+		// nothing to do with the values (a 409 when no one in the org could confirm the proposal).
+		// Committing `rest` first would leave those rejections half-applied. Neither writer reads the
+		// other's fields, so the order is free.
 		let proposalId: string | undefined
 		if (
 			basicMonthlySalary !== undefined ||
@@ -145,6 +148,9 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 					throw e
 				}
 			}
+		}
+		if (Object.keys(rest).length > 0) {
+			await updateEmployee(params.id, locals.user.organizationId, rest, ctx)
 		}
 		// #111: re-fetch masked so the response reflects the new salary, never the pre-change record.
 		const employee = await getEmployee(params.id, locals.user.organizationId, {

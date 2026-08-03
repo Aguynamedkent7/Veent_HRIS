@@ -99,7 +99,14 @@ async function eligibleConfirmerIds(
 		where: {
 			organizationId,
 			isActive: true,
-			role: { in: [...roles] },
+			// Mirrors the multi-role fallback `assertMayDecide` applies (#133): the full `roles` set
+			// when it has anything in it, the primary `role` only when it is empty. Matching on `role`
+			// alone would miss a [MANAGER, HR_ADMIN] user — who CAN confirm — and so could 409 a
+			// proposal as unconfirmable when a qualified confirmer exists.
+			OR: [
+				{ roles: { hasSome: [...roles] } },
+				{ roles: { isEmpty: true }, role: { in: [...roles] } }
+			],
 			id: { not: initiatorId }
 		},
 		select: { id: true }
@@ -246,7 +253,11 @@ export async function rejectProposal(
 		entityType: 'ActionProposal',
 		entityId: proposalId,
 		oldValue: { status: 'PENDING' },
-		newValue: { status: 'REJECTED', decidedById: ctx.actorId, note }
+		// The reason is free text a confirmer typed about someone's pay, so it stays off the audit
+		// log for the same reason the payload's values do (#111/#242) — `/reports/audit-log` renders
+		// `newValue` to every ADMINISTER_SYSTEM holder with no record of the read. It is still on
+		// `ActionProposal.decisionNote` and still reaches the initiator by notification.
+		newValue: { status: 'REJECTED', decidedById: ctx.actorId }
 	})
 	// "rejected", matching the REJECTED status the row actually carries — there is no RETURNED
 	// state here, and the old wording read as one to anyone comparing the audit log to the message.

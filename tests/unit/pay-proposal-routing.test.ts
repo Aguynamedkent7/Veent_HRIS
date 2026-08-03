@@ -44,7 +44,10 @@ vi.mock('$lib/server/services/notifications', () => ({
 	notify: vi.fn().mockResolvedValue(undefined)
 }))
 vi.mock('$lib/server/services/action-proposals', () => ({
-	createProposal: vi.fn().mockResolvedValue({ id: 'prop-1' })
+	createProposal: vi.fn().mockResolvedValue({ id: 'prop-1' }),
+	// Imported by employees.ts for the audited reveal. Unused here, but a factory mock replaces the
+	// whole module, so omitting it makes the import undefined rather than absent.
+	assertMayConfirmProposal: vi.fn()
 }))
 
 const { createProposal } = await import('$lib/server/services/action-proposals')

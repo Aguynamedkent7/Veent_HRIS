@@ -151,9 +151,7 @@
 									<dd class="font-medium">
 										{#if revealed}
 											<span class="text-muted-foreground"
-												>{revealed.current == null
-													? '—'
-													: formatCurrency(Number(revealed.current))}</span
+												>{revealed.current == null ? '—' : formatCurrency(revealed.current)}</span
 											>
 											→ {revealed.proposed == null ? '—' : formatCurrency(revealed.proposed)}
 										{:else}
@@ -202,12 +200,14 @@
 						<button
 							type="submit"
 							disabled={confirm.busy}
+							aria-label="Confirm and apply the change for {p.target.firstName} {p.target.lastName}"
 							class="flex-1 rounded-md bg-green-600 px-2 py-1 text-xs font-medium text-white hover:bg-green-700 disabled:pointer-events-none disabled:opacity-50"
 							>{confirm.busy ? 'Confirming…' : 'Confirm & apply'}</button
 						>
 						<button
 							type="button"
 							disabled={reject.busy}
+							aria-label="Reject the change for {p.target.firstName} {p.target.lastName}"
 							onclick={() => {
 								noteTargetId = p.id
 								noteDialogOpen = true
