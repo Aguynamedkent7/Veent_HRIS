@@ -91,9 +91,11 @@ describe('the capability containment the loan guard depends on', () => {
 })
 
 describe('updateLoan — the door that was open', () => {
-	it("refuses a MANAGER editing an employee who does not report to them", async () => {
+	it('refuses a MANAGER editing an employee who does not report to them', async () => {
 		targeting(STRANGER)
-		await expect(updateLoan('loan1', ORG, { installment: 999 }, ctx('MANAGER'))).rejects.toMatchObject({
+		await expect(
+			updateLoan('loan1', ORG, { installment: 999 }, ctx('MANAGER'))
+		).rejects.toMatchObject({
 			status: 403,
 			body: { message: DENIED }
 		})
@@ -103,7 +105,9 @@ describe('updateLoan — the door that was open', () => {
 	it('refuses an actor editing their OWN loan, with the separation-of-duties reason', async () => {
 		dbMock.loan.findFirst.mockResolvedValue({ id: 'loan1', employeeId: SELF.id })
 		targeting(SELF)
-		await expect(updateLoan('loan1', ORG, { installment: 1 }, ctx('MANAGER'))).rejects.toMatchObject({
+		await expect(
+			updateLoan('loan1', ORG, { installment: 1 }, ctx('MANAGER'))
+		).rejects.toMatchObject({
 			status: 403,
 			body: { message: SELF_ACTION_DENIED }
 		})
@@ -119,7 +123,9 @@ describe('updateLoan — the door that was open', () => {
 
 	it('still 404s on a loan outside the actor org, before any scope check', async () => {
 		dbMock.loan.findFirst.mockResolvedValue(null)
-		await expect(updateLoan('loan1', ORG, { installment: 1 }, ctx('HR_ADMIN'))).rejects.toMatchObject({
+		await expect(
+			updateLoan('loan1', ORG, { installment: 1 }, ctx('HR_ADMIN'))
+		).rejects.toMatchObject({
 			status: 404
 		})
 	})

@@ -40,7 +40,10 @@ async function assertMayWriteLoan(
 	// that omit it.
 	const actorRoles = ctx.actorRoles?.length ? ctx.actorRoles : [ctx.actorRole]
 	if (!canAny(actorRoles, 'VIEW_PAY_ORGWIDE')) {
-		await assertCanTouchEmployee({ id: ctx.actorId, role: ctx.actorRole, organizationId }, employeeId)
+		await assertCanTouchEmployee(
+			{ id: ctx.actorId, role: ctx.actorRole, organizationId },
+			employeeId
+		)
 	}
 }
 
