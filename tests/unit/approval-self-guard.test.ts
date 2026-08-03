@@ -17,7 +17,7 @@ import type { AuditContext } from '$lib/server/services/types'
 
 const { dbMock } = vi.hoisted(() => ({
 	dbMock: {
-		request: { findFirst: vi.fn() },
+		request: { findFirst: vi.fn(), update: vi.fn() },
 		payrollRun: { findFirst: vi.fn(), update: vi.fn() },
 		approvalStep: { update: vi.fn() },
 		$transaction: vi.fn()
@@ -54,6 +54,10 @@ describe('decide — nobody decides their own request (#75)', () => {
 	const pendingRequest = {
 		id: 'req1',
 		employeeId: OWNER_EMP,
+		// No payload, so approving it applies no leave-balance effect — the ownership check is
+		// what these exercise, not the effect.
+		type: 'LEAVE',
+		payload: null,
 		status: 'PENDING',
 		currentStage: 0,
 		steps: [{ id: 's1', attempt: 1, stageIndex: 0, stage: 'MAKE', decision: null }],
@@ -83,13 +87,13 @@ describe('decide — nobody decides their own request (#75)', () => {
 		})
 	})
 
+	// Asserting the decision actually reaches the transaction, not merely that it failed for some
+	// other reason — a catch-all would pass just as well if the guard rejected everyone.
 	it('lets a different employee past the ownership check', async () => {
-		await decide('req1', 'APPROVED', undefined, ctxOf(), 'emp-someone-else').catch(
-			(e: { body?: { message?: string } }) => {
-				// May still fail further down the chain; only the ownership refusal is ruled out.
-				expect(e?.body?.message).not.toBe('You cannot decide your own request')
-			}
-		)
+		await expect(
+			decide('req1', 'APPROVED', undefined, ctxOf(), 'emp-someone-else')
+		).resolves.toBeDefined()
+		expect(dbMock.$transaction).toHaveBeenCalled()
 	})
 })
 

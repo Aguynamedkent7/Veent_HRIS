@@ -135,6 +135,19 @@ export function assertNotSelf(actorUserId: string, target: { userId: string }): 
 	if (target.userId === actorUserId) error(403, SELF_ACTION_DENIED)
 }
 
+/**
+ * Org-scoped employee lookup returning just what `assertNotSelf` needs. Shared by the pay writers
+ * (earnings, deductions, loans), which each carried a byte-identical copy.
+ */
+export async function requireEmployee(employeeId: string, organizationId: string) {
+	const e = await db.employee.findFirst({
+		where: { id: employeeId, user: { organizationId } },
+		select: { id: true, userId: true }
+	})
+	if (!e) error(404, 'Employee not found')
+	return e
+}
+
 /** Throwing form for route guards. 403 — the record may well exist, the actor just can't have it. */
 export async function assertCanTouchEmployee(
 	user: EmployeeAccessActor,

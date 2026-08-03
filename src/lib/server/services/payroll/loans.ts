@@ -2,7 +2,7 @@ import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import type { LoanStatus } from '@prisma/client'
-import { assertNotSelf } from '../employee-access'
+import { assertNotSelf, requireEmployee } from '../employee-access'
 import type { AuditContext } from '../types'
 
 /**
@@ -10,15 +10,6 @@ import type { AuditContext } from '../types'
  * lock, reverse on void) lives in the payroll engine + period lifecycle — this just maintains the
  * records HR sets up. All mutations are org-scoped and audited.
  */
-
-async function requireEmployee(employeeId: string, organizationId: string) {
-	const e = await db.employee.findFirst({
-		where: { id: employeeId, user: { organizationId } },
-		select: { id: true, userId: true }
-	})
-	if (!e) error(404, 'Employee not found')
-	return e
-}
 
 export function listLoans(employeeId: string, organizationId: string) {
 	return db.loan.findMany({

@@ -4,6 +4,7 @@ import { error } from '@sveltejs/kit'
 import { manilaDayKey } from '$lib/utils/dates'
 import { deriveAttendanceDay, type AttPunchType, type DayType, type ScheduleDay } from './derive'
 import { createTimesheet } from '../timesheets'
+import { requireCapability } from '$lib/server/rbac'
 import type { AuditContext } from '../types'
 import type { HolidayType } from '@prisma/client'
 
@@ -581,6 +582,10 @@ export async function unlockRange(
 	range: { from: Date; to: Date; employeeId?: string },
 	ctx: AuditContext
 ) {
+	// Reopening locked days overrides a finalized record — Super-Admin-only (#224). Enforced here so
+	// every caller is covered, not only the two form actions that happen to check today.
+	requireCapability(ctx.actorRole, 'OVERRIDE_FINALIZED')
+
 	const fromKey = manilaDayKey(range.from)
 	const toKey = manilaDayKey(range.to)
 	const res = await db.attendanceDay.updateMany({

@@ -7,6 +7,7 @@ import { D, q2, sum } from './money'
 import { deriveRange, lockRange } from '../attendance'
 import { isValidStandardPeriod } from '$lib/utils/pay-periods'
 import { notifyMany } from '../notifications'
+import { requireCapability } from '$lib/server/rbac'
 import { formatShortDate } from '$lib/utils/format'
 import type { AuditContext } from '../types'
 
@@ -301,6 +302,10 @@ export async function release(id: string, organizationId: string, ctx: AuditCont
 }
 
 export async function voidPeriod(id: string, organizationId: string, ctx: AuditContext) {
+	// Voiding a finalized period is Super-Admin-only (#224) — enforced here, not just at the route,
+	// so the form action and the v1 API twin are covered by one check, as `voidRun` already is.
+	requireCapability(ctx.actorRole, 'OVERRIDE_FINALIZED')
+
 	const period = await requirePeriod(id, organizationId)
 	if (period.status === 'VOIDED') error(400, 'Period is already voided')
 	const run = period.runs[0]

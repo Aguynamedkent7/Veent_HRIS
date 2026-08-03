@@ -11,11 +11,12 @@ import type { Role } from '@prisma/client'
  * So these exercise the enforcement points, not the capability table — `rbac.test.ts` already
  * pins who holds what, and a second copy of that would not catch a mis-pointed guard.
  *
- * `voidPeriod` and `unlockRange` are mocked: neither carries a guard of its own (both are
- * enforced at the route), so the assertion that matters is "was the service reached", and
- * standing up voidPeriod's amortization-reversal transaction to learn that would be
- * disproportionate. `voidRun` DOES carry its own guard, so it is left real — only `db` and the
- * audit writer are mocked under it, which also means the API twin above it runs the real check.
+ * All three writers now carry their own guard, matching the epic's rule that guards live in the
+ * service and not the route. For the route-level tests `voidPeriod` and `unlockRange` stay mocked —
+ * the assertion there is "was the service reached", and standing up voidPeriod's
+ * amortization-reversal transaction to learn that would be disproportionate — while the real
+ * implementations are pulled in separately below to pin the guard itself. `voidRun` is left real
+ * throughout, so the API twin above it runs the real check.
  */
 
 const { dbMock, periodsMock, attendanceMock } = vi.hoisted(() => ({
@@ -151,5 +152,28 @@ describe('reopening locked attendance days (#224)', () => {
 	it('leaves locking to HR', async () => {
 		await attendanceActions.lock!(formEvent('HR_ADMIN', RANGE))
 		expect(attendanceMock.lockRange).toHaveBeenCalled()
+	})
+})
+
+/**
+ * The routes above call mocked services, so they prove the route checks. These call the real
+ * implementations to prove a direct caller — a third route, a job, the next API twin — is refused
+ * too. The guard runs before any lookup, so nothing below it needs standing up.
+ */
+describe('the services refuse a direct unauthorized caller (#224)', () => {
+	it('voidPeriod denies the CEO', async () => {
+		const { voidPeriod } = await vi.importActual<
+			typeof import('$lib/server/services/payroll/periods')
+		>('$lib/server/services/payroll/periods')
+		await expect(voidPeriod('p1', 'org1', ctx('CEO'))).rejects.toMatchObject({ status: 403 })
+	})
+
+	it('unlockRange denies the CEO', async () => {
+		const { unlockRange } = await vi.importActual<typeof import('$lib/server/services/attendance')>(
+			'$lib/server/services/attendance'
+		)
+		await expect(
+			unlockRange('org1', { from: new Date('2026-07-01'), to: new Date('2026-07-15') }, ctx('CEO'))
+		).rejects.toMatchObject({ status: 403 })
 	})
 })

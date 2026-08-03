@@ -83,12 +83,15 @@ describe('setUserActive', () => {
 			body: { message: 'You cannot deactivate your own account.' }
 		})
 		expect(dbMock.user.update).not.toHaveBeenCalled()
+		// As with setUserRole: refused before any round trip, so it is no existence probe either.
+		expect(dbMock.user.findFirst).not.toHaveBeenCalled()
 	})
 
 	// Both directions, as the route check it replaces did — reactivating yourself is unreachable
 	// anyway (an inactive user holds no session), so there is no case to carve out.
 	it('refuses to reactivate the actor’s own account too', async () => {
 		await expect(setUserActive(ACTOR, 'org1', true, CTX)).rejects.toMatchObject({ status: 403 })
+		expect(dbMock.user.findFirst).not.toHaveBeenCalled()
 	})
 
 	it('still deactivates somebody else', async () => {
