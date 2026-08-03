@@ -192,6 +192,14 @@ describe('payroll money writers refuse the actor’s own record', () => {
 describe('the same writers still work on somebody else', () => {
 	beforeEach(() => dbMock.employee.findFirst.mockResolvedValue(other))
 
+	// HR_ADMIN, not the MANAGER the self-guard cases use. The loan writers now also require the
+	// target to be in the actor's pay scope, so a MANAGER is no longer an "authorized actor" for an
+	// arbitrary employee — that is the point of the guard, not a regression. This block asserts the
+	// converse property (the self-guard does not over-block someone who IS authorized), so it needs
+	// a role that genuinely is: HR_ADMIN holds VIEW_PAY_ORGWIDE. The MANAGER-scoped cases live in
+	// `loan-write-scoping.test.ts`.
+	const ORGWIDE: AuditContext = { ...CTX, actorRole: 'HR_ADMIN' }
+
 	it('lets an authorized actor act on another employee', async () => {
 		dbMock.deductionType.findFirst.mockResolvedValue({
 			id: 'dt1',
@@ -205,7 +213,7 @@ describe('the same writers still work on somebody else', () => {
 		})
 
 		await clearsGuard(() =>
-			createLoan('emp-other', 'org1', { principal: 50000, installment: 5000 }, CTX)
+			createLoan('emp-other', 'org1', { principal: 50000, installment: 5000 }, ORGWIDE)
 		)
 		await clearsGuard(() =>
 			createEmployeeEarning(

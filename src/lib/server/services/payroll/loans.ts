@@ -2,7 +2,8 @@ import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import type { LoanStatus } from '@prisma/client'
-import { assertNotSelf, requireEmployee } from '../employee-access'
+import { canAny } from '$lib/rbac'
+import { assertCanTouchEmployee, assertNotSelf, requireEmployee } from '../employee-access'
 import type { AuditContext } from '../types'
 
 /**
@@ -10,6 +11,41 @@ import type { AuditContext } from '../types'
  * lock, reverse on void) lives in the payroll engine + period lifecycle — this just maintains the
  * records HR sets up. All mutations are org-scoped and audited.
  */
+
+/**
+ * Separation of duties + reporting-line scope for every loan/cash-advance write.
+ *
+ * The four writers previously carried `assertNotSelf` on the creates and nothing but an org filter
+ * on the updates, while the scope check lived one layer up in the employee page's
+ * `scopedToEmployee` wrapper — so the v1 API twins reached any employee in the organization.
+ * Confirmed live: a MANAGER whose only report is one other employee PATCHed an unrelated
+ * employee's installment to 999 and got a 200. Updates additionally let an actor edit their OWN
+ * loan, which is the self-dealing #243 closed for compensation.
+ *
+ * `VIEW_PAY_ORGWIDE` rather than `ADMINISTER_HR_ORGWIDE` for the unrestricted arm, and checked
+ * BEFORE delegating, for the reason spelled out on `listVisiblePayEmployeeIds`: PAYROLL_OFFICER and
+ * FINANCE hold neither `ADMINISTER_HR_ORGWIDE` nor a reporting line, so `canTouchEmployee` alone
+ * would lock the two roles that exist to administer pay out of every loan. Same shape as
+ * `overridePayrollEntry` (`./index.ts:547`).
+ *
+ * In the service, not the routes, so the page action and the API twin cannot disagree.
+ */
+async function assertMayWriteLoan(
+	employeeId: string,
+	organizationId: string,
+	ctx: AuditContext
+): Promise<void> {
+	assertNotSelf(ctx.actorId, await requireEmployee(employeeId, organizationId))
+	// Absent actorRoles falls back to the primary role — fail-closed, and #247 tracks the routes
+	// that omit it.
+	const actorRoles = ctx.actorRoles?.length ? ctx.actorRoles : [ctx.actorRole]
+	if (!canAny(actorRoles, 'VIEW_PAY_ORGWIDE')) {
+		await assertCanTouchEmployee(
+			{ id: ctx.actorId, role: ctx.actorRole, organizationId },
+			employeeId
+		)
+	}
+}
 
 export function listLoans(employeeId: string, organizationId: string) {
 	return db.loan.findMany({
@@ -31,7 +67,7 @@ export async function createLoan(
 	data: { type?: string; principal: number; installment: number },
 	ctx: AuditContext
 ) {
-	assertNotSelf(ctx.actorId, await requireEmployee(employeeId, organizationId))
+	await assertMayWriteLoan(employeeId, organizationId, ctx)
 	if (data.installment <= 0 || data.principal <= 0)
 		error(400, 'Principal and installment must be positive')
 
@@ -62,6 +98,7 @@ export async function updateLoan(
 ) {
 	const loan = await db.loan.findFirst({ where: { id, employee: { user: { organizationId } } } })
 	if (!loan) error(404, 'Loan not found')
+	await assertMayWriteLoan(loan.employeeId, organizationId, ctx)
 
 	const updated = await db.loan.update({ where: { id }, data })
 	await writeAuditLog(ctx, {
@@ -79,7 +116,7 @@ export async function createCashAdvance(
 	data: { amount: number; installment: number },
 	ctx: AuditContext
 ) {
-	assertNotSelf(ctx.actorId, await requireEmployee(employeeId, organizationId))
+	await assertMayWriteLoan(employeeId, organizationId, ctx)
 	if (data.installment <= 0 || data.amount <= 0)
 		error(400, 'Amount and installment must be positive')
 
@@ -111,6 +148,7 @@ export async function updateCashAdvance(
 		where: { id, employee: { user: { organizationId } } }
 	})
 	if (!ca) error(404, 'Cash advance not found')
+	await assertMayWriteLoan(ca.employeeId, organizationId, ctx)
 
 	const updated = await db.cashAdvance.update({ where: { id }, data })
 	await writeAuditLog(ctx, {
