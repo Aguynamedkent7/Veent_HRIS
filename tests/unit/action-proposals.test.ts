@@ -129,6 +129,71 @@ describe('confirming — who is refused', () => {
 		expect(dbMock.actionProposal.updateMany).not.toHaveBeenCalled()
 	})
 
+	/**
+	 * The hole this closes: `isSelfAction` relates the target to the INITIATOR only. A proposal
+	 * someone else filed FOR a target who happens to hold a confirming capability therefore looked
+	 * like an ordinary on-behalf-of row — loose confirmer requirement, confirmer ≠ initiator
+	 * satisfied — and the target could sign off their own raise. It also laundered a change they
+	 * could not write directly: get a manager to file it, then confirm it yourself. #224's premise
+	 * defeated through #243's door.
+	 *
+	 * Asserting the message, not just the 403: the capability check can also produce a 403 here, so
+	 * a status-only assertion would pass with this rule deleted and prove nothing.
+	 */
+	it('refuses the TARGET of a proposal someone else filed, even holding the capability', async () => {
+		dbMock.actionProposal.findFirst.mockResolvedValue(onBehalfProposal)
+		// The target is an HR_ADMIN — holds ADMINISTER_HR_ORGWIDE, and is not the initiator.
+		dbMock.employee.findUnique.mockResolvedValue({ userId: 'user-target-hr' })
+		await expect(
+			confirmProposal(
+				'org1',
+				'p1',
+				vi.fn(),
+				ctxOf({ actorId: 'user-target-hr', actorRole: 'HR_ADMIN' })
+			)
+		).rejects.toMatchObject({
+			status: 403,
+			body: { message: 'You cannot confirm a change to your own pay.' }
+		})
+		expect(dbMock.actionProposal.updateMany).not.toHaveBeenCalled()
+	})
+
+	it('refuses the target on reject too — they get no say either way', async () => {
+		dbMock.actionProposal.findFirst.mockResolvedValue(onBehalfProposal)
+		dbMock.employee.findUnique.mockResolvedValue({ userId: 'user-target-hr' })
+		await expect(
+			rejectProposal(
+				'org1',
+				'p1',
+				'no thanks',
+				ctxOf({ actorId: 'user-target-hr', actorRole: 'HR_ADMIN' })
+			)
+		).rejects.toMatchObject({ status: 403 })
+		expect(dbMock.actionProposal.updateMany).not.toHaveBeenCalled()
+	})
+
+	// Reject now applies the identical rule set to confirm — an initiator cannot quietly bury their
+	// own filing either. There is no withdraw feature today; add one deliberately if it is wanted.
+	//
+	// The message matters here, not just the status: on a self-action the initiator IS the target,
+	// so the confirmer≠target rule would also refuse this with a 403. Pinning the message is what
+	// makes this test prove the initiator rule specifically rather than being answered by its
+	// neighbour.
+	it('refuses the initiator on reject as well', async () => {
+		pendSelf()
+		await expect(
+			rejectProposal(
+				'org1',
+				'p1',
+				'changed my mind',
+				ctxOf({ actorId: CEO_USER, actorRole: 'CEO' })
+			)
+		).rejects.toMatchObject({
+			status: 403,
+			body: { message: 'You cannot confirm a change you proposed yourself.' }
+		})
+	})
+
 	it('lets a different APPROVE_FINANCE holder confirm the self-action', async () => {
 		pendSelf()
 		const apply = vi.fn().mockResolvedValue(undefined)

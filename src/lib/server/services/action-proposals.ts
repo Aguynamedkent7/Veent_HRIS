@@ -33,12 +33,40 @@ export function confirmerCapabilityFor(isSelfAction: boolean): Capability {
 }
 
 /**
- * Deliberately capability-keyed, never a `requireMinRole` floor. `ROLE_HIERARCHY` ranks MANAGER
- * level with HR_ADMIN, so a rank floor would let a manager confirm the very proposals that exist
- * because managers must not act alone — the bug shape behind #228 and #243. MANAGER holds neither
- * capability, so it is excluded by construction.
+ * The three rules that decide who may act on a pending proposal. Kept together, and applied to
+ * confirm AND reject alike, because each has a plausible-looking wrong version and any one of them
+ * missing collapses the two-person rule.
+ *
+ * The capability check is deliberately capability-keyed, never a `requireMinRole` floor:
+ * `ROLE_HIERARCHY` ranks MANAGER level with HR_ADMIN, so a rank floor would let a manager decide
+ * the very proposals that exist because managers must not act alone — the bug shape behind #228
+ * and #243. MANAGER holds neither capability, so it is excluded by construction.
  */
-function assertMayConfirm(ctx: AuditContext, isSelfAction: boolean): void {
+async function assertMayDecide(
+	pending: { initiatorId: string; targetEmployeeId: string },
+	ctx: AuditContext
+): Promise<void> {
+	const target = await db.employee.findUnique({
+		where: { id: pending.targetEmployeeId },
+		select: { userId: true }
+	})
+
+	// 1. Not the person who filed it — the entire point of the table.
+	if (pending.initiatorId === ctx.actorId) {
+		error(403, 'You cannot confirm a change you proposed yourself.')
+	}
+
+	// 2. Not the person the change is ABOUT. `isSelfAction` below relates the target to the
+	// INITIATOR only, so without this a proposal someone else filed for a target who happens to
+	// hold a confirming capability would let that target sign off their own raise — #224's premise
+	// defeated through #243's door, and a laundering route for a change they could not write
+	// directly (file it through a manager, then confirm it yourself).
+	if (target?.userId === ctx.actorId) {
+		error(403, 'You cannot confirm a change to your own pay.')
+	}
+
+	// 3. Holds the capability the proposal's shape demands.
+	const isSelfAction = target?.userId === pending.initiatorId
 	const roles = ctx.actorRoles?.length ? ctx.actorRoles : [ctx.actorRole]
 	if (!canAny(roles, confirmerCapabilityFor(isSelfAction))) {
 		error(403, 'You are not authorized to confirm this proposal.')
@@ -139,13 +167,7 @@ export async function confirmProposal(
 	ctx: AuditContext
 ) {
 	const pending = await requirePending(organizationId, proposalId)
-	assertMayConfirm(ctx, await isSelfAction(pending))
-
-	// The initiator can never be the confirmer — the entire point of the table. Checked separately
-	// from the capability so a CEO who holds APPROVE_FINANCE still cannot sign off their own filing.
-	if (pending.initiatorId === ctx.actorId) {
-		error(403, 'You cannot confirm a change you proposed yourself.')
-	}
+	await assertMayDecide(pending, ctx)
 
 	const applied = await db.$transaction(async (tx) => {
 		// Status-guarded claim: exactly one confirmer can move PENDING → APPLIED, so two racing
@@ -189,7 +211,7 @@ export async function rejectProposal(
 	if (!note.trim()) error(400, 'A reason is required to reject a proposal.')
 
 	const pending = await requirePending(organizationId, proposalId)
-	assertMayConfirm(ctx, await isSelfAction(pending))
+	await assertMayDecide(pending, ctx)
 
 	const claim = await db.actionProposal.updateMany({
 		where: { id: proposalId, organizationId, status: 'PENDING' },
@@ -230,16 +252,4 @@ async function requirePending(organizationId: string, proposalId: string) {
 	})
 	if (!proposal) error(404, 'Pending proposal not found')
 	return proposal
-}
-
-/** Self-action is a property of the row, re-derived from the target's user link, never stored. */
-async function isSelfAction(proposal: {
-	initiatorId: string
-	targetEmployeeId: string
-}): Promise<boolean> {
-	const target = await db.employee.findUnique({
-		where: { id: proposal.targetEmployeeId },
-		select: { userId: true }
-	})
-	return target?.userId === proposal.initiatorId
 }
