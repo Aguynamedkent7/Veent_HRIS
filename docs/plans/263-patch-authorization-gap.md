@@ -11,19 +11,19 @@
 
 The RESEARCH report is substantively correct. Its `employees.ts` citations are all shifted by #235's `+25` lines, and two of its statements need sharpening. Re-verified table:
 
-| Claim (RESEARCH §) | Verified state at `98ea3df` |
-| --- | --- |
-| PATCH guard chain (§1a) | **Confirmed, line-for-line.** `+server.ts:74` auth → `:77` `requireCapability(locals.user.role, 'MANAGE_HR')` → `:84` `canTouchEmployee(locals.user, params.id)` → `:88-93` `updateSchema.safeParse`. Unchanged by #235. |
-| `updateSchema` shape (§1a) | **Confirmed.** `+server.ts:20-39`. `employmentStatus: z.enum(['ACTIVE','ON_LEAVE','OFFBOARDED']).optional()` at `:29`; `reportsToId: z.string().optional()` at `:38` — still no `.min(1)`. |
-| Only pay/type split out of `rest` | **Confirmed.** `+server.ts:102` `const { basicMonthlySalary, rateType, employmentType, ...rest } = parsed.data`; `:153-155` `if (Object.keys(rest).length > 0) await updateEmployee(params.id, …, rest, ctx)`. `reportsToId` and `employmentStatus` both ride `rest`. |
-| `updateEmployee` has **no** `proposeIfRequired` call | **Confirmed at this HEAD.** `updateEmployee` is now `employees.ts:571-652` (was `:548-621` on staging). `grep -n proposeIfRequired` → definition `:699`, call sites `:816` (`recordCompensationChange`) and `:1021` (`promoteEmployee`). **Exactly two, both pay writers.** Nothing in `updateEmployee`. |
-| `assertNotSelf` field list excludes `reportsToId` | **Confirmed.** `employees.ts:582-589` guards `jobTitle`, `departmentId`, `employmentStatus`, `endDate`. `reportsToId` absent. Pinned by `tests/unit/self-action-guards.test.ts:104-114`. |
-| `canTouchEmployee` returns true for one's own record | **Confirmed.** `employee-access.ts:52` `if (self.id === employeeId) return true`. So a `MANAGE_HR` holder reaches their own 201 file through the PATCH. |
-| `promoteEmployee` already has org-scope + self-report + proposal, all in one place | **Confirmed, and #235 made it tighter.** `employees.ts:955-958` is now `await assertManagerInOrg(input.reportsToId, organizationId, id)` (shared helper at `:402-409`); proposal at `:1020-1023`. |
-| `proposalPayloadSchema` already includes `reportsToId` | **Confirmed.** `employees.ts:1099-1110`, `.strict()`, `reportsToId: z.string().optional()` at `:1107`. |
-| `applyProposedChange` routes `PROMOTION` → `promoteEmployee` | **Confirmed.** `employees.ts:1144-1147`, with `{ confirmTx: tx }`. The `else` at `:1148-1153` throws for an unknown domain rather than defaulting. |
-| `ROLE_HIERARCHY` ranks MANAGER == HR_ADMIN | **Confirmed verbatim.** `src/lib/rbac.ts:22-28`, comment: _"MANAGER is on-branch HR for JoJo/Sweetleaf (#133), so it ranks level with HR_ADMIN and clears every `requireMinRole('HR_ADMIN')` gate."_ So RESEARCH §2 stands: **the issue's option 1 is a no-op.** |
-| Nothing in the product calls this PATCH | **Confirmed.** `grep -rn "api/v1/employees" src` returns route files and no `fetch`. `grep -rn "request.patch\|api/v1/employees" tests/e2e` → three e2e files touch `reportsToId` **direct via Prisma**, none PATCH. Only consumers are three unit tests importing `PATCH` directly: `employee-api-compensation.test.ts:41`, `pay-write-role-context.test.ts:63`, `reports-to-scoping.test.ts:47`. |
+| Claim (RESEARCH §)                                                                 | Verified state at `98ea3df`                                                                                                                                                                                                                                                                                                                                                                        |
+| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PATCH guard chain (§1a)                                                            | **Confirmed, line-for-line.** `+server.ts:74` auth → `:77` `requireCapability(locals.user.role, 'MANAGE_HR')` → `:84` `canTouchEmployee(locals.user, params.id)` → `:88-93` `updateSchema.safeParse`. Unchanged by #235.                                                                                                                                                                           |
+| `updateSchema` shape (§1a)                                                         | **Confirmed.** `+server.ts:20-39`. `employmentStatus: z.enum(['ACTIVE','ON_LEAVE','OFFBOARDED']).optional()` at `:29`; `reportsToId: z.string().optional()` at `:38` — still no `.min(1)`.                                                                                                                                                                                                         |
+| Only pay/type split out of `rest`                                                  | **Confirmed.** `+server.ts:102` `const { basicMonthlySalary, rateType, employmentType, ...rest } = parsed.data`; `:153-155` `if (Object.keys(rest).length > 0) await updateEmployee(params.id, …, rest, ctx)`. `reportsToId` and `employmentStatus` both ride `rest`.                                                                                                                              |
+| `updateEmployee` has **no** `proposeIfRequired` call                               | **Confirmed at this HEAD.** `updateEmployee` is now `employees.ts:571-652` (was `:548-621` on staging). `grep -n proposeIfRequired` → definition `:699`, call sites `:816` (`recordCompensationChange`) and `:1021` (`promoteEmployee`). **Exactly two, both pay writers.** Nothing in `updateEmployee`.                                                                                           |
+| `assertNotSelf` field list excludes `reportsToId`                                  | **Confirmed.** `employees.ts:582-589` guards `jobTitle`, `departmentId`, `employmentStatus`, `endDate`. `reportsToId` absent. Pinned by `tests/unit/self-action-guards.test.ts:104-114`.                                                                                                                                                                                                           |
+| `canTouchEmployee` returns true for one's own record                               | **Confirmed.** `employee-access.ts:52` `if (self.id === employeeId) return true`. So a `MANAGE_HR` holder reaches their own 201 file through the PATCH.                                                                                                                                                                                                                                            |
+| `promoteEmployee` already has org-scope + self-report + proposal, all in one place | **Confirmed, and #235 made it tighter.** `employees.ts:955-958` is now `await assertManagerInOrg(input.reportsToId, organizationId, id)` (shared helper at `:402-409`); proposal at `:1020-1023`.                                                                                                                                                                                                  |
+| `proposalPayloadSchema` already includes `reportsToId`                             | **Confirmed.** `employees.ts:1099-1110`, `.strict()`, `reportsToId: z.string().optional()` at `:1107`.                                                                                                                                                                                                                                                                                             |
+| `applyProposedChange` routes `PROMOTION` → `promoteEmployee`                       | **Confirmed.** `employees.ts:1144-1147`, with `{ confirmTx: tx }`. The `else` at `:1148-1153` throws for an unknown domain rather than defaulting.                                                                                                                                                                                                                                                 |
+| `ROLE_HIERARCHY` ranks MANAGER == HR_ADMIN                                         | **Confirmed verbatim.** `src/lib/rbac.ts:22-28`, comment: _"MANAGER is on-branch HR for JoJo/Sweetleaf (#133), so it ranks level with HR_ADMIN and clears every `requireMinRole('HR_ADMIN')` gate."_ So RESEARCH §2 stands: **the issue's option 1 is a no-op.**                                                                                                                                   |
+| Nothing in the product calls this PATCH                                            | **Confirmed.** `grep -rn "api/v1/employees" src` returns route files and no `fetch`. `grep -rn "request.patch\|api/v1/employees" tests/e2e` → three e2e files touch `reportsToId` **direct via Prisma**, none PATCH. Only consumers are three unit tests importing `PATCH` directly: `employee-api-compensation.test.ts:41`, `pay-write-role-context.test.ts:63`, `reports-to-scoping.test.ts:47`. |
 
 ### 0.1 Two RESEARCH statements that need correcting
 
@@ -36,7 +36,7 @@ The RESEARCH report is substantively correct. Its `employees.ts` citations are a
 ### 0.2 Three facts established by fresh greps that the plan below leans on
 
 1. **`employmentStatus` reaches `updateEmployee` from exactly one caller: this PATCH.** `grep -rn "updateEmployee" src` → 5 call sites (`(app)/employees/[id]/+page.server.ts:462`, `(app)/profile/+page.server.ts:122`, `(app)/departments/+page.server.ts:103`, `api/v1/employees/[id]/+server.ts:154`). Neither the 201 page's `updateSchema` (`+page.server.ts:~250-320`) nor `/profile`'s nor `/departments`' carries `employmentStatus` or `endDate` — `grep -n "employmentStatus\|endDate"` across those three files returns only unrelated `where` clauses and the `offboard` action's `endDate`. **`UpdateEmployeeInput.endDate` has no caller at all.**
-2. **Nothing in the product ever sets `ON_LEAVE` on the Employee row.** `grep -rn "ON_LEAVE" src` → attendance day-status enums and badge colours only. Leave approval does not touch `Employee.employmentStatus`. So `ON_LEAVE` is reachable *only* through this PATCH, and setting it silently drops the employee from every `employmentStatus: 'ACTIVE'` payroll/attendance query.
+2. **Nothing in the product ever sets `ON_LEAVE` on the Employee row.** `grep -rn "ON_LEAVE" src` → attendance day-status enums and badge colours only. Leave approval does not touch `Employee.employmentStatus`. So `ON_LEAVE` is reachable _only_ through this PATCH, and setting it silently drops the employee from every `employmentStatus: 'ACTIVE'` payroll/attendance query.
 3. **The proposals queue already renders a reporting-line change.** `(app)/requests/proposals/+page.server.ts:144-151` reads `d.reportsToId` off the parsed payload and emits `add('Reports to', <old manager name>, <new manager name>)`, resolving both through a `managerName` map built at `:108`. `+page.svelte:14-16` labels domain `PROMOTION` as "Promotion". **A `reportsToId`-only `PROMOTION` proposal is already a first-class, fully-rendered row today** — the UI's `?/promote` action produces exactly one whenever a MANAGER re-points a report. Zero UI work is needed by this change.
 
 ---
@@ -72,7 +72,7 @@ Destructure `reportsToId` out of `rest` alongside the pay fields and add it to t
 - **Zero schema, enum, migration or UI work.** §0.2(3): the queue renders it already.
 - **It closes the `''` edge for free.** §0.1(a).
 
-**Against:** it inherits `promoteEmployee`'s *other* guards, one of which is a behaviour delta. See §4.2 — the critique found it, the draft did not.
+**Against:** it inherits `promoteEmployee`'s _other_ guards, one of which is a behaviour delta. See §4.2 — the critique found it, the draft did not.
 
 ### Option B — give `updateEmployee` its own `proposeIfRequired` call
 
@@ -80,8 +80,8 @@ Mirror `recordCompensationChange`'s shape inside `updateEmployee`, gated on `inp
 
 **Against — four findings, in order of how hard they are to work around:**
 
-1. **`updateEmployee` has no `confirmTx` support.** `ProposalWriteOpts` (`employees.ts:680-682`) is threaded through `recordCompensationChange` and `promoteEmployee` only, and its doc (`:667-679`) is emphatic that `confirmTx`'s presence carries *both* "write on this client" and "skip the propose branch", deliberately as one field so they cannot drift. Option B has to add the parameter, thread the client through `db.employee.update` and `writeAuditLog`, and re-derive that invariant a third time.
-2. **The payload does not fit.** `proposeIfRequired` stores the writer's input verbatim (`action-proposals.ts:118-119, 150`) and `proposalPayloadSchema` is `.strict()` (`employees.ts:1110`) precisely so a drifted payload fails loudly. `UpdateEmployeeInput` has ~30 fields, almost none of which are in that schema. So Option B must either file a *synthetic* `{ reportsToId }` payload (a payload that is not the writer's input — breaking the one property the confirm path depends on) or widen `proposalPayloadSchema` to the union of two unrelated interfaces.
+1. **`updateEmployee` has no `confirmTx` support.** `ProposalWriteOpts` (`employees.ts:680-682`) is threaded through `recordCompensationChange` and `promoteEmployee` only, and its doc (`:667-679`) is emphatic that `confirmTx`'s presence carries _both_ "write on this client" and "skip the propose branch", deliberately as one field so they cannot drift. Option B has to add the parameter, thread the client through `db.employee.update` and `writeAuditLog`, and re-derive that invariant a third time.
+2. **The payload does not fit.** `proposeIfRequired` stores the writer's input verbatim (`action-proposals.ts:118-119, 150`) and `proposalPayloadSchema` is `.strict()` (`employees.ts:1110`) precisely so a drifted payload fails loudly. `UpdateEmployeeInput` has ~30 fields, almost none of which are in that schema. So Option B must either file a _synthetic_ `{ reportsToId }` payload (a payload that is not the writer's input — breaking the one property the confirm path depends on) or widen `proposalPayloadSchema` to the union of two unrelated interfaces.
 3. **`applyProposedChange` has nowhere to send it.** `:1135-1153` dispatches `COMPENSATION` → `recordCompensationChange`, `PROMOTION` → `promoteEmployee`, else throw. A proposal filed by `updateEmployee` must be applied by `updateEmployee`, which means a third branch and a third `ProposalDomain` value — see §1.1.
 4. **It splits one PATCH across two authorization outcomes inside one writer.** A body of `{ reportsToId, contactPhone }` would have `updateEmployee` file half of itself and write the other half, from inside a single function, with a single audit diff loop (`:622-649`) that would have to learn which keys it actually wrote. Option A gets the same split for free because the two halves are already two separate writers with two separate audit entries.
 
@@ -111,7 +111,7 @@ Once D1 lands, a `MANAGE_HR` holder PATCHing **their own** record's `reportsToId
 **Therefore: do NOT add `reportsToId` to `assertNotSelf`'s field list at `employees.ts:582-589`.** Three reasons:
 
 1. **It would be a second guard for one gap** — the thing the task explicitly forbids. And it would win, because `assertNotSelf` runs at `:588` and the routed field never reaches `updateEmployee` at all after D1, so the added entry would be dead code on the live path and a hard 403 on any hypothetical future one.
-2. **403 is the *wrong* answer here, per a decision this repo already made.** #224 Part 2 / #243 deliberately converted self-actions on pay from `assertNotSelf`'s hard 403 to propose→confirm; `pay-proposal-routing.test.ts:11-13` records why — _"a CEO with no one above them could never record their own contractual raise"_. The reporting line sits in the same writer as pay, behind the same routing. Making it a 403 would be the only field in `promoteEmployee` that hard-fails on self.
+2. **403 is the _wrong_ answer here, per a decision this repo already made.** #224 Part 2 / #243 deliberately converted self-actions on pay from `assertNotSelf`'s hard 403 to propose→confirm; `pay-proposal-routing.test.ts:11-13` records why — _"a CEO with no one above them could never record their own contractual raise"_. The reporting line sits in the same writer as pay, behind the same routing. Making it a 403 would be the only field in `promoteEmployee` that hard-fails on self.
 3. **It matches the UI exactly, which is the point of #263.** `?/promote` on your own record files a proposal today (`pay-proposal-routing.test.ts:147-158` pins it for `jobTitle`; the same branch covers `reportsToId`). After D1 the API does the same thing.
 
 The existing dual shape is precedent, not an inconsistency: `jobTitle` is **403 on self** through `updateEmployee` (`:583`) and **proposal-routed on self** through `promoteEmployee` — the split turns on which writer owns the field, not on the field. `reportsToId` is owned by `promoteEmployee`.
@@ -127,12 +127,18 @@ The existing dual shape is precedent, not an inconsistency: `jobTitle` is **403 
 `offboardEmployee` (`employees.ts:1188-1223`) does four things, in one transaction:
 
 ```ts
-if (target.userId === ctx.actorId) error(400, 'You cannot offboard your own employee record — ask another admin to do it.')
+if (target.userId === ctx.actorId)
+	error(400, 'You cannot offboard your own employee record — ask another admin to do it.')
 const [employee] = await db.$transaction([
-    db.employee.update({ where: { id }, data: { employmentStatus: 'OFFBOARDED', endDate } }),
-    db.user.updateMany({ where: { employee: { id } }, data: { isActive: false } })
+	db.employee.update({ where: { id }, data: { employmentStatus: 'OFFBOARDED', endDate } }),
+	db.user.updateMany({ where: { employee: { id } }, data: { isActive: false } })
 ])
-await writeAuditLog(ctx, { action: 'UPDATE', entityType: 'Employee', entityId: id, newValue: { employmentStatus: 'OFFBOARDED', endDate } })
+await writeAuditLog(ctx, {
+	action: 'UPDATE',
+	entityType: 'Employee',
+	entityId: id,
+	newValue: { employmentStatus: 'OFFBOARDED', endDate }
+})
 ```
 
 `finalizeSeparation` (`separation.ts:228-281`) does the same two writes (`:263-270`) **plus** a status-guarded `SeparationRecord` claim, a final-pay snapshot, and settling every ACTIVE loan and cash advance to `PAID`.
@@ -144,12 +150,14 @@ So the column is one of a **pair** (`employmentStatus` + `endDate`) and one of a
 **(a) Reject `employmentStatus` on this path** — the change of behaviour is: `PATCH { employmentStatus }` becomes a 400 instead of a partial, session-leaking write.
 
 **(b) Give `updateEmployee` the missing side effects** — set `endDate` and flip `User.isActive` when `employmentStatus` changes. **Rejected:**
+
 - It makes `updateEmployee` the **third** hand-written copy of the offboard semantics (after `offboardEmployee` and `finalizeSeparation`) — the exact drift mechanism #235's own INNOVATE section (`docs/plans/235-reportstoid-cross-tenant.md:100-108`) identified as the cause of that bug.
 - It cannot express reactivation coherently: clear `endDate` to what? Re-activate the login of someone with a **FINALIZED** `SeparationRecord` whose loans were force-settled to `PAID` and whose final pay was snapshotted? There is no product decision behind any of those answers, and inventing one in a security fix is exactly the speculative scope CLAUDE.md §2 forbids.
 - It cannot express `ON_LEAVE` at all — §0.2(2): no writer sets it, and setting it silently removes the employee from payroll.
 - No consumer is asking for it (§0, last row: nothing in the product calls this route).
 
 **Chosen: (a), reject.** Reject **all three** values, not just `OFFBOARDED`:
+
 - `OFFBOARDED` → `POST ?action=offboard` exists and does it correctly, self-guard included.
 - `ACTIVE` (un-offboarding) → no writer exists; doing it through here produces an employee the roster calls active and the auth hook still locks out.
 - `ON_LEAVE` → no writer, no reader that distinguishes it from ACTIVE on the roster (`offboardedFilter`, `:147-166`, groups them), and three readers that treat it as "not ACTIVE" and silently exclude the person from payroll and clock-in.
@@ -174,15 +182,15 @@ I applied the "guard in the service" doctrine mechanically. Tracing it against t
 `updateEmployee`'s guards run in source order: `assertNotSelf` at `:582-589` (which lists `employmentStatus`), then the branch check, then the reportsTo check, then the write. A service-level `employmentStatus` rejection has to be placed relative to that:
 
 - **Before `assertNotSelf`** → `{ employmentStatus: 'OFFBOARDED' }` on one's own record now returns **400**, not the **403 `SELF_ACTION_DENIED`** that `tests/unit/self-action-guards.test.ts:104-114` asserts (the loop at `:106-112` calls `refusesSelf`, which matches on the message constant). **That test goes red**, and the fix would be to edit a self-action regression test in a PR about authorization — precisely the kind of edit that should never be routine.
-- **After `assertNotSelf`** → the test stays green, but the code now depends on an *ordering* between two guards for its observable behaviour, with nothing in either guard's comment saying so. A future reorder silently converts a self-dealing 403 into a generic 400.
+- **After `assertNotSelf`** → the test stays green, but the code now depends on an _ordering_ between two guards for its observable behaviour, with nothing in either guard's comment saying so. A future reorder silently converts a self-dealing 403 into a generic 400.
 
 Neither is acceptable in a security change. The route-level placement has neither problem: `updateEmployee` is untouched, `assertNotSelf` keeps all four entries and all four behaviours, and `self-action-guards.test.ts` passes byte-identically.
 
-**(b) The doctrine's own justification is absent here.** Both quoted comments give the *same* reason — "so the form action and its v1 API twin are covered by one check". That reason presupposes **two doors**. §0.2(1) establishes there is exactly one: no form action, no other service caller, and no product code anywhere sends `employmentStatus` to `updateEmployee`. Guarding the single door at the door is not a doctrine violation; it is the doctrine's premise not being met. And the route already owns a field-subset split for exactly this reason (`+server.ts:95-102`).
+**(b) The doctrine's own justification is absent here.** Both quoted comments give the _same_ reason — "so the form action and its v1 API twin are covered by one check". That reason presupposes **two doors**. §0.2(1) establishes there is exactly one: no form action, no other service caller, and no product code anywhere sends `employmentStatus` to `updateEmployee`. Guarding the single door at the door is not a doctrine violation; it is the doctrine's premise not being met. And the route already owns a field-subset split for exactly this reason (`+server.ts:95-102`).
 
 **Reversed: the `employmentStatus` rejection goes in the route handler,** immediately after the destructure, before `ctx` is built and before any query.
 
-**What is deliberately *not* done, and why:** `UpdateEmployeeInput.employmentStatus` (`:80`) and `.endDate` (`:81`) stay in the interface, and `assertNotSelf`'s four-field list stays as-is, even though after this change no caller reaches either. That mirrors #235's own decision to keep `assertManagerInOrg` inside `updateEmployee` after the field stopped arriving there: a fail-closed backstop at the write boundary costs nothing and covers the next caller. It is also what CLAUDE.md §3 requires — my change orphans them, but they are guards, not dead helpers, and deleting a guard because the current caller set does not trip it is how #228 happened.
+**What is deliberately _not_ done, and why:** `UpdateEmployeeInput.employmentStatus` (`:80`) and `.endDate` (`:81`) stay in the interface, and `assertNotSelf`'s four-field list stays as-is, even though after this change no caller reaches either. That mirrors #235's own decision to keep `assertManagerInOrg` inside `updateEmployee` after the field stopped arriving there: a fail-closed backstop at the write boundary costs nothing and covers the next caller. It is also what CLAUDE.md §3 requires — my change orphans them, but they are guards, not dead helpers, and deleting a guard because the current caller set does not trip it is how #228 happened.
 
 ## 4.2 Two consequences of D1 the draft did not trace
 
@@ -191,7 +199,7 @@ Neither is acceptable in a security change. The route-level placement has neithe
 
 ```ts
 if (eff.getTime() < utcMidnight(employee.startDate).getTime()) {
-    error(400, 'Effective date cannot be before the hire date.')
+	error(400, 'Effective date cannot be before the hire date.')
 }
 ```
 
@@ -219,20 +227,20 @@ The route passes `effectiveDate: new Date()`. So for an employee whose `startDat
 
 ## 4.5 Alternatives brainstormed and rejected
 
-| # | Alternative | Verdict |
-| --- | --- | --- |
-| A | **Gate `reportsToId` on `requireMinRole('HR_ADMIN')`** (the issue's option 1). | **Rejected — it is a no-op.** `ROLE_HIERARCHY` ranks `MANAGER: 2` and `HR_ADMIN: 2` (`rbac.ts:22-28`), `hasMinRole` is `>=` (`:32-34`), pinned by `tests/unit/rbac.test.ts` (`hasMinRole('MANAGER','HR_ADMIN') === true`). The check would admit exactly the actor it was written to exclude, and would read as protection to every future reader. `action-proposals.ts:40-43` warns about this shape by name. |
-| B | **Strip `reportsToId` from `updateSchema`** (the issue's option 2). | **Rejected**, same three reasons #235 rejected it (`docs/plans/235-reportstoid-cross-tenant.md:77-79`), the first of which is fatal: Zod strips unknown keys, so it is a **silent 200 no-op** on a write. Making it loud costs the code the option was meant to save — and then you still have no proposal routing, so it does not even fix #263. |
-| C | **Option B of §1 — `proposeIfRequired` inside `updateEmployee`.** | **Rejected** — §1, four findings. Needs `confirmTx` plumbing, a synthetic payload or a widened `.strict()` schema, a third `applyProposedChange` branch and a new `ProposalDomain`. ~60 lines to reach where Option A gets by moving one identifier. |
-| D | **New `ProposalDomain.REPORTING_LINE`.** | **Rejected** — §1.1. Needs a `db push` everywhere, a new apply branch (a second place to get the org re-check wrong), a `domainLabels` entry, and it would give the same edit two different domains depending on which door filed it — rebuilding #263's asymmetry inside the queue. `PROMOTION` already carries `reportsToId` in `proposalPayloadSchema:1107` and renders it in the queue. |
-| E | **Add `reportsToId` to `assertNotSelf`.** | **Rejected** — §2. A second guard for one gap; dead on the live path after D1; and 403 is the answer #224/#243 deliberately replaced with propose→confirm for every other field this writer owns. |
-| F | **Give `updateEmployee` the `endDate` + `User.isActive` side effects.** | **Rejected** — §3.2(b). A third copy of the offboard semantics after `offboardEmployee` and `finalizeSeparation`; no coherent reactivation semantics; no consumer asking. |
-| G | **Add a `POST ?action=reactivate` while we are here.** | **Rejected — pure scope creep.** Nothing in the product reactivates an employee today, through any door. If it is wanted it needs a product decision about `endDate`, the `SeparationRecord`, and the settled loans — its own issue. |
-| H | **`.min(1)` on `reportsToId` in `updateSchema`.** | **Rejected as unnecessary** — §6.5. After D1 the field reaches `promoteEmployee`, whose `!== undefined` condition sends `''` into `assertManagerInOrg('')` → clean 404. Adding it would be a second, redundant validation. |
-| I | **Tighten `updateEmployee:609` from `if (input.reportsToId &&` to `!== undefined`** to close the residual `''` → 500 for hypothetical future callers. | **Rejected — do not touch #235's just-landed code for a hypothetical.** No caller reaches it after D1; the outcome is a 500 on a forged empty FK, i.e. robustness, not authorization. Documented in §6.5 and the PR instead. |
-| J | **Make `updateSchema` `.strict()`** so unknown keys 400 instead of being stripped. | ~~Rejected — right idea, wrong PR.~~ **⚠ REVERSED — filed as #264 and folded in; see §12.** The rejection turned on "no test coverage over the callers"; §12.2 supplies that coverage by auditing every caller in the repo (there are six bodies, all in unit tests, all subsets of the schema) and finds the blast radius empty. |
-| K | **Fix the "A pay change is waiting" notification copy.** | ~~Rejected — flag only.~~ **⚠ REVERSED — filed as #265 and folded in; see §14.** The rejection assumed "three strings **plus assertions**"; §14.2 finds **zero** test assertions on any of the three, so the change is three template literals and one lookup const, in a file nothing else in this PR opens. |
-| L | **Fold #263 into `reports-to-scoping.test.ts`** rather than a new test file. | **Rejected.** That file's docblock (`:4-12`) is a #235 narrative about cross-tenant writes, and its `dbMock` lacks `position`, `branch`, `employee.findUnique` and a tx client — everything `promoteEmployee` and a MANAGER-actor `canTouchEmployee` need. Extending it would blur two issues in one file's story. New file, §6.1. |
+| #   | Alternative                                                                                                                                           | Verdict                                                                                                                                                                                                                                                                                                                                                                                                        |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A   | **Gate `reportsToId` on `requireMinRole('HR_ADMIN')`** (the issue's option 1).                                                                        | **Rejected — it is a no-op.** `ROLE_HIERARCHY` ranks `MANAGER: 2` and `HR_ADMIN: 2` (`rbac.ts:22-28`), `hasMinRole` is `>=` (`:32-34`), pinned by `tests/unit/rbac.test.ts` (`hasMinRole('MANAGER','HR_ADMIN') === true`). The check would admit exactly the actor it was written to exclude, and would read as protection to every future reader. `action-proposals.ts:40-43` warns about this shape by name. |
+| B   | **Strip `reportsToId` from `updateSchema`** (the issue's option 2).                                                                                   | **Rejected**, same three reasons #235 rejected it (`docs/plans/235-reportstoid-cross-tenant.md:77-79`), the first of which is fatal: Zod strips unknown keys, so it is a **silent 200 no-op** on a write. Making it loud costs the code the option was meant to save — and then you still have no proposal routing, so it does not even fix #263.                                                              |
+| C   | **Option B of §1 — `proposeIfRequired` inside `updateEmployee`.**                                                                                     | **Rejected** — §1, four findings. Needs `confirmTx` plumbing, a synthetic payload or a widened `.strict()` schema, a third `applyProposedChange` branch and a new `ProposalDomain`. ~60 lines to reach where Option A gets by moving one identifier.                                                                                                                                                           |
+| D   | **New `ProposalDomain.REPORTING_LINE`.**                                                                                                              | **Rejected** — §1.1. Needs a `db push` everywhere, a new apply branch (a second place to get the org re-check wrong), a `domainLabels` entry, and it would give the same edit two different domains depending on which door filed it — rebuilding #263's asymmetry inside the queue. `PROMOTION` already carries `reportsToId` in `proposalPayloadSchema:1107` and renders it in the queue.                    |
+| E   | **Add `reportsToId` to `assertNotSelf`.**                                                                                                             | **Rejected** — §2. A second guard for one gap; dead on the live path after D1; and 403 is the answer #224/#243 deliberately replaced with propose→confirm for every other field this writer owns.                                                                                                                                                                                                              |
+| F   | **Give `updateEmployee` the `endDate` + `User.isActive` side effects.**                                                                               | **Rejected** — §3.2(b). A third copy of the offboard semantics after `offboardEmployee` and `finalizeSeparation`; no coherent reactivation semantics; no consumer asking.                                                                                                                                                                                                                                      |
+| G   | **Add a `POST ?action=reactivate` while we are here.**                                                                                                | **Rejected — pure scope creep.** Nothing in the product reactivates an employee today, through any door. If it is wanted it needs a product decision about `endDate`, the `SeparationRecord`, and the settled loans — its own issue.                                                                                                                                                                           |
+| H   | **`.min(1)` on `reportsToId` in `updateSchema`.**                                                                                                     | **Rejected as unnecessary** — §6.5. After D1 the field reaches `promoteEmployee`, whose `!== undefined` condition sends `''` into `assertManagerInOrg('')` → clean 404. Adding it would be a second, redundant validation.                                                                                                                                                                                     |
+| I   | **Tighten `updateEmployee:609` from `if (input.reportsToId &&` to `!== undefined`** to close the residual `''` → 500 for hypothetical future callers. | **Rejected — do not touch #235's just-landed code for a hypothetical.** No caller reaches it after D1; the outcome is a 500 on a forged empty FK, i.e. robustness, not authorization. Documented in §6.5 and the PR instead.                                                                                                                                                                                   |
+| J   | **Make `updateSchema` `.strict()`** so unknown keys 400 instead of being stripped.                                                                    | ~~Rejected — right idea, wrong PR.~~ **⚠ REVERSED — filed as #264 and folded in; see §12.** The rejection turned on "no test coverage over the callers"; §12.2 supplies that coverage by auditing every caller in the repo (there are six bodies, all in unit tests, all subsets of the schema) and finds the blast radius empty.                                                                              |
+| K   | **Fix the "A pay change is waiting" notification copy.**                                                                                              | ~~Rejected — flag only.~~ **⚠ REVERSED — filed as #265 and folded in; see §14.** The rejection assumed "three strings **plus assertions**"; §14.2 finds **zero** test assertions on any of the three, so the change is three template literals and one lookup const, in a file nothing else in this PR opens.                                                                                                  |
+| L   | **Fold #263 into `reports-to-scoping.test.ts`** rather than a new test file.                                                                          | **Rejected.** That file's docblock (`:4-12`) is a #235 narrative about cross-tenant writes, and its `dbMock` lacks `position`, `branch`, `employee.findUnique` and a tx client — everything `promoteEmployee` and a MANAGER-actor `canTouchEmployee` need. Extending it would blur two issues in one file's story. New file, §6.1.                                                                             |
 
 ---
 
@@ -251,63 +259,63 @@ Replace `:95-108`.
 **Before**
 
 ```ts
-	// #170/#222: pay and employment type must never be written straight onto the Employee row — both
-	// are effective-dated, so a bare Employee write would desync the history the payroll run reads.
-	// Split them out: everything else still goes through updateEmployee, while pay and type go to
-	// promoteEmployee, which records both as effective-today snapshots in ONE transaction. It has to
-	// be one call rather than two writers: the rate-basis pairing (#189) can only be validated on the
-	// resulting state, and a PART_TIME/HOURLY → REGULAR/MONTHLY change is invalid at every
-	// intermediate step. Resending the same values is a no-op, not an error.
-	const { basicMonthlySalary, rateType, employmentType, ...rest } = parsed.data
-	const ctx = {
-		organizationId: locals.user.organizationId,
-		actorId: locals.user.id,
-		actorRole: locals.user.role,
-		actorRoles: locals.user.roles
-	}
+// #170/#222: pay and employment type must never be written straight onto the Employee row — both
+// are effective-dated, so a bare Employee write would desync the history the payroll run reads.
+// Split them out: everything else still goes through updateEmployee, while pay and type go to
+// promoteEmployee, which records both as effective-today snapshots in ONE transaction. It has to
+// be one call rather than two writers: the rate-basis pairing (#189) can only be validated on the
+// resulting state, and a PART_TIME/HOURLY → REGULAR/MONTHLY change is invalid at every
+// intermediate step. Resending the same values is a no-op, not an error.
+const { basicMonthlySalary, rateType, employmentType, ...rest } = parsed.data
+const ctx = {
+	organizationId: locals.user.organizationId,
+	actorId: locals.user.id,
+	actorRole: locals.user.role,
+	actorRoles: locals.user.roles
+}
 ```
 
 **After**
 
 ```ts
-	// #170/#222: pay and employment type must never be written straight onto the Employee row — both
-	// are effective-dated, so a bare Employee write would desync the history the payroll run reads.
-	// Split them out: everything else still goes through updateEmployee, while pay and type go to
-	// promoteEmployee, which records both as effective-today snapshots in ONE transaction. It has to
-	// be one call rather than two writers: the rate-basis pairing (#189) can only be validated on the
-	// resulting state, and a PART_TIME/HOURLY → REGULAR/MONTHLY change is invalid at every
-	// intermediate step. Resending the same values is a no-op, not an error.
-	//
-	// #263 puts `reportsToId` in the same split, for an authorization reason rather than a history
-	// one: promoteEmployee is the writer that routes a change through propose→confirm (#224 Part 2 /
-	// #243), and it is the only reporting-line path the UI has. Left in `rest` it reached
-	// updateEmployee, which has no proposal call at all — so a MANAGER re-pointed a reporting line
-	// unilaterally through the API while the same edit in the UI needed a second person. It must be
-	// destructured OUT, not merely added to the call below: written by both writers, the column would
-	// land immediately while the proposal it just filed is still pending.
-	const { basicMonthlySalary, rateType, employmentType, employmentStatus, reportsToId, ...rest } =
-		parsed.data
+// #170/#222: pay and employment type must never be written straight onto the Employee row — both
+// are effective-dated, so a bare Employee write would desync the history the payroll run reads.
+// Split them out: everything else still goes through updateEmployee, while pay and type go to
+// promoteEmployee, which records both as effective-today snapshots in ONE transaction. It has to
+// be one call rather than two writers: the rate-basis pairing (#189) can only be validated on the
+// resulting state, and a PART_TIME/HOURLY → REGULAR/MONTHLY change is invalid at every
+// intermediate step. Resending the same values is a no-op, not an error.
+//
+// #263 puts `reportsToId` in the same split, for an authorization reason rather than a history
+// one: promoteEmployee is the writer that routes a change through propose→confirm (#224 Part 2 /
+// #243), and it is the only reporting-line path the UI has. Left in `rest` it reached
+// updateEmployee, which has no proposal call at all — so a MANAGER re-pointed a reporting line
+// unilaterally through the API while the same edit in the UI needed a second person. It must be
+// destructured OUT, not merely added to the call below: written by both writers, the column would
+// land immediately while the proposal it just filed is still pending.
+const { basicMonthlySalary, rateType, employmentType, employmentStatus, reportsToId, ...rest } =
+	parsed.data
 
-	// #263: employment status is not a plain column. `offboardEmployee` sets it together with
-	// `endDate` AND `User.isActive = false` — the flag `isSessionBlocked` reads (access-guard.ts) —
-	// so writing the column alone leaves an OFFBOARDED employee holding a live session, and writing
-	// it back to ACTIVE leaves a reactivated one locked out. ON_LEAVE has no writer anywhere and
-	// silently drops the employee from every `employmentStatus: 'ACTIVE'` payroll and attendance
-	// query. Rejected loudly rather than dropped from `updateSchema`: zod strips unknown keys, so a
-	// removal would make this a silent 200 that discards the field.
-	if (employmentStatus !== undefined) {
-		return apiError(
-			400,
-			'Employment status is not editable here — offboarding goes through POST ?action=offboard, which also records the end date and deactivates the login.'
-		)
-	}
+// #263: employment status is not a plain column. `offboardEmployee` sets it together with
+// `endDate` AND `User.isActive = false` — the flag `isSessionBlocked` reads (access-guard.ts) —
+// so writing the column alone leaves an OFFBOARDED employee holding a live session, and writing
+// it back to ACTIVE leaves a reactivated one locked out. ON_LEAVE has no writer anywhere and
+// silently drops the employee from every `employmentStatus: 'ACTIVE'` payroll and attendance
+// query. Rejected loudly rather than dropped from `updateSchema`: zod strips unknown keys, so a
+// removal would make this a silent 200 that discards the field.
+if (employmentStatus !== undefined) {
+	return apiError(
+		400,
+		'Employment status is not editable here — offboarding goes through POST ?action=offboard, which also records the end date and deactivates the login.'
+	)
+}
 
-	const ctx = {
-		organizationId: locals.user.organizationId,
-		actorId: locals.user.id,
-		actorRole: locals.user.role,
-		actorRoles: locals.user.roles
-	}
+const ctx = {
+	organizationId: locals.user.organizationId,
+	actorId: locals.user.id,
+	actorRole: locals.user.role,
+	actorRoles: locals.user.roles
+}
 ```
 
 `apiError` is already imported (`:13`). No new imports.
@@ -388,18 +396,18 @@ Replace `:160-162`.
 **Before**
 
 ```ts
-		// 202, not 200: the pay change is on file awaiting a second authorized person, so `data` does
-		// NOT yet reflect it. Returning 200 would tell the caller their raise landed when it has not.
-		// Any non-pay fields in the same PATCH did apply — they are not routed through proposals.
+// 202, not 200: the pay change is on file awaiting a second authorized person, so `data` does
+// NOT yet reflect it. Returning 200 would tell the caller their raise landed when it has not.
+// Any non-pay fields in the same PATCH did apply — they are not routed through proposals.
 ```
 
 **After**
 
 ```ts
-		// 202, not 200: the pay and/or reporting-line change is on file awaiting a second authorized
-		// person, so `data` does NOT yet reflect it. Returning 200 would tell the caller their raise or
-		// their re-org landed when it has not. Any other fields in the same PATCH did apply — they are
-		// not routed through proposals.
+// 202, not 200: the pay and/or reporting-line change is on file awaiting a second authorized
+// person, so `data` does NOT yet reflect it. Returning 200 would tell the caller their raise or
+// their re-org landed when it has not. Any other fields in the same PATCH did apply — they are
+// not routed through proposals.
 ```
 
 Comment only. The `if (proposalId)` branch (`:163-165`) is unchanged: `AWAITING_CONFIRMATION` (`employees.ts:664-665`) is already domain-neutral wording.
@@ -520,35 +528,35 @@ Docblock must state the three things this file exists to catch, in the style of 
 - **MANAGER actor:** `canTouchEmployee` runs first — `employee.findUnique` (self) → `listReportIdsFor` (mocked) → `branch.findMany` → **`findFirst` #1** (target/branch check at `employee-access.ts:69`). Then #2 = `getEmployee`, #3 = `assertManagerInOrg`.
 - Blanket `mockResolvedValue(EMP)` is fine wherever `assertManagerInOrg` should **pass** (it only checks truthiness); use `mockResolvedValueOnce` chains only where a specific lookup must return `null`.
 
-| # | describe / it | Asserts |
-| --- | --- | --- |
-| **`reportsToId` is proposal-routed (#263)** | | |
-| 1 | a bare `[MANAGER]` PATCHing a report's `reportsToId` **files a proposal, does not write** | `res.status === 202`; body has `proposalId: 'prop-1'` and `notice === AWAITING_CONFIRMATION`; `createProposal` called with `expect.objectContaining({ domain: 'PROMOTION', targetUserId: <target user>, payload: expect.objectContaining({ reportsToId: 'mgr2' }) })`; `dbMock.employee.update` **not called**; `dbMock.$transaction` **not called** |
-| 2 | a `[MANAGER, HR_ADMIN]` user writes directly — **200** | `res.status === 200`; `createProposal` **not** called; `employee.update` called with `data.reportsToId === 'mgr2'`. _(#247's full-role-set rule, on the new field.)_ |
-| 3 | an actor re-pointing **their own** reporting line files a self-action proposal | actor's `userId === EMP.userId`; `res.status === 202`; `createProposal` called with `targetUserId === <actor user id>` — the id `createProposal:135` derives `isSelfAction` from, and therefore the `APPROVE_FINANCE` confirmer. Uses an **HR_ADMIN** actor, so the routing is provably the *self* branch and not the missing-capability branch (`employees.ts:707`). No write. |
-| 4 | **the field does not reach `updateEmployee` in the same request** | body `{ reportsToId: 'mgr2', contactPhone: '0917' }` as a bare `[MANAGER]` → 202; `employee.update` **not called** (so the reporting line did NOT land while its proposal is pending); `createProposal` called once. _(§4.2(b) — the single most important case in the file.)_ |
-| 5 | an HR_ADMIN acting on someone else still writes directly | `res.status === 200`; `createProposal` not called; `employee.update` `data.reportsToId === 'mgr2'`. _(The 95%-of-usage path, unchanged.)_ |
-| 6 | resending the **current** reporting line is a no-op, not a 400 | `EMP.reportsToId === 'mgr2'`, body `{ reportsToId: 'mgr2' }`, HR_ADMIN → `res.status === 200`; `createProposal` not called; `employee.update` not called. _(§4.3(1): the `NO_CHANGE` swallow now covers this path.)_ |
-| ~~7~~ | ~~a **future-dated hire's** reporting line is refused with the hire-date message~~ | **❌ DELETED — see §17.2.** #266 fixes the floor, so the expected outcome inverts from 400 to success. Replaced by two cases (§17.2 rows 7 and 8) that pin the new contract in both directions. The docblock reasoning in §4.2(a) is rewritten by §13.6, not silently dropped. |
-| 8 | a **cross-tenant** manager id is still refused, and nothing is filed | `assertManagerInOrg`'s lookup → `null`; `res.status === 404`; `createProposal` **not** called; no write. _(Validation before filing, the rule `pay-proposal-routing.test.ts:270-309` pins for pay. Assert on **status**, not message — the route flattens every 404 to 'Employee not found' at `:169`.)_ |
-| 9 | an **empty-string** `reportsToId` is a clean 404, not a 500 | body `{ reportsToId: '' }`; manager lookup → `null`; `res.status === 404`. _(§6.5 — pins that the field now takes the `!== undefined` path.)_ |
-| **`employmentStatus` is not editable here (#263)** | | |
-| 10 | `OFFBOARDED` is refused | `res.status === 400`; message mentions `?action=offboard`; `employee.update` **not called**; `dbMock.employee.findFirst` **not called** — the rejection precedes every query |
-| 11 | `ACTIVE` and `ON_LEAVE` are refused too | loop both values → 400 each; no write. _(Not just the destructive value: `OFFBOARDED → ACTIVE` is the un-offboard that leaves `User.isActive` false.)_ |
-| 12 | it does not take the rest of the PATCH down with it silently | body `{ employmentStatus: 'OFFBOARDED', contactPhone: '0917' }` → 400, and `employee.update` **not called**. _(The whole request is refused; the caller resubmits without the field. Pins that we did not build a partial-apply.)_ |
-| 13 | a PATCH with no `employmentStatus` is untouched by the guard | `{ contactPhone: '0917' }` → 200; `employee.update` called with `data.contactPhone` |
+| #                                                  | describe / it                                                                             | Asserts                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`reportsToId` is proposal-routed (#263)**        |                                                                                           |                                                                                                                                                                                                                                                                                                                                                                                 |
+| 1                                                  | a bare `[MANAGER]` PATCHing a report's `reportsToId` **files a proposal, does not write** | `res.status === 202`; body has `proposalId: 'prop-1'` and `notice === AWAITING_CONFIRMATION`; `createProposal` called with `expect.objectContaining({ domain: 'PROMOTION', targetUserId: <target user>, payload: expect.objectContaining({ reportsToId: 'mgr2' }) })`; `dbMock.employee.update` **not called**; `dbMock.$transaction` **not called**                            |
+| 2                                                  | a `[MANAGER, HR_ADMIN]` user writes directly — **200**                                    | `res.status === 200`; `createProposal` **not** called; `employee.update` called with `data.reportsToId === 'mgr2'`. _(#247's full-role-set rule, on the new field.)_                                                                                                                                                                                                            |
+| 3                                                  | an actor re-pointing **their own** reporting line files a self-action proposal            | actor's `userId === EMP.userId`; `res.status === 202`; `createProposal` called with `targetUserId === <actor user id>` — the id `createProposal:135` derives `isSelfAction` from, and therefore the `APPROVE_FINANCE` confirmer. Uses an **HR_ADMIN** actor, so the routing is provably the _self_ branch and not the missing-capability branch (`employees.ts:707`). No write. |
+| 4                                                  | **the field does not reach `updateEmployee` in the same request**                         | body `{ reportsToId: 'mgr2', contactPhone: '0917' }` as a bare `[MANAGER]` → 202; `employee.update` **not called** (so the reporting line did NOT land while its proposal is pending); `createProposal` called once. _(§4.2(b) — the single most important case in the file.)_                                                                                                  |
+| 5                                                  | an HR_ADMIN acting on someone else still writes directly                                  | `res.status === 200`; `createProposal` not called; `employee.update` `data.reportsToId === 'mgr2'`. _(The 95%-of-usage path, unchanged.)_                                                                                                                                                                                                                                       |
+| 6                                                  | resending the **current** reporting line is a no-op, not a 400                            | `EMP.reportsToId === 'mgr2'`, body `{ reportsToId: 'mgr2' }`, HR_ADMIN → `res.status === 200`; `createProposal` not called; `employee.update` not called. _(§4.3(1): the `NO_CHANGE` swallow now covers this path.)_                                                                                                                                                            |
+| ~~7~~                                              | ~~a **future-dated hire's** reporting line is refused with the hire-date message~~        | **❌ DELETED — see §17.2.** #266 fixes the floor, so the expected outcome inverts from 400 to success. Replaced by two cases (§17.2 rows 7 and 8) that pin the new contract in both directions. The docblock reasoning in §4.2(a) is rewritten by §13.6, not silently dropped.                                                                                                  |
+| 8                                                  | a **cross-tenant** manager id is still refused, and nothing is filed                      | `assertManagerInOrg`'s lookup → `null`; `res.status === 404`; `createProposal` **not** called; no write. _(Validation before filing, the rule `pay-proposal-routing.test.ts:270-309` pins for pay. Assert on **status**, not message — the route flattens every 404 to 'Employee not found' at `:169`.)_                                                                        |
+| 9                                                  | an **empty-string** `reportsToId` is a clean 404, not a 500                               | body `{ reportsToId: '' }`; manager lookup → `null`; `res.status === 404`. _(§6.5 — pins that the field now takes the `!== undefined` path.)_                                                                                                                                                                                                                                   |
+| **`employmentStatus` is not editable here (#263)** |                                                                                           |                                                                                                                                                                                                                                                                                                                                                                                 |
+| 10                                                 | `OFFBOARDED` is refused                                                                   | `res.status === 400`; message mentions `?action=offboard`; `employee.update` **not called**; `dbMock.employee.findFirst` **not called** — the rejection precedes every query                                                                                                                                                                                                    |
+| 11                                                 | `ACTIVE` and `ON_LEAVE` are refused too                                                   | loop both values → 400 each; no write. _(Not just the destructive value: `OFFBOARDED → ACTIVE` is the un-offboard that leaves `User.isActive` false.)_                                                                                                                                                                                                                          |
+| 12                                                 | it does not take the rest of the PATCH down with it silently                              | body `{ employmentStatus: 'OFFBOARDED', contactPhone: '0917' }` → 400, and `employee.update` **not called**. _(The whole request is refused; the caller resubmits without the field. Pins that we did not build a partial-apply.)_                                                                                                                                              |
+| 13                                                 | a PATCH with no `employmentStatus` is untouched by the guard                              | `{ contactPhone: '0917' }` → 200; `employee.update` called with `data.contactPhone`                                                                                                                                                                                                                                                                                             |
 
 ### 6.2 Existing tests that must stay green **unmodified**
 
-| File | Why it is the signal it is |
-| --- | --- |
-| `tests/unit/self-action-guards.test.ts:104-121` | **The single most important untouched test.** `:104-114` asserts `updateEmployee` returns 403 `SELF_ACTION_DENIED` for `{ employmentStatus: 'OFFBOARDED' }` and `{ endDate }` on one's own record. It is green **only** because the rejection went in the route, not the service (§4.1(a)). If it goes red, D3's placement was reverted by mistake. |
-| `tests/unit/reports-to-scoping.test.ts` (all 10) | #235's own file, on this branch. `:203-225`'s two **route** cases both send `reportsToId` through the PATCH: `:204-212` expects **404** for a cross-tenant id (still 404, now from `promoteEmployee`'s `assertManagerInOrg` — same helper, same status) and `:214-225` expects **200** with `employee.update` carrying `data.reportsToId`. ⚠️ **`:214-225` will need its mock chain re-sequenced**, because after Step 1 the write comes from `promoteEmployee`'s transaction rather than `updateEmployee`'s. See §6.3 — this is the one existing file this change is expected to touch, and touching it must be a deliberate, explained edit, never a convenience. |
-| `tests/unit/pay-write-role-context.test.ts:148-162` | The MANAGER-actor PATCH pair. Body is `{ basicMonthlySalary: 50000 }` — no `reportsToId`, no `employmentStatus` — so the widened condition and the new rejection are both inert. Proves the pay path is byte-unchanged. |
-| `tests/unit/employee-api-compensation.test.ts` | Every PATCH body is pay-only. |
-| `tests/unit/promotion.test.ts` | ⚠ **AMENDED by §17.3.** `promoteEmployee`'s own guards, including `:144-157` (self-report 400, cross-org 404) — those stay green unmodified. #266 edits `promoteEmployee`, so this file **gains two cases**. Critically, its existing `:158-167` (`'refuses an effective date before the hire date'`) also stays green **unmodified** under the §13.4 design — see §13.5, which is the single finding that chose that design over the one #266 proposed. |
-| `tests/unit/pay-proposal-routing.test.ts` | The routing decision itself. Untouched. |
-| `tests/unit/rbac.test.ts` | `hasMinRole('MANAGER','HR_ADMIN') === true` — the fact that makes alternative A a no-op. |
+| File                                                | Why it is the signal it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tests/unit/self-action-guards.test.ts:104-121`     | **The single most important untouched test.** `:104-114` asserts `updateEmployee` returns 403 `SELF_ACTION_DENIED` for `{ employmentStatus: 'OFFBOARDED' }` and `{ endDate }` on one's own record. It is green **only** because the rejection went in the route, not the service (§4.1(a)). If it goes red, D3's placement was reverted by mistake.                                                                                                                                                                                                                                                                                                                 |
+| `tests/unit/reports-to-scoping.test.ts` (all 10)    | #235's own file, on this branch. `:203-225`'s two **route** cases both send `reportsToId` through the PATCH: `:204-212` expects **404** for a cross-tenant id (still 404, now from `promoteEmployee`'s `assertManagerInOrg` — same helper, same status) and `:214-225` expects **200** with `employee.update` carrying `data.reportsToId`. ⚠️ **`:214-225` will need its mock chain re-sequenced**, because after Step 1 the write comes from `promoteEmployee`'s transaction rather than `updateEmployee`'s. See §6.3 — this is the one existing file this change is expected to touch, and touching it must be a deliberate, explained edit, never a convenience. |
+| `tests/unit/pay-write-role-context.test.ts:148-162` | The MANAGER-actor PATCH pair. Body is `{ basicMonthlySalary: 50000 }` — no `reportsToId`, no `employmentStatus` — so the widened condition and the new rejection are both inert. Proves the pay path is byte-unchanged.                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `tests/unit/employee-api-compensation.test.ts`      | Every PATCH body is pay-only.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `tests/unit/promotion.test.ts`                      | ⚠ **AMENDED by §17.3.** `promoteEmployee`'s own guards, including `:144-157` (self-report 400, cross-org 404) — those stay green unmodified. #266 edits `promoteEmployee`, so this file **gains two cases**. Critically, its existing `:158-167` (`'refuses an effective date before the hire date'`) also stays green **unmodified** under the §13.4 design — see §13.5, which is the single finding that chose that design over the one #266 proposed.                                                                                                                                                                                                            |
+| `tests/unit/pay-proposal-routing.test.ts`           | The routing decision itself. Untouched.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `tests/unit/rbac.test.ts`                           | `hasMinRole('MANAGER','HR_ADMIN') === true` — the fact that makes alternative A a no-op.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 ### 6.3 The one existing test that needs a deliberate edit
 
@@ -698,6 +706,7 @@ Table names are snake_case plural; camelCase columns need double quotes (per the
 17. After merge, close **#235 and #263 by hand** — issues do not auto-close on a merge to `staging`.
 
 ---
+
 ---
 
 # EXTENSION — folding #264, #265 and #266 into the same PR
@@ -717,14 +726,14 @@ deliverables that supersede §5/§6/§7/§8/§9/§10.
 
 They are **§10 step 16's own three follow-ups**, filed and then pulled back in:
 
-| Issue | §10 step 16 called it | Origin in this document |
-| --- | --- | --- |
-| **#264** | (a) `updateSchema` `.strict()` | §4.5 alternative **J**, rejected as "right idea, wrong PR" |
-| **#265** | (b) domain-agnostic proposal notification copy | §4.3(3) / §4.5 alternative **K**, "flag only" |
-| **#266** | (c) a future-dated hire's reporting line uneditable before their start date | §4.2(a), "accepted, not worked around" |
+| Issue    | §10 step 16 called it                                                       | Origin in this document                                    |
+| -------- | --------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| **#264** | (a) `updateSchema` `.strict()`                                              | §4.5 alternative **J**, rejected as "right idea, wrong PR" |
+| **#265** | (b) domain-agnostic proposal notification copy                              | §4.3(3) / §4.5 alternative **K**, "flag only"              |
+| **#266** | (c) a future-dated hire's reporting line uneditable before their start date | §4.2(a), "accepted, not worked around"                     |
 
 That matters for the review argument: none of the three is new scope discovered mid-build. Each
-was found *by* this plan's own research, argued in writing, and deferred on a stated reason. Folding
+was found _by_ this plan's own research, argued in writing, and deferred on a stated reason. Folding
 them in means **reversing three recorded rejections**, so each one below re-opens its original
 argument and says what changed. Two reverse because the stated reason turned out to be factually
 wrong (§12.2, §14.2); one reverses because the user decided the delta is a bug worth fixing rather
@@ -734,12 +743,12 @@ than a contract worth pinning (§13).
 
 `#263 core` = §5 Steps 1–3 (`+server.ts:95-165`) + Step 4 (`contracts/employees.md:83-105`).
 
-| Item | Files / ranges it touches | Textual overlap with #263 core | Behavioural coupling to #263 core |
-| --- | --- | --- | --- |
-| **#264** | `+server.ts:20-39` (`updateSchema`) — **one file, one range** | **None.** Same file, lines 20-39 vs 95-165. No shared hunk. | **Yes, one-directional and upstream.** `.strict()` fires inside `safeParse` at `:89`, which is *before* the destructure at `:102`. #263's two carve-outs sit downstream of it. Traced in full in §12.1. |
-| **#265** | `action-proposals.ts` — one new const + three template literals (`:170-174`, `:224`, `:264`) | **None.** #263 core never opens this file, and §5 Step 5 lists it as verify-only. | **None.** No route, no writer, no guard. The only link is motivational: #263 makes a `reportsToId`-only `PROMOTION` reachable from a second door, which is *why* the copy is worth fixing now. |
-| **#266** | `employees.ts` `promoteEmployee` — the floor at `:906-910` moves to `:963` | **None.** #263 core edits no service file. `employees.ts` appears in §5 only as Step 5's verify-only list, and the floor is **not** on that list (`:402-409`, `:582-589`, `:605-611`, `:1099-1110`) — re-checked line by line, confirming #266 does not contradict any "do not edit" instruction already given. | **Yes, and it is destructive if ordered wrong.** #263's §6.1 case 7 asserts the floor's *current* behaviour through the route. #266 inverts that assertion's expected outcome. |
-| **#264 ↔ #265 ↔ #266** | — | **None between any pair.** Three different files, three different mechanisms. | **None between any pair.** |
+| Item                   | Files / ranges it touches                                                                    | Textual overlap with #263 core                                                                                                                                                                                                                                                                                  | Behavioural coupling to #263 core                                                                                                                                                                       |
+| ---------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **#264**               | `+server.ts:20-39` (`updateSchema`) — **one file, one range**                                | **None.** Same file, lines 20-39 vs 95-165. No shared hunk.                                                                                                                                                                                                                                                     | **Yes, one-directional and upstream.** `.strict()` fires inside `safeParse` at `:89`, which is _before_ the destructure at `:102`. #263's two carve-outs sit downstream of it. Traced in full in §12.1. |
+| **#265**               | `action-proposals.ts` — one new const + three template literals (`:170-174`, `:224`, `:264`) | **None.** #263 core never opens this file, and §5 Step 5 lists it as verify-only.                                                                                                                                                                                                                               | **None.** No route, no writer, no guard. The only link is motivational: #263 makes a `reportsToId`-only `PROMOTION` reachable from a second door, which is _why_ the copy is worth fixing now.          |
+| **#266**               | `employees.ts` `promoteEmployee` — the floor at `:906-910` moves to `:963`                   | **None.** #263 core edits no service file. `employees.ts` appears in §5 only as Step 5's verify-only list, and the floor is **not** on that list (`:402-409`, `:582-589`, `:605-611`, `:1099-1110`) — re-checked line by line, confirming #266 does not contradict any "do not edit" instruction already given. | **Yes, and it is destructive if ordered wrong.** #263's §6.1 case 7 asserts the floor's _current_ behaviour through the route. #266 inverts that assertion's expected outcome.                          |
+| **#264 ↔ #265 ↔ #266** | —                                                                                            | **None between any pair.** Three different files, three different mechanisms.                                                                                                                                                                                                                                   | **None between any pair.**                                                                                                                                                                              |
 
 Nothing in the matrix is a conflict. **All three are safe to fold in.** The one hazard is ordering,
 and it is entirely #266's (a test written against the wrong floor semantics), which §11.3 removes.
@@ -754,19 +763,19 @@ and it is entirely #266's (a test written against the wrong floor semantics), wh
 5.  #265   domain-aware notification copy               (action-proposals.ts)
 ```
 
-**#264 first.** It changes the *parse gate every later test in this PR runs through*. Written last
+**#264 first.** It changes the _parse gate every later test in this PR runs through_. Written last
 instead, every one of the 13+ route cases authored in step 3 would need re-verifying against a
 changed `safeParse` outcome — including case 10's `dbMock.employee.findFirst` **not called**
 assertion, which is a claim about how far a request gets before any query. Written first, the
 route's admission rules are settled before a single route test exists. It is also the smallest and
 most reversible of the three (one `.strict()`), so it validates the harness cheaply.
 
-**#266 second, and specifically *before* #263 core.** This is the ordering decision that actually
+**#266 second, and specifically _before_ #263 core.** This is the ordering decision that actually
 matters. Two properties make it the right way round:
 
 - **#266 is independently observable and independently testable before #263 lands.** Today
-  `reportsToId` reaches `updateEmployee`, not `promoteEmployee`, so the floor is unreachable *from
-  the API route*. But it is fully reachable from `?/promote`, where its own regression test already
+  `reportsToId` reaches `updateEmployee`, not `promoteEmployee`, so the floor is unreachable _from
+  the API route_. But it is fully reachable from `?/promote`, where its own regression test already
   lives (`promotion.test.ts:158-167`). So #266 can be built and proven at the service level in its
   own commit, with `promotion.test.ts` and `pay-proposal-routing.test.ts` as the gate, while
   #263 core has not moved a line.
@@ -781,7 +790,7 @@ matters. Two properties make it the right way round:
 are byte-identical to what §5 already specifies. It lands on a settled parse gate and a settled
 floor, so its test file is authored **once**.
 
-**#265 last, and deliberately detached.** It is the only one of the three with *zero* coupling in
+**#265 last, and deliberately detached.** It is the only one of the three with _zero_ coupling in
 either direction — different file, different layer, no shared test. Putting it last means: the two
 riskiest reviews (#266's service change, #263's route change) are read against an unmodified
 notification module; and if a reviewer wants it out, dropping the final commit removes it with no
@@ -795,16 +804,16 @@ for review ergonomics and per-commit greenness, and says so.
 
 > "none of #264/#265/#266 may weaken, regress, or complicate the core #263 fix"
 
-| #263 core property | #264 | #265 | #266 |
-| --- | --- | --- | --- |
-| `reportsToId` is destructured OUT of `rest` (§4.2(b) — the fix itself) | untouched | untouched | untouched |
-| `reportsToId` reaches `promoteEmployee` in ONE call (§1.2) | untouched | untouched | untouched |
-| a MANAGER's re-point files a `PROMOTION` proposal, no write | untouched | changes only the **notification text** the confirmer sees; `createProposal`'s row, domain, payload, confirmer set and 409 are all untouched | untouched — #266 sits ~50 lines above `proposeIfRequired` and cannot reach a call that already returned |
-| a self re-point files a self-action proposal (§2) | untouched | as above | untouched |
-| `employmentStatus` is rejected with an actionable 400 (§4.1) | **must be checked** — see §12.1. Answer: unaffected, because `employmentStatus` is a **known** key and `.strict()` only ever rejects unknown ones. | untouched | untouched |
-| `assertNotSelf`'s four entries stay as they are (§2) | untouched | untouched | untouched |
-| `''` → clean 404, not 500 (§6.5) | untouched — `''` is a *value*, not an unknown key, so `.strict()` never sees it | untouched | untouched — the floor is gated on what changed, and `''` still reaches `assertManagerInOrg` |
-| the `NO_CHANGE` swallow covers reporting lines (§4.3(1)) | untouched | untouched | **narrow interaction, benign** — see §13.7(c): a no-change call has nothing in the floor's gate, so `NO_CHANGE` fires either way, at the same status |
+| #263 core property                                                     | #264                                                                                                                                               | #265                                                                                                                                        | #266                                                                                                                                                 |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `reportsToId` is destructured OUT of `rest` (§4.2(b) — the fix itself) | untouched                                                                                                                                          | untouched                                                                                                                                   | untouched                                                                                                                                            |
+| `reportsToId` reaches `promoteEmployee` in ONE call (§1.2)             | untouched                                                                                                                                          | untouched                                                                                                                                   | untouched                                                                                                                                            |
+| a MANAGER's re-point files a `PROMOTION` proposal, no write            | untouched                                                                                                                                          | changes only the **notification text** the confirmer sees; `createProposal`'s row, domain, payload, confirmer set and 409 are all untouched | untouched — #266 sits ~50 lines above `proposeIfRequired` and cannot reach a call that already returned                                              |
+| a self re-point files a self-action proposal (§2)                      | untouched                                                                                                                                          | as above                                                                                                                                    | untouched                                                                                                                                            |
+| `employmentStatus` is rejected with an actionable 400 (§4.1)           | **must be checked** — see §12.1. Answer: unaffected, because `employmentStatus` is a **known** key and `.strict()` only ever rejects unknown ones. | untouched                                                                                                                                   | untouched                                                                                                                                            |
+| `assertNotSelf`'s four entries stay as they are (§2)                   | untouched                                                                                                                                          | untouched                                                                                                                                   | untouched                                                                                                                                            |
+| `''` → clean 404, not 500 (§6.5)                                       | untouched — `''` is a _value_, not an unknown key, so `.strict()` never sees it                                                                    | untouched                                                                                                                                   | untouched — the floor is gated on what changed, and `''` still reaches `assertManagerInOrg`                                                          |
+| the `NO_CHANGE` swallow covers reporting lines (§4.3(1))               | untouched                                                                                                                                          | untouched                                                                                                                                   | **narrow interaction, benign** — see §13.7(c): a no-change call has nothing in the floor's gate, so `NO_CHANGE` fires either way, at the same status |
 
 **No row is weakened.** One row (#264 × `employmentStatus`) needed a real trace rather than an
 assertion; §12.1 does it.
@@ -818,21 +827,22 @@ assertion; §12.1 does it.
 The route, verbatim at `98ea3df` (`+server.ts:84-108`):
 
 ```ts
-	if (!(await canTouchEmployee(locals.user, params.id))) {     // :84
-		return apiError(403, 'You can only edit your own team members.')
-	}
+if (!(await canTouchEmployee(locals.user, params.id))) {
+	// :84
+	return apiError(403, 'You can only edit your own team members.')
+}
 
-	const body = await request.json()                            // :88
-	const parsed = updateSchema.safeParse(body)                  // :89   ← .strict() fires HERE
+const body = await request.json() // :88
+const parsed = updateSchema.safeParse(body) // :89   ← .strict() fires HERE
 
-	if (!parsed.success) {
-		return apiError(400, 'Invalid request body')             // :92
-	}
+if (!parsed.success) {
+	return apiError(400, 'Invalid request body') // :92
+}
 
-	// …
-	const { basicMonthlySalary, rateType, employmentType, ...rest } = parsed.data   // :102
-	//                                                    ↑ #263 Step 1 adds employmentStatus, reportsToId here
-	//                                                    ↑ #263 Step 1's 400 lands immediately after
+// …
+const { basicMonthlySalary, rateType, employmentType, ...rest } = parsed.data // :102
+//                                                    ↑ #263 Step 1 adds employmentStatus, reportsToId here
+//                                                    ↑ #263 Step 1's 400 lands immediately after
 ```
 
 **Zod's `.strict()` is a parse-time check.** It is evaluated inside `safeParse` while walking the
@@ -844,22 +854,21 @@ result, and `.data` does not exist on the failure branch.
 
 1. **Does the order of `.strict()` vs. the `employmentStatus`/`reportsToId` destructure matter?**
    Yes, and it is fixed by the language, not by anything this plan chooses: `.strict()` at `:89`
-   strictly precedes the destructure at `:102`, which strictly precedes #263's `employmentStatus`
-   400. There is no way to reorder them without moving the `safeParse` call.
+   strictly precedes the destructure at `:102`, which strictly precedes #263's `employmentStatus` 400. There is no way to reorder them without moving the `safeParse` call.
 2. **Does a body with BOTH an unknown field AND a valid `employmentStatus` now 400 at parse time
    with a Zod message instead of #263's friendlier one?** It 400s **at parse time**, yes — but
    **not with a Zod message**. The route already collapses every parse failure to a fixed literal:
    `return apiError(400, 'Invalid request body')` at `:92`. The `ZodError` is discarded, never
    serialized, and never reaches the client. So the observable difference is:
 
-   | Body | Before #264 | After #264 |
-   | --- | --- | --- |
-   | `{ employmentStatus: 'OFFBOARDED' }` | 400 + the `?action=offboard` pointer | **identical** — 400 + the pointer |
-   | `{ employmentStatus: 'OFFBOARDED', nickname: 'x' }` | 200, `nickname` silently stripped, status written | 400 `'Invalid request body'` |
-   | `{ nickname: 'x' }` | 200, nothing written, caller believes it worked | 400 `'Invalid request body'` |
+   | Body                                                | Before #264                                       | After #264                        |
+   | --------------------------------------------------- | ------------------------------------------------- | --------------------------------- |
+   | `{ employmentStatus: 'OFFBOARDED' }`                | 400 + the `?action=offboard` pointer              | **identical** — 400 + the pointer |
+   | `{ employmentStatus: 'OFFBOARDED', nickname: 'x' }` | 200, `nickname` silently stripped, status written | 400 `'Invalid request body'`      |
+   | `{ nickname: 'x' }`                                 | 200, nothing written, caller believes it worked   | 400 `'Invalid request body'`      |
 
    The only case that loses the friendly pointer is a body that was **malformed on independent
-   grounds** and, before #264, was answered with a *silent partial write*. Trading a silent partial
+   grounds** and, before #264, was answered with a _silent partial write_. Trading a silent partial
    write for a generic 400 is not a regression of #263's message — #263's message was never
    reachable for that body, because that body used to succeed.
 
@@ -882,19 +891,19 @@ sssNumber · philhealthNumber · pagibigNumber · tinNumber · reportsToId
 
 Every caller in the repository, found by exhaustive grep and checked body-by-body:
 
-| Caller | Body | Subset of the list? |
-| --- | --- | --- |
-| product code (`src/**`) | **none** — `grep -rn "api/v1/employees" src` returns only the route files themselves; no `fetch` anywhere | n/a |
-| `tests/e2e/**` | **none PATCH it.** `pii.spec.ts:121` and `:181` are both `page.request.get`. The three specs that touch `reportsToId` write it direct via Prisma | n/a |
-| `employee-api-compensation.test.ts:92` | `{ basicMonthlySalary: 50000 }` | ✅ |
-| `employee-api-compensation.test.ts:113` | `{ basicMonthlySalary: 30000 }` | ✅ |
-| `employee-api-compensation.test.ts:125` | `{ rateType: 'DAILY' }` | ✅ |
-| `employee-api-compensation.test.ts:149` | `{ basicMonthlySalary: 50000 }` | ✅ |
-| `employee-api-compensation.test.ts:173` | `{ basicMonthlySalary: 50000, jobTitle: 'Team Lead' }` | ✅ |
-| `pay-write-role-context.test.ts:96` | `{ basicMonthlySalary: 50000 }` | ✅ |
-| `reports-to-scoping.test.ts:208` | `{ reportsToId: 'emp-other-org' }` | ✅ |
-| `reports-to-scoping.test.ts:221` | `{ reportsToId: 'mgr1' }` | ✅ |
-| the 13 new cases in §17.2 | all built from the list above | ✅ |
+| Caller                                  | Body                                                                                                                                             | Subset of the list? |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------- |
+| product code (`src/**`)                 | **none** — `grep -rn "api/v1/employees" src` returns only the route files themselves; no `fetch` anywhere                                        | n/a                 |
+| `tests/e2e/**`                          | **none PATCH it.** `pii.spec.ts:121` and `:181` are both `page.request.get`. The three specs that touch `reportsToId` write it direct via Prisma | n/a                 |
+| `employee-api-compensation.test.ts:92`  | `{ basicMonthlySalary: 50000 }`                                                                                                                  | ✅                  |
+| `employee-api-compensation.test.ts:113` | `{ basicMonthlySalary: 30000 }`                                                                                                                  | ✅                  |
+| `employee-api-compensation.test.ts:125` | `{ rateType: 'DAILY' }`                                                                                                                          | ✅                  |
+| `employee-api-compensation.test.ts:149` | `{ basicMonthlySalary: 50000 }`                                                                                                                  | ✅                  |
+| `employee-api-compensation.test.ts:173` | `{ basicMonthlySalary: 50000, jobTitle: 'Team Lead' }`                                                                                           | ✅                  |
+| `pay-write-role-context.test.ts:96`     | `{ basicMonthlySalary: 50000 }`                                                                                                                  | ✅                  |
+| `reports-to-scoping.test.ts:208`        | `{ reportsToId: 'emp-other-org' }`                                                                                                               | ✅                  |
+| `reports-to-scoping.test.ts:221`        | `{ reportsToId: 'mgr1' }`                                                                                                                        | ✅                  |
+| the 13 new cases in §17.2               | all built from the list above                                                                                                                    | ✅                  |
 
 **Zero bodies would newly 400. The behavioural blast radius of #264 inside this repository is
 empty** — it is reachable only by an external API caller sending a field this API has never
@@ -1049,10 +1058,10 @@ carries the identical floor at `:764-767`, and unlike `promoteEmployee`'s copy i
 (`:761-763`):
 
 ```ts
-	// Lower bound only: effectiveDate ≥ hire date (UTC-midnight). Future-dating is allowed (#170 Stage
-	// 1.5) — no scheduler needed: the insert below leaves the current cache untouched (its re-derivation
-	// is "max effectiveDate ≤ today"), and getEmployee heals the cache the first time it is read on or
-	// after the effective date.
+// Lower bound only: effectiveDate ≥ hire date (UTC-midnight). Future-dating is allowed (#170 Stage
+// 1.5) — no scheduler needed: the insert below leaves the current cache untouched (its re-derivation
+// is "max effectiveDate ≤ today"), and getEmployee heals the cache the first time it is read on or
+// after the effective date.
 ```
 
 Every clause is about the **snapshot** and the **cache-healing** rule. `promoteEmployee`'s copy has
@@ -1072,7 +1081,7 @@ on or after the effective date.'`
 
 **Confirmed for `reportsToId`. Not confirmed for `positionId` and `jobTitle`** — see §13.3.
 
-## 13.3 The hole in the reasoning: two of the three plain columns *do* surface the effective date
+## 13.3 The hole in the reasoning: two of the three plain columns _do_ surface the effective date
 
 `promoteEmployee`'s audit block writes `newValue: { effectiveDate: eff }` **unconditionally**
 (`:1057`), for every promotion including a column-only one. What reads it back:
@@ -1099,10 +1108,10 @@ employmentStatus · workScheduleId · branchId
 
 So, of `promoteEmployee`'s three plain columns:
 
-| Column | In `HISTORY_FIELDS`? | Does a change to it alone emit a timeline event carrying `effectiveDate`? |
-| --- | --- | --- |
-| `positionId` | **yes** | **yes** |
-| `jobTitle` | **yes** | **yes** |
+| Column        | In `HISTORY_FIELDS`?                                                                                                                                                                                                 | Does a change to it alone emit a timeline event carrying `effectiveDate`?                   |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `positionId`  | **yes**                                                                                                                                                                                                              | **yes**                                                                                     |
+| `jobTitle`    | **yes**                                                                                                                                                                                                              | **yes**                                                                                     |
 | `reportsToId` | **no** — deliberately, per the comment at `:1052-1053`: _"reportsToId is not a HISTORY_FIELD (the timeline shows employment terms, not the org chart)"_ — it rides `newValue._otherFields = ['reportsToId']` instead | **no.** `changes.length === 0`, so no event is pushed at all and the date is never rendered |
 
 **Consequence:** gating the floor on `payChanged \|\| typeChanged` alone — exactly as #266 proposes —
@@ -1149,8 +1158,8 @@ if (
 i.e. **the floor fires for everything except a reporting-line-only change.** The line is not
 arbitrary: it is exactly "the change writes an effective-dated snapshot, or it writes a
 `HISTORY_FIELD` that the timeline renders the effective date against". `reportsToId` is the single
-field in `PromoteEmployeeInput` that is neither, and it is neither *by an explicit decision already
-recorded in this file* (`:1052-1053`).
+field in `PromoteEmployeeInput` that is neither, and it is neither _by an explicit decision already
+recorded in this file_ (`:1052-1053`).
 
 **For:**
 
@@ -1168,7 +1177,7 @@ Both are addressed there. The honest cost is one extra sentence of comment expla
 `reportsToId` is the exception — and that sentence is a pointer to a decision the file already made.
 
 **Verdict: Option B.** If a reviewer prefers Option A's simpler condition, it is a live choice — but
-it *requires* re-pointing `promotion.test.ts:158-167` at a pay change and adding a fresh
+it _requires_ re-pointing `promotion.test.ts:158-167` at a pay change and adding a fresh
 column-backdating case, and it should be argued against §13.3, not adopted by default.
 
 ## 13.5 What `promotion.test.ts` says about the floor — the deciding finding
@@ -1176,16 +1185,16 @@ column-backdating case, and it should be argued against §13.3, not adopted by d
 **Exactly one test pins it.** `tests/unit/promotion.test.ts:158-167`:
 
 ```ts
-	it('refuses an effective date before the hire date', async () => {
-		await expect(
-			promoteEmployee(
-				'emp1',
-				'org1',
-				{ jobTitle: 'Shift Lead', effectiveDate: new Date(Date.now() - 500 * DAY) },
-				CTX
-			)
-		).rejects.toMatchObject({ status: 400 })
-	})
+it('refuses an effective date before the hire date', async () => {
+	await expect(
+		promoteEmployee(
+			'emp1',
+			'org1',
+			{ jobTitle: 'Shift Lead', effectiveDate: new Date(Date.now() - 500 * DAY) },
+			CTX
+		)
+	).rejects.toMatchObject({ status: 400 })
+})
 ```
 
 against the fixture at `:46-55` (`PART_TIMER`, `startDate: Date.now() - 400 * DAY`,
@@ -1193,12 +1202,12 @@ against the fixture at `:46-55` (`PART_TIMER`, `startDate: Date.now() - 400 * DA
 
 So the one existing test of the floor is **a plain-column-only change dated below the hire date** —
 precisely the shape #266 proposes to unblock. Not a pre-boarded hire (the employee started 400 days
-ago); a *backdated* effective date. The gating change affects both shapes identically.
+ago); a _backdated_ effective date. The gating change affects both shapes identically.
 
-| Design | `promotion.test.ts:158-167` |
-| --- | --- |
+| Design                                   | `promotion.test.ts:158-167`                                                                                                                                                                                                                                                                                                          |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Option A (`payChanged \|\| typeChanged`) | **RED.** `jobTitle` only ⇒ `payChanged=false`, `typeChanged=false` ⇒ floor skipped ⇒ `columns={jobTitle:'Shift Lead'}` (≠ `'Crew'`) ⇒ `NO_CHANGE` does not fire ⇒ future-date guard does not fire (`eff` is in the past) ⇒ the promotion **succeeds**. The test would have to be re-pointed at a pay change and its title rewritten. |
-| Option B (chosen) | **GREEN, unmodified.** `columns.jobTitle !== undefined` ⇒ gate true ⇒ `eff (−500d) < startDate (−400d)` ⇒ 400. |
+| Option B (chosen)                        | **GREEN, unmodified.** `columns.jobTitle !== undefined` ⇒ gate true ⇒ `eff (−500d) < startDate (−400d)` ⇒ 400.                                                                                                                                                                                                                       |
 
 Traced by hand against the fixture, not assumed. **This is the finding that chose Option B.** Flagged
 here with the same weight §6.3 gives `reports-to-scoping.test.ts:214-225`: under the chosen design
@@ -1206,16 +1215,16 @@ here with the same weight §6.3 gives `reports-to-scoping.test.ts:214-225`: unde
 and re-derive rather than editing the assertion.
 
 Checked for completeness against every other `promoteEmployee` test in the repo, since the floor's
-*position* moves (§13.7):
+_position_ moves (§13.7):
 
-| Test | `effectiveDate` | Fixture `startDate` | Reaches the floor? |
-| --- | --- | --- | --- |
-| `promotion.test.ts:72,79,100,129,137,144,150,169` | `TODAY` | −400d | no — `eff > startDate` |
-| `promotion.test.ts:194,202` | `NEXT_WEEK` | −400d | no |
-| `promotion.test.ts:158` | −500d | −400d | **yes** — analysed above, stays green |
-| `pay-proposal-routing.test.ts:147,195,247,258,294,306,354` | `TODAY` | `2020-01-01` | no |
-| `reports-to-scoping.test.ts:214-225` (route, after #263) | today | `2024-01-01` | no |
-| `employee-api-compensation.test.ts`, `pay-write-role-context.test.ts` | today | `2024-01-01` | no |
+| Test                                                                  | `effectiveDate` | Fixture `startDate` | Reaches the floor?                    |
+| --------------------------------------------------------------------- | --------------- | ------------------- | ------------------------------------- |
+| `promotion.test.ts:72,79,100,129,137,144,150,169`                     | `TODAY`         | −400d               | no — `eff > startDate`                |
+| `promotion.test.ts:194,202`                                           | `NEXT_WEEK`     | −400d               | no                                    |
+| `promotion.test.ts:158`                                               | −500d           | −400d               | **yes** — analysed above, stays green |
+| `pay-proposal-routing.test.ts:147,195,247,258,294,306,354`            | `TODAY`         | `2020-01-01`        | no                                    |
+| `reports-to-scoping.test.ts:214-225` (route, after #263)              | today           | `2024-01-01`        | no                                    |
+| `employee-api-compensation.test.ts`, `pay-write-role-context.test.ts` | today           | `2024-01-01`        | no                                    |
 
 ## 13.6 Rewriting §4.2(a)'s reasoning rather than deleting it
 
@@ -1238,11 +1247,11 @@ inverts. The replacement reasoning, which §19 point 5 and the new test docblock
 
 §4.2(a)'s reasons (i)/(ii)/(iii) do not survive, and here is why each fails rather than being
 dropped: **(i)** "the UI has always behaved this way, and #263 is about matching the UI" — matching
-the UI is the goal only where the UI is *right*; #266 establishes it is not, so this fix moves both
+the UI is the goal only where the UI is _right_; #266 establishes it is not, so this fix moves both
 doors instead of one, which serves the same objective better. **(ii)** "it fails loudly and early,
 before any write or filing" — still true, and still true after the change for the case that keeps
 the floor (§13.7(b) confirms the floor still precedes `proposeIfRequired` and the transaction); it
-was an argument that the delta was *survivable*, never that it was *correct*. **(iii)** "the
+was an argument that the delta was _survivable_, never that it was _correct_. **(iii)** "the
 reporting line for a pre-start hire is set at creation, so this is a narrow edge" — accurate and
 still accurate; it argued the delta was cheap to accept, but the fix is 4 lines and 2 tests, which
 is cheaper than documenting the edge.
@@ -1250,25 +1259,25 @@ is cheaper than documenting the edge.
 ## 13.7 Exact diff
 
 `src/lib/server/services/employees.ts`. **Two hunks: a deletion and an insertion.** The floor is
-*moved*, not duplicated — the design fails closed only if exactly one copy exists.
+_moved_, not duplicated — the design fails closed only if exactly one copy exists.
 
 ### Hunk 1 — remove the unconditional floor (`:906-910`)
 
 **Before**
 
 ```ts
-	const eff = utcMidnight(input.effectiveDate)
-	const today = utcMidnight(new Date())
-	if (eff.getTime() < utcMidnight(employee.startDate).getTime()) {
-		error(400, 'Effective date cannot be before the hire date.')
-	}
+const eff = utcMidnight(input.effectiveDate)
+const today = utcMidnight(new Date())
+if (eff.getTime() < utcMidnight(employee.startDate).getTime()) {
+	error(400, 'Effective date cannot be before the hire date.')
+}
 ```
 
 **After**
 
 ```ts
-	const eff = utcMidnight(input.effectiveDate)
-	const today = utcMidnight(new Date())
+const eff = utcMidnight(input.effectiveDate)
+const today = utcMidnight(new Date())
 ```
 
 `eff` and `today` both stay — they are used at `:917`, `:929`, `:967`, `:994`, `:1035` and in the
@@ -1279,60 +1288,60 @@ audit block. Only the `if` moves.
 **Before**
 
 ```ts
-	if (!payChanged && !typeChanged && Object.keys(columns).length === 0) {
-		error(NO_CHANGE_STATUS, NO_CHANGE_MESSAGE)
-	}
+if (!payChanged && !typeChanged && Object.keys(columns).length === 0) {
+	error(NO_CHANGE_STATUS, NO_CHANGE_MESSAGE)
+}
 
-	// Only pay and employment type are effective-dated; position, title and the reporting line are
-	// plain columns that would apply the moment this is saved. Rather than quietly applying half a
-	// promotion early, a future-dated one must be pay/type-only.
-	if (eff.getTime() > today.getTime() && Object.keys(columns).length > 0) {
-		error(
-			400,
-			'A future-dated promotion can only change pay and employment type. Position, job title and reporting line apply immediately — record those on or after the effective date.'
-		)
-	}
+// Only pay and employment type are effective-dated; position, title and the reporting line are
+// plain columns that would apply the moment this is saved. Rather than quietly applying half a
+// promotion early, a future-dated one must be pay/type-only.
+if (eff.getTime() > today.getTime() && Object.keys(columns).length > 0) {
+	error(
+		400,
+		'A future-dated promotion can only change pay and employment type. Position, job title and reporting line apply immediately — record those on or after the effective date.'
+	)
+}
 ```
 
 **After**
 
 ```ts
-	if (!payChanged && !typeChanged && Object.keys(columns).length === 0) {
-		error(NO_CHANGE_STATUS, NO_CHANGE_MESSAGE)
-	}
+if (!payChanged && !typeChanged && Object.keys(columns).length === 0) {
+	error(NO_CHANGE_STATUS, NO_CHANGE_MESSAGE)
+}
 
-	// Two bounds on the effective date. They bind different subsets of the promotion, so they are
-	// kept together and each says which.
-	//
-	// LOWER (#266) — a date below the hire date is nonsense for anything that RECORDS it: pay and
-	// employment type are effective-dated snapshots by construction (`recordCompensationChange`
-	// applies the same floor for that reason, :761-767), and positionId/jobTitle are HISTORY_FIELDS,
-	// so `getEmploymentHistory` renders the date back on the 201 timeline (:1310-1319). It binds
-	// nothing about the reporting line: `reportsToId` is deliberately NOT a HISTORY_FIELD (see the
-	// audit block below), so a reporting-line-only change emits no timeline event and surfaces the
-	// date nowhere, and as a plain column it applies the moment this saves regardless of the date.
-	// Running unconditionally, the floor therefore refused a legitimate edit outright — a hire whose
-	// startDate is still in the future could not be re-pointed at a different manager through
-	// `?/promote`, or (after #263) through the v1 PATCH, since both pass today's date.
-	if (
-		(payChanged ||
-			typeChanged ||
-			columns.positionId !== undefined ||
-			columns.jobTitle !== undefined) &&
-		eff.getTime() < utcMidnight(employee.startDate).getTime()
-	) {
-		error(400, 'Effective date cannot be before the hire date.')
-	}
+// Two bounds on the effective date. They bind different subsets of the promotion, so they are
+// kept together and each says which.
+//
+// LOWER (#266) — a date below the hire date is nonsense for anything that RECORDS it: pay and
+// employment type are effective-dated snapshots by construction (`recordCompensationChange`
+// applies the same floor for that reason, :761-767), and positionId/jobTitle are HISTORY_FIELDS,
+// so `getEmploymentHistory` renders the date back on the 201 timeline (:1310-1319). It binds
+// nothing about the reporting line: `reportsToId` is deliberately NOT a HISTORY_FIELD (see the
+// audit block below), so a reporting-line-only change emits no timeline event and surfaces the
+// date nowhere, and as a plain column it applies the moment this saves regardless of the date.
+// Running unconditionally, the floor therefore refused a legitimate edit outright — a hire whose
+// startDate is still in the future could not be re-pointed at a different manager through
+// `?/promote`, or (after #263) through the v1 PATCH, since both pass today's date.
+if (
+	(payChanged ||
+		typeChanged ||
+		columns.positionId !== undefined ||
+		columns.jobTitle !== undefined) &&
+	eff.getTime() < utcMidnight(employee.startDate).getTime()
+) {
+	error(400, 'Effective date cannot be before the hire date.')
+}
 
-	// UPPER — only pay and employment type are effective-dated; position, title and the reporting
-	// line are plain columns that would apply the moment this is saved. Rather than quietly applying
-	// half a promotion early, a future-dated one must be pay/type-only.
-	if (eff.getTime() > today.getTime() && Object.keys(columns).length > 0) {
-		error(
-			400,
-			'A future-dated promotion can only change pay and employment type. Position, job title and reporting line apply immediately — record those on or after the effective date.'
-		)
-	}
+// UPPER — only pay and employment type are effective-dated; position, title and the reporting
+// line are plain columns that would apply the moment this is saved. Rather than quietly applying
+// half a promotion early, a future-dated one must be pay/type-only.
+if (eff.getTime() > today.getTime() && Object.keys(columns).length > 0) {
+	error(
+		400,
+		'A future-dated promotion can only change pay and employment type. Position, job title and reporting line apply immediately — record those on or after the effective date.'
+	)
+}
 ```
 
 The upper guard's own comment gains the `UPPER —` prefix and is otherwise unchanged. The message
@@ -1345,11 +1354,11 @@ The floor now runs **after** three things it used to precede. Each checked again
 test in §13.5's table; **none is reached by any of them**, because every test that reaches the floor
 uses a below-hire date with no other failure, and every test with another failure uses `TODAY`.
 
-| Now runs before the floor | Effect on a below-hire-date call that also trips it | Reachable by an existing test? |
-| --- | --- | --- |
-| (a) the two history `findMany` reads (`:913`, `:923`) and the rate-basis check (`:936`) | an invalid rate/type pairing now answers `RATE_BASIS_MISMATCH` instead of the hire-date message. Both 400, both before any write | no |
-| (b) the `columns` block (`:939-958`) — `position.findFirst`, `assertManagerInOrg` | a cross-tenant `positionId`/`reportsToId` now answers 404 instead of the hire-date 400. Arguably better ordering: the id is validated before the date | no |
-| (c) the `NO_CHANGE` check (`:960`) | **no observable change.** A no-change call has `payChanged=false`, `typeChanged=false` and `columns` empty, so the floor's gate is false either way; `NO_CHANGE` wins in both the old and the new arrangement | no |
+| Now runs before the floor                                                               | Effect on a below-hire-date call that also trips it                                                                                                                                                           | Reachable by an existing test? |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| (a) the two history `findMany` reads (`:913`, `:923`) and the rate-basis check (`:936`) | an invalid rate/type pairing now answers `RATE_BASIS_MISMATCH` instead of the hire-date message. Both 400, both before any write                                                                              | no                             |
+| (b) the `columns` block (`:939-958`) — `position.findFirst`, `assertManagerInOrg`       | a cross-tenant `positionId`/`reportsToId` now answers 404 instead of the hire-date 400. Arguably better ordering: the id is validated before the date                                                         | no                             |
+| (c) the `NO_CHANGE` check (`:960`)                                                      | **no observable change.** A no-change call has `payChanged=false`, `typeChanged=false` and `columns` empty, so the floor's gate is false either way; `NO_CHANGE` wins in both the old and the new arrangement | no                             |
 
 **What has NOT moved, and must not:** the floor still sits **before** `proposeIfRequired` (`:1020`)
 and before the write transaction (`:1025`). So §4.2(a)(ii)'s property survives verbatim — a refused
@@ -1406,11 +1415,11 @@ proven by `confirmProposal:206` already passing `pending.domain` into its `apply
 
 Exact current strings (`grep -n "pay change" src/lib/server/services/action-proposals.ts`):
 
-| Line | Function | String |
-| --- | --- | --- |
-| `:172` | `createProposal` | `'A pay change is waiting for your confirmation.'` |
+| Line   | Function          | String                                                  |
+| ------ | ----------------- | ------------------------------------------------------- |
+| `:172` | `createProposal`  | `'A pay change is waiting for your confirmation.'`      |
 | `:224` | `confirmProposal` | `'Your proposed pay change was confirmed and applied.'` |
-| `:264` | `rejectProposal` | `` `Your proposed pay change was rejected: ${note}` `` |
+| `:264` | `rejectProposal`  | `` `Your proposed pay change was rejected: ${note}` ``  |
 
 **Test assertions against any of them: none.** Established by grepping `pay change` and `notifyMany`
 across `src` and `tests`:
@@ -1470,21 +1479,21 @@ const DOMAIN_NOUN: Record<ProposalDomain, string> = {
 **Before**
 
 ```ts
-	await notifyMany(
-		confirmers,
-		'A pay change is waiting for your confirmation.',
-		'/requests/proposals'
-	)
+await notifyMany(
+	confirmers,
+	'A pay change is waiting for your confirmation.',
+	'/requests/proposals'
+)
 ```
 
 **After**
 
 ```ts
-	await notifyMany(
-		confirmers,
-		`A ${DOMAIN_NOUN[input.domain]} is waiting for your confirmation.`,
-		'/requests/proposals'
-	)
+await notifyMany(
+	confirmers,
+	`A ${DOMAIN_NOUN[input.domain]} is waiting for your confirmation.`,
+	'/requests/proposals'
+)
 ```
 
 ### Hunk 3 — `confirmProposal` (`:224`)
@@ -1492,16 +1501,16 @@ const DOMAIN_NOUN: Record<ProposalDomain, string> = {
 **Before**
 
 ```ts
-	await notifyMany([pending.initiatorId], 'Your proposed pay change was confirmed and applied.')
+await notifyMany([pending.initiatorId], 'Your proposed pay change was confirmed and applied.')
 ```
 
 **After**
 
 ```ts
-	await notifyMany(
-		[pending.initiatorId],
-		`Your proposed ${DOMAIN_NOUN[pending.domain]} was confirmed and applied.`
-	)
+await notifyMany(
+	[pending.initiatorId],
+	`Your proposed ${DOMAIN_NOUN[pending.domain]} was confirmed and applied.`
+)
 ```
 
 ### Hunk 4 — `rejectProposal` (`:262-264`)
@@ -1509,29 +1518,29 @@ const DOMAIN_NOUN: Record<ProposalDomain, string> = {
 **Before**
 
 ```ts
-	// "rejected", matching the REJECTED status the row actually carries — there is no RETURNED
-	// state here, and the old wording read as one to anyone comparing the audit log to the message.
-	await notifyMany([pending.initiatorId], `Your proposed pay change was rejected: ${note}`)
+// "rejected", matching the REJECTED status the row actually carries — there is no RETURNED
+// state here, and the old wording read as one to anyone comparing the audit log to the message.
+await notifyMany([pending.initiatorId], `Your proposed pay change was rejected: ${note}`)
 ```
 
 **After**
 
 ```ts
-	// "rejected", matching the REJECTED status the row actually carries — there is no RETURNED
-	// state here, and the old wording read as one to anyone comparing the audit log to the message.
-	await notifyMany(
-		[pending.initiatorId],
-		`Your proposed ${DOMAIN_NOUN[pending.domain]} was rejected: ${note}`
-	)
+// "rejected", matching the REJECTED status the row actually carries — there is no RETURNED
+// state here, and the old wording read as one to anyone comparing the audit log to the message.
+await notifyMany(
+	[pending.initiatorId],
+	`Your proposed ${DOMAIN_NOUN[pending.domain]} was rejected: ${note}`
+)
 ```
 
 Resulting copy, all six combinations:
 
-| | `COMPENSATION` | `PROMOTION` |
-| --- | --- | --- |
-| filed | A pay change is waiting for your confirmation. | A promotion is waiting for your confirmation. |
+|           | `COMPENSATION`                                      | `PROMOTION`                                        |
+| --------- | --------------------------------------------------- | -------------------------------------------------- |
+| filed     | A pay change is waiting for your confirmation.      | A promotion is waiting for your confirmation.      |
 | confirmed | Your proposed pay change was confirmed and applied. | Your proposed promotion was confirmed and applied. |
-| rejected | Your proposed pay change was rejected: … | Your proposed promotion was rejected: … |
+| rejected  | Your proposed pay change was rejected: …            | Your proposed promotion was rejected: …            |
 
 The `COMPENSATION` column is **byte-identical to today's copy**, which is the property that makes
 this a strictly additive change.
@@ -1544,7 +1553,7 @@ with no domain in scope at the point they render:
 
 - `:97` `title="No pay changes are waiting for you."` — the queue's empty state, wrong whenever the
   queue would have held a promotion.
-- `:241` `title="Reject pay change"` — the reject dialog's heading; `p.domain` *is* in scope in that
+- `:241` `title="Reject pay change"` — the reject dialog's heading; `p.domain` _is_ in scope in that
   block, so this one is genuinely a one-liner, and it is left alone only because it is a `.svelte`
   file that §7 point 2 keeps out of this PR entirely and that no part of this change otherwise
   opens.
@@ -1563,7 +1572,7 @@ statement of residual risk.
 ## 15.1 Findings that changed the plan
 
 **(a) #266 as filed breaks a test, and I nearly missed which one.**
-My first pass checked `promotion.test.ts` for a *pre-boarded hire* fixture — the shape the issue
+My first pass checked `promotion.test.ts` for a _pre-boarded hire_ fixture — the shape the issue
 describes — found none (`PART_TIMER.startDate` is 400 days in the past), and was about to record
 "no existing test pins this". That would have been wrong. The floor does not care whether the hire
 date is in the future; it cares whether `effectiveDate < startDate`, and `:158-167` reaches that
@@ -1572,7 +1581,7 @@ Reading the fixture rather than the test title is what caught it. **Recorded bec
 mode generalizes: "no test has this fixture" is not the same claim as "no test reaches this branch".**
 
 **(b) The issue's justification for #266 is right about the mechanism and wrong about the scope.**
-"Plain columns apply immediately regardless of `effectiveDate`" is true of the *write*, and is
+"Plain columns apply immediately regardless of `effectiveDate`" is true of the _write_, and is
 exactly what the function's second guard says. But `jobTitle` and `positionId` also feed
 `getEmploymentHistory`, which renders `newValue.effectiveDate` back to the user (`:1310-1319`). So
 for two of the three plain columns the effective date is not inert. §13.3. This is the finding that
@@ -1607,7 +1616,7 @@ so it can be reverted alone.**
 
 **(f) Could #264 be folded into #263 Step 1's commit, since it is the same file?** Yes, and it would
 be defensible. Kept separate because the two changes answer to different issues with different
-blast radii (one changes the route's admission rules for *every* field; the other carves out two),
+blast radii (one changes the route's admission rules for _every_ field; the other carves out two),
 and because a `.strict()` regression — if one ever surfaces from an external caller — should be
 revertable without touching the authorization fix. A reviewer who prefers fewer commits can squash
 commits 1 and 3 with no design change.
@@ -1622,7 +1631,7 @@ CLAUDE.md §2. Not done.
 ## 15.3 Residual risk, stated plainly
 
 **One.** §13.4's Option B draws its line at "does this change surface an effective date to a human",
-which is a *derived* property — it holds because `reportsToId` is absent from `HISTORY_FIELDS`
+which is a _derived_ property — it holds because `reportsToId` is absent from `HISTORY_FIELDS`
 today. If someone later adds `reportsToId` to `HISTORY_FIELDS`, the gate silently becomes wrong (the
 timeline would render pre-hire dates again) and nothing fails. Mitigations chosen: the comment in
 §13.7 names the dependency explicitly and points at the audit block that records the decision, and
@@ -1637,7 +1646,7 @@ cheap assertion at this layer. Recorded as a known, accepted coupling rather tha
 it could have failed and each survived it:
 
 - **#264** could have collided with #263's destructure-then-reject pattern. It does not, because
-  `.strict()` rejects only *unknown* keys and both carved-out fields are known. Traced, not assumed
+  `.strict()` rejects only _unknown_ keys and both carved-out fields are known. Traced, not assumed
   (§12.1). The audit that #264 itself demanded found an empty blast radius (§12.2).
 - **#265** could have needed a `ProposalDomain` value, or broken a test asserting on copy. It needs
   neither: the enum already has both values it describes, and zero tests assert on any of the three
@@ -1657,16 +1666,16 @@ and then edited — is removed by ordering, not by argument.
 Replaces §5's step list. **The diffs in §5 Steps 1–4 are unchanged** — do not re-derive them; they
 are still verbatim-correct against the working tree.
 
-| Step | What | File | Source of the diff |
-| --- | --- | --- | --- |
-| **0a** | `.strict()` on `updateSchema` | `src/routes/api/v1/employees/[id]/+server.ts:20-39` | **§12.3** |
-| **0b** | move the hire-date floor below `columns` and gate it (2 hunks) | `src/lib/server/services/employees.ts:906-910` → `:963` | **§13.7** |
-| **1** | split `employmentStatus` + `reportsToId` out of `rest`; reject `employmentStatus` with 400 | `+server.ts:95-108` | §5 Step 1 — **unchanged** |
-| **2** | widen the `promoteEmployee` trigger and input with `reportsToId` | `+server.ts:123-146` | §5 Step 2 — **unchanged** |
-| **3** | reword the 202 comment | `+server.ts:160-162` | §5 Step 3 — **unchanged** |
-| **4** | correct the PATCH + offboard contract blocks | `specs/001-hris-platform/contracts/employees.md:83-105` | §5 Step 4 — **unchanged**; still droppable |
-| **5** | verify-only pass, no edits | `employees.ts:402-409`, `:582-589`, `:605-611`, `:1099-1110`; `enum ProposalDomain`; `(app)/requests/proposals/+page.server.ts:144-151` | §5 Step 5 — **unchanged**. Re-confirmed in §13.1 that the floor is on none of these ranges, so Step 0b does not contradict it |
-| **6** | domain-aware notification copy (4 hunks) | `src/lib/server/services/action-proposals.ts:29-33, 170-174, 224, 262-264` | **§14.3** |
+| Step   | What                                                                                       | File                                                                                                                                    | Source of the diff                                                                                                            |
+| ------ | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| **0a** | `.strict()` on `updateSchema`                                                              | `src/routes/api/v1/employees/[id]/+server.ts:20-39`                                                                                     | **§12.3**                                                                                                                     |
+| **0b** | move the hire-date floor below `columns` and gate it (2 hunks)                             | `src/lib/server/services/employees.ts:906-910` → `:963`                                                                                 | **§13.7**                                                                                                                     |
+| **1**  | split `employmentStatus` + `reportsToId` out of `rest`; reject `employmentStatus` with 400 | `+server.ts:95-108`                                                                                                                     | §5 Step 1 — **unchanged**                                                                                                     |
+| **2**  | widen the `promoteEmployee` trigger and input with `reportsToId`                           | `+server.ts:123-146`                                                                                                                    | §5 Step 2 — **unchanged**                                                                                                     |
+| **3**  | reword the 202 comment                                                                     | `+server.ts:160-162`                                                                                                                    | §5 Step 3 — **unchanged**                                                                                                     |
+| **4**  | correct the PATCH + offboard contract blocks                                               | `specs/001-hris-platform/contracts/employees.md:83-105`                                                                                 | §5 Step 4 — **unchanged**; still droppable                                                                                    |
+| **5**  | verify-only pass, no edits                                                                 | `employees.ts:402-409`, `:582-589`, `:605-611`, `:1099-1110`; `enum ProposalDomain`; `(app)/requests/proposals/+page.server.ts:144-151` | §5 Step 5 — **unchanged**. Re-confirmed in §13.1 that the floor is on none of these ranges, so Step 0b does not contradict it |
+| **6**  | domain-aware notification copy (4 hunks)                                                   | `src/lib/server/services/action-proposals.ts:29-33, 170-174, 224, 262-264`                                                              | **§14.3**                                                                                                                     |
 
 **Files touched by the whole PR, complete list:** `+server.ts`, `employees.ts`,
 `action-proposals.ts`, `contracts/employees.md`, plus tests. **No `.svelte` file, no
@@ -1701,34 +1710,34 @@ Changes from §6.1: old case 7 is **deleted** (§13.6); new cases **7** and **8*
 8–13 shift to 9–14; cases **15** and **16** are new for #264. Cases 1–6 and 9–14 are **byte-identical
 in intent to §6.1's 1–6 and 8–13** — only their numbers move.
 
-| # | describe / it | Asserts | Commit |
-| --- | --- | --- | --- |
-| **`reportsToId` is proposal-routed (#263)** | | | |
-| 1 | a bare `[MANAGER]` PATCHing a report's `reportsToId` **files a proposal, does not write** | as §6.1 case 1 | 3 |
-| 2 | a `[MANAGER, HR_ADMIN]` user writes directly — **200** | as §6.1 case 2 | 3 |
-| 3 | an actor re-pointing **their own** reporting line files a self-action proposal | as §6.1 case 3 | 3 |
-| 4 | **the field does not reach `updateEmployee` in the same request** | as §6.1 case 4. _(Still the single most important case in the file — §4.2(b).)_ | 3 |
-| 5 | an HR_ADMIN acting on someone else still writes directly | as §6.1 case 5 | 3 |
-| 6 | resending the **current** reporting line is a no-op, not a 400 | as §6.1 case 6 | 3 |
-| **the hire-date floor, at the door #263 opens (#266)** | | | |
-| 7 | **a pre-boarded hire's reporting line now goes through** | `EMP.startDate` = today + 30d, body `{ reportsToId: 'mgr2' }`, HR_ADMIN → `res.status === 200`; `employee.update` called with `data.reportsToId === 'mgr2'`; `createProposal` not called. _(The route twin of §17.3's first case. **Replaces §6.1 case 7, whose expected outcome was the opposite 400** — see §13.6 for why the contract inverted rather than the test being deleted quietly.)_ | 3 |
-| 8 | **a pre-boarded hire's PAY change is still refused by the floor** | `EMP.startDate` = today + 30d, body `{ basicMonthlySalary: 50000 }`, HR_ADMIN → `res.status === 400`; body message `'Effective date cannot be before the hire date.'`; `employee.update` **not called**; `createProposal` **not called**. _(The floor must still bite for the case it exists to protect, and must still bite BEFORE anything is filed — §13.7's "what has NOT moved". If this goes green while case 7 also goes green, the gate is drawn in the right place; if both 400, Step 0b was not applied; if both 200, the floor was removed instead of gated.)_ | 3 |
-| **the rest of the reporting-line contract (#263)** | | | |
-| 9 | a **cross-tenant** manager id is still refused, and nothing is filed | as §6.1 case 8 | 3 |
-| 10 | an **empty-string** `reportsToId` is a clean 404, not a 500 | as §6.1 case 9 | 3 |
-| **`employmentStatus` is not editable here (#263)** | | | |
-| 11 | `OFFBOARDED` is refused | as §6.1 case 10 | 3 |
-| 12 | `ACTIVE` and `ON_LEAVE` are refused too | as §6.1 case 11 | 3 |
-| 13 | it does not take the rest of the PATCH down with it silently | as §6.1 case 12 | 3 |
-| 14 | a PATCH with no `employmentStatus` is untouched by the guard | as §6.1 case 13 | 3 |
-| **unknown fields are refused, not stripped (#264)** | | | |
-| 15 | **an unrecognized key is a 400, not a silent 200** | body `{ nickname: 'Bibo' }` as HR_ADMIN → `res.status === 400`; `employee.update` **not called**; `dbMock.employee.findFirst` **not called** — the parse gate precedes every query, exactly as case 11's rejection does. _(The whole point of #264: before it, this body was a 200 that wrote nothing and told the caller it had worked.)_ | **1** |
-| 16 | **an unknown key alongside a known one refuses the whole body** | body `{ contactPhone: '0917', nickname: 'Bibo' }` → 400; `employee.update` **not called**. _(Pins that `.strict()` is not a partial-apply: the known half does not land. Same property case 13 pins for `employmentStatus`, reached by a different mechanism.)_ | **1** |
+| #                                                      | describe / it                                                                             | Asserts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Commit |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| **`reportsToId` is proposal-routed (#263)**            |                                                                                           |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |        |
+| 1                                                      | a bare `[MANAGER]` PATCHing a report's `reportsToId` **files a proposal, does not write** | as §6.1 case 1                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | 3      |
+| 2                                                      | a `[MANAGER, HR_ADMIN]` user writes directly — **200**                                    | as §6.1 case 2                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | 3      |
+| 3                                                      | an actor re-pointing **their own** reporting line files a self-action proposal            | as §6.1 case 3                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | 3      |
+| 4                                                      | **the field does not reach `updateEmployee` in the same request**                         | as §6.1 case 4. _(Still the single most important case in the file — §4.2(b).)_                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | 3      |
+| 5                                                      | an HR_ADMIN acting on someone else still writes directly                                  | as §6.1 case 5                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | 3      |
+| 6                                                      | resending the **current** reporting line is a no-op, not a 400                            | as §6.1 case 6                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | 3      |
+| **the hire-date floor, at the door #263 opens (#266)** |                                                                                           |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |        |
+| 7                                                      | **a pre-boarded hire's reporting line now goes through**                                  | `EMP.startDate` = today + 30d, body `{ reportsToId: 'mgr2' }`, HR_ADMIN → `res.status === 200`; `employee.update` called with `data.reportsToId === 'mgr2'`; `createProposal` not called. _(The route twin of §17.3's first case. **Replaces §6.1 case 7, whose expected outcome was the opposite 400** — see §13.6 for why the contract inverted rather than the test being deleted quietly.)_                                                                                                                                                                           | 3      |
+| 8                                                      | **a pre-boarded hire's PAY change is still refused by the floor**                         | `EMP.startDate` = today + 30d, body `{ basicMonthlySalary: 50000 }`, HR_ADMIN → `res.status === 400`; body message `'Effective date cannot be before the hire date.'`; `employee.update` **not called**; `createProposal` **not called**. _(The floor must still bite for the case it exists to protect, and must still bite BEFORE anything is filed — §13.7's "what has NOT moved". If this goes green while case 7 also goes green, the gate is drawn in the right place; if both 400, Step 0b was not applied; if both 200, the floor was removed instead of gated.)_ | 3      |
+| **the rest of the reporting-line contract (#263)**     |                                                                                           |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |        |
+| 9                                                      | a **cross-tenant** manager id is still refused, and nothing is filed                      | as §6.1 case 8                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | 3      |
+| 10                                                     | an **empty-string** `reportsToId` is a clean 404, not a 500                               | as §6.1 case 9                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | 3      |
+| **`employmentStatus` is not editable here (#263)**     |                                                                                           |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |        |
+| 11                                                     | `OFFBOARDED` is refused                                                                   | as §6.1 case 10                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | 3      |
+| 12                                                     | `ACTIVE` and `ON_LEAVE` are refused too                                                   | as §6.1 case 11                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | 3      |
+| 13                                                     | it does not take the rest of the PATCH down with it silently                              | as §6.1 case 12                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | 3      |
+| 14                                                     | a PATCH with no `employmentStatus` is untouched by the guard                              | as §6.1 case 13                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | 3      |
+| **unknown fields are refused, not stripped (#264)**    |                                                                                           |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |        |
+| 15                                                     | **an unrecognized key is a 400, not a silent 200**                                        | body `{ nickname: 'Bibo' }` as HR_ADMIN → `res.status === 400`; `employee.update` **not called**; `dbMock.employee.findFirst` **not called** — the parse gate precedes every query, exactly as case 11's rejection does. _(The whole point of #264: before it, this body was a 200 that wrote nothing and told the caller it had worked.)_                                                                                                                                                                                                                                | **1**  |
+| 16                                                     | **an unknown key alongside a known one refuses the whole body**                           | body `{ contactPhone: '0917', nickname: 'Bibo' }` → 400; `employee.update` **not called**. _(Pins that `.strict()` is not a partial-apply: the known half does not land. Same property case 13 pins for `employmentStatus`, reached by a different mechanism.)_                                                                                                                                                                                                                                                                                                           | **1**  |
 
-**Not written, deliberately:** a case asserting that a body with an unknown key *and* a valid
+**Not written, deliberately:** a case asserting that a body with an unknown key _and_ a valid
 `employmentStatus` returns the generic message rather than the offboard pointer. It is true (§12.1)
-and it is documented in the docblock, but asserting it would pin the *relative precedence of two
-error messages* as a contract, which is exactly the ordering-dependence §4.1(a) refused to build
+and it is documented in the docblock, but asserting it would pin the _relative precedence of two
+error messages_ as a contract, which is exactly the ordering-dependence §4.1(a) refused to build
 into the `employmentStatus` guard. Cases 11 and 15 each pin their own path; their intersection needs
 no third.
 
@@ -1756,10 +1765,10 @@ describe('promoteEmployee hire-date floor (#266)', () => {
 })
 ```
 
-| # | it | Setup | Asserts |
-| --- | --- | --- | --- |
-| A | lets a reporting-line change through for a hire who has not started yet | `dbMock.employee.findFirst.mockResolvedValueOnce(PRE_BOARDED).mockResolvedValueOnce({ id: 'mgr9' })`; `promoteEmployee('emp1','org1',{ reportsToId: 'mgr9', effectiveDate: TODAY }, CTX)` | resolves; `txMock.employee.update` called with `data.reportsToId === 'mgr9'`; `writeAuditLog` called once |
-| B | still refuses a pay change dated before the hire date | `dbMock.employee.findFirst.mockResolvedValue(PRE_BOARDED)`; `promoteEmployee('emp1','org1',{ basicMonthlySalary: 30000, rateType: 'MONTHLY', employmentType: 'REGULAR', effectiveDate: TODAY }, CTX)` | rejects `{ status: 400, body: { message: 'Effective date cannot be before the hire date.' } }`; `txMock.employee.update` **not called**; `txMock.employeeCompensation.create` **not called** |
+| #   | it                                                                      | Setup                                                                                                                                                                                                 | Asserts                                                                                                                                                                                      |
+| --- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A   | lets a reporting-line change through for a hire who has not started yet | `dbMock.employee.findFirst.mockResolvedValueOnce(PRE_BOARDED).mockResolvedValueOnce({ id: 'mgr9' })`; `promoteEmployee('emp1','org1',{ reportsToId: 'mgr9', effectiveDate: TODAY }, CTX)`             | resolves; `txMock.employee.update` called with `data.reportsToId === 'mgr9'`; `writeAuditLog` called once                                                                                    |
+| B   | still refuses a pay change dated before the hire date                   | `dbMock.employee.findFirst.mockResolvedValue(PRE_BOARDED)`; `promoteEmployee('emp1','org1',{ basicMonthlySalary: 30000, rateType: 'MONTHLY', employmentType: 'REGULAR', effectiveDate: TODAY }, CTX)` | rejects `{ status: 400, body: { message: 'Effective date cannot be before the hire date.' } }`; `txMock.employee.update` **not called**; `txMock.employeeCompensation.create` **not called** |
 
 Case B asserts on the **message**, not just the status, because three different 400s are reachable
 from that input shape (the pairing check, `NO_CHANGE`, and the floor) and only one of them proves the
@@ -1777,12 +1786,12 @@ Option A rather than Option B — fix the gate, not the test.
 Added at **commit 5**. Needs one new import line, since the module is mocked but never pulled into
 scope: `const { notifyMany } = await import('$lib/server/services/notifications')`.
 
-| # | it | Asserts |
-| --- | --- | --- |
-| A | names a promotion a promotion when one is filed | `createProposal('org1', { …, domain: 'PROMOTION', payload: { reportsToId: 'mgr2' } }, ctxOf())` → `notifyMany` called with `[…], 'A promotion is waiting for your confirmation.', '/requests/proposals'` |
-| B | still calls a pay change a pay change | same with `domain: 'COMPENSATION'` → `'A pay change is waiting for your confirmation.'`. _(The regression half: the existing copy must not move.)_ |
-| C | names the domain when a proposal is confirmed | `pendOnBehalf()` with `domain: 'PROMOTION'` → `confirmProposal(…)` → `notifyMany` called with `[initiator], 'Your proposed promotion was confirmed and applied.'` |
-| D | names the domain when a proposal is rejected | same fixture → `rejectProposal('org1','p1','wrong manager', …)` → message is `'Your proposed promotion was rejected: wrong manager'` |
+| #   | it                                              | Asserts                                                                                                                                                                                                  |
+| --- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A   | names a promotion a promotion when one is filed | `createProposal('org1', { …, domain: 'PROMOTION', payload: { reportsToId: 'mgr2' } }, ctxOf())` → `notifyMany` called with `[…], 'A promotion is waiting for your confirmation.', '/requests/proposals'` |
+| B   | still calls a pay change a pay change           | same with `domain: 'COMPENSATION'` → `'A pay change is waiting for your confirmation.'`. _(The regression half: the existing copy must not move.)_                                                       |
+| C   | names the domain when a proposal is confirmed   | `pendOnBehalf()` with `domain: 'PROMOTION'` → `confirmProposal(…)` → `notifyMany` called with `[initiator], 'Your proposed promotion was confirmed and applied.'`                                        |
+| D   | names the domain when a proposal is rejected    | same fixture → `rejectProposal('org1','p1','wrong manager', …)` → message is `'Your proposed promotion was rejected: wrong manager'`                                                                     |
 
 C and D reuse the file's existing `onBehalfProposal` fixture (`:78`) with `domain` overridden —
 `requirePending` returns the whole row, so `pending.domain` is whatever the mock says. One case per
@@ -1792,17 +1801,17 @@ call site plus one regression case; no more, because all four exercise the same 
 
 §6.2's table stands, with two rows changed and one added:
 
-| File | Status |
-| --- | --- |
-| `tests/unit/self-action-guards.test.ts:104-121` | **Unchanged from §6.2.** Still the single most important untouched test, and none of the three new items goes near it. |
-| `tests/unit/reports-to-scoping.test.ts` (all 10) | **Unchanged from §6.2 / §6.3** — `:214-225` may still need its stale ordering comment fixed, for #263's reason alone. #266 does not affect it: its `EMP.startDate` is `2024-01-01`, so the floor never fired for it before or after. #264 does not affect it: both its bodies are single known fields. |
-| `tests/unit/promotion.test.ts` | **⚠ row rewritten.** Gains two cases (§17.3) and **modifies none**, including `:158-167`, which the chosen design keeps green. See §13.5. |
-| `tests/unit/pay-proposal-routing.test.ts` | **⚠ row rewritten.** §6.2 said "untouched"; still true — no case is added or changed. But it is now a **gate for #266**, not a bystander: all seven of its `promoteEmployee` calls run through the moved floor. Its fixture's `startDate` is `2020-01-01` and every call passes `TODAY`, so none reaches the floor's condition (§13.5's table). Run it at commit 2. |
-| `tests/unit/action-proposals.test.ts` | **⚠ new row.** Gains four cases (§17.4), modifies none. Its 25+ existing cases never assert on notification copy (§14.2), so they are unaffected by #265. |
-| `tests/unit/proposal-queue.test.ts` | **new row.** Mocks `notifyMany` and asserts nothing about it; unaffected by #265. Listed so the grep behind that claim is on the record. |
-| `tests/unit/pay-write-role-context.test.ts:148-162` | Unchanged from §6.2. Its body `{ basicMonthlySalary: 50000 }` is a known key (#264 inert), no `reportsToId`/`employmentStatus` (#263 inert), `startDate: 2024-01-01` with today's date (#266 inert). Proves the pay path is byte-unchanged across all four changes. |
-| `tests/unit/employee-api-compensation.test.ts` | Unchanged from §6.2. All five bodies are subsets of `updateSchema` (#264 inert) and all are pay-only. |
-| `tests/unit/rbac.test.ts` | Unchanged from §6.2. |
+| File                                                | Status                                                                                                                                                                                                                                                                                                                                                              |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tests/unit/self-action-guards.test.ts:104-121`     | **Unchanged from §6.2.** Still the single most important untouched test, and none of the three new items goes near it.                                                                                                                                                                                                                                              |
+| `tests/unit/reports-to-scoping.test.ts` (all 10)    | **Unchanged from §6.2 / §6.3** — `:214-225` may still need its stale ordering comment fixed, for #263's reason alone. #266 does not affect it: its `EMP.startDate` is `2024-01-01`, so the floor never fired for it before or after. #264 does not affect it: both its bodies are single known fields.                                                              |
+| `tests/unit/promotion.test.ts`                      | **⚠ row rewritten.** Gains two cases (§17.3) and **modifies none**, including `:158-167`, which the chosen design keeps green. See §13.5.                                                                                                                                                                                                                           |
+| `tests/unit/pay-proposal-routing.test.ts`           | **⚠ row rewritten.** §6.2 said "untouched"; still true — no case is added or changed. But it is now a **gate for #266**, not a bystander: all seven of its `promoteEmployee` calls run through the moved floor. Its fixture's `startDate` is `2020-01-01` and every call passes `TODAY`, so none reaches the floor's condition (§13.5's table). Run it at commit 2. |
+| `tests/unit/action-proposals.test.ts`               | **⚠ new row.** Gains four cases (§17.4), modifies none. Its 25+ existing cases never assert on notification copy (§14.2), so they are unaffected by #265.                                                                                                                                                                                                           |
+| `tests/unit/proposal-queue.test.ts`                 | **new row.** Mocks `notifyMany` and asserts nothing about it; unaffected by #265. Listed so the grep behind that claim is on the record.                                                                                                                                                                                                                            |
+| `tests/unit/pay-write-role-context.test.ts:148-162` | Unchanged from §6.2. Its body `{ basicMonthlySalary: 50000 }` is a known key (#264 inert), no `reportsToId`/`employmentStatus` (#263 inert), `startDate: 2024-01-01` with today's date (#266 inert). Proves the pay path is byte-unchanged across all four changes.                                                                                                 |
+| `tests/unit/employee-api-compensation.test.ts`      | Unchanged from §6.2. All five bodies are subsets of `updateSchema` (#264 inert) and all are pay-only.                                                                                                                                                                                                                                                               |
+| `tests/unit/rbac.test.ts`                           | Unchanged from §6.2.                                                                                                                                                                                                                                                                                                                                                |
 
 ## 17.6 Validation gates — revised
 
@@ -1864,7 +1873,7 @@ its two values. The Playwright `e2e` job is unaffected — no spec PATCHes this 
 
 ## 17.7 §6.5 and §6.6 — amendments
 
-**§6.5 (the `""` FK edge) stands unchanged.** `''` is a *value* of a known key, so `.strict()` never
+**§6.5 (the `""` FK edge) stands unchanged.** `''` is a _value_ of a known key, so `.strict()` never
 sees it; the floor is not on its path (it is refused by `assertManagerInOrg` at `:956`, seven lines
 before the floor's new position); #265 is a different file. The proof and the "no `.min(1)`" verdict
 are both still valid.
@@ -1872,8 +1881,7 @@ are both still valid.
 **§6.6 (optional live verification) gains three steps**, after its existing six:
 
 7. As **HR_ADMIN**, `PATCH /api/v1/employees/<id>` with `{"nickname":"x"}` → expect **400**
-   `'Invalid request body'`, and `SELECT` the row to confirm nothing changed. Before #264 this was a
-   200. _(#264)_
+   `'Invalid request body'`, and `SELECT` the row to confirm nothing changed. Before #264 this was a 200. _(#264)_
 8. Pick or create an employee whose `start_date` is in the future. As **HR_ADMIN**,
    `PATCH … {"reportsToId":"<an org-A manager>"}` → expect **200** and the column moves. Then
    `PATCH … {"basicMonthlySalary": 60000}` on the same employee → expect **400 'Effective date
@@ -1923,7 +1931,7 @@ Replaces §7 entirely. Points 1, 3, 4 and 7 are carried over verbatim; 2, 5 and 
 **5. (replaced)** ~~One behaviour delta for a legitimate caller~~ → **No behaviour delta for a
 legitimate caller — the one that existed was a bug and is fixed here (#266).**
 `promoteEmployee`'s hire-date floor ran before it knew what the promotion changed, so it refused
-*any* call dated below the hire date — including a reporting-line change, which is a plain column
+_any_ call dated below the hire date — including a reporting-line change, which is a plain column
 that applies immediately and records the effective date nowhere. A hire whose start date is still in
 the future therefore could not be re-pointed at a different manager **at all**, through `?/promote`
 or through the v1 PATCH. The floor is now evaluated after `payChanged`/`typeChanged` and the
@@ -1952,7 +1960,7 @@ offboard pointer. Intended — that body used to succeed with a silent partial w
 
 **13. (new)** **Four issues, one PR, in this order:** #264 (`.strict()`) → #266 (the floor) → #263
 (the two gaps, the PR's subject) → #265 (the copy). The only hard ordering constraint is #266 before
-#263: #263's test for a pre-boarded hire's reporting line asserts the *opposite* outcome depending
+#263: #263's test for a pre-boarded hire's reporting line asserts the _opposite_ outcome depending
 on which lands first, and writing it against the old floor would have meant editing a fresh
 assertion to make a later commit pass. #264 is first because it changes the parse gate every later
 route test runs through. #265 is last because it is fully independent — different file, different
@@ -1983,13 +1991,13 @@ one PR.
 independently green (§17.6 gives the per-commit gate) and each is independently revertable, which is
 the property that makes folding three extra issues in defensible.
 
-| # | Subject (no trailers, per repo CLAUDE.md) | Contents |
-| --- | --- | --- |
-| 1 | `fix(employees): reject unknown fields on the v1 employee PATCH (#264)` | §16 Step 0a + `employee-patch-authorization.test.ts` created with cases 15–16 |
-| 2 | `fix(employees): apply the hire-date floor only to effective-dated changes (#266)` | §16 Step 0b + `promotion.test.ts` cases A–B |
-| 3 | `fix(employees): route the v1 PATCH's reporting-line change through propose→confirm (#263)` | §16 Steps 1–3 + `employee-patch-authorization.test.ts` cases 1–14 + `reports-to-scoping.test.ts`'s comment, if §6.3 finds it needs one. May be split in two, with `refuse employmentStatus edits on the v1 PATCH (#263)` as its own commit, exactly as §9 suggested |
-| 4 | `docs(contracts): correct the v1 employee PATCH/offboard contract (#263)` | §16 Step 4. **Droppable** — no code dependency in either direction; drop PR point 9 with it |
-| 5 | `fix(notifications): name the domain in proposal notices instead of always "pay" (#265)` | §16 Step 6 + `action-proposals.test.ts` cases A–D. **Droppable** — nothing else in the PR opens that file |
+| #   | Subject (no trailers, per repo CLAUDE.md)                                                   | Contents                                                                                                                                                                                                                                                            |
+| --- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `fix(employees): reject unknown fields on the v1 employee PATCH (#264)`                     | §16 Step 0a + `employee-patch-authorization.test.ts` created with cases 15–16                                                                                                                                                                                       |
+| 2   | `fix(employees): apply the hire-date floor only to effective-dated changes (#266)`          | §16 Step 0b + `promotion.test.ts` cases A–B                                                                                                                                                                                                                         |
+| 3   | `fix(employees): route the v1 PATCH's reporting-line change through propose→confirm (#263)` | §16 Steps 1–3 + `employee-patch-authorization.test.ts` cases 1–14 + `reports-to-scoping.test.ts`'s comment, if §6.3 finds it needs one. May be split in two, with `refuse employmentStatus edits on the v1 PATCH (#263)` as its own commit, exactly as §9 suggested |
+| 4   | `docs(contracts): correct the v1 employee PATCH/offboard contract (#263)`                   | §16 Step 4. **Droppable** — no code dependency in either direction; drop PR point 9 with it                                                                                                                                                                         |
+| 5   | `fix(notifications): name the domain in proposal notices instead of always "pay" (#265)`    | §16 Step 6 + `action-proposals.test.ts` cases A–D. **Droppable** — nothing else in the PR opens that file                                                                                                                                                           |
 
 `pnpm test` at the tip is the gate for all five changes plus #235's. Per §9's own rule, #235's
 `reports-to-scoping.test.ts` must be green **at every commit**, not only at the tip — which is now
