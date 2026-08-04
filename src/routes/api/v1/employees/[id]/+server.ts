@@ -17,26 +17,40 @@ import { EMPLOYMENT_TYPES } from '$lib/utils/employment-type'
 import { z } from 'zod'
 import type { RequestHandler } from './$types'
 
-const updateSchema = z.object({
-	firstName: z.string().min(1).optional(),
-	lastName: z.string().min(1).optional(),
-	middleName: z.string().optional(),
-	contactPhone: z.string().optional(),
-	contactAddress: z.string().optional(),
-	departmentId: z.string().optional(),
-	jobTitle: z.string().optional(),
-	employmentType: z.enum(EMPLOYMENT_TYPES).optional(),
-	employmentStatus: z.enum(['ACTIVE', 'ON_LEAVE', 'OFFBOARDED']).optional(),
-	basicMonthlySalary: z.coerce.number().positive().optional(),
-	rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
-	// #191: a PATCH only carries the fields the caller intends to change, so anything sent
-	// here is by definition new and is format-checked and stored canonically.
-	sssNumber: govIdSchema('sssNumber'),
-	philhealthNumber: govIdSchema('philhealthNumber'),
-	pagibigNumber: govIdSchema('pagibigNumber'),
-	tinNumber: govIdSchema('tinNumber'),
-	reportsToId: z.string().optional()
-})
+// #264: `.strict()`, not a plain `z.object`. Zod strips unknown keys by default, so a PATCH naming
+// a field this schema does not know — a typo, a stale client, a column that used to exist — was a
+// 200 that silently discarded it. Silent data loss on a write is the same trap #235 and #263 each
+// refused for one specific field (`docs/plans/235-reportstoid-cross-tenant.md:77`, §3.2 here); this
+// applies the same rule to the whole body. Every caller was audited first: nothing in `src` fetches
+// this route, no e2e spec PATCHes it, and all eight bodies in the unit suites are subsets of the
+// fields below, so nothing legitimate newly 400s.
+//
+// It does NOT subsume the handler's `employmentStatus` rejection, and must not be read as licence
+// to delete that field from this schema. `employmentStatus` is a KNOWN key, so strict never sees
+// it — and only the handler's own 400 names `POST ?action=offboard`. Deleting the field would swap
+// an actionable message for a bare 'Invalid request body'.
+const updateSchema = z
+	.object({
+		firstName: z.string().min(1).optional(),
+		lastName: z.string().min(1).optional(),
+		middleName: z.string().optional(),
+		contactPhone: z.string().optional(),
+		contactAddress: z.string().optional(),
+		departmentId: z.string().optional(),
+		jobTitle: z.string().optional(),
+		employmentType: z.enum(EMPLOYMENT_TYPES).optional(),
+		employmentStatus: z.enum(['ACTIVE', 'ON_LEAVE', 'OFFBOARDED']).optional(),
+		basicMonthlySalary: z.coerce.number().positive().optional(),
+		rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
+		// #191: a PATCH only carries the fields the caller intends to change, so anything sent
+		// here is by definition new and is format-checked and stored canonically.
+		sssNumber: govIdSchema('sssNumber'),
+		philhealthNumber: govIdSchema('philhealthNumber'),
+		pagibigNumber: govIdSchema('pagibigNumber'),
+		tinNumber: govIdSchema('tinNumber'),
+		reportsToId: z.string().optional()
+	})
+	.strict()
 
 const offboardSchema = z.object({
 	endDate: z.coerce.date()
