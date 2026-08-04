@@ -427,6 +427,8 @@ model Employee {
   companyEmail             String?
   startDate                DateTime
   endDate                  DateTime?
+  // Primary manager. Postgres cannot express "reportsTo.organizationId == this employee's", so
+  // every service-layer writer verifies it (#235) — `assertManagerInOrg` in services/employees.ts.
   reportsToId              String?
   positionId               String?
   workScheduleId           String?

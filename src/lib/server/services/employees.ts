@@ -390,6 +390,24 @@ function isEmployeeNumberConflict(e: unknown) {
 	return Array.isArray(target) && target.includes('employeeNumber')
 }
 
+/**
+ * A reporting line must not cross tenants. Postgres cannot express "reportsTo belongs to the same
+ * organization" — the same limitation `branchId` and `positionId` carry — so every writer of
+ * `reportsToId` verifies it here (#235, where the check lived on one writer and two others took a
+ * forged id as given).
+ *
+ * `selfId` is the employee being written. Omitted at create time: Prisma generates the row's id at
+ * insert, so a new hire cannot be named as its own manager.
+ */
+async function assertManagerInOrg(reportsToId: string, organizationId: string, selfId?: string) {
+	if (reportsToId === selfId) error(400, 'An employee cannot report to themselves.')
+	const manager = await db.employee.findFirst({
+		where: { id: reportsToId, user: { organizationId } },
+		select: { id: true }
+	})
+	if (!manager) error(404, 'Manager not found')
+}
+
 export async function createEmployee(
 	organizationId: string,
 	input: CreateEmployeeInput,
@@ -397,6 +415,11 @@ export async function createEmployee(
 ) {
 	const existingUser = await db.user.findUnique({ where: { email: input.email } })
 	if (existingUser) error(409, 'Email already in use')
+
+	// #235: the reporting line comes straight off the request, so verify the manager is in this org
+	// before anything is written. Ahead of the hash — a single indexed lookup should not sit behind
+	// 300ms of bcrypt on a hire that cannot succeed.
+	if (input.reportsToId) await assertManagerInOrg(input.reportsToId, organizationId)
 
 	// Hashed once, outside the retry loop — bcrypt at cost 12 is by far the expensive part and
 	// the password does not change between attempts.
@@ -577,6 +600,14 @@ export async function updateEmployee(
 		})
 		if (!branch) error(404, 'Branch not found')
 		if (branch.status === 'CLOSED') error(400, 'That branch is closed — choose an open branch.')
+	}
+
+	// #235: same reason as the branch above — a reporting line must stay inside the tenant, and
+	// `data: input` writes this column straight through (the v1 PATCH accepts it). Skipped when
+	// unchanged, for the same reason the branch check is: re-saving a 201 file whose manager
+	// predates this check must not fail every unrelated edit on it.
+	if (input.reportsToId && input.reportsToId !== existing.reportsToId) {
+		await assertManagerInOrg(input.reportsToId, organizationId, id)
 	}
 
 	const updated = await db.employee.update({
@@ -922,12 +953,7 @@ export async function promoteEmployee(
 		columns.jobTitle = input.jobTitle
 	}
 	if (input.reportsToId !== undefined && input.reportsToId !== employee.reportsToId) {
-		if (input.reportsToId === id) error(400, 'An employee cannot report to themselves.')
-		const manager = await db.employee.findFirst({
-			where: { id: input.reportsToId, user: { organizationId } },
-			select: { id: true }
-		})
-		if (!manager) error(404, 'Manager not found')
+		await assertManagerInOrg(input.reportsToId, organizationId, id)
 		columns.reportsToId = input.reportsToId
 	}
 
