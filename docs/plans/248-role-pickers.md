@@ -225,9 +225,12 @@ cross-tenant means creating `UserOrganization` rows, i.e. building org-membershi
 territory); Settings has no UI for it at all. A role-assignment fix must not also build multi-tenant
 account provisioning.
 
-What this plan _does_ handle is the **interaction**: D4's membership-aware count means the existing
-cross-tenant CEO is correctly recognised as a CEO of every tenant they belong to, so promoting and
-then demoting an org-local CEO from a non-home tenant works. Note also that `setUserRole`'s
+What this plan _does_ handle is the **interaction**: `assertNotLastOfRole` checks every organization
+the target is reachable from — their home org **and every org they hold a membership in** — not
+just the org the write was issued through. Checking only the acting org is not safe: a target who
+is only a _member_ of another tenant (the seeded cross-tenant CEO) can still be that other tenant's
+only reachable holder, and a demotion issued from the target's home org would never look at it,
+silently stranding that tenant. Note also that `setUserRole`'s
 `db.user.findFirst({ where: { id, organizationId } })` (`org.ts:205-207`) means the seeded
 cross-tenant CEO **cannot be targeted from a non-home tenant** (404) — correct and deliberate.
 
