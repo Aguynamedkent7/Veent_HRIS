@@ -212,9 +212,13 @@ export async function setUserRole(
 		await assertNotLastSuperAdmin(organizationId, existing)
 	}
 
+	// GUARDRAIL: #255 — `roles` is the set every capability check actually reads (`rolesOf` falls
+	// back to `[role]` only when the set is empty, which it never is post-#133 backfill). Writing
+	// `role` alone left the user judged on their OLD authority forever. This screen sets one
+	// primary role, so the set is reset to match it rather than merged into.
 	const updated = await db.user.update({
 		where: { id: userId },
-		data: { role: newRole }
+		data: { role: newRole, roles: [newRole] }
 	})
 
 	await writeAuditLog(ctx, {

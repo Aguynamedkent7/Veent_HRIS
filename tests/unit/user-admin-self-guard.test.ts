@@ -53,11 +53,14 @@ describe('setUserRole', () => {
 		expect(dbMock.user.findFirst).not.toHaveBeenCalled()
 	})
 
-	it('still changes somebody else’s role', async () => {
+	// #255: the write must carry the role SET too. Every capability check resolves authority from
+	// `roles` and falls back to `[role]` only when it is empty — which it never is after the #133
+	// backfill — so a change that touched only `role` left the user on their old authority forever.
+	it('still changes somebody else’s role, and syncs the role set with it (#255)', async () => {
 		await expect(setUserRole('user-other', 'org1', 'MANAGER', CTX)).resolves.toBeDefined()
 		expect(dbMock.user.update).toHaveBeenCalledWith({
 			where: { id: 'user-other' },
-			data: { role: 'MANAGER' }
+			data: { role: 'MANAGER', roles: ['MANAGER'] }
 		})
 	})
 
