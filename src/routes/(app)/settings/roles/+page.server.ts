@@ -1,5 +1,6 @@
 import { fail, error } from '@sveltejs/kit'
 import { z } from 'zod'
+import { ASSIGNABLE_ROLES } from '$lib/rbac'
 import { can, requireCapability } from '$lib/server/rbac'
 import { failFromError } from '$lib/server/form-fail'
 import { listOrgUsers, setUserRole, setUserActive } from '$lib/server/services/settings/org'
@@ -21,7 +22,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 const roleSchema = z.object({
 	userId: z.string().min(1, 'User ID is required'),
-	role: z.enum(['EMPLOYEE', 'MANAGER', 'HR_ADMIN', 'SUPER_ADMIN', 'PAYROLL_OFFICER', 'FINANCE'])
+	role: z.enum(ASSIGNABLE_ROLES)
 })
 
 const activeSchema = z.object({
@@ -54,8 +55,8 @@ export const actions: Actions = {
 		try {
 			await setUserRole(parsed.data.userId, user.organizationId, parsed.data.role, ctx)
 		} catch (err) {
-			// Surface the service's guardrails — last-super-admin (409) and self-role-change (403) —
-			// as inline errors rather than error pages.
+			// Surface the service's guardrails — last super admin / last CEO (409) and
+			// self-role-change (403) — as inline errors rather than error pages.
 			return failFromError(err)
 		}
 	},

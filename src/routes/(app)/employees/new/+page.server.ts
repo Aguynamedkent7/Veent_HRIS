@@ -1,6 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit'
 import { z } from 'zod'
 import { db } from '$lib/server/db'
+import { HIRE_ROLES } from '$lib/rbac'
 import { requireCapability } from '$lib/server/rbac'
 import { createEmployee } from '$lib/server/services/employees'
 import { sendWelcomeEmail } from '$lib/server/notifications'
@@ -63,7 +64,11 @@ const createSchema = z
 		firstName: z.string().min(1),
 		lastName: z.string().min(1),
 		middleName: z.string().optional(),
-		role: z.enum(['EMPLOYEE', 'MANAGER', 'HR_ADMIN']),
+		// #248: deliberately narrower than ASSIGNABLE_ROLES. This form runs under MANAGE_HR, which
+		// MANAGER holds, so anything listed here is an account a MANAGER can mint at that authority
+		// with no CEO involved. Governance, finance and sign-off roles are granted after hire, in
+		// Settings → Roles. See HIRE_ROLES in $lib/rbac.
+		role: z.enum(HIRE_ROLES),
 		departmentId: z.string().min(1),
 		jobTitle: z.string().min(1),
 		// New hires start probationary (#136/#188) unless HR picks otherwise; regularization to

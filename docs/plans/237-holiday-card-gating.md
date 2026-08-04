@@ -20,15 +20,16 @@ Everything below was re-derived from fresh Reads at `c524b49`, not carried over 
 
 ### 1.1 The bug — CONFIRMED, exactly as described
 
-| Surface | File:line | Gate | Resolves to |
-|---|---|---|---|
-| Card | `src/routes/(app)/settings/+page.svelte:80-85` | `super: true` | — |
-| Card filter | `src/routes/(app)/settings/+page.svelte:88-93` | `!('super' in c && c.super) \|\| data.isSuperAdmin` | — |
-| `isSuperAdmin` | `src/routes/(app)/settings/+page.server.ts:8` | `can(user.role, 'ADMINISTER_SYSTEM')` | `{SUPER_ADMIN, CEO}` |
-| Nav entry | `src/routes/(app)/+layout.svelte:243` | `show: isSuperAdmin` → `canAny(roles,'ADMINISTER_SYSTEM')` | `{SUPER_ADMIN, CEO}` |
-| **Page + all 3 actions** | `src/routes/(app)/settings/holidays/+page.server.ts:9, 28, 53, 93` | `requireCapability(user.role, 'MANAGE_HR')` | `{MANAGER, HR_ADMIN, SUPER_ADMIN, CEO}` |
+| Surface                  | File:line                                                          | Gate                                                       | Resolves to                             |
+| ------------------------ | ------------------------------------------------------------------ | ---------------------------------------------------------- | --------------------------------------- |
+| Card                     | `src/routes/(app)/settings/+page.svelte:80-85`                     | `super: true`                                              | —                                       |
+| Card filter              | `src/routes/(app)/settings/+page.svelte:88-93`                     | `!('super' in c && c.super) \|\| data.isSuperAdmin`        | —                                       |
+| `isSuperAdmin`           | `src/routes/(app)/settings/+page.server.ts:8`                      | `can(user.role, 'ADMINISTER_SYSTEM')`                      | `{SUPER_ADMIN, CEO}`                    |
+| Nav entry                | `src/routes/(app)/+layout.svelte:243`                              | `show: isSuperAdmin` → `canAny(roles,'ADMINISTER_SYSTEM')` | `{SUPER_ADMIN, CEO}`                    |
+| **Page + all 3 actions** | `src/routes/(app)/settings/holidays/+page.server.ts:9, 28, 53, 93` | `requireCapability(user.role, 'MANAGE_HR')`                | `{MANAGER, HR_ADMIN, SUPER_ADMIN, CEO}` |
 
 Set math from `src/lib/rbac.ts:55,77`:
+
 - `MANAGE_HR = ['MANAGER','HR_ADMIN','SUPER_ADMIN','CEO']`
 - `ADMINISTER_SYSTEM = ['SUPER_ADMIN','CEO']`
 - **Locked-out set = `{MANAGER, HR_ADMIN}`** — confirmed.
@@ -39,19 +40,19 @@ Set math from `src/lib/rbac.ts:55,77`:
 
 **Only two display surfaces reference the page** (`grep -rn "settings/holidays" src/`): the card and the nav entry. `tests/unit/back-target.test.ts:44` mentions the URL but tests back-navigation, not gating. No dashboard quick-link, no other entry point.
 
-### 1.2 (b) Card audit — INDEPENDENTLY RE-RUN, and it found *more* than the validate pass looked at
+### 1.2 (b) Card audit — INDEPENDENTLY RE-RUN, and it found _more_ than the validate pass looked at
 
 I audited **all 15 cards**, not just the 4 flagged ones, and **all 8 settings nav children**.
 
 **The 3 gated cards other than Holiday Calendar:**
 
-| Card | Card gate | Page guard | Verdict |
-|---|---|---|---|
-| `/payroll/config` | `super:true` → `{SUPER_ADMIN,CEO}` | `requireCapability(role,'ADMINISTER_SYSTEM')` (`payroll/config/+page.server.ts:10,41,103`) | **exact match, by construction** |
-| `/payroll/statutory-rates` | `statutory:true` → `canAny(roles,'MANAGE_STATUTORY_RATES') \|\| canAny(roles,'PROPOSE_STATUTORY_RATES')` | *identical expression* (`payroll/statutory-rates/+page.server.ts:67-69`) | **exact match, by construction** |
-| `/settings/roles` | `super:true` → `{SUPER_ADMIN,CEO}` | `can(role,'MANAGE_USER_ROLES') \|\| can(role,'ADMINISTER_SYSTEM')` → `{CEO}∪{SUPER_ADMIN,CEO}` = `{SUPER_ADMIN,CEO}` (`settings/roles/+page.server.ts:13-15`) | **match today — but by COINCIDENCE** (see §2) |
+| Card                       | Card gate                                                                                                | Page guard                                                                                                                                                    | Verdict                                       |
+| -------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `/payroll/config`          | `super:true` → `{SUPER_ADMIN,CEO}`                                                                       | `requireCapability(role,'ADMINISTER_SYSTEM')` (`payroll/config/+page.server.ts:10,41,103`)                                                                    | **exact match, by construction**              |
+| `/payroll/statutory-rates` | `statutory:true` → `canAny(roles,'MANAGE_STATUTORY_RATES') \|\| canAny(roles,'PROPOSE_STATUTORY_RATES')` | _identical expression_ (`payroll/statutory-rates/+page.server.ts:67-69`)                                                                                      | **exact match, by construction**              |
+| `/settings/roles`          | `super:true` → `{SUPER_ADMIN,CEO}`                                                                       | `can(role,'MANAGE_USER_ROLES') \|\| can(role,'ADMINISTER_SYSTEM')` → `{CEO}∪{SUPER_ADMIN,CEO}` = `{SUPER_ADMIN,CEO}` (`settings/roles/+page.server.ts:13-15`) | **match today — but by COINCIDENCE** (see §2) |
 
-**The 11 ungated cards** — I did *not* take "they're `super:false`, so fine" on faith. Three of them do **not** guard on `MANAGE_HR` at all:
+**The 11 ungated cards** — I did _not_ take "they're `super:false`, so fine" on faith. Three of them do **not** guard on `MANAGE_HR` at all:
 
 - `/settings/org` → `requireMinRole(user.role, 'HR_ADMIN')` (`:17,61,91,124`)
 - `/settings/org-chart` → `requireMinRole(user.role, 'HR_ADMIN')` (`:7`)
@@ -61,27 +62,27 @@ These are **still a match**, but only because of `ROLE_HIERARCHY` (`src/lib/rbac
 
 **All 8 settings nav children audited:**
 
-| Nav child (`+layout.svelte`) | `show:` | Page admits | Verdict |
-|---|---|---|---|
-| `/settings` `:236` | `isAdmin` | `MANAGE_HR` | match |
-| `/settings/company` `:237` | `isAdmin` | `MANAGE_HR` | match |
-| `/settings/pay-codes` `:238` | `isAdmin` | `MANAGE_HR` | match |
-| `/settings/salary-grades` `:239` | `isAdmin` | `MANAGE_HR` | match |
-| `/settings/org` `:240` | `isAdmin` | `minRole HR_ADMIN` (= `MANAGE_HR` set) | match |
-| `/settings/schedules` `:241` | `isAdmin` | `minRole HR_ADMIN` (= `MANAGE_HR` set) | match |
-| `/settings/roles` `:242` | `isSuperAdmin \|\| canManageUserRoles` | `ADMINISTER_SYSTEM ∨ MANAGE_USER_ROLES` | **match by construction** — the nav already mirrors the page's OR |
-| `/settings/holidays` `:243` | `isSuperAdmin` | `MANAGE_HR` | **MISMATCH** ✗ |
+| Nav child (`+layout.svelte`)     | `show:`                                | Page admits                             | Verdict                                                           |
+| -------------------------------- | -------------------------------------- | --------------------------------------- | ----------------------------------------------------------------- |
+| `/settings` `:236`               | `isAdmin`                              | `MANAGE_HR`                             | match                                                             |
+| `/settings/company` `:237`       | `isAdmin`                              | `MANAGE_HR`                             | match                                                             |
+| `/settings/pay-codes` `:238`     | `isAdmin`                              | `MANAGE_HR`                             | match                                                             |
+| `/settings/salary-grades` `:239` | `isAdmin`                              | `MANAGE_HR`                             | match                                                             |
+| `/settings/org` `:240`           | `isAdmin`                              | `minRole HR_ADMIN` (= `MANAGE_HR` set)  | match                                                             |
+| `/settings/schedules` `:241`     | `isAdmin`                              | `minRole HR_ADMIN` (= `MANAGE_HR` set)  | match                                                             |
+| `/settings/roles` `:242`         | `isSuperAdmin \|\| canManageUserRoles` | `ADMINISTER_SYSTEM ∨ MANAGE_USER_ROLES` | **match by construction** — the nav already mirrors the page's OR |
+| `/settings/holidays` `:243`      | `isSuperAdmin`                         | `MANAGE_HR`                             | **MISMATCH** ✗                                                    |
 
 `grep -rn "isSuperAdmin" src/` returns only 8 hits total across the whole codebase — `+layout.svelte:96,242,243`, `settings/+page.svelte:91`, `settings/+page.server.ts:8`, and three unrelated hits in `reports/audit-log/+page.server.ts` (row-value redaction, not a nav gate). There is **no** `isSuperAdmin` gate anywhere in the main `navItems` array.
 
-> **CONCLUSION (b) CONFIRMED, and slightly strengthened:** Holiday Calendar is the only display-gate/page-guard mismatch in the entire settings surface — card *or* nav. The Roles & Access card is the one remaining gate that matches only by coincidence.
+> **CONCLUSION (b) CONFIRMED, and slightly strengthened:** Holiday Calendar is the only display-gate/page-guard mismatch in the entire settings surface — card _or_ nav. The Roles & Access card is the one remaining gate that matches only by coincidence.
 
 ### 1.3 (e) The minimal fix — CONFIRMED, with the reasoning re-derived
 
-The proposed `super: true` → `super: false` is correct and is *not* a hack, for a reason worth stating explicitly:
+The proposed `super: true` → `super: false` is correct and is _not_ a hack, for a reason worth stating explicitly:
 
 > `src/routes/(app)/settings/+page.server.ts:6` guards the **whole `/settings` index** on
-> `MANAGE_HR`. Nobody who cannot hold `MANAGE_HR` ever sees *any* card. Therefore "no extra gate"
+> `MANAGE_HR`. Nobody who cannot hold `MANAGE_HR` ever sees _any_ card. Therefore "no extra gate"
 > **is** "gated on `MANAGE_HR`" — the exact guard the holidays page enforces. No new gate concept,
 > no new server flag, no new capability plumbing.
 
@@ -102,8 +103,8 @@ The validate pass gave two; I found two more that are stronger.
    pushed into `PageData` (or reached via `$page.data.user`). The current design — **server computes
    the boolean, next to where the guard lives** — is strictly better and is the reason the gates have
    stayed correct for the other cards.
-4. **It re-creates the exact bug.** The bug *is* an indirection between a card's flag and its page's
-   guard. Adding a *second, richer* indirection layer does not remove the drift surface; it enlarges
+4. **It re-creates the exact bug.** The bug _is_ an indirection between a card's flag and its page's
+   guard. Adding a _second, richer_ indirection layer does not remove the drift surface; it enlarges
    it. The fix that actually removes drift is making the flag evaluate the page's own expression —
    which is what §2 does for the one card where it doesn't.
 
@@ -132,17 +133,17 @@ the Roles & Access card reproduces **#237 verbatim**: page usable, card invisibl
    decisive argument. `grep -rn MANAGE_USER_ROLES src/` finds `+layout.svelte:99,242` and
    `settings/roles/+page.server.ts:35` — and **does not find `settings/+page.svelte`**, because the
    card gate never names the capability. A #248 implementer doing a conscientious sweep of every
-   `MANAGE_USER_ROLES` consumer will miss this card *by construction*. Leaving it as "a note on a
+   `MANAGE_USER_ROLES` consumer will miss this card _by construction_. Leaving it as "a note on a
    sibling agent's plan" bets correctness on a hand-off.
-2. **The issue explicitly asks for it.** #237 says: *"the other `super: true` cards are worth checking
+2. **The issue explicitly asks for it.** #237 says: _"the other `super: true` cards are worth checking
    for the same mismatch — the pattern of a display gate drifting from its page's real guard is what
-   produced this one."* The audit was requested; it found exactly one gate resting on a coincidence.
+   produced this one."_ The audit was requested; it found exactly one gate resting on a coincidence.
    Reporting it and not fixing it under-delivers on the issue's own ask.
 3. **It is provably behaviour-neutral today.** `{SUPER_ADMIN, CEO}` before, `{SUPER_ADMIN, CEO}` after.
-   It cannot regress anything; it is a *pure* removal of a hidden dependency.
+   It cannot regress anything; it is a _pure_ removal of a hidden dependency.
 4. **It takes no position on #248.** It does not touch `MANAGE_USER_ROLES`'s membership. It makes the
    card evaluate the page's own guard expression, so whatever set #248 lands on, the card follows.
-   This satisfies the caller's bar — *"trivial and clearly correct regardless of what #248 decides"* —
+   This satisfies the caller's bar — _"trivial and clearly correct regardless of what #248 decides"_ —
    literally.
 5. **It follows a pattern already in the same file, three lines away.** `canStatutory`
    (`+page.server.ts:9-11` / `+page.svelte:90`) is exactly this shape: server mirrors the page's OR
@@ -161,7 +162,7 @@ the Roles & Access card reproduces **#237 verbatim**: page usable, card invisibl
 
 ## §3 DECISION on (d) — primary-role vs full-role-set in nav/page → **DO NOT FOLD. File separately.**
 
-This is the opposite of the caller's tentative lean. Three pieces of evidence, gathered *after* the
+This is the opposite of the caller's tentative lean. Three pieces of evidence, gathered _after_ the
 initial draft, changed the answer. I document the reversal in §7.
 
 ### 3.1 The divergence is real and I reproduced it by reading
@@ -188,7 +189,7 @@ canAny(<x>.roles,             …)  →    8 call sites, all in loads computing 
 
 Every **route guard** in the application, without exception, resolves authority from the primary
 role. The multi-role helper written for #133 has **never been called**. The nav is the outlier, not
-`settings/+page.server.ts`. Changing one of 192 primary-role guards makes the codebase *less*
+`settings/+page.server.ts`. Changing one of 192 primary-role guards makes the codebase _less_
 consistent, not more.
 
 ### 3.3 Evidence 2 — the narrow fold would not even fix the symptom; it moves the 403 one level deeper
@@ -200,14 +201,14 @@ subpages still guard on the primary role**. The broken link relocates from one p
 Fixing it properly means converting every settings subpage (~40 call sites) — which is a refactor,
 not a bugfix, and unambiguously not #237.
 
-### 3.4 Evidence 3 — the divergence is currently *latent*: nothing creates a multi-element `roles`
+### 3.4 Evidence 3 — the divergence is currently _latent_: nothing creates a multi-element `roles`
 
 `c844fba` (#255, two commits before HEAD) made `setUserRole` write `data: { role: newRole, roles: [newRole] }`
 (`src/lib/server/services/settings/org.ts:215-221`) — the **only** UI that assigns roles resets the
 set to a single element. `prisma/seed-core.ts:24` writes `roles: [u.role]`.
 `scripts/migrate-user-roles-backfill.ts` sets `roles = ARRAY[role]`. `grep` finds **no** code path
 anywhere in `src/`, `prisma/`, or `scripts/` that writes a multi-element `roles` array. Multi-role is
-a supported *schema* shape (`prisma/schema.prisma:387`) reachable only by direct DB writes.
+a supported _schema_ shape (`prisma/schema.prisma:387`) reachable only by direct DB writes.
 
 So the (d) bug affects **zero users reachable through the product today**.
 
@@ -237,12 +238,14 @@ So the (d) bug affects **zero users reachable through the product today**.
 ## §4 Final scope
 
 **IN**
-1. Holiday Calendar card: `super: true` → `super: false`. *(the issue)*
-2. Holidays nav entry: `show: isSuperAdmin` → `show: isAdmin`. *(the issue)*
-3. Roles & Access card: gate on `canRoles`, mirroring the page's own OR. *(§2 — the requested audit's one finding)*
+
+1. Holiday Calendar card: `super: true` → `super: false`. _(the issue)_
+2. Holidays nav entry: `show: isSuperAdmin` → `show: isAdmin`. _(the issue)_
+3. Roles & Access card: gate on `canRoles`, mirroring the page's own OR. _(§2 — the requested audit's one finding)_
 4. Tests: 1 new unit spec, 1 new e2e spec, 1 line added to `tests/e2e/helpers.ts`.
 
 **OUT (each with a written reason)**
+
 - Generic `requiredCapability?: Capability` field — refuted, §1.4.
 - Primary-role → full-role-set conversion — separate issue, §3.
 - Refactoring the `super`/`statutory`/`roles` flags into `show:` booleans — §6, Alternative C.
@@ -269,7 +272,7 @@ break after `{`, so this reformats to nothing).
  		},
 ```
 
-*Why `super: false` and not deleting the key:* the other 11 ungated cards all spell `super: false`
+_Why `super: false` and not deleting the key:_ the other 11 ungated cards all spell `super: false`
 explicitly. Deleting the key works (`!('super' in c && c.super)` handles absence) but breaks file
 consistency for no gain.
 
@@ -297,7 +300,7 @@ Lines 88-93. One added branch, placed above the `super` fallback, mirroring the 
  	)
 ```
 
-*Type note:* `cards` becomes a 3-member union (`{…super:boolean}` ×13, `{…statutory:boolean}` ×1,
+_Type note:_ `cards` becomes a 3-member union (`{…super:boolean}` ×13, `{…statutory:boolean}` ×1,
 `{…roles:boolean}` ×1). The `in` operator narrows unions whose members lack the key (TS ≥ 4.9) —
 this is the identical mechanism the existing `'statutory' in c` line already relies on. `pnpm check`
 is the gate.
@@ -320,7 +323,7 @@ Lines 7-12. Three added lines (two of them comment). No import change: `can` is 
  	}
 ```
 
-*Deliberate:* `can(user.role, …)`, **not** `canAny(user.roles, …)` — it must mirror
+_Deliberate:_ `can(user.role, …)`, **not** `canAny(user.roles, …)` — it must mirror
 `settings/roles/+page.server.ts:13-14`, which uses `can(user.role, …)`. Using `canAny` here would
 plant a fresh instance of the (d) drift while claiming to remove drift. See §3.
 
@@ -334,7 +337,7 @@ Line 243.
 +			{ href: '/settings/holidays', label: 'Holidays', show: isAdmin }
 ```
 
-*Why `isAdmin` and not `true`:* the parent already gates the whole group
+_Why `isAdmin` and not `true`:_ the parent already gates the whole group
 (`showSettings = isAdmin && …`, line 250), so `true` would be behaviourally identical. But lines
 236-241 all spell `show: isAdmin` explicitly — the array is meant to be readable standalone as
 "who sees this row". Match the neighbours.
@@ -363,13 +366,13 @@ Independent edits; this order keeps each intermediate state coherent.
 - **No Svelte component test exists anywhere in the repo** (`grep` for `render(`,
   `@testing-library/svelte`, `vitest-environment` across `tests/unit/` → 0 hits; the only `.svelte`
   import is `$lib/utils/submit-guard.svelte`, a runes module, not a component).
-- **`jsdom` is not a dependency** — it appears in `pnpm-lock.yaml` only as an optional *peer* of
+- **`jsdom` is not a dependency** — it appears in `pnpm-lock.yaml` only as an optional _peer_ of
   vitest. A component test would require adding a dependency **and** a vitest env change.
 
 → **The card/nav gates are not unit-testable without introducing the repo's first component-test
 infrastructure.** They are e2e-testable, and `tests/e2e/employee-view-only.spec.ts` is direct
 precedent for "assert a role does / does not see a control", with the matching philosophy already
-written into its header: *"a hidden button is a UX decision, the role gate is the boundary."*
+written into its header: _"a hidden button is a UX decision, the role gate is the boundary."_
 #237 is that same sentence read the other way.
 
 ### 6.1 NEW — `tests/unit/settings-cards.test.ts`
@@ -495,10 +498,11 @@ test('Super Admin keeps every card and nav entry it already had (#237)', async (
 ```
 
 **Locator safety, checked against the markup:**
+
 - Card accessible name is its text: `"Holiday Calendar Regular & special holidays"` → the
   `/Holiday Calendar/` regex matches the card and nothing else.
 - Nav row name is exactly `"Holidays"` → `exact: true` prevents it matching the card.
-- `/Payroll Config/` cannot match the sidebar's `"Payroll"` row (which MANAGER *does* have);
+- `/Payroll Config/` cannot match the sidebar's `"Payroll"` row (which MANAGER _does_ have);
   `/Roles & Access/` cannot match the sidebar's `"Roles"` row.
 - Cards are plain `<a href>`, so the click needs no hydration-retry (`use:enhance` buttons do;
   anchors don't).
@@ -521,18 +525,18 @@ line 676), gets a `userOrganization` row and `roles: ['HR_ADMIN']` via
 
 ### 6.4 Coverage matrix — every requirement item mapped
 
-| Requirement | Covered by |
-|---|---|
-| MANAGER sees + uses card & nav entry | e2e `Manager can find and open the Holiday Calendar` |
-| HR_ADMIN sees + uses card & nav entry | e2e `HR Admin can find and open the Holiday Calendar` |
-| SUPER_ADMIN access unaffected | e2e `Super Admin keeps every card and nav entry it already had` |
-| CEO access unaffected | unit `CEO gets the expected card flags` (`isSuperAdmin: true, canRoles: true`) — CEO holds both `MANAGE_HR` and `ADMINISTER_SYSTEM`, so no gate it passed before can have narrowed |
-| Fix is *targeted* (no blanket opening) | e2e `… still does not see the system-admin cards` ×2 |
-| **(c)** Roles card change pinned | unit `canRoles` column across 4 roles, longhand |
-| **(c)** Roles card no-op today | unit: `canRoles === isSuperAdmin` for all four rows |
-| **(d)** — no code change | nothing to pin; separate issue drafted (§3.5) |
-| The fix's premise (`/settings` = `MANAGE_HR`) | unit `opens for %s` / `stays closed to %s` |
-| Capability set math | already pinned — `tests/unit/rbac.test.ts:28,35,190-192`; **do not duplicate** |
+| Requirement                                   | Covered by                                                                                                                                                                         |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MANAGER sees + uses card & nav entry          | e2e `Manager can find and open the Holiday Calendar`                                                                                                                               |
+| HR_ADMIN sees + uses card & nav entry         | e2e `HR Admin can find and open the Holiday Calendar`                                                                                                                              |
+| SUPER_ADMIN access unaffected                 | e2e `Super Admin keeps every card and nav entry it already had`                                                                                                                    |
+| CEO access unaffected                         | unit `CEO gets the expected card flags` (`isSuperAdmin: true, canRoles: true`) — CEO holds both `MANAGE_HR` and `ADMINISTER_SYSTEM`, so no gate it passed before can have narrowed |
+| Fix is _targeted_ (no blanket opening)        | e2e `… still does not see the system-admin cards` ×2                                                                                                                               |
+| **(c)** Roles card change pinned              | unit `canRoles` column across 4 roles, longhand                                                                                                                                    |
+| **(c)** Roles card no-op today                | unit: `canRoles === isSuperAdmin` for all four rows                                                                                                                                |
+| **(d)** — no code change                      | nothing to pin; separate issue drafted (§3.5)                                                                                                                                      |
+| The fix's premise (`/settings` = `MANAGE_HR`) | unit `opens for %s` / `stays closed to %s`                                                                                                                                         |
+| Capability set math                           | already pinned — `tests/unit/rbac.test.ts:28,35,190-192`; **do not duplicate**                                                                                                     |
 
 ---
 
@@ -554,7 +558,9 @@ pnpm exec prisma generate     # CI does this before `pnpm check`; @prisma/client
 ```bash
 pnpm format:check
 ```
+
 Expected: clean. If it fails → `pnpm format`, then re-run. Watch specifically for:
+
 - `settings/+page.svelte:86` — the Roles card one-liner must still fit `printWidth: 100`
   (98 cols with 2 tabs @ `tabWidth: 2`; `roles: true` is the same width as `super: true`).
 - `settings/+page.server.ts` — the new `canRoles` line is 89 cols; it must **not** wrap.
@@ -565,16 +571,19 @@ Expected: clean. If it fails → `pnpm format`, then re-run. Watch specifically 
 ```bash
 pnpm lint
 ```
+
 Expected: clean. Specifically catches, if anything went wrong:
+
 - an unused import in `settings/+page.server.ts` (none expected — `can` is still used twice);
 - the `// eslint-disable-next-line @typescript-eslint/no-explicit-any` in the new unit test must be
-  present *and* actually needed (an unused disable is itself reported).
+  present _and_ actually needed (an unused disable is itself reported).
 
 ### Gate 3 — typecheck
 
 ```bash
 pnpm check          # svelte-kit sync && svelte-check --tsconfig ./tsconfig.json
 ```
+
 Expected: 0 errors, 0 warnings. This is the gate for the 3-member `cards` union narrowing (§5.3) and
 for `data.canRoles` existing on `PageData` (it is generated from the load's return type — if step 3
 of §5.6 was skipped, this fails loudly, which is the intent).
@@ -586,6 +595,7 @@ pnpm test                                    # full suite — must stay green
 pnpm exec vitest run tests/unit/settings-cards.test.ts   # focused, while iterating
 pnpm exec vitest run tests/unit/rbac.test.ts             # confirm the table was NOT touched
 ```
+
 Expected: full suite green; `rbac.test.ts` unchanged and passing (no capability membership moved).
 
 ### Gate 5 — e2e (needs Postgres)
@@ -598,6 +608,7 @@ pnpm exec playwright install chromium        # first run only
 pnpm exec playwright test tests/e2e/settings-visibility.spec.ts   # focused
 pnpm test:e2e                                # full suite before pushing
 ```
+
 Expected: 5 new tests pass; the rest of the suite unaffected (nothing shared was touched except one
 additive `USERS` entry).
 
@@ -606,16 +617,17 @@ additive `USERS` entry).
 ```bash
 pnpm dev --port 5175                         # background; poll until curl localhost:5175/login is 200
 ```
+
 Then, on the two-step tenant login (pick **Veent** first — `selectTenant` in `helpers.ts`), or via the
 `DevLoginSwitcher` / `_dev/login-as` harness:
 
-| # | Login | Expect |
-|---|---|---|
-| 1 | `hr@veent.ph` / `Hr@1234` | `/settings` shows **Holiday Calendar**; sidebar Settings group shows **Holidays**; card opens `/settings/holidays`; **no** Payroll Config, **no** Roles & Access |
-| 2 | `manager@veent.ph` / `Manager@1234` | same as #1 |
-| 3 | `admin@veent.ph` / `Admin@1234` | Holiday Calendar **and** Payroll Config **and** Roles & Access still present; Holidays nav row still present |
-| 4 | `ceo@veent.ph` / `Ceo@1234` | unchanged from before the fix (holds both capabilities) |
-| 5 | `employee@veent.ph` / `Employee@1234` | no Settings group in the nav at all; `/settings` → 403 |
+| #   | Login                                 | Expect                                                                                                                                                           |
+| --- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `hr@veent.ph` / `Hr@1234`             | `/settings` shows **Holiday Calendar**; sidebar Settings group shows **Holidays**; card opens `/settings/holidays`; **no** Payroll Config, **no** Roles & Access |
+| 2   | `manager@veent.ph` / `Manager@1234`   | same as #1                                                                                                                                                       |
+| 3   | `admin@veent.ph` / `Admin@1234`       | Holiday Calendar **and** Payroll Config **and** Roles & Access still present; Holidays nav row still present                                                     |
+| 4   | `ceo@veent.ph` / `Ceo@1234`           | unchanged from before the fix (holds both capabilities)                                                                                                          |
+| 5   | `employee@veent.ph` / `Employee@1234` | no Settings group in the nav at all; `/settings` → 403                                                                                                           |
 
 Add a holiday as `hr@veent.ph` (then delete it) to confirm the page's actions really work for the
 role the card now advertises — the "HR can use a page they now find" half of the issue.
@@ -626,6 +638,7 @@ role the card now advertises — the "HR can use a page they now find" half of t
 git diff --stat
 git diff
 ```
+
 Expected exactly: 3 files changed in `src/` (+3 lines in `+page.server.ts`, 3 changed lines in
 `settings/+page.svelte` incl. 1 added, 1 changed line in `+layout.svelte`), 2 new test files, 1
 modified test helper. **Every changed line must trace to §5.** Anything else is scope creep — revert it.
@@ -650,9 +663,9 @@ modified test helper. **Every changed line must trace to §5.** Anything else is
 
 ## §9 Where the drafted plan was wrong, and what changed
 
-**(d) — I reversed my own first answer.** The draft leaned *fold it in*: same file, three mechanical
+**(d) — I reversed my own first answer.** The draft leaned _fold it in_: same file, three mechanical
 lines, `requireAnyCapability` already exists, project precedent (#249's payroll scope fold), and the
-caller's own lean. Three measurements taken *afterwards* killed it:
+caller's own lean. Three measurements taken _afterwards_ killed it:
 
 1. `requireAnyCapability` has **0 call sites** — it is dead code. That inverted "there's already a
    helper for this" into "nobody has ever adopted this pattern at the route layer."
@@ -662,12 +675,12 @@ caller's own lean. Three measurements taken *afterwards* killed it:
 
 And the decisive functional point: the narrow fold **relocates the 403 from `/settings` to eleven
 subpages** rather than fixing it. A fold that doesn't fix the symptom is not a fold, it's a
-half-migration. *The lesson: "same file, three lines" measured the diff, not the change.*
+half-migration. _The lesson: "same file, three lines" measured the diff, not the change._
 
 **(c) — I nearly deferred it, and the reason I didn't is worth keeping.** The draft said "note it for
 #248, don't scope-creep." What flipped it: `grep -rn MANAGE_USER_ROLES` **does not find the card**,
 because the card's gate never names the capability. The hand-off would fail silently precisely
-*because* of the defect being handed off. That converts "speculative hardening" into "removing a
+_because_ of the defect being handed off. That converts "speculative hardening" into "removing a
 dependency on a coincidence" — a different category, and one YAGNI doesn't cover.
 
 **One thing the draft got right and I re-tested rather than trusting:** the ungated cards. Assuming
@@ -678,35 +691,35 @@ written down.
 
 ## §10 Alternatives considered and rejected
 
-| # | Alternative | Why rejected |
-|---|---|---|
-| **A** | **Bare 2-line fix**: holidays card + nav only; note the Roles coincidence for #248. | The safest option, and the runner-up. Rejected on §2 reason 1 only: the coincidence is invisible to the grep #248's author would run, so the note is likely to be lost exactly when it matters. Everything else about A is right, and A is the fallback if the #248 author objects to the overlap. |
-| **B** | **Generic `requiredCapability?: Capability` field** *(the issue's own suggestion)*. | Refuted four ways in §1.4. The killer: it moves the authorization decision from the server (where the guard lives) to the client, and adds an indirection layer to fix a bug *caused by* an indirection layer. |
-| **C** | **Replace `super`/`statutory`/`roles` flags with a `show:` boolean per card**, matching `+layout.svelte`'s convention (`{…, show: data.canRoles}` + `.filter(c => c.show)`). | Genuinely attractive — it handles ORs natively (which killed B), deletes the `'x' in c` narrowing dance, matches the sibling file, and each gate becomes readable next to the page it links to. **Rejected:** it rewrites all 15 card entries for a discoverability bugfix, adds `git blame` noise, makes review harder, and requires `cards` to become `$derived` (it currently references no reactive state). CLAUDE.md §3: *"Don't refactor things that aren't broken."* **Worth filing as a standalone cleanup** — it is the real root-cause fix for the flag-drift class, just not #237's job. |
-| **D** | **Delete the `super` key from the 12 `super: false` cards**, keeping it only on `/payroll/config`. | The filter already handles absence, so it works. 12 lines of churn, zero behaviour change, and it makes the array less uniform to skim. No. |
-| **E** | **Rename `super` → `sysadmin`** now that it has one `true` user. | Pure naming churn across 13 lines. Mention-don't-change territory. |
-| **F** | **`show: true` for the Holidays nav row** (the parent group is already `isAdmin`-gated, so this is behaviourally identical and shorter). | Correct but inconsistent: rows 236-241 all spell `show: isAdmin`. The array is meant to read standalone as "who sees this row". Matching neighbours beats saving a word. |
-| **G** | **Widen `ADMINISTER_SYSTEM` to include HR_ADMIN/MANAGER** so the existing card gate becomes right. | Fixes the symptom by granting system administration to two roles that must not have it — would let MANAGER into `/payroll/config`. Inverts the fix. Absolutely not. |
-| **H** | **Hard-code the card gate as a `MANAGE_HR` check in the component** (push `roles` into `PageData`, call `canAny`). | Same client-side-authorization objection as B, plus it duplicates a check the `/settings` load already performs. Strictly worse than `super: false`. |
-| **I** | **Extract the `cards` array into `settings/cards.ts`** so the gate logic becomes unit-testable in the `node` env. | The tempting "make it testable" move. Rejected: it invents a module to serve a test, the gate is 3 booleans the server already computes (and §6.1 pins those directly), and the e2e covers the markup. Abstraction created for a single use — CLAUDE.md §2. |
-| **J** | **First-ever Svelte component test** (`// @vitest-environment jsdom` + `@testing-library/svelte`). | `jsdom` is not a dependency (lockfile shows it only as an optional vitest peer), so this needs a new dep + vitest config change + the repo's first component-test pattern — all to cover a 2-line markup change that a 25-line e2e already covers on real markup with real auth. Disproportionate by a wide margin. |
-| **K** | **No test at all** — "it's a 2-line display fix, manually verify it." | The whole issue *is* a display gate silently drifting. A fix with no pinning test is one refactor away from drifting back, and #237 is the proof that nobody notices. The e2e is cheap (read-only, no fixtures, no teardown). |
-| **L** | **Extend `tests/e2e/admin.spec.ts`** instead of adding a file. | That spec is `mode: 'serial'` with `beforeAll`/`afterAll` DB fixtures and is SUPER_ADMIN-shaped. A read-only, parallel-safe, multi-role check would inherit serial execution and teardown it doesn't need. New file is cleaner and cheaper in CI. |
-| **M** | **Fold (d) for the whole settings surface** (index + all 13 subpages → `requireAnyCapability(user.roles, …)`). | This is the *correct* fix for (d) and the reason the narrow fold is wrong. ~40 call sites, and it would leave 152 primary-role guards elsewhere still divergent. That is an architecture decision, not a bugfix — separate issue (§3.5). |
-| **N** | **Fix (d) from the other end**: change the nav to use the primary role (`can(role, …)`), making it match all 192 guards. | Equally defensible, arguably *better* (8 sites vs 192), and it would delete #133's multi-role nav support. Which end to fix from is exactly the decision that must not be made inside #237. It belongs in the (d) issue, and I have named it there as an option. |
+| #     | Alternative                                                                                                                                                                  | Why rejected                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A** | **Bare 2-line fix**: holidays card + nav only; note the Roles coincidence for #248.                                                                                          | The safest option, and the runner-up. Rejected on §2 reason 1 only: the coincidence is invisible to the grep #248's author would run, so the note is likely to be lost exactly when it matters. Everything else about A is right, and A is the fallback if the #248 author objects to the overlap.                                                                                                                                                                                                                                                                                                  |
+| **B** | **Generic `requiredCapability?: Capability` field** _(the issue's own suggestion)_.                                                                                          | Refuted four ways in §1.4. The killer: it moves the authorization decision from the server (where the guard lives) to the client, and adds an indirection layer to fix a bug _caused by_ an indirection layer.                                                                                                                                                                                                                                                                                                                                                                                      |
+| **C** | **Replace `super`/`statutory`/`roles` flags with a `show:` boolean per card**, matching `+layout.svelte`'s convention (`{…, show: data.canRoles}` + `.filter(c => c.show)`). | Genuinely attractive — it handles ORs natively (which killed B), deletes the `'x' in c` narrowing dance, matches the sibling file, and each gate becomes readable next to the page it links to. **Rejected:** it rewrites all 15 card entries for a discoverability bugfix, adds `git blame` noise, makes review harder, and requires `cards` to become `$derived` (it currently references no reactive state). CLAUDE.md §3: _"Don't refactor things that aren't broken."_ **Worth filing as a standalone cleanup** — it is the real root-cause fix for the flag-drift class, just not #237's job. |
+| **D** | **Delete the `super` key from the 12 `super: false` cards**, keeping it only on `/payroll/config`.                                                                           | The filter already handles absence, so it works. 12 lines of churn, zero behaviour change, and it makes the array less uniform to skim. No.                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| **E** | **Rename `super` → `sysadmin`** now that it has one `true` user.                                                                                                             | Pure naming churn across 13 lines. Mention-don't-change territory.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **F** | **`show: true` for the Holidays nav row** (the parent group is already `isAdmin`-gated, so this is behaviourally identical and shorter).                                     | Correct but inconsistent: rows 236-241 all spell `show: isAdmin`. The array is meant to read standalone as "who sees this row". Matching neighbours beats saving a word.                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **G** | **Widen `ADMINISTER_SYSTEM` to include HR_ADMIN/MANAGER** so the existing card gate becomes right.                                                                           | Fixes the symptom by granting system administration to two roles that must not have it — would let MANAGER into `/payroll/config`. Inverts the fix. Absolutely not.                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **H** | **Hard-code the card gate as a `MANAGE_HR` check in the component** (push `roles` into `PageData`, call `canAny`).                                                           | Same client-side-authorization objection as B, plus it duplicates a check the `/settings` load already performs. Strictly worse than `super: false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| **I** | **Extract the `cards` array into `settings/cards.ts`** so the gate logic becomes unit-testable in the `node` env.                                                            | The tempting "make it testable" move. Rejected: it invents a module to serve a test, the gate is 3 booleans the server already computes (and §6.1 pins those directly), and the e2e covers the markup. Abstraction created for a single use — CLAUDE.md §2.                                                                                                                                                                                                                                                                                                                                         |
+| **J** | **First-ever Svelte component test** (`// @vitest-environment jsdom` + `@testing-library/svelte`).                                                                           | `jsdom` is not a dependency (lockfile shows it only as an optional vitest peer), so this needs a new dep + vitest config change + the repo's first component-test pattern — all to cover a 2-line markup change that a 25-line e2e already covers on real markup with real auth. Disproportionate by a wide margin.                                                                                                                                                                                                                                                                                 |
+| **K** | **No test at all** — "it's a 2-line display fix, manually verify it."                                                                                                        | The whole issue _is_ a display gate silently drifting. A fix with no pinning test is one refactor away from drifting back, and #237 is the proof that nobody notices. The e2e is cheap (read-only, no fixtures, no teardown).                                                                                                                                                                                                                                                                                                                                                                       |
+| **L** | **Extend `tests/e2e/admin.spec.ts`** instead of adding a file.                                                                                                               | That spec is `mode: 'serial'` with `beforeAll`/`afterAll` DB fixtures and is SUPER_ADMIN-shaped. A read-only, parallel-safe, multi-role check would inherit serial execution and teardown it doesn't need. New file is cleaner and cheaper in CI.                                                                                                                                                                                                                                                                                                                                                   |
+| **M** | **Fold (d) for the whole settings surface** (index + all 13 subpages → `requireAnyCapability(user.roles, …)`).                                                               | This is the _correct_ fix for (d) and the reason the narrow fold is wrong. ~40 call sites, and it would leave 152 primary-role guards elsewhere still divergent. That is an architecture decision, not a bugfix — separate issue (§3.5).                                                                                                                                                                                                                                                                                                                                                            |
+| **N** | **Fix (d) from the other end**: change the nav to use the primary role (`can(role, …)`), making it match all 192 guards.                                                     | Equally defensible, arguably _better_ (8 sites vs 192), and it would delete #133's multi-role nav support. Which end to fix from is exactly the decision that must not be made inside #237. It belongs in the (d) issue, and I have named it there as an option.                                                                                                                                                                                                                                                                                                                                    |
 
 ## §11 Residual risks, and how each is caught
 
-| Risk | Caught by |
-|---|---|
-| `data.canRoles` referenced before the server provides it (§5.6 order violated) | `pnpm check` — `PageData` is generated from the load's return type |
-| The 3-member union breaks `in` narrowing | `pnpm check` |
-| New lines wrap and fail CI's first gate | Gate 1, with the specific column counts to watch |
-| `hr@veent.ph` absent from the e2e DB | Gate 5 — `pnpm db:seed:e2e` is called out as mandatory, not optional |
-| Locator collision (`Holidays` nav row vs `Holiday Calendar` card) | `exact: true` + the §6.2 locator-safety analysis |
-| Fix accidentally opens Payroll Config / Roles to MANAGER | the two negative-control e2e tests |
-| #248 lands first and also touches the Roles card | §2 coordination note in the PR body; conflict risk nil (disjoint files) |
-| Hand-written `canStatutory` matrix cell is wrong | flagged in-place in §6.1 (the `SUPER_ADMIN` row is deliberately wrong there); Gate 4 fails loudly if not corrected |
+| Risk                                                                           | Caught by                                                                                                          |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `data.canRoles` referenced before the server provides it (§5.6 order violated) | `pnpm check` — `PageData` is generated from the load's return type                                                 |
+| The 3-member union breaks `in` narrowing                                       | `pnpm check`                                                                                                       |
+| New lines wrap and fail CI's first gate                                        | Gate 1, with the specific column counts to watch                                                                   |
+| `hr@veent.ph` absent from the e2e DB                                           | Gate 5 — `pnpm db:seed:e2e` is called out as mandatory, not optional                                               |
+| Locator collision (`Holidays` nav row vs `Holiday Calendar` card)              | `exact: true` + the §6.2 locator-safety analysis                                                                   |
+| Fix accidentally opens Payroll Config / Roles to MANAGER                       | the two negative-control e2e tests                                                                                 |
+| #248 lands first and also touches the Roles card                               | §2 coordination note in the PR body; conflict risk nil (disjoint files)                                            |
+| Hand-written `canStatutory` matrix cell is wrong                               | flagged in-place in §6.1 (the `SUPER_ADMIN` row is deliberately wrong there); Gate 4 fails loudly if not corrected |
 
 ## §12 Final decisions (locked)
 
@@ -731,7 +744,7 @@ Do not start until this plan is approved. Any deviation mid-EXECUTE gets reporte
 1. `git switch staging && git pull` — confirm HEAD is at or ahead of `c524b49`.
 2. `git switch -c fix/holiday-card-gate-237`.
 3. `pnpm install --frozen-lockfile && pnpm exec prisma generate`.
-4. **Baseline:** run `pnpm format:check && pnpm lint && pnpm check && pnpm test` — all green *before*
+4. **Baseline:** run `pnpm format:check && pnpm lint && pnpm check && pnpm test` — all green _before_
    any edit. A pre-existing failure must be known, not discovered later.
 5. Edit `src/routes/(app)/+layout.svelte:243` — `show: isSuperAdmin` → `show: isAdmin`. (§5.5)
 6. Edit `src/routes/(app)/settings/+page.svelte:84` — `super: true` → `super: false` on Holiday

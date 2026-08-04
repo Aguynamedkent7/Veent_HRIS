@@ -2,7 +2,7 @@ import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import type { AuditContext } from '../types'
-import type { Role } from '@prisma/client'
+import { Prisma, type Role } from '@prisma/client'
 
 interface PositionInput {
 	title: string
@@ -168,24 +168,60 @@ export async function listOrgUsers(organizationId: string) {
 	}))
 }
 
-// Guard against locking an organization out of super-admin access. Blocks demoting
-// or deactivating the last active SUPER_ADMIN. Call before any write that would
-// strip the super-admin capability from `target`.
-async function assertNotLastSuperAdmin(
-	organizationId: string,
-	target: { id: string; role: Role; isActive: boolean }
+// Roles an organization must never be left without an active holder of, because only a holder of
+// that same role can grant it back. SUPER_ADMIN has been covered since #160; CEO joins it now that
+// #248 makes the role assignable through the app — MANAGE_USER_ROLES is CEO-exclusive, so an org
+// that loses its last CEO has no in-app way to appoint another. A label per role, not a bare list,
+// so the 409 names the role the caller was actually looking at.
+const IRREPLACEABLE_ROLES: Partial<Record<Role, string>> = {
+	SUPER_ADMIN: 'super admin',
+	CEO: 'CEO'
+}
+
+// Call before any write that strips `target` of their role or deactivates them. Must run inside
+// the same transaction as that write (see setUserRole/setUserActive) — counting holders and then
+// writing as two separate queries is a TOCTOU race between two concurrent admin requests.
+//
+// Holders are counted per organization the target is reachable from: their home org AND every org
+// they hold a membership in — not just the org the write was issued through. The seeded CEO
+// belongs to all three tenants (#131) via membership while User.organizationId names only one; a
+// check scoped to a single org either false-409s a safe demotion (if that org isn't the target's
+// home org) or, the reverse gap, misses that the target is another org's *only* reachable holder
+// (if that org is neither the acting org nor checked at all). Membership is the tenant boundary
+// everywhere else too (api/v1/session/switch-org validates against it before currentOrgId
+// changes).
+//
+// Scope note: offboarding deactivates the user account directly (services/separation.ts,
+// services/employees.ts) and does NOT pass through here. That is a pre-existing gap in #160's
+// guard, inherited rather than introduced by #248, and recoverable by reactivation.
+async function assertNotLastOfRole(
+	tx: Prisma.TransactionClient,
+	target: { id: string; organizationId: string; role: Role; isActive: boolean }
 ) {
-	if (target.role !== 'SUPER_ADMIN' || !target.isActive) return
-	const otherActiveSupers = await db.user.count({
-		where: {
-			organizationId,
-			role: 'SUPER_ADMIN',
-			isActive: true,
-			id: { not: target.id }
-		}
+	const label = IRREPLACEABLE_ROLES[target.role]
+	if (!label || !target.isActive) return
+
+	const memberships = await tx.userOrganization.findMany({
+		where: { userId: target.id },
+		select: { organizationId: true }
 	})
-	if (otherActiveSupers === 0) {
-		error(409, 'Cannot remove the last active super admin from the organization.')
+	const affectedOrgIds = new Set([
+		target.organizationId,
+		...memberships.map((m) => m.organizationId)
+	])
+
+	for (const organizationId of affectedOrgIds) {
+		const otherActiveHolders = await tx.user.count({
+			where: {
+				role: target.role,
+				isActive: true,
+				id: { not: target.id },
+				OR: [{ organizationId }, { memberships: { some: { organizationId } } }]
+			}
+		})
+		if (otherActiveHolders === 0) {
+			error(409, `Cannot remove the last active ${label} from the organization.`)
+		}
 	}
 }
 
@@ -201,25 +237,40 @@ export async function setUserRole(
 	// it. Enforced here, both routes are covered once and any future caller is covered by default.
 	if (userId === ctx.actorId) error(403, 'You cannot change your own role.')
 
-	// GUARDRAIL: user must belong to the same organization.
-	const existing = await db.user.findFirst({
-		where: { id: userId, organizationId }
-	})
-	if (!existing) error(404, 'User not found')
+	// The target read, the last-holder count, and the write are wrapped in one serializable
+	// transaction so two concurrent admin requests can't both read "another holder exists" and
+	// both proceed — Serializable makes Prisma throw (P2034) on that conflict instead of letting
+	// both writes land.
+	const { existing, updated } = await db.$transaction(
+		async (tx) => {
+			// GUARDRAIL: user must belong to the same organization.
+			const existing = await tx.user.findFirst({
+				where: { id: userId, organizationId }
+			})
+			if (!existing) error(404, 'User not found')
 
-	// GUARDRAIL: don't demote the last active super admin.
-	if (newRole !== 'SUPER_ADMIN') {
-		await assertNotLastSuperAdmin(organizationId, existing)
-	}
+			// GUARDRAIL: don't strip the last active super admin — or, since #248, the last active
+			// CEO. Keyed on the role being LOST rather than the one being set, so re-saving a
+			// user's existing role is never blocked (the select is prefilled with it, so that Save
+			// is one click away).
+			if (newRole !== existing.role) {
+				await assertNotLastOfRole(tx, existing)
+			}
 
-	// GUARDRAIL: #255 — `roles` is the set every capability check actually reads (`rolesOf` falls
-	// back to `[role]` only when the set is empty, which it never is post-#133 backfill). Writing
-	// `role` alone left the user judged on their OLD authority forever. This screen sets one
-	// primary role, so the set is reset to match it rather than merged into.
-	const updated = await db.user.update({
-		where: { id: userId },
-		data: { role: newRole, roles: [newRole] }
-	})
+			// GUARDRAIL: #255 — `roles` is the set every capability check actually reads (`rolesOf`
+			// falls back to `[role]` only when the set is empty, which it never is post-#133
+			// backfill). Writing `role` alone left the user judged on their OLD authority forever.
+			// This screen sets one primary role, so the set is reset to match it rather than merged
+			// into.
+			const updated = await tx.user.update({
+				where: { id: userId },
+				data: { role: newRole, roles: [newRole] }
+			})
+
+			return { existing, updated }
+		},
+		{ isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+	)
 
 	await writeAuditLog(ctx, {
 		action: 'UPDATE',
@@ -243,20 +294,31 @@ export async function setUserActive(
 	// user cannot hold a session to make the call.
 	if (userId === ctx.actorId) error(403, 'You cannot deactivate your own account.')
 
-	const existing = await db.user.findFirst({
-		where: { id: userId, organizationId }
-	})
-	if (!existing) error(404, 'User not found')
+	// See setUserRole: same atomicity reasoning — target read, holder count and write share one
+	// serializable transaction so the count can't go stale between two concurrent requests.
+	const { existing, updated } = await db.$transaction(
+		async (tx) => {
+			const existing = await tx.user.findFirst({
+				where: { id: userId, organizationId }
+			})
+			if (!existing) error(404, 'User not found')
 
-	// GUARDRAIL: don't deactivate the last active super admin.
-	if (!isActive) {
-		await assertNotLastSuperAdmin(organizationId, existing)
-	}
+			// GUARDRAIL: don't deactivate the last active super admin or CEO (#248) — deactivating
+			// the only CEO freezes role management org-wide, since MANAGE_USER_ROLES is
+			// CEO-exclusive.
+			if (!isActive) {
+				await assertNotLastOfRole(tx, existing)
+			}
 
-	const updated = await db.user.update({
-		where: { id: userId },
-		data: { isActive }
-	})
+			const updated = await tx.user.update({
+				where: { id: userId },
+				data: { isActive }
+			})
+
+			return { existing, updated }
+		},
+		{ isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+	)
 
 	await writeAuditLog(ctx, {
 		action: 'UPDATE',

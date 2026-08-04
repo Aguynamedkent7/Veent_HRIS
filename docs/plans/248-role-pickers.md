@@ -35,10 +35,10 @@ evidence say it was not intent:
    `src/lib/rbac.ts:102-105` describes VERIFIER/APPROVER as the middle and final gates of the
    maker→verifier→approver chain; `rbac.ts:91` makes CEO the sole holder of `MANAGE_USER_ROLES`.
    Excluding these three from assignment does not express a governance policy — it produces two
-   governance *failures*: an approval chain that cannot be restaffed, and a single-point-of-failure
+   governance _failures_: an approval chain that cannot be restaffed, and a single-point-of-failure
    role with no in-app succession.
-4. **The one place CEO *is* deliberately handled is a UI-only check.**
-   `settings/roles/+page.svelte:99` (`u.role !== 'CEO'`) concerns the *target's current* role, not
+4. **The one place CEO _is_ deliberately handled is a UI-only check.**
+   `settings/roles/+page.svelte:99` (`u.role !== 'CEO'`) concerns the _target's current_ role, not
    the selectable set, and it is enforced **only in the page** — the v1 PATCH twin
    (`api/v1/settings/users/[id]/role/+server.ts`) has no equivalent check at all. A genuine policy
    in this codebase lives in the service (cf. the self-guard, moved into `setUserRole` in
@@ -46,20 +46,20 @@ evidence say it was not intent:
    not a policy.
 
 **Therefore:** add the three missing values. Do **not** take the issue's alternative branch
-("explicit comment on both enums"). *However*, that alternative is honoured in spirit for the
+("explicit comment on both enums"). _However_, that alternative is honoured in spirit for the
 **hire form** — see D3, where the restriction genuinely is deliberate and is written down.
 
 ### D2 — Which hardcoded lists get touched? **The three role-management lists → 9 values, consolidated behind one exported const.**
 
 The validate pass counted four; the true count is **five**. Full inventory:
 
-| # | Location | Today | Action |
-|---|---|---|---|
-| 1 | `src/routes/(app)/settings/roles/+page.server.ts:24` — zod enum | 6 | → `z.enum(ASSIGNABLE_ROLES)` |
-| 2 | `src/routes/api/v1/settings/users/[id]/role/+server.ts:8` — zod enum | 6 | → `z.enum(ASSIGNABLE_ROLES)` |
-| 3 | `src/routes/(app)/settings/roles/+page.svelte:23-30` — `roles` const → `<option>` list | 6 | → `{#each ASSIGNABLE_ROLES}` |
-| 4 | `src/routes/(app)/employees/new/+page.server.ts:66` — hire zod enum | 3 | → `z.enum(HIRE_ROLES)`, **stays 3** (D3) |
-| 5 | `src/routes/(app)/employees/new/+page.svelte:195-197` — three `<option>`s | 3 | **unchanged**, gains a pointer comment (D3) |
+| #   | Location                                                                               | Today | Action                                      |
+| --- | -------------------------------------------------------------------------------------- | ----- | ------------------------------------------- |
+| 1   | `src/routes/(app)/settings/roles/+page.server.ts:24` — zod enum                        | 6     | → `z.enum(ASSIGNABLE_ROLES)`                |
+| 2   | `src/routes/api/v1/settings/users/[id]/role/+server.ts:8` — zod enum                   | 6     | → `z.enum(ASSIGNABLE_ROLES)`                |
+| 3   | `src/routes/(app)/settings/roles/+page.svelte:23-30` — `roles` const → `<option>` list | 6     | → `{#each ASSIGNABLE_ROLES}`                |
+| 4   | `src/routes/(app)/employees/new/+page.server.ts:66` — hire zod enum                    | 3     | → `z.enum(HIRE_ROLES)`, **stays 3** (D3)    |
+| 5   | `src/routes/(app)/employees/new/+page.svelte:195-197` — three `<option>`s              | 3     | **unchanged**, gains a pointer comment (D3) |
 
 Lists 1–3 are three copies of one fact and are what drifted. They collapse to a single exported
 const `ASSIGNABLE_ROLES` in `src/lib/rbac.ts` — the module that already declares itself the "single
@@ -131,7 +131,7 @@ branch produces a **reachable false 409** the moment #248 ships:
 > The promotion is permanently unreversible in-app — precisely the trap #248 exists to remove.
 
 The fix is one clause: `OR: [{ organizationId }, { memberships: { some: { organizationId } } }]`.
-Membership *is* the tenant boundary in this codebase — `api/v1/session/switch-org/+server.ts:21-24`
+Membership _is_ the tenant boundary in this codebase — `api/v1/session/switch-org/+server.ts:21-24`
 validates against `userOrganization` before letting `currentOrgId` change, and
 `hooks.server.ts:34-38` resolves `locals.user.organizationId` from it. So "holders who can act in
 this org" is exactly `home org ∪ members`. Applying it uniformly (not just to CEO) keeps one guard
@@ -171,7 +171,7 @@ layout data with full typing. **No `load` change required.**
 The issue asks this to be decided separately. It stays as-is:
 
 - #248's actual complaint is "exactly one CEO account exists with no way to create a second". That
-  is fixed by making the *role* assignable, not by handing the *capability* to more roles. Fixing it
+  is fixed by making the _role_ assignable, not by handing the _capability_ to more roles. Fixing it
   twice, in two ways, in one change is how a scoped fix becomes a governance rewrite.
 - Widening `MANAGE_USER_ROLES` reverses a documented #132 decision and would need its own
   separation-of-duties analysis (e.g. giving it to SUPER_ADMIN creates a mutual-promotion loop
@@ -198,6 +198,7 @@ Once VERIFIER appears in the picker, a CEO trying to make an existing Manager "a
 instead **replace** their MANAGER role. That is a real footgun this change makes reachable.
 
 **Why a multi-role UI is not in scope:**
+
 1. It is a different feature, not a picker widening: a multi-select control, a merge-vs-replace
    decision in `setUserRole` (or a second writer), and an audit-log shape change (`oldValue`/
    `newValue` are currently `{ role }`, `org.ts:228-229`).
@@ -212,7 +213,7 @@ instead **replace** their MANAGER role. That is a real footgun this change makes
 **Mitigation that does ship (one line of UI copy, no logic):** the page's intro paragraph gains
 "Assigning a role replaces the user's full role set." — see Change 4c.
 
-**Follow-up issue to file:** *"Multi-role assignment UI for Settings → Roles"*, must include the
+**Follow-up issue to file:** _"Multi-role assignment UI for Settings → Roles"_, must include the
 legal-combination question, naming VERIFIER+APPROVER as the case that must be forbidden.
 
 ### D8 — Cross-tenant CEO provisioning: **OUT OF SCOPE, explicitly.**
@@ -224,13 +225,16 @@ cross-tenant means creating `UserOrganization` rows, i.e. building org-membershi
 territory); Settings has no UI for it at all. A role-assignment fix must not also build multi-tenant
 account provisioning.
 
-What this plan *does* handle is the **interaction**: D4's membership-aware count means the existing
-cross-tenant CEO is correctly recognised as a CEO of every tenant they belong to, so promoting and
-then demoting an org-local CEO from a non-home tenant works. Note also that `setUserRole`'s
+What this plan _does_ handle is the **interaction**: `assertNotLastOfRole` checks every organization
+the target is reachable from — their home org **and every org they hold a membership in** — not
+just the org the write was issued through. Checking only the acting org is not safe: a target who
+is only a _member_ of another tenant (the seeded cross-tenant CEO) can still be that other tenant's
+only reachable holder, and a demotion issued from the target's home org would never look at it,
+silently stranding that tenant. Note also that `setUserRole`'s
 `db.user.findFirst({ where: { id, organizationId } })` (`org.ts:205-207`) means the seeded
 cross-tenant CEO **cannot be targeted from a non-home tenant** (404) — correct and deliberate.
 
-**Follow-up issue to file:** *"An app-promoted CEO is single-tenant; the seeded CEO is cross-tenant"*
+**Follow-up issue to file:** _"An app-promoted CEO is single-tenant; the seeded CEO is cross-tenant"_
 — decide whether promotion to CEO should also grant memberships, or whether cross-tenant executive
 access needs its own provisioning surface.
 
@@ -247,7 +251,7 @@ access needs its own provisioning surface.
   `setUserRole`, self-change is blocked, so the actor always survives as a CEO (see D5).
 - Matching #160's shape keeps one guard with one dialect. Widening it to
   `OR: [{ role }, { roles: { has: role } }]` (the shape `recruitment.ts:345` uses) is not strictly
-  correct either, because `rolesOf` falls back to `[role]` only when `roles` is *empty* — the
+  correct either, because `rolesOf` falls back to `[role]` only when `roles` is _empty_ — the
   faithful predicate needs an `isEmpty` branch, and that complexity buys nothing today.
 
 This is the same territory as D7; both are resolved by the multi-role follow-up issue.
@@ -259,31 +263,31 @@ This is the same territory as D7; both are resolved by the multi-role follow-up 
 Line numbers below are from a fresh `Read` of each file at HEAD. They match the validate pass except
 where noted.
 
-| File | Lines | Fact |
-|---|---|---|
-| `prisma/schema.prisma` | 27-37 | `enum Role` — all nine values. **Unchanged by this plan.** |
-| `prisma/schema.prisma` | 383-387 | `role Role @default(EMPLOYEE)` + `roles Role[] @default([])` |
-| `src/lib/rbac.ts` | 91 | `MANAGE_USER_ROLES: ['CEO']` |
-| `src/lib/rbac.ts` | 77 | `ADMINISTER_SYSTEM: ['SUPER_ADMIN', 'CEO']` |
-| `src/lib/rbac.ts` | 89 | `OVERRIDE_FINALIZED: ['SUPER_ADMIN']` |
-| `src/lib/rbac.ts` | 137-152 | end of `CAPABILITIES`, `Capability`, `can`, `canAny` — file ends at 152 |
-| `src/lib/server/services/settings/org.ts` | 171-190 | `assertNotLastSuperAdmin` (comment 171-173, fn 174-190) |
-| `src/lib/server/services/settings/org.ts` | 192-233 | `setUserRole`; self-guard 202, org scope 205-208, guard call 210-213, write 219-222, audit 224-230 |
-| `src/lib/server/services/settings/org.ts` | 235-270 | `setUserActive`; guard call 251-254 |
-| `src/routes/(app)/settings/roles/+page.server.ts` | 22-25 | six-value `roleSchema` (enum on 24) |
-| `src/routes/(app)/settings/roles/+page.server.ts` | 57-58 | comment naming only the last-super-admin guardrail |
-| `src/routes/api/v1/settings/users/[id]/role/+server.ts` | 7-9 | six-value `roleSchema` (enum on 8) |
-| `src/routes/api/v1/settings/users/[id]/role/+server.ts` | 11-13 | comment naming only the last-super-admin guardrail |
-| `src/routes/(app)/settings/roles/+page.svelte` | 23-30 | local `roles` const (six values) |
-| `src/routes/(app)/settings/roles/+page.svelte` | 42-45 | intro `<p>` |
-| `src/routes/(app)/settings/roles/+page.svelte` | 99 | `{#if canManageRoles && u.role !== 'CEO'}` |
-| `src/routes/(app)/settings/roles/+page.svelte` | 112-114 | `{#each roles as r (r)}` → `<option>` |
-| `src/routes/(app)/employees/new/+page.server.ts` | 66 | `role: z.enum(['EMPLOYEE','MANAGER','HR_ADMIN'])` |
-| `src/routes/(app)/employees/new/+page.server.ts` | 21, 122 | `requireCapability(…, 'MANAGE_HR')` on load and on `create` |
-| `src/routes/(app)/employees/new/+page.svelte` | 195-197 | three `<option>`s with friendly labels |
-| `src/routes/(app)/+layout.server.ts` | 41-47 | returns `user: { id, email, role, roles, organizationId }` |
-| `tests/unit/rbac.test.ts` | 1-22 | `import type { Role }`, `ALL_ROLES` literal (nine) |
-| `tests/unit/user-admin-self-guard.test.ts` | 13-38 | `dbMock` harness (`user.findFirst/update/count`), `CTX.actorRole: 'CEO'` |
+| File                                                    | Lines   | Fact                                                                                               |
+| ------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------- |
+| `prisma/schema.prisma`                                  | 27-37   | `enum Role` — all nine values. **Unchanged by this plan.**                                         |
+| `prisma/schema.prisma`                                  | 383-387 | `role Role @default(EMPLOYEE)` + `roles Role[] @default([])`                                       |
+| `src/lib/rbac.ts`                                       | 91      | `MANAGE_USER_ROLES: ['CEO']`                                                                       |
+| `src/lib/rbac.ts`                                       | 77      | `ADMINISTER_SYSTEM: ['SUPER_ADMIN', 'CEO']`                                                        |
+| `src/lib/rbac.ts`                                       | 89      | `OVERRIDE_FINALIZED: ['SUPER_ADMIN']`                                                              |
+| `src/lib/rbac.ts`                                       | 137-152 | end of `CAPABILITIES`, `Capability`, `can`, `canAny` — file ends at 152                            |
+| `src/lib/server/services/settings/org.ts`               | 171-190 | `assertNotLastSuperAdmin` (comment 171-173, fn 174-190)                                            |
+| `src/lib/server/services/settings/org.ts`               | 192-233 | `setUserRole`; self-guard 202, org scope 205-208, guard call 210-213, write 219-222, audit 224-230 |
+| `src/lib/server/services/settings/org.ts`               | 235-270 | `setUserActive`; guard call 251-254                                                                |
+| `src/routes/(app)/settings/roles/+page.server.ts`       | 22-25   | six-value `roleSchema` (enum on 24)                                                                |
+| `src/routes/(app)/settings/roles/+page.server.ts`       | 57-58   | comment naming only the last-super-admin guardrail                                                 |
+| `src/routes/api/v1/settings/users/[id]/role/+server.ts` | 7-9     | six-value `roleSchema` (enum on 8)                                                                 |
+| `src/routes/api/v1/settings/users/[id]/role/+server.ts` | 11-13   | comment naming only the last-super-admin guardrail                                                 |
+| `src/routes/(app)/settings/roles/+page.svelte`          | 23-30   | local `roles` const (six values)                                                                   |
+| `src/routes/(app)/settings/roles/+page.svelte`          | 42-45   | intro `<p>`                                                                                        |
+| `src/routes/(app)/settings/roles/+page.svelte`          | 99      | `{#if canManageRoles && u.role !== 'CEO'}`                                                         |
+| `src/routes/(app)/settings/roles/+page.svelte`          | 112-114 | `{#each roles as r (r)}` → `<option>`                                                              |
+| `src/routes/(app)/employees/new/+page.server.ts`        | 66      | `role: z.enum(['EMPLOYEE','MANAGER','HR_ADMIN'])`                                                  |
+| `src/routes/(app)/employees/new/+page.server.ts`        | 21, 122 | `requireCapability(…, 'MANAGE_HR')` on load and on `create`                                        |
+| `src/routes/(app)/employees/new/+page.svelte`           | 195-197 | three `<option>`s with friendly labels                                                             |
+| `src/routes/(app)/+layout.server.ts`                    | 41-47   | returns `user: { id, email, role, roles, organizationId }`                                         |
+| `tests/unit/rbac.test.ts`                               | 1-22    | `import type { Role }`, `ALL_ROLES` literal (nine)                                                 |
+| `tests/unit/user-admin-self-guard.test.ts`              | 13-38   | `dbMock` harness (`user.findFirst/update/count`), `CTX.actorRole: 'CEO'`                           |
 
 Environment facts confirmed for the executor:
 
@@ -310,7 +314,6 @@ Environment facts confirmed for the executor:
 changes; the capability table is untouched (D6).
 
 ```ts
-
 // ─── Role assignment (#248) ───────────────────────────────────────────────────
 
 /**
@@ -658,82 +661,82 @@ readonly literal tuple otherwise fails `pnpm check` on the element type.
 **B1 — additions inside `describe('setUserRole', …)`:**
 
 ```ts
-	// #248: the three roles no picker offered. The service always accepted them (it takes a Role);
-	// what was missing was any route that would pass them. Pinned end-to-end at the writer.
-	it.each(['CEO', 'VERIFIER', 'APPROVER'] as const)('promotes a user to %s (#248)', async (role) => {
-		dbMock.user.update.mockResolvedValue({ id: 'user-other', role })
-		await expect(setUserRole('user-other', 'org1', role, CTX)).resolves.toBeDefined()
-		expect(dbMock.user.update).toHaveBeenCalledWith({
-			where: { id: 'user-other' },
-			data: { role, roles: [role] }
-		})
+// #248: the three roles no picker offered. The service always accepted them (it takes a Role);
+// what was missing was any route that would pass them. Pinned end-to-end at the writer.
+it.each(['CEO', 'VERIFIER', 'APPROVER'] as const)('promotes a user to %s (#248)', async (role) => {
+	dbMock.user.update.mockResolvedValue({ id: 'user-other', role })
+	await expect(setUserRole('user-other', 'org1', role, CTX)).resolves.toBeDefined()
+	expect(dbMock.user.update).toHaveBeenCalledWith({
+		where: { id: 'user-other' },
+		data: { role, roles: [role] }
 	})
+})
 
-	it('blocks demoting the last active CEO (#248)', async () => {
-		dbMock.user.findFirst.mockResolvedValue({ id: 'user-other', role: 'CEO', isActive: true })
-		dbMock.user.count.mockResolvedValue(0)
+it('blocks demoting the last active CEO (#248)', async () => {
+	dbMock.user.findFirst.mockResolvedValue({ id: 'user-other', role: 'CEO', isActive: true })
+	dbMock.user.count.mockResolvedValue(0)
 
-		await expect(setUserRole('user-other', 'org1', 'HR_ADMIN', CTX)).rejects.toMatchObject({
-			status: 409,
-			body: { message: 'Cannot remove the last active CEO from the organization.' }
-		})
-		expect(dbMock.user.update).not.toHaveBeenCalled()
+	await expect(setUserRole('user-other', 'org1', 'HR_ADMIN', CTX)).rejects.toMatchObject({
+		status: 409,
+		body: { message: 'Cannot remove the last active CEO from the organization.' }
 	})
+	expect(dbMock.user.update).not.toHaveBeenCalled()
+})
 
-	it('demotes a CEO while another active CEO remains', async () => {
-		dbMock.user.findFirst.mockResolvedValue({ id: 'user-other', role: 'CEO', isActive: true })
-		dbMock.user.count.mockResolvedValue(1)
+it('demotes a CEO while another active CEO remains', async () => {
+	dbMock.user.findFirst.mockResolvedValue({ id: 'user-other', role: 'CEO', isActive: true })
+	dbMock.user.count.mockResolvedValue(1)
 
-		await expect(setUserRole('user-other', 'org1', 'HR_ADMIN', CTX)).resolves.toBeDefined()
+	await expect(setUserRole('user-other', 'org1', 'HR_ADMIN', CTX)).resolves.toBeDefined()
+})
+
+// The seeded CEO belongs to all three tenants via userOrganization while User.organizationId
+// names only one. Counting the org column alone would report "no other CEO" in the other two
+// and trap a promotion the same actor had just made (#248).
+it('counts holders who reach the org through a membership', async () => {
+	dbMock.user.findFirst.mockResolvedValue({ id: 'user-other', role: 'CEO', isActive: true })
+	await setUserRole('user-other', 'org1', 'HR_ADMIN', CTX)
+
+	expect(dbMock.user.count).toHaveBeenCalledWith({
+		where: {
+			role: 'CEO',
+			isActive: true,
+			id: { not: 'user-other' },
+			OR: [{ organizationId: 'org1' }, { memberships: { some: { organizationId: 'org1' } } }]
+		}
 	})
+})
 
-	// The seeded CEO belongs to all three tenants via userOrganization while User.organizationId
-	// names only one. Counting the org column alone would report "no other CEO" in the other two
-	// and trap a promotion the same actor had just made (#248).
-	it('counts holders who reach the org through a membership', async () => {
-		dbMock.user.findFirst.mockResolvedValue({ id: 'user-other', role: 'CEO', isActive: true })
-		await setUserRole('user-other', 'org1', 'HR_ADMIN', CTX)
-
-		expect(dbMock.user.count).toHaveBeenCalledWith({
-			where: {
-				role: 'CEO',
-				isActive: true,
-				id: { not: 'user-other' },
-				OR: [{ organizationId: 'org1' }, { memberships: { some: { organizationId: 'org1' } } }]
-			}
-		})
+// The guard keys on the role being LOST, so re-saving a user's current role — one click, since
+// the select is prefilled — is never mistaken for a demotion.
+it('does not block re-saving the last super admin’s existing role', async () => {
+	dbMock.user.findFirst.mockResolvedValue({
+		id: 'user-other',
+		role: 'SUPER_ADMIN',
+		isActive: true
 	})
+	dbMock.user.count.mockResolvedValue(0)
 
-	// The guard keys on the role being LOST, so re-saving a user's current role — one click, since
-	// the select is prefilled — is never mistaken for a demotion.
-	it('does not block re-saving the last super admin’s existing role', async () => {
-		dbMock.user.findFirst.mockResolvedValue({
-			id: 'user-other',
-			role: 'SUPER_ADMIN',
-			isActive: true
-		})
-		dbMock.user.count.mockResolvedValue(0)
-
-		await expect(setUserRole('user-other', 'org1', 'SUPER_ADMIN', CTX)).resolves.toBeDefined()
-		expect(dbMock.user.count).not.toHaveBeenCalled()
-	})
+	await expect(setUserRole('user-other', 'org1', 'SUPER_ADMIN', CTX)).resolves.toBeDefined()
+	expect(dbMock.user.count).not.toHaveBeenCalled()
+})
 ```
 
 **B2 — addition inside `describe('setUserActive', …)`:**
 
 ```ts
-	// The guard's real bite: only a CEO can change roles and never their own, so a role change always
-	// leaves one CEO standing — but a SUPER_ADMIN holds ADMINISTER_SYSTEM and could deactivate the
-	// org's only CEO, freezing role management entirely (#248).
-	it('blocks deactivating the last active CEO (#248)', async () => {
-		dbMock.user.findFirst.mockResolvedValue({ id: 'user-other', role: 'CEO', isActive: true })
-		dbMock.user.count.mockResolvedValue(0)
+// The guard's real bite: only a CEO can change roles and never their own, so a role change always
+// leaves one CEO standing — but a SUPER_ADMIN holds ADMINISTER_SYSTEM and could deactivate the
+// org's only CEO, freezing role management entirely (#248).
+it('blocks deactivating the last active CEO (#248)', async () => {
+	dbMock.user.findFirst.mockResolvedValue({ id: 'user-other', role: 'CEO', isActive: true })
+	dbMock.user.count.mockResolvedValue(0)
 
-		await expect(setUserActive('user-other', 'org1', false, CTX)).rejects.toMatchObject({
-			status: 409
-		})
-		expect(dbMock.user.update).not.toHaveBeenCalled()
+	await expect(setUserActive('user-other', 'org1', false, CTX)).rejects.toMatchObject({
+		status: 409
 	})
+	expect(dbMock.user.update).not.toHaveBeenCalled()
+})
 ```
 
 **Retained unchanged (do not touch):** the two self-guard tests at the top of `setUserRole`
@@ -781,12 +784,12 @@ pnpm test user-admin-self-guard
 
 **Gate expectations**
 
-| Gate | Expected | If it fails |
-|---|---|---|
-| `format:check` | clean | run `pnpm format`, re-inspect the diff for unintended reflow |
-| `lint` | clean | most likely an unused import left after deleting the local `roles` const in `+page.svelte` |
-| `check` | 0 errors, 0 warnings | if `data.user` is reported missing on `PageData`, **stop and report** (D5) rather than improvising a `load` change |
-| `test` | all suites pass, `rbac.test.ts` and `user-admin-self-guard.test.ts` gain the new cases | a failing existing `user-admin-self-guard` case means Change 7b changed #160 behaviour — treat as a plan violation, not a test to update |
+| Gate           | Expected                                                                               | If it fails                                                                                                                              |
+| -------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `format:check` | clean                                                                                  | run `pnpm format`, re-inspect the diff for unintended reflow                                                                             |
+| `lint`         | clean                                                                                  | most likely an unused import left after deleting the local `roles` const in `+page.svelte`                                               |
+| `check`        | 0 errors, 0 warnings                                                                   | if `data.user` is reported missing on `PageData`, **stop and report** (D5) rather than improvising a `load` change                       |
+| `test`         | all suites pass, `rbac.test.ts` and `user-admin-self-guard.test.ts` gain the new cases | a failing existing `user-admin-self-guard` case means Change 7b changed #160 behaviour — treat as a plan violation, not a test to update |
 
 **E2E** (`pnpm test:e2e`) is not required by this change and needs Postgres + a seeded DB. Run it only
 if the local environment already has one; no spec touches the affected surfaces.
@@ -839,9 +842,9 @@ automatically, and the drift class disappears permanently.
 Rejected on two grounds. **Security:** auto-widening is the wrong default for an authorization
 surface. `src/lib/rbac.ts:47-51` states the house rule explicitly — a newly added Role must grant
 nothing "until someone decides it should, rather than silently inheriting". Applying that to
-*capabilities* but not to *assignability* would be inconsistent, and the failure mode is worse
+_capabilities_ but not to _assignability_ would be inconsistent, and the failure mode is worse
 (a role becomes handable-out before anyone decides it should be). **Mechanical:** the `.svelte`
-option list cannot use it — `Object.values(Role)` is a *runtime* import of `@prisma/client`, which
+option list cannot use it — `Object.values(Role)` is a _runtime_ import of `@prisma/client`, which
 would pull the Prisma client into the browser bundle; every client-side role import in this codebase
 is `import type`. So the derivation would only cover two of the three lists, leaving the drift it was
 meant to eliminate.
@@ -854,7 +857,7 @@ gains a role that `ASSIGNABLE_ROLES` does not — forcing the decision without p
 The strictest YAGNI reading: no new export, three literal edits, zero indirection. Genuinely fewer
 concepts.
 
-Rejected because the bug being fixed *is* three copies of one fact drifting apart. Shipping a fix
+Rejected because the bug being fixed _is_ three copies of one fact drifting apart. Shipping a fix
 that leaves the drift mechanism intact — and adds a fourth trigger for it, since any future role now
 needs three synchronized edits plus a decision about the hire form — treats the symptom. The
 consolidation is one exported const with three live call sites in a module that already exists and is
@@ -868,13 +871,13 @@ Three options were weighed once requirement 7 demanded a test pinning the hire-f
 - **(a) Leave the literal inline, add only a comment, skip the test.** Cheapest, but the decision
   then rests on a comment nobody's tooling checks — and the issue's own framing ("if deliberate,
   make it explicit") argues for something durable. Rejected.
-- **(b) `export const _HIRE_ROLES` from the route.** SvelteKit *does* permit `_`-prefixed exports
+- **(b) `export const _HIRE_ROLES` from the route.** SvelteKit _does_ permit `_`-prefixed exports
   (`exports.js:16`), so this is legal and co-locates the list with its enforcement. Rejected because
   the test would then import the route module, which eagerly pulls in `$lib/server/db` (PrismaClient
   construction), `$lib/server/notifications`, and the employees service — a mock-heavy test graph for
   a three-string assertion, and a novel export idiom this codebase uses nowhere.
 - **(c) `$lib/rbac.ts`.** One call site today, which is the ponytail objection — but the const is not
-  there for reuse, it is there to be an *auditable, tested authorization statement* sitting next to
+  there for reuse, it is there to be an _auditable, tested authorization statement_ sitting next to
   the capability table whose membership (`MANAGE_HR` ⊇ MANAGER) is exactly what makes the
   restriction necessary. That is a legitimate reason for a single-use named constant. **Chosen**, and
   flagged here so REVIEW sees it was a considered exception rather than reflex.
@@ -899,7 +902,7 @@ is the exact complaint #248 files.
 ### I5 — Is the last-CEO guard even reachable on the role path? — **surfaced, kept anyway**
 
 The second pass established something the issue does not say: because `MANAGE_USER_ROLES` is
-CEO-exclusive *and* `setUserRole` blocks self-change, **every** role change leaves at least one CEO
+CEO-exclusive _and_ `setUserRole` blocks self-change, **every** role change leaves at least one CEO
 standing. So the CEO branch of the guard can only fire from `setUserActive` (a SUPER_ADMIN
 deactivating the sole CEO) or from the cross-tenant scoping case in I4.
 
@@ -920,7 +923,7 @@ Folded into the D7 multi-role follow-up rather than half-solved here.
 
 The second pass found that `services/separation.ts:267-270` and `services/employees.ts:1183-1186`
 both set `user.isActive = false` directly, bypassing the last-holder guard entirely. The seeded CEO
-*does* have an Employee record (`EMP-900`, `seed-core.ts:487-494`), so offboarding it would
+_does_ have an Employee record (`EMP-900`, `seed-core.ts:487-494`), so offboarding it would
 deactivate the org's only CEO with no 409.
 
 Not fixed here: it is a **pre-existing** #160 gap (the same bypass exists for SUPER_ADMIN today),
@@ -940,17 +943,17 @@ enforces. Verified against the generated `$types` that this needs no `load` chan
 
 Line-by-line pass against "would a senior engineer call this overcomplicated?":
 
-| Considered adding | Verdict |
-|---|---|
-| A `roles.ts` module for the two lists | **No** — `$lib/rbac.ts` exists and is exactly this |
-| Re-exporting the consts from `$lib/server/rbac` | **No** — 13 server files already import `$lib/rbac` directly |
-| A `Role → label` map for the roles-page select | **No** — the existing `r.replace('_', ' ')` handles all nine |
-| A capability-derived generic "last holder" helper | **No** — D4; actively unsafe and more code |
-| A `currentUserId` field on the page `load` | **No** — parent layout data already carries it |
-| An e2e spec for the picker | **No** — no signal a unit test doesn't give |
-| A `setUserRoles` (plural) writer | **No** — D7, out of scope |
-| Touching `prisma/schema.prisma` or the seed | **No** — all nine values already exist |
-| Changing `MANAGE_USER_ROLES` | **No** — D6 |
+| Considered adding                                 | Verdict                                                      |
+| ------------------------------------------------- | ------------------------------------------------------------ |
+| A `roles.ts` module for the two lists             | **No** — `$lib/rbac.ts` exists and is exactly this           |
+| Re-exporting the consts from `$lib/server/rbac`   | **No** — 13 server files already import `$lib/rbac` directly |
+| A `Role → label` map for the roles-page select    | **No** — the existing `r.replace('_', ' ')` handles all nine |
+| A capability-derived generic "last holder" helper | **No** — D4; actively unsafe and more code                   |
+| A `currentUserId` field on the page `load`        | **No** — parent layout data already carries it               |
+| An e2e spec for the picker                        | **No** — no signal a unit test doesn't give                  |
+| A `setUserRoles` (plural) writer                  | **No** — D7, out of scope                                    |
+| Touching `prisma/schema.prisma` or the seed       | **No** — all nine values already exist                       |
+| Changing `MANAGE_USER_ROLES`                      | **No** — D6                                                  |
 
 Net new abstractions: **zero**. Net new exported constants: **two**, both plain arrays in an existing
 module, both tested. Net new functions: **zero** (one existing private function renamed and widened).
@@ -991,7 +994,7 @@ rather than lost.
    needs its own provisioning surface (#131 territory).
 4. **Role routes check the primary role, not the full set** (I10). `requireCapability(user.role, …)`
    vs. `requireAnyCapability(user.roles, …)` in both role-assignment routes.
-5. *(Optional, low priority)* **The hire form lets a MANAGER create an HR_ADMIN** (I10). Pre-existing;
+5. _(Optional, low priority)_ **The hire form lets a MANAGER create an HR_ADMIN** (I10). Pre-existing;
    consider whether HR_ADMIN creation should require `ADMINISTER_HR_ORGWIDE`.
 
 ---
@@ -1003,22 +1006,22 @@ rather than making it silently (RIPER-5 EXECUTE rule).
 
 - [ ] **1.** Branch off an updated local `staging`: `git switch staging && git pull && git switch -c fix/assignable-roles-248`. (Never `checkout -b origin/staging`.)
 - [ ] **2.** **Change 1** — append `ASSIGNABLE_ROLES` and `HIRE_ROLES` (with their doc comments) to the end of `src/lib/rbac.ts`. Do not touch `CAPABILITIES`, `ROLE_HIERARCHY`, or anything above.
-      *Verify:* `pnpm check` — both consts infer as readonly tuples of `Role`.
+      _Verify:_ `pnpm check` — both consts infer as readonly tuples of `Role`.
 - [ ] **3.** **Change 2** — `settings/roles/+page.server.ts`: add the `$lib/rbac` import (2a), swap the enum (2b), correct the guardrail comment (2c).
 - [ ] **4.** **Change 3** — `api/v1/settings/users/[id]/role/+server.ts`: add the import, swap the enum, replace the header comment.
-      *Verify (3+4):* `pnpm check` clean — `parsed.data.role` still assignable to `Role` at both `setUserRole` call sites.
+      _Verify (3+4):_ `pnpm check` clean — `parsed.data.role` still assignable to `Role` at both `setUserRole` call sites.
 - [ ] **5.** **Change 4** — `settings/roles/+page.svelte`: import `ASSIGNABLE_ROLES` (4a), delete the local `roles` const (4a), point `{#each}` at it (4b), update the intro copy (4c), swap line 99's condition to `u.id !== data.user.id` with its comment (4d).
-      *Verify:* `pnpm check` — no unused-import or missing-`data.user` error. **If `data.user` is not on `PageData`, STOP and report** (do not add a `currentUserId` to `load` on your own initiative).
+      _Verify:_ `pnpm check` — no unused-import or missing-`data.user` error. **If `data.user` is not on `PageData`, STOP and report** (do not add a `currentUserId` to `load` on your own initiative).
 - [ ] **6.** **Change 5** — `employees/new/+page.server.ts`: import `HIRE_ROLES`, swap the enum, add the rationale comment. The list stays three values.
 - [ ] **7.** **Change 6** — `employees/new/+page.svelte`: add the one-line pointer comment above the three `<option>`s. Options and labels unchanged.
 - [ ] **8.** **Change 7a** — replace `assertNotLastSuperAdmin` in `src/lib/server/services/settings/org.ts` with `IRREPLACEABLE_ROLES` + `assertNotLastOfRole`, comments included. Keep the SUPER_ADMIN 409 message byte-identical.
 - [ ] **9.** **Change 7b** — `setUserRole` call site: `if (newRole !== existing.role) await assertNotLastOfRole(...)`.
 - [ ] **10.** **Change 7c** — `setUserActive` call site: same helper, updated comment. Confirm **no other** line of `org.ts` changed (`git diff` — in particular `data: { role: newRole, roles: [newRole] }` and the self-guard at line 202 must be untouched).
-      *Verify (8-10):* `pnpm test user-admin-self-guard` — the **four existing** tests still pass before any new ones are added.
+      _Verify (8-10):_ `pnpm test user-admin-self-guard` — the **four existing** tests still pass before any new ones are added.
 - [ ] **11.** **Test A** — `tests/unit/rbac.test.ts`: value-import `Role` (A0), extend the `$lib/rbac` import (A1), append the `role assignment lists (#248)` describe (A2).
-      *Verify:* `pnpm test rbac` — new block green, the entire pre-existing capability matrix untouched and still green.
+      _Verify:_ `pnpm test rbac` — new block green, the entire pre-existing capability matrix untouched and still green.
 - [ ] **12.** **Test B** — `tests/unit/user-admin-self-guard.test.ts`: amend the header comment (B0), add five cases to `setUserRole` (B1) and one to `setUserActive` (B2). **Edit no existing test.**
-      *Verify:* `pnpm test user-admin-self-guard` — all green; `git diff` on this file shows additions only.
+      _Verify:_ `pnpm test user-admin-self-guard` — all green; `git diff` on this file shows additions only.
 - [ ] **13.** **Gate 1 — format:** `pnpm format:check`. If it fails, `pnpm format`, then re-read the diff for unintended reflow before re-running.
 - [ ] **14.** **Gate 2 — lint:** `pnpm lint` clean.
 - [ ] **15.** **Gate 3 — typecheck:** `pnpm check` — 0 errors, 0 warnings.

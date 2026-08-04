@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
+	import { ASSIGNABLE_ROLES } from '$lib/rbac'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
@@ -19,15 +20,6 @@
 	const setActiveGuard = (id: string) => (setActiveGuards[id] ??= createSubmitGuard())
 	const setRoleGuards: Record<string, ReturnType<typeof createSubmitGuard>> = {}
 	const setRoleGuard = (id: string) => (setRoleGuards[id] ??= createSubmitGuard())
-
-	const roles = [
-		'EMPLOYEE',
-		'MANAGER',
-		'HR_ADMIN',
-		'SUPER_ADMIN',
-		'PAYROLL_OFFICER',
-		'FINANCE'
-	] as const
 </script>
 
 <svelte:head>
@@ -41,7 +33,8 @@
 		<h1 class="text-2xl font-bold tracking-tight">Roles &amp; Permissions</h1>
 		<p class="text-sm text-muted-foreground">
 			Manage each user's access level and account status. You cannot change your own role or
-			deactivate yourself, and the last active super admin is protected.
+			deactivate yourself, and the last active super admin and CEO are protected. Assigning a role
+			replaces the user's full role set.
 		</p>
 	</div>
 
@@ -96,7 +89,12 @@
 							</div>
 						</td>
 						<td class="px-4 py-3" colspan="2">
-							{#if canManageRoles && u.role !== 'CEO'}
+							<!-- #248: gate on the rule the service actually enforces (no self-role-change),
+							     not on the target being a CEO. The old CEO block was UI-only — the v1 PATCH
+							     twin never had it — and it made CEO a role that could be granted but never
+							     revoked. A CEO row is now editable; setUserRole refuses to remove the last
+							     active one (409). -->
+							{#if canManageRoles && u.id !== data.user.id}
 								<form
 									method="POST"
 									action="?/setRole"
@@ -109,7 +107,7 @@
 										value={u.role}
 										class="flex h-9 w-40 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 									>
-										{#each roles as r (r)}
+										{#each ASSIGNABLE_ROLES as r (r)}
 											<option value={r}>{r.replace('_', ' ')}</option>
 										{/each}
 									</select>
