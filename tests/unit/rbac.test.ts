@@ -1,13 +1,16 @@
 import { describe, it, expect } from 'vitest'
 import {
+	ASSIGNABLE_ROLES,
 	CAPABILITIES,
+	HIRE_ROLES,
 	can,
 	canAny,
 	hasMinRole,
 	hasAnyMinRole,
 	ROLE_HIERARCHY
 } from '../../src/lib/rbac'
-import type { Role } from '@prisma/client'
+// Value import, not type-only: the generated enum object is the drift tripwire below.
+import { Role } from '@prisma/client'
 
 const ALL_ROLES: Role[] = [
 	'EMPLOYEE',
@@ -250,5 +253,38 @@ describe('statutory rate capabilities (#220)', () => {
 			expect(can(role, 'MANAGE_STATUTORY_RATES')).toBe(false)
 			expect(can(role, 'PROPOSE_STATUTORY_RATES')).toBe(false)
 		}
+	})
+})
+
+// #248: CEO, VERIFIER and APPROVER existed in the schema but no role picker offered them, so they
+// were assignable only by seeding the database. These pin both assignment lists.
+describe('role assignment lists (#248)', () => {
+	it('offers every role the schema defines', () => {
+		expect([...ASSIGNABLE_ROLES].sort()).toEqual([...ALL_ROLES].sort())
+	})
+
+	// Tripwire. A role added to the schema lands here, forcing an explicit decision about whether it
+	// may be assigned — the omission #248 fixed went unnoticed for three roles across two releases.
+	// If a future role is deliberately NOT assignable, change this assertion and say why.
+	it('keeps the picker in step with the Prisma enum', () => {
+		expect(Object.values(Role).sort()).toEqual([...ALL_ROLES].sort())
+	})
+
+	// The hire form runs under MANAGE_HR, which MANAGER holds — so every role listed there is one a
+	// MANAGER can mint outright, bypassing MANAGE_USER_ROLES (CEO-exclusive). It stays a strict
+	// subset on purpose; governance, finance and sign-off roles are granted after hire.
+	it('keeps privileged roles off the hire form', () => {
+		const hire: string[] = [...HIRE_ROLES]
+		const assignable: string[] = [...ASSIGNABLE_ROLES]
+		expect(hire).toEqual(['EMPLOYEE', 'MANAGER', 'HR_ADMIN'])
+		for (const r of hire) expect(assignable).toContain(r)
+		for (const r of ['SUPER_ADMIN', 'CEO', 'PAYROLL_OFFICER', 'FINANCE', 'VERIFIER', 'APPROVER']) {
+			expect(hire).not.toContain(r)
+		}
+	})
+
+	// Sanity: every role the hire form can mint holds strictly less than the CEO exclusives.
+	it('lets no hire-form role change other users’ roles', () => {
+		for (const r of HIRE_ROLES) expect(can(r, 'MANAGE_USER_ROLES')).toBe(false)
 	})
 })

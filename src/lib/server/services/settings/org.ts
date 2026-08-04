@@ -168,24 +168,43 @@ export async function listOrgUsers(organizationId: string) {
 	}))
 }
 
-// Guard against locking an organization out of super-admin access. Blocks demoting
-// or deactivating the last active SUPER_ADMIN. Call before any write that would
-// strip the super-admin capability from `target`.
-async function assertNotLastSuperAdmin(
+// Roles an organization must never be left without an active holder of, because only a holder of
+// that same role can grant it back. SUPER_ADMIN has been covered since #160; CEO joins it now that
+// #248 makes the role assignable through the app — MANAGE_USER_ROLES is CEO-exclusive, so an org
+// that loses its last CEO has no in-app way to appoint another. A label per role, not a bare list,
+// so the 409 names the role the caller was actually looking at.
+const IRREPLACEABLE_ROLES: Partial<Record<Role, string>> = {
+	SUPER_ADMIN: 'super admin',
+	CEO: 'CEO'
+}
+
+// Call before any write that strips `target` of their role or deactivates them.
+//
+// Holders are counted by membership as well as home org: the seeded CEO belongs to all three
+// tenants (#131) while User.organizationId names only one, so an org-column-only count reports
+// "no other CEO" in the other two and would refuse a demotion that is perfectly safe — trapping
+// the promotion it just allowed. Membership is the tenant boundary everywhere else too
+// (api/v1/session/switch-org validates against it before currentOrgId changes).
+//
+// Scope note: offboarding deactivates the user account directly (services/separation.ts,
+// services/employees.ts) and does NOT pass through here. That is a pre-existing gap in #160's
+// guard, inherited rather than introduced by #248, and recoverable by reactivation.
+async function assertNotLastOfRole(
 	organizationId: string,
 	target: { id: string; role: Role; isActive: boolean }
 ) {
-	if (target.role !== 'SUPER_ADMIN' || !target.isActive) return
-	const otherActiveSupers = await db.user.count({
+	const label = IRREPLACEABLE_ROLES[target.role]
+	if (!label || !target.isActive) return
+	const otherActiveHolders = await db.user.count({
 		where: {
-			organizationId,
-			role: 'SUPER_ADMIN',
+			role: target.role,
 			isActive: true,
-			id: { not: target.id }
+			id: { not: target.id },
+			OR: [{ organizationId }, { memberships: { some: { organizationId } } }]
 		}
 	})
-	if (otherActiveSupers === 0) {
-		error(409, 'Cannot remove the last active super admin from the organization.')
+	if (otherActiveHolders === 0) {
+		error(409, `Cannot remove the last active ${label} from the organization.`)
 	}
 }
 
@@ -207,9 +226,11 @@ export async function setUserRole(
 	})
 	if (!existing) error(404, 'User not found')
 
-	// GUARDRAIL: don't demote the last active super admin.
-	if (newRole !== 'SUPER_ADMIN') {
-		await assertNotLastSuperAdmin(organizationId, existing)
+	// GUARDRAIL: don't strip the last active super admin — or, since #248, the last active CEO.
+	// Keyed on the role being LOST rather than the one being set, so re-saving a user's existing
+	// role is never blocked (the select is prefilled with it, so that Save is one click away).
+	if (newRole !== existing.role) {
+		await assertNotLastOfRole(organizationId, existing)
 	}
 
 	// GUARDRAIL: #255 — `roles` is the set every capability check actually reads (`rolesOf` falls
@@ -248,9 +269,10 @@ export async function setUserActive(
 	})
 	if (!existing) error(404, 'User not found')
 
-	// GUARDRAIL: don't deactivate the last active super admin.
+	// GUARDRAIL: don't deactivate the last active super admin or CEO (#248) — deactivating the only
+	// CEO freezes role management org-wide, since MANAGE_USER_ROLES is CEO-exclusive.
 	if (!isActive) {
-		await assertNotLastSuperAdmin(organizationId, existing)
+		await assertNotLastOfRole(organizationId, existing)
 	}
 
 	const updated = await db.user.update({

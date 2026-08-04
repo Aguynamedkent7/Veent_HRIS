@@ -149,3 +149,40 @@ export function can(userRole: Role, capability: Capability): boolean {
 export function canAny(userRoles: Role[], capability: Capability): boolean {
 	return userRoles.some((r) => can(r, capability))
 }
+
+// ─── Role assignment (#248) ───────────────────────────────────────────────────
+
+/**
+ * The roles Settings → Roles — and its v1 PATCH twin — may assign.
+ *
+ * Every value the schema defines. It was six of nine until #248: CEO, VERIFIER and APPROVER
+ * existed as roles but no picker offered them, so the approval chain (#134) could not be
+ * restaffed and the CEO — sole holder of MANAGE_USER_ROLES, and so the only role that can hand
+ * out any role — had no in-app succession. Both were reachable only by seeding the database.
+ *
+ * Written out rather than derived from the Prisma enum on purpose, for the same reason
+ * CAPABILITIES lists its holders longhand: a role added to the schema must be a deliberate
+ * decision to hand out, not something that becomes assignable merely by existing.
+ */
+export const ASSIGNABLE_ROLES = [
+	'EMPLOYEE',
+	'MANAGER',
+	'HR_ADMIN',
+	'SUPER_ADMIN',
+	'PAYROLL_OFFICER',
+	'FINANCE',
+	'CEO',
+	'VERIFIER',
+	'APPROVER'
+] as const satisfies readonly Role[]
+
+/**
+ * The roles the hire form (/employees/new) may create — deliberately a strict subset (#248).
+ *
+ * That form is gated on MANAGE_HR, which MANAGER holds. Every role listed here is therefore one
+ * a MANAGER can mint outright, as a brand-new account, with no CEO involved — bypassing
+ * MANAGE_USER_ROLES entirely. So governance (CEO, SUPER_ADMIN), finance (PAYROLL_OFFICER,
+ * FINANCE) and sign-off (VERIFIER, APPROVER) stay off it: those are granted after hire, in
+ * Settings → Roles, which only the CEO can reach.
+ */
+export const HIRE_ROLES = ['EMPLOYEE', 'MANAGER', 'HR_ADMIN'] as const satisfies readonly Role[]
