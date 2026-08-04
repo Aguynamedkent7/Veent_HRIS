@@ -101,6 +101,7 @@ describe('PATCH /api/v1/timesheets/[id]', () => {
 			body: { message: WRONG_STAGE }
 		})
 		expect(txMock.approvalStep.update).not.toHaveBeenCalled()
+		expect(txMock.timesheet.update).not.toHaveBeenCalled()
 	})
 
 	it('lets a [MANAGER, VERIFIER] user act on the VERIFY stage', async () => {
@@ -119,6 +120,7 @@ describe('PATCH /api/v1/leave/[id]', () => {
 			body: { message: WRONG_STAGE }
 		})
 		expect(txMock.approvalStep.update).not.toHaveBeenCalled()
+		expect(txMock.request.update).not.toHaveBeenCalled()
 	})
 
 	it('lets a [MANAGER, APPROVER] user act on the APPROVE stage', async () => {
