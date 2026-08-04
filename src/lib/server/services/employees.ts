@@ -905,9 +905,6 @@ export async function promoteEmployee(
 
 	const eff = utcMidnight(input.effectiveDate)
 	const today = utcMidnight(new Date())
-	if (eff.getTime() < utcMidnight(employee.startDate).getTime()) {
-		error(400, 'Effective date cannot be before the hire date.')
-	}
 
 	// Pay is judged against the comp in effect on the effective date, not today's cache — the same
 	// rule `recordCompensationChange` applies, so a backdated promotion compares like with like.
@@ -961,9 +958,32 @@ export async function promoteEmployee(
 		error(NO_CHANGE_STATUS, NO_CHANGE_MESSAGE)
 	}
 
-	// Only pay and employment type are effective-dated; position, title and the reporting line are
-	// plain columns that would apply the moment this is saved. Rather than quietly applying half a
-	// promotion early, a future-dated one must be pay/type-only.
+	// Two bounds on the effective date. They bind different subsets of the promotion, so they are
+	// kept together and each says which.
+	//
+	// LOWER (#266) — a date below the hire date is nonsense for anything that RECORDS it: pay and
+	// employment type are effective-dated snapshots by construction (`recordCompensationChange`
+	// applies the same floor for that reason, :761-767), and positionId/jobTitle are HISTORY_FIELDS,
+	// so `getEmploymentHistory` renders the date back on the 201 timeline (:1310-1319). It binds
+	// nothing about the reporting line: `reportsToId` is deliberately NOT a HISTORY_FIELD (see the
+	// audit block below), so a reporting-line-only change emits no timeline event and surfaces the
+	// date nowhere, and as a plain column it applies the moment this saves regardless of the date.
+	// Running unconditionally, the floor therefore refused a legitimate edit outright — a hire whose
+	// startDate is still in the future could not be re-pointed at a different manager through
+	// `?/promote`, or (after #263) through the v1 PATCH, since both pass today's date.
+	if (
+		(payChanged ||
+			typeChanged ||
+			columns.positionId !== undefined ||
+			columns.jobTitle !== undefined) &&
+		eff.getTime() < utcMidnight(employee.startDate).getTime()
+	) {
+		error(400, 'Effective date cannot be before the hire date.')
+	}
+
+	// UPPER — only pay and employment type are effective-dated; position, title and the reporting
+	// line are plain columns that would apply the moment this is saved. Rather than quietly applying
+	// half a promotion early, a future-dated one must be pay/type-only.
 	if (eff.getTime() > today.getTime() && Object.keys(columns).length > 0) {
 		error(
 			400,
