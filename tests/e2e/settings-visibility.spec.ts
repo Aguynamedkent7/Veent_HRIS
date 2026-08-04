@@ -33,8 +33,13 @@ for (const { label, user } of LOCKED_OUT) {
 		await page.waitForURL('**/settings/holidays', { waitUntil: 'domcontentloaded' })
 		await expect(page.getByRole('heading', { name: 'Public Holidays' })).toBeVisible()
 		// ...and it is usable, not merely readable.
-		await page.getByRole('button', { name: 'Add Holiday' }).click()
-		await expect(page.getByRole('heading', { name: 'Add New Holiday' })).toBeVisible()
+		const addHeading = page.getByRole('heading', { name: 'Add New Holiday' })
+		// Retry the click until the form opens — a pre-hydration click is silently dropped
+		// (verify-skill hydration gotcha; see employee-view-only.spec.ts for the same idiom).
+		await expect(async () => {
+			await page.getByRole('button', { name: 'Add Holiday' }).click()
+			await expect(addHeading).toBeVisible({ timeout: 1000 })
+		}).toPass({ timeout: 15000 })
 	})
 
 	test(`${label} still does not see the system-admin cards (#237)`, async ({ page }) => {
