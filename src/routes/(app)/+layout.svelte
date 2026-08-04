@@ -240,7 +240,7 @@
 			{ href: '/settings/org', label: 'Org Structure', show: isAdmin },
 			{ href: '/settings/schedules', label: 'Schedules', show: isAdmin },
 			{ href: '/settings/roles', label: 'Roles', show: isSuperAdmin || canManageUserRoles },
-			{ href: '/settings/holidays', label: 'Holidays', show: isSuperAdmin }
+			{ href: '/settings/holidays', label: 'Holidays', show: isAdmin }
 		].filter((i) => i.show)
 	)
 

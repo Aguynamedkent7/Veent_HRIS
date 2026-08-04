@@ -5,6 +5,9 @@
 **Mode history:** RIPER-5 PLAN → INNOVATE (self-critique) → this document is the finalized plan.
 **Schema impact:** NONE. `prisma/schema.prisma` already defines all nine `Role` values. **No `db push`, no migration script, no seed change.**
 **Estimated diff:** 7 source files, ~70 lines net; 2 test files, ~70 lines added.
+**Status:** SHIPPED — merged to `staging` via PR #260 (`8463428`; CodeRabbit follow-up `160eb79`
+scoped the last-holder guard to every affected org and made it atomic; merge commit `205bb63`).
+Closed by hand — merging to `staging` doesn't auto-close.
 
 ---
 
