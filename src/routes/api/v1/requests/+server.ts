@@ -42,6 +42,7 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 		organizationId: user.organizationId,
 		actorId: user.id,
 		actorRole: user.role,
+		actorRoles: user.roles,
 		ipAddress: getClientAddress()
 	})
 	return json({ request: created }, { status: 201 })

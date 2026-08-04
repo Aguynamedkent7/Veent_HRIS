@@ -54,11 +54,16 @@ beforeEach(() => {
 
 describe('the capability containment canReadPayslip depends on', () => {
 	/**
-	 * `canTouchEmployee` is called with a single `role` even though this call site has the full set.
-	 * That is only safe because every ADMINISTER_HR_ORGWIDE holder is admitted by the
-	 * VIEW_PAY_ORGWIDE arm BEFORE the delegation, so its single-role short-circuit can never be
-	 * the deciding factor. If that containment ever breaks, the multi-role gap (#133) becomes real
-	 * here and this test is the warning.
+	 * What this pins changed with #247, and it is worth more now than before.
+	 *
+	 * It used to license a workaround: `canTouchEmployee` read one role, and containment was the
+	 * proof that its short-circuit could never decide the answer here. `canTouchEmployee` now reads
+	 * the full set, so that argument is moot.
+	 *
+	 * What containment still guarantees is the ORDER of the two arms. `canReadPayslip` checks
+	 * VIEW_PAY_ORGWIDE and only then delegates; if VIEW_PAY_ORGWIDE ever stopped containing
+	 * ADMINISTER_HR_ORGWIDE, an org-wide HR holder would fall through to a reporting-line check and
+	 * be denied payslips they hold. That is a live invariant, and this is still its warning.
 	 */
 	it('VIEW_PAY_ORGWIDE contains every ADMINISTER_HR_ORGWIDE holder', () => {
 		for (const role of CAPABILITIES.ADMINISTER_HR_ORGWIDE) {

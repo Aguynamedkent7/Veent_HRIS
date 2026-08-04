@@ -71,6 +71,10 @@ function ctxOf(locals: App.Locals, ip: string) {
 		organizationId: locals.user!.organizationId,
 		actorId: locals.user!.id,
 		actorRole: locals.user!.role,
+		// #247: `proposeIfRequired` decides whether a pay change is written directly or filed for
+		// confirmation from the FULL role set, so omitting this scoped a [MANAGER, HR_ADMIN] user
+		// down to MANAGER and routed a change they may make straight through the proposal queue.
+		actorRoles: locals.user!.roles,
 		ipAddress: ip
 	}
 }
@@ -562,18 +566,20 @@ export const actions: Actions = scopedToEmployee({
 		}
 	},
 
+	// ponytail: only the two loan actions were folded into ctxOf — the rest of the inline ctx
+	// literals in this file are audit-only, and converting them would be churn.
 	addLoan: async ({ request, locals, params, getClientAddress }) => {
 		requireMinRole(locals.user!.role, 'HR_ADMIN')
 		const user = locals.user!
 		const parsed = loanSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid loan details' })
 		try {
-			await createLoan(params.id, user.organizationId, parsed.data, {
-				organizationId: user.organizationId,
-				actorId: user.id,
-				actorRole: user.role,
-				ipAddress: getClientAddress()
-			})
+			await createLoan(
+				params.id,
+				user.organizationId,
+				parsed.data,
+				ctxOf(locals, getClientAddress())
+			)
 		} catch (e) {
 			return failFromError(e)
 		}
@@ -586,12 +592,12 @@ export const actions: Actions = scopedToEmployee({
 		const parsed = cashAdvanceSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid cash-advance details' })
 		try {
-			await createCashAdvance(params.id, user.organizationId, parsed.data, {
-				organizationId: user.organizationId,
-				actorId: user.id,
-				actorRole: user.role,
-				ipAddress: getClientAddress()
-			})
+			await createCashAdvance(
+				params.id,
+				user.organizationId,
+				parsed.data,
+				ctxOf(locals, getClientAddress())
+			)
 		} catch (e) {
 			return failFromError(e)
 		}

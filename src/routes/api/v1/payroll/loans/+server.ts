@@ -45,6 +45,7 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 		organizationId: locals.user.organizationId,
 		actorId: locals.user.id,
 		actorRole: locals.user.role,
+		actorRoles: locals.user.roles,
 		ipAddress: getClientAddress()
 	}
 	try {

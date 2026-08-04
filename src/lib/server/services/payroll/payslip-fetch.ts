@@ -49,10 +49,15 @@ export async function canReadPayslip(
 	// MANAGER is the only role that gets here — see VIEW_PAY_ORGWIDE's docblock. Scoped to the
 	// reporting line, the same rule the 201 file and the roster enforce (#228/#234).
 	//
-	// `canTouchEmployee` takes ONE role, but that role only decides its ADMINISTER_HR_ORGWIDE
-	// short-circuit, and every holder of that capability was already admitted by the arm above —
-	// VIEW_PAY_ORGWIDE is a superset of it. So the multi-role gap (#133) cannot change the
-	// answer at this call site, and widening the signature would loosen #228's surface instead.
+	// `canTouchEmployee` now reads the full role set (#247), but that changes nothing here and this
+	// call site never depended on it either way: its only role-dependent line is the
+	// ADMINISTER_HR_ORGWIDE short-circuit, and every holder of that capability was already admitted
+	// by the arm above, VIEW_PAY_ORGWIDE being a superset of it. The containment test below still
+	// pins that — what it protects is the ORDER of these two arms, not the old single-role read.
+	//
+	// The widening was revisited rather than reversed: this call site's reasoning held, but the 201
+	// file and roster call sites have no capability arm in front of them, so there the single-role
+	// short-circuit WAS the deciding factor and denied [MANAGER, HR_ADMIN] users their own records.
 	return canTouchEmployee(user, target.id)
 }
 
