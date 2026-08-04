@@ -10,26 +10,30 @@
 
 The RESEARCH pass handed over a set of findings. All of them were re-checked against disk, not copied.
 
-| Claim from RESEARCH                                                                                 | Verified at `9e39689`                                                                                                                                                                                                                                                        |
-| --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `govIdSchema` at `gov-ids.ts:136-144`, `.optional()` then `.transform(v => v ? v : null)`            | **True**, verbatim (block quoted in §3.1).                                                                                                                                                                                                                                    |
-| An absent `govIdSchema` key survives parsing as `null`; a plain `.optional()` key is dropped         | **True.** Re-reproduced independently against the installed zod (see §0.1).                                                                                                                                                                                                   |
-| The four gov IDs are the only non-plain-optional fields in `updateSchema`                            | **True.** `+server.ts:20-39`: every other field is plain `.optional()` / `z.enum(...).optional()` / `z.coerce.number().positive().optional()`. **No `.default()` and no other `.transform()` anywhere in the schema** — so no other key is ever synthesised. Load-bearing; see §4.2. |
-| `+server.ts:102` destructures pay out, `:153` guards on `Object.keys(rest).length > 0`, `:154` calls `updateEmployee` | **True**, exact lines.                                                                                                                                                                                                                                                        |
-| A completely empty `PATCH {}` writes all four IDs to `null`                                         | **True**, and confirmed by the repro: `{}` parses to `{sssNumber: null, …}`, four keys, so the `:153` guard can never be false.                                                                                                                                                |
-| `updateEmployee` writes `data: input` wholesale, no field filtering                                 | **True.** `employees.ts:582-586`.                                                                                                                                                                                                                                             |
-| Gov IDs excluded from `HISTORY_FIELDS`, so the wipe logs only field **names**                       | **True.** `employees.ts:104-118` + the `otherChanged.push(key)` branch at `:604`. The old values are not recoverable from the audit log.                                                                                                                                       |
-| Three `govIdSchema` call sites; the HR edit form already strips nulls                                | **True.** `grep -rn govIdSchema src/ tests/` → `gov-ids.ts:136`, `employees/new/+page.server.ts:86-89,95-96`, `employees/[id]/+page.server.ts:302-305,319-320`, `api/v1/employees/[id]/+server.ts:34-37`. Strip at `employees/[id]/+page.server.ts:438-459`, verbatim as quoted. |
-| `a18536e` (2026-07-27) is the only commit to `gov-ids.ts`                                           | **True.** `git log --follow -- src/lib/utils/gov-ids.ts` → one commit.                                                                                                                                                                                                         |
-| No product caller of this PATCH; API-direct only                                                    | **True.** No `method: 'PATCH'` anywhere in `src/` or `tests/`.                                                                                                                                                                                                                 |
-| No test pins gov-ID values in any `employee.update` `data` argument                                 | **True**, and stronger — see §0.2.                                                                                                                                                                                                                                            |
+| Claim from RESEARCH                                                                                                   | Verified at `9e39689`                                                                                                                                                                                                                                                                |
+| --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `govIdSchema` at `gov-ids.ts:136-144`, `.optional()` then `.transform(v => v ? v : null)`                             | **True**, verbatim (block quoted in §3.1).                                                                                                                                                                                                                                           |
+| An absent `govIdSchema` key survives parsing as `null`; a plain `.optional()` key is dropped                          | **True.** Re-reproduced independently against the installed zod (see §0.1).                                                                                                                                                                                                          |
+| The four gov IDs are the only non-plain-optional fields in `updateSchema`                                             | **True.** `+server.ts:20-39`: every other field is plain `.optional()` / `z.enum(...).optional()` / `z.coerce.number().positive().optional()`. **No `.default()` and no other `.transform()` anywhere in the schema** — so no other key is ever synthesised. Load-bearing; see §4.2. |
+| `+server.ts:102` destructures pay out, `:153` guards on `Object.keys(rest).length > 0`, `:154` calls `updateEmployee` | **True**, exact lines.                                                                                                                                                                                                                                                               |
+| A completely empty `PATCH {}` writes all four IDs to `null`                                                           | **True**, and confirmed by the repro: `{}` parses to `{sssNumber: null, …}`, four keys, so the `:153` guard can never be false.                                                                                                                                                      |
+| `updateEmployee` writes `data: input` wholesale, no field filtering                                                   | **True.** `employees.ts:582-586`.                                                                                                                                                                                                                                                    |
+| Gov IDs excluded from `HISTORY_FIELDS`, so the wipe logs only field **names**                                         | **True.** `employees.ts:104-118` + the `otherChanged.push(key)` branch at `:604`. The old values are not recoverable from the audit log.                                                                                                                                             |
+| Three `govIdSchema` call sites; the HR edit form already strips nulls                                                 | **True.** `grep -rn govIdSchema src/ tests/` → `gov-ids.ts:136`, `employees/new/+page.server.ts:86-89,95-96`, `employees/[id]/+page.server.ts:302-305,319-320`, `api/v1/employees/[id]/+server.ts:34-37`. Strip at `employees/[id]/+page.server.ts:438-459`, verbatim as quoted.     |
+| `a18536e` (2026-07-27) is the only commit to `gov-ids.ts`                                                             | **True.** `git log --follow -- src/lib/utils/gov-ids.ts` → one commit.                                                                                                                                                                                                               |
+| No product caller of this PATCH; API-direct only                                                                      | **True.** No `method: 'PATCH'` anywhere in `src/` or `tests/`.                                                                                                                                                                                                                       |
+| No test pins gov-ID values in any `employee.update` `data` argument                                                   | **True**, and stronger — see §0.2.                                                                                                                                                                                                                                                   |
 
 ### 0.1 The zod behaviour, re-reproduced (and extended to the candidate fix)
 
 Run inside the repo so `zod` resolves to the installed 3.25.76:
 
 ```js
-const govIdNull = z.string().trim().optional().transform((v) => (v ? v : null))
+const govIdNull = z
+	.string()
+	.trim()
+	.optional()
+	.transform((v) => (v ? v : null))
 const govIdUndef = z
 	.string()
 	.trim()
@@ -59,7 +63,7 @@ Two things this establishes that the plan turns on:
 
 **(a) An explicit `''` is the API's only "clear this ID" affordance today — and Option 2 destroys it silently.**
 
-`{"sssNumber": null}` does **not** clear the field: `z.string()` rejects `null` outright, so the request is a **400 `Invalid request body`** (last line of the repro). `{"sssNumber": ""}` is therefore the *only* way any caller anywhere in the product can clear a stored government ID. The HR edit form deliberately cannot (`employees/[id]/+page.server.ts:441-445`: _"Explicit clearing is deferred until a dedicated clear affordance exists"_).
+`{"sssNumber": null}` does **not** clear the field: `z.string()` rejects `null` outright, so the request is a **400 `Invalid request body`** (last line of the repro). `{"sssNumber": ""}` is therefore the _only_ way any caller anywhere in the product can clear a stored government ID. The HR edit form deliberately cannot (`employees/[id]/+page.server.ts:441-445`: _"Explicit clearing is deferred until a dedicated clear affordance exists"_).
 
 This matters because the route's own contract comment (`+server.ts:32-33`) says _"a PATCH only carries the fields the caller intends to change"_ — under that contract `""` is an intentional, explicit instruction. Any fix that maps absent **and** empty to "leave unchanged" turns that instruction into a **200 OK with the write silently discarded**. §4.1.
 
@@ -95,13 +99,13 @@ That draft is wrong. §4.
 
 ## 1. The three options, stated precisely
 
-| #   | Where           | Mechanism                                                       | Sites affected            |
-| --- | --------------- | ----------------------------------------------------------------- | ------------------------- |
-| 1   | `gov-ids.ts`    | absent → `undefined` (key dropped), `''` → `null`, value → canonical | all 3 (2 provably no-op)  |
-| 2   | `+server.ts`    | route strips `null` gov IDs before calling `updateEmployee`       | 1                         |
-| 3   | `employees.ts`  | merge semantics inside `updateEmployee`                           | all 4 `updateEmployee` callers |
+| #   | Where          | Mechanism                                                            | Sites affected                 |
+| --- | -------------- | -------------------------------------------------------------------- | ------------------------------ |
+| 1   | `gov-ids.ts`   | absent → `undefined` (key dropped), `''` → `null`, value → canonical | all 3 (2 provably no-op)       |
+| 2   | `+server.ts`   | route strips `null` gov IDs before calling `updateEmployee`          | 1                              |
+| 3   | `employees.ts` | merge semantics inside `updateEmployee`                              | all 4 `updateEmployee` callers |
 
-**Option 3 is dismissed on the facts, not on taste.** `UpdateEmployeeInput` declares `sssNumber?: string | null` (`employees.ts:86-89`) and the HR edit form's strip exists precisely so it can pass `undefined`, not `null`. `null` is a *legal, deliberate* "clear this column" value that `updateEmployee` cannot distinguish from an accident without a shape change. Making `updateEmployee` ignore `null` would silently break the one thing the API can still do (§0.2a) and change the contract for `(app)/profile/+page.server.ts:122`, `(app)/departments/+page.server.ts:103` and the edit form, none of which are broken. Rejected.
+**Option 3 is dismissed on the facts, not on taste.** `UpdateEmployeeInput` declares `sssNumber?: string | null` (`employees.ts:86-89`) and the HR edit form's strip exists precisely so it can pass `undefined`, not `null`. `null` is a _legal, deliberate_ "clear this column" value that `updateEmployee` cannot distinguish from an accident without a shape change. Making `updateEmployee` ignore `null` would silently break the one thing the API can still do (§0.2a) and change the contract for `(app)/profile/+page.server.ts:122`, `(app)/departments/+page.server.ts:103` and the edit form, none of which are broken. Rejected.
 
 So the real choice is 1 vs 2.
 
@@ -140,7 +144,7 @@ So Option 1's "wider blast radius" is nominal. Three call sites, one changes beh
 ## 4.3 What Option 1 buys that Option 2 does not
 
 1. **It fixes the defect, not an instance of it.** The bug is that `govIdSchema` says `.optional()` and then makes the field mandatory-with-a-default. That contradiction is the artifact `a18536e` shipped; Option 2 leaves it in place, correct only because two of three consumers happen to compensate for it downstream. The next consumer inherits the trap with zero friction — which is exactly how this bug was born (`a18536e` added the compensating strip to one of the two new sites and not the other).
-2. **The route needs no code change at all.** Under Option 1 the `:153` guard `Object.keys(rest).length > 0` becomes correct again *as written* — see §4.4. Option 2 requires editing the destructure **and** relocating the guard, i.e. a larger diff in the more dangerous file.
+2. **The route needs no code change at all.** Under Option 1 the `:153` guard `Object.keys(rest).length > 0` becomes correct again _as written_ — see §4.4. Option 2 requires editing the destructure **and** relocating the guard, i.e. a larger diff in the more dangerous file.
 3. **It preserves the explicit-clear affordance** (§0.2a, §4.1).
 4. **It does not add a third hand-written copy** of the conditional-spread strip.
 
@@ -148,22 +152,22 @@ So Option 1's "wider blast radius" is nominal. Three call sites, one changes beh
 
 The task asks whether the guard at `+server.ts:153` needs to move after a strip. Answer depends on the option, and the trace is exact:
 
-Every field in `updateSchema` (`+server.ts:20-39`) is one of: plain `.optional()`, `z.enum(...).optional()`, `z.coerce.number().positive().optional()`, or `govIdSchema`. There is **no `.default()`** and **no other `.transform()`**. A `ZodOptional` with no transform drops an absent key (repro §0.1, `middleName` case). Therefore the gov IDs are the *only* source of synthesised keys.
+Every field in `updateSchema` (`+server.ts:20-39`) is one of: plain `.optional()`, `z.enum(...).optional()`, `z.coerce.number().positive().optional()`, or `govIdSchema`. There is **no `.default()`** and **no other `.transform()`**. A `ZodOptional` with no transform drops an absent key (repro §0.1, `middleName` case). Therefore the gov IDs are the _only_ source of synthesised keys.
 
 - **Under Option 1:** `parsed.data` contains exactly the keys the caller sent. `rest` = those minus `basicMonthlySalary`/`rateType`/`employmentType`. `Object.keys(rest).length > 0` is false precisely when the caller sent no non-pay field. **The guard is correct where it stands; do not move it.** `PATCH {}` → `rest = {}` → `updateEmployee` is never called → 200 with an unchanged record. `PATCH {basicMonthlySalary: 50000}` → `rest = {}` → no Employee-row write at all, which is what the #170 tests want anyway.
 - **Under Option 2:** the guard would be testing the pre-strip `rest`, which still carries the four nulls, so `PATCH {}` would call `updateEmployee({})` → `db.employee.update({ data: {} })` → a pointless write and a `getEmployee` round-trip. The guard would **have** to move onto the rebuilt object. One more reason the "smaller diff" framing was wrong.
 
 ## 4.5 Alternatives brainstormed and rejected
 
-| #   | Alternative                                                                                                                        | Verdict                                                                                                                                                                                                                                                                                                                             |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A   | Drop the first `.transform` entirely — let `undefined` stay `undefined` and `''` fail validation, forcing callers to omit or send a value. | **Rejected.** Breaks both form sites hard: `Object.fromEntries(formData)` sends `''` for every untouched field, so every create and every edit would 400 on four fields at once. Also removes the clear affordance outright rather than preserving it.                                                                                |
-| B   | Keep `''` → `null` but make the API **reject** `''` with a 400 ("send a value or omit the field").                                  | **Rejected as out of scope**, though defensible. It is a deliberate API-contract change with no bug behind it, and it needs a product decision about whether clearing a statutory ID should be possible at all. Flag in the PR (§7.4); do not fold in.                                                                                |
-| C   | `.strict()` on `updateSchema` so unknown keys 400.                                                                                 | **Rejected.** Unrelated to this bug (the keys are known), and a real behaviour change for existing API callers.                                                                                                                                                                                                                       |
-| D   | Two schema variants — `govIdSchema` for forms, `govIdPatchSchema` for the API.                                                      | **Rejected.** Speculative duplication for one consumer, and it re-opens the same trap: whichever variant a future site picks wrong is silently wrong again. The single definition with correct absent-semantics serves all three; the doc comment on `govIdSchema` explicitly exists to keep them unified.                             |
-| E   | Also apply the strip in `+server.ts` **as well as** Option 1 (belt and braces).                                                     | **Rejected.** With Option 1 the strip would be dead code that *re-introduces* the §4.1 silent discard for `''`. Strictly worse than either option alone.                                                                                                                                                                              |
-| F   | Change `updateEmployee` to ignore `null` (Option 3).                                                                               | **Rejected** — §1. `null` is a legal clear value for four other callers.                                                                                                                                                                                                                                                              |
-| G   | Add the gov IDs to `HISTORY_FIELDS` so a wipe is at least recoverable from the audit log.                                           | **Rejected, emphatically.** `employees.ts:106-107` excludes them deliberately: _"Everything else (bank/GCash, government IDs, Discord) is intentionally excluded so sensitive PII never lands in the audit trail."_ Fixing a data-loss bug by writing the lost PII into an audit table is the wrong trade and contradicts #111.        |
+| #   | Alternative                                                                                                                                | Verdict                                                                                                                                                                                                                                                                                                                         |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A   | Drop the first `.transform` entirely — let `undefined` stay `undefined` and `''` fail validation, forcing callers to omit or send a value. | **Rejected.** Breaks both form sites hard: `Object.fromEntries(formData)` sends `''` for every untouched field, so every create and every edit would 400 on four fields at once. Also removes the clear affordance outright rather than preserving it.                                                                          |
+| B   | Keep `''` → `null` but make the API **reject** `''` with a 400 ("send a value or omit the field").                                         | **Rejected as out of scope**, though defensible. It is a deliberate API-contract change with no bug behind it, and it needs a product decision about whether clearing a statutory ID should be possible at all. Flag in the PR (§7.4); do not fold in.                                                                          |
+| C   | `.strict()` on `updateSchema` so unknown keys 400.                                                                                         | **Rejected.** Unrelated to this bug (the keys are known), and a real behaviour change for existing API callers.                                                                                                                                                                                                                 |
+| D   | Two schema variants — `govIdSchema` for forms, `govIdPatchSchema` for the API.                                                             | **Rejected.** Speculative duplication for one consumer, and it re-opens the same trap: whichever variant a future site picks wrong is silently wrong again. The single definition with correct absent-semantics serves all three; the doc comment on `govIdSchema` explicitly exists to keep them unified.                      |
+| E   | Also apply the strip in `+server.ts` **as well as** Option 1 (belt and braces).                                                            | **Rejected.** With Option 1 the strip would be dead code that _re-introduces_ the §4.1 silent discard for `''`. Strictly worse than either option alone.                                                                                                                                                                        |
+| F   | Change `updateEmployee` to ignore `null` (Option 3).                                                                                       | **Rejected** — §1. `null` is a legal clear value for four other callers.                                                                                                                                                                                                                                                        |
+| G   | Add the gov IDs to `HISTORY_FIELDS` so a wipe is at least recoverable from the audit log.                                                  | **Rejected, emphatically.** `employees.ts:106-107` excludes them deliberately: _"Everything else (bank/GCash, government IDs, Discord) is intentionally excluded so sensitive PII never lands in the audit trail."_ Fixing a data-loss bug by writing the lost PII into an audit table is the wrong trade and contradicts #111. |
 
 ## 4.6 A hazard I checked for and did not find
 
@@ -243,17 +247,17 @@ The route needs **no logic change** (§4.4). Its contract comment does need to s
 **Before**
 
 ```ts
-	// #191: a PATCH only carries the fields the caller intends to change, so anything sent
-	// here is by definition new and is format-checked and stored canonically.
+// #191: a PATCH only carries the fields the caller intends to change, so anything sent
+// here is by definition new and is format-checked and stored canonically.
 ```
 
 **After**
 
 ```ts
-	// #191: a PATCH only carries the fields the caller intends to change, so anything sent
-	// here is by definition new and is format-checked and stored canonically. #267: "sent" is
-	// literal — an omitted field is absent from parsed.data and is never written; an explicit ""
-	// is a request to clear. Both depend on govIdSchema keeping absent and empty distinct.
+// #191: a PATCH only carries the fields the caller intends to change, so anything sent
+// here is by definition new and is format-checked and stored canonically. #267: "sent" is
+// literal — an omitted field is absent from parsed.data and is never written; an explicit ""
+// is a request to clear. Both depend on govIdSchema keeping absent and empty distinct.
 ```
 
 Two lines. It targets the exact assumption whose violation caused the bug, at the site that regressed.
@@ -283,12 +287,12 @@ describe('govIdSchema — absent, empty and value are three different things (#2
 })
 ```
 
-| #   | Case                                | Asserts                                                                           |
-| --- | ----------------------------------- | --------------------------------------------------------------------------------- |
-| 1   | key absent — `S.parse({})`          | `'sssNumber' in data === false`. **The regression, at its source.**                |
-| 2   | explicit `''`                       | `data.sssNumber === null` — clearing still reaches the writer                      |
-| 3   | a value                             | `data.sssNumber === '34-1234567-8'` from input `'3412345678'` — still canonicalised |
-| 4   | a malformed value                   | `safeParse({ sssNumber: '1234' }).success === false`, message `govIdError('sssNumber')` — the refine still fires after the `v == null` change |
+| #   | Case                       | Asserts                                                                                                                                       |
+| --- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | key absent — `S.parse({})` | `'sssNumber' in data === false`. **The regression, at its source.**                                                                           |
+| 2   | explicit `''`              | `data.sssNumber === null` — clearing still reaches the writer                                                                                 |
+| 3   | a value                    | `data.sssNumber === '34-1234567-8'` from input `'3412345678'` — still canonicalised                                                           |
+| 4   | a malformed value          | `safeParse({ sssNumber: '1234' }).success === false`, message `govIdError('sssNumber')` — the refine still fires after the `v == null` change |
 
 Case 4 exists specifically to catch the `v == null` hazard from Step 1: if the short-circuit were widened wrongly (e.g. to `!v`), validation would silently stop rejecting `''`-adjacent input.
 
@@ -302,13 +306,13 @@ Harness: copy the hoisted `dbMock`/`txMock` block and module mocks from `employe
 - `$lib/server/services/employee-access` needs **no** mock: the actor is `HR_ADMIN`, and `canTouchEmployee` short-circuits on `ADMINISTER_HR_ORGWIDE` before any query (`employee-access.ts:43`). Same reason the sibling file gets away without it.
 - `EMP` fixture needs `sssNumber` populated so the masked re-fetch has something to mask.
 
-| #   | it                                                                       | Body                          | Asserts                                                                                                                                                              |
-| --- | ------------------------------------------------------------------------ | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | **a PATCH that omits the government IDs does not write them**            | `{ firstName: 'Ana' }`        | 200; `employee.update` called once; its `data` **has** `firstName` and `not.toHaveProperty` for all four of `sssNumber`, `philhealthNumber`, `pagibigNumber`, `tinNumber`. **The filed bug.** |
-| 2   | **an empty PATCH writes nothing at all**                                 | `{}`                          | 200; `employee.update` **not called**. Pins the "worse than filed" case *and* that the `:153` guard regained its meaning (§4.4) — this test fails under Option 2 unless the guard is relocated. |
-| 3   | **an explicitly sent ID is still written, canonically**                  | `{ sssNumber: '3412345678' }` | 200; `data.sssNumber === '34-1234567-8'`; the other three absent from `data`. Proves the fix did not make the fields unwritable via this route.                        |
-| 4   | **an explicit empty string still clears the ID**                         | `{ sssNumber: '' }`           | 200; `data.sssNumber === null`. Pins the affordance §4.1 is the reason for choosing Option 1 — if a future change reverts to Option 2, this test says so out loud.     |
-| 5   | **a malformed ID is rejected, and nothing is written**                   | `{ sssNumber: '1234' }`       | 400; `employee.update` **not called**. Cheap, and guards the refine at the route layer.                                                                                |
+| #   | it                                                            | Body                          | Asserts                                                                                                                                                                                         |
+| --- | ------------------------------------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **a PATCH that omits the government IDs does not write them** | `{ firstName: 'Ana' }`        | 200; `employee.update` called once; its `data` **has** `firstName` and `not.toHaveProperty` for all four of `sssNumber`, `philhealthNumber`, `pagibigNumber`, `tinNumber`. **The filed bug.**   |
+| 2   | **an empty PATCH writes nothing at all**                      | `{}`                          | 200; `employee.update` **not called**. Pins the "worse than filed" case _and_ that the `:153` guard regained its meaning (§4.4) — this test fails under Option 2 unless the guard is relocated. |
+| 3   | **an explicitly sent ID is still written, canonically**       | `{ sssNumber: '3412345678' }` | 200; `data.sssNumber === '34-1234567-8'`; the other three absent from `data`. Proves the fix did not make the fields unwritable via this route.                                                 |
+| 4   | **an explicit empty string still clears the ID**              | `{ sssNumber: '' }`           | 200; `data.sssNumber === null`. Pins the affordance §4.1 is the reason for choosing Option 1 — if a future change reverts to Option 2, this test says so out loud.                              |
+| 5   | **a malformed ID is rejected, and nothing is written**        | `{ sssNumber: '1234' }`       | 400; `employee.update` **not called**. Cheap, and guards the refine at the route layer.                                                                                                         |
 
 All five run against the real route → real `updateEmployee` → mocked Prisma, exactly like the sibling file. **Every one of them fails today** (1, 3, 4, 5 write four nulls; 2 writes four nulls where it should not write at all) — write them first and watch them fail before applying Step 1.
 
