@@ -2,6 +2,9 @@ import { expect, type Browser, type Page } from '@playwright/test'
 
 export const USERS = {
 	admin: { email: 'admin@veent.ph', password: 'Admin@1234' },
+	// HR-level authority without system administration — the role #237 locked out of the
+	// Settings cards. Seeded by seedProd; see prisma/seed-core.ts.
+	hr: { email: 'hr@veent.ph', password: 'Hr@1234' },
 	manager: { email: 'manager@veent.ph', password: 'Manager@1234' },
 	employee: { email: 'employee@veent.ph', password: 'Employee@1234' },
 	// Maker-checker sign-off accounts (#134).

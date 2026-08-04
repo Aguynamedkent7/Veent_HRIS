@@ -81,13 +81,14 @@
 			href: '/settings/holidays',
 			title: 'Holiday Calendar',
 			desc: 'Regular & special holidays',
-			super: true
+			super: false
 		},
-		{ href: '/settings/roles', title: 'Roles & Access', desc: 'User role management', super: true }
+		{ href: '/settings/roles', title: 'Roles & Access', desc: 'User role management', roles: true }
 	]
 	const visible = $derived(
 		cards.filter((c) => {
 			if ('statutory' in c && c.statutory) return data.canStatutory
+			if ('roles' in c && c.roles) return data.canRoles
 			return !('super' in c && c.super) || data.isSuperAdmin
 		})
 	)
