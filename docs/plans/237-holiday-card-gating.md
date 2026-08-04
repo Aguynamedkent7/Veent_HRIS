@@ -2,8 +2,16 @@
 
 **Repo:** `/home/hyuse/Desktop/VeentApps/veent_hris`
 **Branch:** `staging` · **HEAD verified:** `c524b49` (`Merge pull request #257 from Aguynamedkent7/fix/user-roles-backfill-255`)
-**Modes run:** `[MODE: PLAN]` → `[MODE: INNOVATE]` (self-critique of the drafted plan)
-**Repo state:** untouched. No repository file was edited. This document is the only artifact.
+**Modes run:** `[MODE: PLAN]` → `[MODE: INNOVATE]` (self-critique of the drafted plan) → `[MODE: EXECUTE]`
+**Status:** EXECUTED, not yet merged — committed `27f066d` on `fix/holiday-card-gate-237`
+(re-validated with zero drift at `staging @ 205bb63`, post-#248/#260). Manual verification across
+all 5 login rows (Gate 6) passed. The falsification pass turned up a real flake in the e2e spec's
+"Add Holiday" click (a pre-hydration click silently dropped — the same class of bug documented
+elsewhere in `tests/e2e/` as the "verify-skill hydration gotcha"); fixed with the repo's existing
+`expect(...).toPass({ timeout: 15000 })` retry idiom (see `employee-view-only.spec.ts` for
+precedent), then re-verified: 3/3 clean runs, and the falsification pass now correctly fails both
+"can find and open" tests when the production fix is reverted, and passes once restored. Amend
+commit pending. Awaiting PR into `staging`; close #237 by hand after merge — it will not auto-close.
 
 > **Note on the issue's stated paths.** The issue and the validate pass refer to
 > `settings/+page.svelte` / `+layout.svelte`. The real paths are under the `(app)` route group:
