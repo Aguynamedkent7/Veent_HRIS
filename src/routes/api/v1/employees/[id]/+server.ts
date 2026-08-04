@@ -113,7 +113,31 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	// be one call rather than two writers: the rate-basis pairing (#189) can only be validated on the
 	// resulting state, and a PART_TIME/HOURLY → REGULAR/MONTHLY change is invalid at every
 	// intermediate step. Resending the same values is a no-op, not an error.
-	const { basicMonthlySalary, rateType, employmentType, ...rest } = parsed.data
+	//
+	// #263 puts `reportsToId` in the same split, for an authorization reason rather than a history
+	// one: promoteEmployee is the writer that routes a change through propose→confirm (#224 Part 2 /
+	// #243), and it is the only reporting-line path the UI has. Left in `rest` it reached
+	// updateEmployee, which has no proposal call at all — so a MANAGER re-pointed a reporting line
+	// unilaterally through the API while the same edit in the UI needed a second person. It must be
+	// destructured OUT, not merely added to the call below: written by both writers, the column would
+	// land immediately while the proposal it just filed is still pending.
+	const { basicMonthlySalary, rateType, employmentType, employmentStatus, reportsToId, ...rest } =
+		parsed.data
+
+	// #263: employment status is not a plain column. `offboardEmployee` sets it together with
+	// `endDate` AND `User.isActive = false` — the flag `isSessionBlocked` reads (access-guard.ts) —
+	// so writing the column alone leaves an OFFBOARDED employee holding a live session, and writing
+	// it back to ACTIVE leaves a reactivated one locked out. ON_LEAVE has no writer anywhere and
+	// silently drops the employee from every `employmentStatus: 'ACTIVE'` payroll and attendance
+	// query. Rejected loudly rather than dropped from `updateSchema`: zod strips unknown keys, so a
+	// removal would make this a silent 200 that discards the field.
+	if (employmentStatus !== undefined) {
+		return apiError(
+			400,
+			'Employment status is not editable here — offboarding goes through POST ?action=offboard, which also records the end date and deactivates the login.'
+		)
+	}
+
 	const ctx = {
 		organizationId: locals.user.organizationId,
 		actorId: locals.user.id,
@@ -134,30 +158,35 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 				return apiError(400, RATE_BASIS_MISMATCH)
 			}
 		}
-		// #224 Part 2 / #243: set when the pay change was filed for confirmation instead of applied.
+		// #224 Part 2 / #243 / #263: set when the change was filed for confirmation instead of applied.
 		//
 		// Runs BEFORE updateEmployee for the same reason as the pairing pre-check above, which the
 		// pre-check alone no longer covers: promoteEmployee can now refuse for reasons that have
 		// nothing to do with the values (a 409 when no one in the org could confirm the proposal).
 		// Committing `rest` first would leave those rejections half-applied. Neither writer reads the
 		// other's fields, so the order is free.
+		//
+		// ONE call, never one per field: a PATCH carrying pay AND a reporting line is one career event
+		// and must file ONE proposal, or the two halves become independently confirmable.
 		let proposalId: string | undefined
 		if (
 			basicMonthlySalary !== undefined ||
 			rateType !== undefined ||
-			employmentType !== undefined
+			employmentType !== undefined ||
+			reportsToId !== undefined
 		) {
 			try {
 				;({ proposalId } = await promoteEmployee(
 					params.id,
 					locals.user.organizationId,
-					{ basicMonthlySalary, rateType, employmentType, effectiveDate: new Date() },
+					{ basicMonthlySalary, rateType, employmentType, reportsToId, effectiveDate: new Date() },
 					ctx
 				))
 			} catch (e: unknown) {
-				// A PATCH resending the current salary/pay type/employment type is a no-op, not a failure —
-				// swallow only the writer's "no change" 400 and let the (unchanged) record be returned. Any
-				// other 400 (e.g. an invalid rate/type pairing) still propagates to the client below.
+				// A PATCH resending the current salary/pay type/employment type/reporting line is a no-op,
+				// not a failure — swallow only the writer's "no change" 400 and let the (unchanged) record be
+				// returned. Any other 400 (an invalid rate/type pairing, a manager outside the org, a
+				// self-report) still propagates to the client below.
 				const err = e as { status?: number; body?: { message?: string } }
 				if (!(err?.status === NO_CHANGE_STATUS && err.body?.message === NO_CHANGE_MESSAGE)) {
 					throw e
@@ -171,9 +200,10 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 		const employee = await getEmployee(params.id, locals.user.organizationId, {
 			viewerRole: locals.user.role
 		})
-		// 202, not 200: the pay change is on file awaiting a second authorized person, so `data` does
-		// NOT yet reflect it. Returning 200 would tell the caller their raise landed when it has not.
-		// Any non-pay fields in the same PATCH did apply — they are not routed through proposals.
+		// 202, not 200: the pay and/or reporting-line change is on file awaiting a second authorized
+		// person, so `data` does NOT yet reflect it. Returning 200 would tell the caller their raise or
+		// their re-org landed when it has not. Any other fields in the same PATCH did apply — they are
+		// not routed through proposals.
 		if (proposalId) {
 			return json({ data: employee, proposalId, notice: AWAITING_CONFIRMATION }, { status: 202 })
 		}

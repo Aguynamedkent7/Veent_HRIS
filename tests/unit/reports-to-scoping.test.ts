@@ -196,9 +196,11 @@ describe('updateEmployee — the second writer validates it too (#235)', () => {
 })
 
 /**
- * The live route: no UI needed, plain JSON reaches `updateEmployee` with a caller-supplied
- * `reportsToId`. The route's catch flattens any 404 to 'Employee not found', so assert on status —
- * that flattening is pre-existing and desirable (a forged id learns nothing).
+ * The live route: no UI needed, plain JSON reaches the service with a caller-supplied `reportsToId`.
+ * Since #263 that service is `promoteEmployee`, not `updateEmployee` — same helper, same statuses,
+ * which is why both cases below hold unchanged. The route's catch flattens any 404 to 'Employee not
+ * found', so assert on status — that flattening is pre-existing and desirable (a forged id learns
+ * nothing).
  */
 describe('PATCH /api/v1/employees/[id] — the reporting line is org-scoped (#235)', () => {
 	it('refuses a cross-tenant reportsToId', async () => {
@@ -212,7 +214,8 @@ describe('PATCH /api/v1/employees/[id] — the reporting line is org-scoped (#23
 	})
 
 	it('still applies a same-org reportsToId', async () => {
-		// #1 getEmployee → #2 manager lookup → #3 getEmployee re-fetch for the masked response.
+		// Inside promoteEmployee: #1 getEmployee → #2 manager lookup. Then #3, the route's own
+		// getEmployee re-fetch for the masked response.
 		dbMock.employee.findFirst
 			.mockResolvedValueOnce(EMP)
 			.mockResolvedValueOnce({ id: 'mgr1' })
