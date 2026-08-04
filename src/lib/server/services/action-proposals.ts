@@ -33,6 +33,21 @@ export function confirmerCapabilityFor(isSelfAction: boolean): Capability {
 }
 
 /**
+ * What each domain's notifications call the thing (#265). All three messages below said "pay
+ * change" regardless of domain, which has been wrong since #222 for a PROMOTION carrying only a job
+ * title or a reporting line — and #263 makes that shape reachable from the v1 PATCH as well, so a
+ * confirmer is told to approve a raise that is actually a re-org.
+ *
+ * `Record<ProposalDomain, string>` rather than a lookup with a fallback: a third domain must fail
+ * the typecheck, not quietly inherit the wrong noun. Phrased to read after both "A …" and
+ * "Your proposed …".
+ */
+const DOMAIN_NOUN: Record<ProposalDomain, string> = {
+	COMPENSATION: 'pay change',
+	PROMOTION: 'promotion'
+}
+
+/**
  * The three rules that decide who may act on a pending proposal. Kept together, and applied to
  * confirm AND reject alike, because each has a plausible-looking wrong version and any one of them
  * missing collapses the two-person rule.
@@ -169,7 +184,7 @@ export async function createProposal(
 
 	await notifyMany(
 		confirmers,
-		'A pay change is waiting for your confirmation.',
+		`A ${DOMAIN_NOUN[input.domain]} is waiting for your confirmation.`,
 		'/requests/proposals'
 	)
 
@@ -221,7 +236,10 @@ export async function confirmProposal(
 		oldValue: { status: 'PENDING' },
 		newValue: { status: 'APPLIED', decidedById: ctx.actorId }
 	})
-	await notifyMany([pending.initiatorId], 'Your proposed pay change was confirmed and applied.')
+	await notifyMany(
+		[pending.initiatorId],
+		`Your proposed ${DOMAIN_NOUN[pending.domain]} was confirmed and applied.`
+	)
 
 	return applied
 }
@@ -261,7 +279,10 @@ export async function rejectProposal(
 	})
 	// "rejected", matching the REJECTED status the row actually carries — there is no RETURNED
 	// state here, and the old wording read as one to anyone comparing the audit log to the message.
-	await notifyMany([pending.initiatorId], `Your proposed pay change was rejected: ${note}`)
+	await notifyMany(
+		[pending.initiatorId],
+		`Your proposed ${DOMAIN_NOUN[pending.domain]} was rejected: ${note}`
+	)
 
 	return { id: proposalId }
 }
