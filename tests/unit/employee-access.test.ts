@@ -108,7 +108,7 @@ describe('canTouchEmployee (#228)', () => {
 	})
 
 	it('refuses a report who belongs to another organization', async () => {
-		// createEmployee takes reportsToId as given, so a cross-tenant report row is writable.
+		// Rows written before #235 can still point across tenants (every writer validates now).
 		// The relationship must not survive the org filter.
 		listReportIdsFor.mockResolvedValue(['report1'])
 		dbMock.employee.findFirst.mockResolvedValue(null)
