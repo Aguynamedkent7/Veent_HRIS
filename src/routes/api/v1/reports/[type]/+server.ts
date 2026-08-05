@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit'
 import { z } from 'zod'
-import { requireCapability, requirePayrollReports } from '$lib/server/rbac'
+import { requireAnyCapability, requirePayrollReports } from '$lib/server/rbac'
 import { listVisiblePayEmployeeIds } from '$lib/server/services/employee-access'
 import {
 	generateHeadcount,
@@ -67,7 +67,7 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
 			organizationId: user.organizationId
 		})
 	} else {
-		requireCapability(user.role, 'MANAGE_HR')
+		requireAnyCapability(user.roles, 'MANAGE_HR')
 	}
 
 	const dateParam = z.coerce.date()

@@ -1,13 +1,13 @@
 import { fail } from '@sveltejs/kit'
 import { z } from 'zod'
-import { requireCapability } from '$lib/server/rbac'
+import { requireAnyCapability } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { ratesFromRule } from '$lib/server/services/payroll/rates'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
-	requireCapability(locals.user!.role, 'ADMINISTER_SYSTEM')
+	requireAnyCapability(locals.user!.roles, 'ADMINISTER_SYSTEM')
 
 	const [config, payRateRule] = await Promise.all([
 		db.payrollConfig.findUnique({ where: { organizationId: locals.user!.organizationId } }),
@@ -38,7 +38,7 @@ const configSchema = z.object({
 export const actions: Actions = {
 	update: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		requireCapability(user.role, 'ADMINISTER_SYSTEM')
+		requireAnyCapability(user.roles, 'ADMINISTER_SYSTEM')
 
 		const raw = Object.fromEntries(await request.formData())
 		const parsed = configSchema.safeParse(raw)
@@ -100,7 +100,7 @@ export const actions: Actions = {
 
 	updateRates: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		requireCapability(user.role, 'ADMINISTER_SYSTEM')
+		requireAnyCapability(user.roles, 'ADMINISTER_SYSTEM')
 
 		const parsed = ratesSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) {

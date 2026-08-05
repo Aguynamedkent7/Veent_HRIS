@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit'
-import { requireCapability, requireAnyMinRole } from '$lib/server/rbac'
+import { requireAnyCapability, requireAnyMinRole } from '$lib/server/rbac'
 import {
 	getEmployee,
 	updateEmployee,
@@ -90,7 +90,7 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	if (!locals.user) return apiError(401, 'Unauthorized')
 
 	try {
-		requireCapability(locals.user.role, 'MANAGE_HR')
+		requireAnyCapability(locals.user.roles, 'MANAGE_HR')
 	} catch {
 		return apiError(403, 'Insufficient permissions')
 	}
@@ -227,7 +227,7 @@ export const POST: RequestHandler = async ({ locals, params, request, url }) => 
 
 	if (action === 'offboard') {
 		try {
-			requireCapability(locals.user.role, 'MANAGE_HR')
+			requireAnyCapability(locals.user.roles, 'MANAGE_HR')
 		} catch {
 			return apiError(403, 'Insufficient permissions')
 		}

@@ -1,7 +1,7 @@
 import { fail, error } from '@sveltejs/kit'
 import { z } from 'zod'
 import { ASSIGNABLE_ROLES } from '$lib/rbac'
-import { can, canAny, requireCapability, requireAnyCapability } from '$lib/server/rbac'
+import { can, canAny, requireAnyCapability } from '$lib/server/rbac'
 import { failFromError } from '$lib/server/form-fail'
 import { listOrgUsers, setUserRole, setUserActive } from '$lib/server/services/settings/org'
 import type { Actions, PageServerLoad } from './$types'
@@ -64,7 +64,7 @@ export const actions: Actions = {
 
 	setActive: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		requireCapability(user.role, 'ADMINISTER_SYSTEM')
+		requireAnyCapability(user.roles, 'ADMINISTER_SYSTEM')
 
 		const raw = Object.fromEntries(await request.formData())
 		const parsed = activeSchema.safeParse(raw)

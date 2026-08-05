@@ -43,7 +43,12 @@ const { PATCH } = await import('../../src/routes/api/v1/employees/[id]/+server')
 const { AWAITING_CONFIRMATION } = await import('$lib/server/services/employees')
 const { createProposal } = await import('$lib/server/services/action-proposals')
 
-const HR_USER = { id: 'u1', organizationId: 'org1', role: 'HR_ADMIN' as Role }
+const HR_USER = {
+	id: 'u1',
+	organizationId: 'org1',
+	role: 'HR_ADMIN' as Role,
+	roles: ['HR_ADMIN'] as Role[]
+}
 
 const EMP = {
 	id: 'emp1',

@@ -2,7 +2,7 @@ import { fail } from '@sveltejs/kit'
 import { z } from 'zod'
 import { db } from '$lib/server/db'
 import { manilaDayKey } from '$lib/utils/dates'
-import { can, requireCapability } from '$lib/server/rbac'
+import { can, requireAnyCapability } from '$lib/server/rbac'
 import { listRecentAnnouncements, createAnnouncement } from '$lib/server/services/announcements'
 import { countPendingApprovals } from '$lib/server/services/approvals'
 import { listRecent } from '$lib/server/services/notifications'
@@ -150,7 +150,7 @@ const announcementSchema = z.object({
 export const actions: Actions = {
 	postAnnouncement: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		requireCapability(user.role, 'MANAGE_HR')
+		requireAnyCapability(user.roles, 'MANAGE_HR')
 
 		const parsed = announcementSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success)
@@ -202,7 +202,7 @@ export const actions: Actions = {
 	// HR grants an employee award, announced on the dashboard feed (#180).
 	giveAward: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		requireCapability(user.role, 'MANAGE_HR')
+		requireAnyCapability(user.roles, 'MANAGE_HR')
 		const data = await request.formData()
 		const employeeId = data.get('employeeId') as string
 		const title = (data.get('title') as string) ?? ''

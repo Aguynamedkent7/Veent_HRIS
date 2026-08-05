@@ -1,5 +1,5 @@
 import { fail, isHttpError } from '@sveltejs/kit'
-import { can, requireAnyMinRole, requireCapability } from '$lib/server/rbac'
+import { can, requireAnyMinRole, requireAnyCapability } from '$lib/server/rbac'
 import { failFromError } from '$lib/server/form-fail'
 import { assertCanTouchEmployee } from '$lib/server/services/employee-access'
 import {
@@ -402,7 +402,7 @@ function scopedToEmployee(actions: Actions): Actions {
 export const actions: Actions = scopedToEmployee({
 	// Set the employee's additional supervisors (#176). HR-only.
 	setSupervisors: async ({ request, locals, params, getClientAddress }) => {
-		requireCapability(locals.user!.role, 'MANAGE_HR')
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 		const ids = (await request.formData()).getAll('supervisorIds').map(String).filter(Boolean)
 		try {
 			await setAdditionalSupervisors(
@@ -530,7 +530,7 @@ export const actions: Actions = scopedToEmployee({
 	// #111: audited reveal of every masked sensitive field (gov IDs, salary, disbursement). The
 	// role check runs server-side — the UI button is cosmetic gating only (Constitution P2).
 	reveal: async ({ locals, params, getClientAddress }) => {
-		requireCapability(locals.user!.role, 'MANAGE_HR')
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 		// A self-reveal (an HR user opening their own 201 file) is exempt from the audit log —
 		// own data, decision #2. Same identity comparison as load's object-level access check.
 		const self = await db.employee.findUnique({
@@ -681,7 +681,7 @@ export const actions: Actions = scopedToEmployee({
 
 	// Exempt/restore an individual employee from a statutory contribution (#173). HR-only, audited.
 	toggleStatutoryExemption: async ({ request, locals, params, getClientAddress }) => {
-		requireCapability(locals.user!.role, 'MANAGE_HR')
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 		const parsed = statutoryToggleSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid statutory toggle' })
 		try {
@@ -702,7 +702,7 @@ export const actions: Actions = scopedToEmployee({
 	// Toggle "employer share paid externally" for one contribution (#173, Feature C). Zeroes the ER
 	// share only; the EE share is still deducted. HR-only, audited.
 	toggleEmployerShareExternal: async ({ request, locals, params, getClientAddress }) => {
-		requireCapability(locals.user!.role, 'MANAGE_HR')
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 		const parsed = employerShareExternalToggleSchema.safeParse(
 			Object.fromEntries(await request.formData())
 		)
@@ -724,7 +724,7 @@ export const actions: Actions = scopedToEmployee({
 
 	// Set which semi-monthly cutoff the EE share is deducted on (#173, Feature E). HR-only, audited.
 	setStatutoryAllocation: async ({ request, locals, params, getClientAddress }) => {
-		requireCapability(locals.user!.role, 'MANAGE_HR')
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 		const parsed = statutoryAllocationSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid statutory allocation' })
 		try {
@@ -743,7 +743,7 @@ export const actions: Actions = scopedToEmployee({
 	},
 
 	addEmergencyContact: async ({ request, locals, params, getClientAddress }) => {
-		requireCapability(locals.user!.role, 'MANAGE_HR')
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 		const parsed = emergencyContactSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Name, relationship, and phone are required.' })
 		try {
@@ -761,7 +761,7 @@ export const actions: Actions = scopedToEmployee({
 	},
 
 	deleteEmergencyContact: async ({ request, locals, getClientAddress }) => {
-		requireCapability(locals.user!.role, 'MANAGE_HR')
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 		const contactId = (await request.formData()).get('contactId') as string
 		if (!contactId) return fail(400, { error: 'Missing contact id.' })
 		try {
@@ -778,7 +778,7 @@ export const actions: Actions = scopedToEmployee({
 	},
 
 	uploadDocument: async ({ request, locals, params, getClientAddress }) => {
-		requireCapability(locals.user!.role, 'MANAGE_HR')
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 
 		const data = await request.formData()
 		const file = data.get('file')
@@ -807,7 +807,7 @@ export const actions: Actions = scopedToEmployee({
 	},
 
 	deleteDocument: async ({ request, locals, getClientAddress }) => {
-		requireCapability(locals.user!.role, 'MANAGE_HR')
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 		const docId = (await request.formData()).get('docId') as string
 		if (!docId) return fail(400, { error: 'Missing document id.' })
 		try {
@@ -826,7 +826,7 @@ export const actions: Actions = scopedToEmployee({
 	// Tick a MANUAL onboarding step on/off for this employee (#116). Derived steps are
 	// read-only — they check themselves off from the record — so only manual items post here.
 	toggleOnboardingStep: async ({ request, locals, params, getClientAddress }) => {
-		requireCapability(locals.user!.role, 'MANAGE_HR')
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 		const data = await request.formData()
 		const itemId = data.get('itemId') as string
 		if (!itemId) return fail(400, { error: 'Missing item id.' })
