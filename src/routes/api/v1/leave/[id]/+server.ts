@@ -1,11 +1,11 @@
 import { json } from '@sveltejs/kit'
-import { requireMinRole } from '$lib/server/rbac'
+import { requireAnyMinRole } from '$lib/server/rbac'
 import { reviewLeaveRequest } from '$lib/server/services/leave'
 import { apiError } from '$lib/server/api-error'
 import type { RequestHandler } from './$types'
 
 // PATCH: body = { action: 'approve' | 'reject' | 'override-approve', rejectionReason?: string, note?: string }
-// requireMinRole MANAGER
+// requireAnyMinRole MANAGER
 // call reviewLeaveRequest
 // return json(result)
 export const PATCH: RequestHandler = async ({ params, request, locals, getClientAddress }) => {
@@ -14,7 +14,7 @@ export const PATCH: RequestHandler = async ({ params, request, locals, getClient
 	const user = locals.user
 
 	try {
-		requireMinRole(user.role, 'MANAGER')
+		requireAnyMinRole(user.roles, 'MANAGER')
 	} catch {
 		return apiError(403, 'Insufficient permissions')
 	}
@@ -35,7 +35,7 @@ export const PATCH: RequestHandler = async ({ params, request, locals, getClient
 	// override-approve requires HR_ADMIN or higher
 	if (action === 'override-approve') {
 		try {
-			requireMinRole(user.role, 'HR_ADMIN')
+			requireAnyMinRole(user.roles, 'HR_ADMIN')
 		} catch {
 			return apiError(403, 'override-approve requires HR_ADMIN or higher')
 		}

@@ -1,6 +1,6 @@
 import { fail } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
-import { requireMinRole } from '$lib/server/rbac'
+import { requireAnyMinRole } from '$lib/server/rbac'
 import {
 	listSchedules,
 	createSchedule,
@@ -10,7 +10,7 @@ import {
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
-	requireMinRole(locals.user!.role, 'HR_ADMIN')
+	requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
 	const organizationId = locals.user!.organizationId
 	const [schedules, org] = await Promise.all([
 		listSchedules(organizationId),
@@ -28,7 +28,7 @@ function hhmmToMin(s: string): number | null {
 
 export const actions: Actions = {
 	create: async ({ request, locals, getClientAddress }) => {
-		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
 		const fd = await request.formData()
 		const name = String(fd.get('name') ?? '').trim()
 		const startMinutes = hhmmToMin(String(fd.get('start') ?? ''))
@@ -64,7 +64,7 @@ export const actions: Actions = {
 	},
 
 	toggleOrgTardiness: async ({ request, locals, getClientAddress }) => {
-		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
 		const enabled = (await request.formData()).get('enabled') === 'true'
 		await setOrgTardiness(locals.user!.organizationId, enabled, {
 			organizationId: locals.user!.organizationId,
@@ -76,7 +76,7 @@ export const actions: Actions = {
 	},
 
 	toggleTardiness: async ({ request, locals, getClientAddress }) => {
-		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
 		const fd = await request.formData()
 		const id = String(fd.get('id') ?? '')
 		const enabled = fd.get('enabled') === 'true'

@@ -1,5 +1,5 @@
 import { fail, isHttpError, redirect } from '@sveltejs/kit'
-import { requireMinRole } from '$lib/server/rbac'
+import { requireAnyMinRole } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { createSeparation, listSeparations } from '$lib/server/services/separation'
 import { z } from 'zod'
@@ -7,7 +7,7 @@ import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!
-	requireMinRole(user.role, 'HR_ADMIN')
+	requireAnyMinRole(user.roles, 'HR_ADMIN')
 
 	const [separations, employees] = await Promise.all([
 		listSeparations(user.organizationId),
@@ -34,7 +34,7 @@ const createSchema = z.object({
 export const actions: Actions = {
 	create: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		requireMinRole(user.role, 'HR_ADMIN')
+		requireAnyMinRole(user.roles, 'HR_ADMIN')
 
 		const raw = Object.fromEntries(await request.formData())
 		const parsed = createSchema.safeParse(raw)

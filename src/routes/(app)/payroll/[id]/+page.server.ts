@@ -1,6 +1,6 @@
 import { error, fail, isHttpError } from '@sveltejs/kit'
 import { z } from 'zod'
-import { requirePayrollManage } from '$lib/server/rbac'
+import { requireAnyCapability, requirePayrollManage } from '$lib/server/rbac'
 import { canAny } from '$lib/rbac'
 import { listVisiblePayEmployeeIds } from '$lib/server/services/employee-access'
 import {
@@ -98,7 +98,7 @@ const decideSchema = z.object({
 export const actions: Actions = {
 	override: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		requirePayrollManage(user.role)
+		requirePayrollManage(user.roles)
 
 		const data = await request.formData()
 
@@ -127,7 +127,7 @@ export const actions: Actions = {
 	// deductions) — allowed until the run is approved.
 	compute: async ({ params, locals, getClientAddress }) => {
 		const user = locals.user!
-		requirePayrollManage(user.role)
+		requirePayrollManage(user.roles)
 
 		try {
 			await computePayroll(params.id, user.organizationId, ctxOf(locals, getClientAddress()))
@@ -143,8 +143,7 @@ export const actions: Actions = {
 	// return needs a reason.
 	decide: async ({ request, locals, params, getClientAddress }) => {
 		const user = locals.user!
-		const roles = user.roles?.length ? user.roles : [user.role]
-		if (!canAny(roles, 'APPROVE_REQUESTS')) error(403, 'Insufficient permissions')
+		requireAnyCapability(user.roles, 'APPROVE_REQUESTS')
 
 		const parsed = decideSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid decision' })

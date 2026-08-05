@@ -11,7 +11,7 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 	if (!locals.user) return apiError(401, 'Unauthorized')
 
 	try {
-		requirePayrollManage(locals.user.role)
+		requirePayrollManage(locals.user.roles)
 	} catch {
 		return apiError(403, 'Insufficient permissions')
 	}

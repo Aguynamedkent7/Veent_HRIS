@@ -13,7 +13,7 @@ const patchSchema = z.object({
 export const PATCH: RequestHandler = async ({ locals, params, request, getClientAddress }) => {
 	if (!locals.user) return apiError(401, 'Unauthorized')
 	try {
-		requirePayrollManage(locals.user.role)
+		requirePayrollManage(locals.user.roles)
 	} catch {
 		return forbidden()
 	}

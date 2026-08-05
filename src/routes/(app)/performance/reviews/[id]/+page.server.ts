@@ -1,7 +1,7 @@
 import { fail, isHttpError } from '@sveltejs/kit'
 import { z } from 'zod'
 import { db } from '$lib/server/db'
-import { requireMinRole } from '$lib/server/rbac'
+import { requireAnyMinRole } from '$lib/server/rbac'
 import {
 	getReview,
 	redactHrAuthored,
@@ -23,7 +23,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	// read someone's self-assessment, manager comments and rating by walking ids —
 	// isSubject/isReviewer only drove the UI. HR may read any review in the org.
 	if (!isSubject && !isReviewer) {
-		requireMinRole(user.role, 'HR_ADMIN')
+		requireAnyMinRole(user.roles, 'HR_ADMIN')
 	}
 
 	// #179: the reviewed employee never sees the HR-authored review — redact the manager

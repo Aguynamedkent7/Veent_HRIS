@@ -13,7 +13,7 @@ import {
 import type { Actions, PageServerLoad, RequestEvent } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
-	requirePayrollManage(locals.user!.role)
+	requirePayrollManage(locals.user!.roles)
 	return {
 		periods: await listPeriods(locals.user!.organizationId),
 		canVoid: canAny(locals.user!.roles, 'OVERRIDE_FINALIZED')
@@ -49,7 +49,7 @@ const openSchema = z.object({
 
 export const actions: Actions = {
 	open: async (event) => {
-		requirePayrollManage(event.locals.user!.role)
+		requirePayrollManage(event.locals.user!.roles)
 		const parsed = openSchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid period details' })
 		try {
@@ -69,7 +69,7 @@ export const actions: Actions = {
 	},
 
 	import: async (event) => {
-		requirePayrollManage(event.locals.user!.role)
+		requirePayrollManage(event.locals.user!.roles)
 		const id = (await event.request.formData()).get('id') as string
 		try {
 			await importAttendance(id, event.locals.user!.organizationId, ctxOf(event))
@@ -79,7 +79,7 @@ export const actions: Actions = {
 	},
 
 	generate: async (event) => {
-		requirePayrollManage(event.locals.user!.role)
+		requirePayrollManage(event.locals.user!.roles)
 		const id = (await event.request.formData()).get('id') as string
 		try {
 			await generate(id, event.locals.user!.organizationId, ctxOf(event))
@@ -89,7 +89,7 @@ export const actions: Actions = {
 	},
 
 	lock: async (event) => {
-		requirePayrollManage(event.locals.user!.role)
+		requirePayrollManage(event.locals.user!.roles)
 		const data = await event.request.formData()
 		const id = data.get('id') as string
 		const overrideNote = ((data.get('overrideNote') as string) || '').trim() || undefined
@@ -101,7 +101,7 @@ export const actions: Actions = {
 	},
 
 	release: async (event) => {
-		requirePayrollManage(event.locals.user!.role)
+		requirePayrollManage(event.locals.user!.roles)
 		const id = (await event.request.formData()).get('id') as string
 		try {
 			await release(id, event.locals.user!.organizationId, ctxOf(event))

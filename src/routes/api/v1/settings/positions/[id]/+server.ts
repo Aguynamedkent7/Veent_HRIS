@@ -1,12 +1,12 @@
 import { json, error } from '@sveltejs/kit'
 import { z } from 'zod'
-import { requireMinRole } from '$lib/server/rbac'
+import { requireAnyMinRole } from '$lib/server/rbac'
 import { getPosition, updatePosition } from '$lib/server/services/settings/org'
 import type { RequestHandler } from './$types'
 
 export const GET: RequestHandler = async ({ locals, params }) => {
 	if (!locals.user) error(401, 'Unauthorized')
-	requireMinRole(locals.user.role, 'HR_ADMIN')
+	requireAnyMinRole(locals.user.roles, 'HR_ADMIN')
 	return json({ data: await getPosition(params.id, locals.user.organizationId) })
 }
 
@@ -21,7 +21,7 @@ const updateSchema = z.object({
 export const PATCH: RequestHandler = async ({ locals, params, request, getClientAddress }) => {
 	if (!locals.user) error(401, 'Unauthorized')
 	const user = locals.user
-	requireMinRole(user.role, 'HR_ADMIN')
+	requireAnyMinRole(user.roles, 'HR_ADMIN')
 
 	const parsed = updateSchema.safeParse(await request.json())
 	if (!parsed.success) error(422, parsed.error.errors[0]?.message ?? 'Invalid position')

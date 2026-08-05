@@ -1,4 +1,4 @@
-import { requireMinRole } from '$lib/server/rbac'
+import { requireAnyMinRole } from '$lib/server/rbac'
 import { failFromError } from '$lib/server/form-fail'
 import { paginate } from '$lib/server/pagination'
 import { countEmployees, listEmployees, offboardEmployee } from '$lib/server/services/employees'
@@ -15,7 +15,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	// used to stand here admitted every manager to the WHOLE roster — the same dead-guard shape
 	// #228 fixed on the 201 page. The floor now only keeps EMPLOYEE and the off-ladder roles out;
 	// who a manager actually sees is decided by the id filter below, not by rank.
-	requireMinRole(locals.user!.role, 'MANAGER')
+	requireAnyMinRole(locals.user!.roles, 'MANAGER')
 
 	const organizationId = locals.user!.organizationId
 	const search = url.searchParams.get('search') ?? undefined
@@ -66,7 +66,7 @@ export const actions: Actions = {
 	// Onboarding lives on the dedicated /employees/new page (full form + Discord ID); this
 	// list page only carries the offboard action for the table rows.
 	offboard: async ({ request, locals, getClientAddress }) => {
-		requireMinRole(locals.user!.role, 'MANAGER')
+		requireAnyMinRole(locals.user!.roles, 'MANAGER')
 		const user = locals.user!
 
 		const data = await request.formData()

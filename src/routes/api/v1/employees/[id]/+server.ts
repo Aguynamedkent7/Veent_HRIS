@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit'
-import { requireCapability, requireMinRole } from '$lib/server/rbac'
+import { requireCapability, requireAnyMinRole } from '$lib/server/rbac'
 import {
 	getEmployee,
 	updateEmployee,
@@ -62,7 +62,7 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 	if (!locals.user) return apiError(401, 'Unauthorized')
 
 	try {
-		requireMinRole(locals.user.role, 'MANAGER')
+		requireAnyMinRole(locals.user.roles, 'MANAGER')
 	} catch {
 		return apiError(403, 'Insufficient permissions')
 	}
