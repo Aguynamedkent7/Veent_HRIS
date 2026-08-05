@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit'
-import { requireCapability } from '$lib/server/rbac'
+import { requireAnyCapability } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { listVisiblePayEmployeeIds } from '$lib/server/services/employee-access'
 import {
@@ -61,7 +61,7 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 			organizationId: user.organizationId
 		})
 	} else {
-		requireCapability(user.role, 'MANAGE_HR')
+		requireAnyCapability(user.roles, 'MANAGE_HR')
 	}
 
 	// Parse filter params

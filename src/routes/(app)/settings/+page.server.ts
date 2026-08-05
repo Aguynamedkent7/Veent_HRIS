@@ -1,9 +1,9 @@
-import { can, canAny, requireCapability } from '$lib/server/rbac'
+import { can, canAny, requireAnyCapability } from '$lib/server/rbac'
 import type { PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!
-	requireCapability(user.role, 'MANAGE_HR')
+	requireAnyCapability(user.roles, 'MANAGE_HR')
 	return {
 		isSuperAdmin: can(user.role, 'ADMINISTER_SYSTEM'),
 		// The Roles page opens for the role-changer (#132) and the account-status admin, so the card

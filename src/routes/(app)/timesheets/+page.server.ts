@@ -1,5 +1,5 @@
 import { fail, isHttpError, redirect } from '@sveltejs/kit'
-import { can, requireCapability, requireAnyMinRole } from '$lib/server/rbac'
+import { can, requireAnyCapability, requireAnyMinRole } from '$lib/server/rbac'
 import {
 	countTimesheets,
 	listTimesheets,
@@ -87,7 +87,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 
 /** #165: every mutating action on this page is closed to the Employee role. */
 function requireModify(event: RequestEvent) {
-	requireCapability(event.locals.user!.role, 'VIEW_TEAM')
+	requireAnyCapability(event.locals.user!.roles, 'VIEW_TEAM')
 }
 
 function ctxOf(event: RequestEvent) {
@@ -237,7 +237,7 @@ export const actions: Actions = {
 	create: async (event) => {
 		requireModify(event)
 		const user = event.locals.user!
-		requireCapability(user.role, 'MANAGE_HR')
+		requireAnyCapability(user.roles, 'MANAGE_HR')
 
 		const parsed = createSchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success)

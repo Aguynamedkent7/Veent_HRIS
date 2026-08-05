@@ -2,7 +2,7 @@ import { fail, redirect } from '@sveltejs/kit'
 import { z } from 'zod'
 import { db } from '$lib/server/db'
 import { HIRE_ROLES } from '$lib/rbac'
-import { requireCapability } from '$lib/server/rbac'
+import { requireAnyCapability } from '$lib/server/rbac'
 import { createEmployee } from '$lib/server/services/employees'
 import { sendWelcomeEmail } from '$lib/server/notifications'
 import { govIdSchema } from '$lib/utils/gov-ids'
@@ -19,7 +19,7 @@ function generateTempPassword(): string {
 }
 
 export const load: PageServerLoad = async ({ locals }) => {
-	requireCapability(locals.user!.role, 'MANAGE_HR')
+	requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 
 	const orgId = locals.user!.organizationId
 	const [departments, employees, positions, workSchedules] = await Promise.all([
@@ -124,7 +124,7 @@ const createSchema = z
 
 export const actions: Actions = {
 	create: async ({ request, locals, getClientAddress }) => {
-		requireCapability(locals.user!.role, 'MANAGE_HR')
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 		const user = locals.user!
 
 		const raw = Object.fromEntries(await request.formData())

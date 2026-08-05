@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit'
-import { can, requireCapability } from '$lib/server/rbac'
+import { can, requireAnyCapability } from '$lib/server/rbac'
 import { listJobPostings, createJobPosting } from '$lib/server/services/recruitment'
 import { apiError, badRequest, forbidden } from '$lib/server/api-error'
 import { z } from 'zod'
@@ -34,7 +34,7 @@ export const POST: RequestHandler = async ({ request, locals, getClientAddress }
 	const user = locals.user
 
 	try {
-		requireCapability(user.role, 'MANAGE_HR')
+		requireAnyCapability(user.roles, 'MANAGE_HR')
 	} catch {
 		return forbidden()
 	}

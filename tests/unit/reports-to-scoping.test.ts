@@ -79,7 +79,12 @@ const EMP = {
 	startDate: new Date('2024-01-01')
 }
 
-const HR_USER = { id: 'u1', organizationId: ORG, role: 'HR_ADMIN' as Role }
+const HR_USER = {
+	id: 'u1',
+	organizationId: ORG,
+	role: 'HR_ADMIN' as Role,
+	roles: ['HR_ADMIN'] as Role[]
+}
 
 const patch = (body: unknown) =>
 	PATCH({
