@@ -1,6 +1,6 @@
 # Issue #267 — `PATCH /api/v1/employees/[id]` silently wipes government IDs
 
-**Repo:** `/home/hyuse/Desktop/VeentApps/veent_hris` · **Branch:** `fix/gov-id-patch-wipe-267` · **HEAD/base:** `9e39689540bda41c4af13195e087e597ed18b0d6`
+**Repo:** `veent_hris` (all paths below are repository-relative) · **Branch:** `fix/gov-id-patch-wipe-267` · **HEAD/base:** `9e39689540bda41c4af13195e087e597ed18b0d6`
 **Modes run:** PLAN → INNOVATE (per `.claude/skills/riper5/SKILL.md`). No repository file was modified; every quote below was re-read at this HEAD.
 **Scope:** standalone. Does not touch, reference, or depend on the pending #235/#263/#264/#265/#266 stack (PR #268).
 
@@ -314,7 +314,7 @@ Harness: copy the hoisted `dbMock`/`txMock` block and module mocks from `employe
 | 4   | **an explicit empty string still clears the ID**              | `{ sssNumber: '' }`           | 200; `data.sssNumber === null`. Pins the affordance §4.1 is the reason for choosing Option 1 — if a future change reverts to Option 2, this test says so out loud.                              |
 | 5   | **a malformed ID is rejected, and nothing is written**        | `{ sssNumber: '1234' }`       | 400; `employee.update` **not called**. Cheap, and guards the refine at the route layer.                                                                                                         |
 
-All five run against the real route → real `updateEmployee` → mocked Prisma, exactly like the sibling file. **Every one of them fails today** (1, 3, 4, 5 write four nulls; 2 writes four nulls where it should not write at all) — write them first and watch them fail before applying Step 1.
+All five run against the real route → real `updateEmployee` → mocked Prisma, exactly like the sibling file. **Cases 1-4 fail today; case 5 already passes.** 1, 3 and 4 fail because the write carries four nulls where it should carry one field or none; 2 fails because it writes at all. Case 5's malformed value is rejected by the refine before `updateEmployee` is ever reached, so nothing is written either way — it guards the route-layer refine against regression rather than reproducing the bug. Case 4 fails only on its "the other three are absent" assertion; its `sssNumber === null` half is already true pre-fix, which is why that assertion is not optional. Write them first and watch 1-4 fail before applying Step 1.
 
 ### 6.3 Existing tests that must stay green **unmodified**
 
@@ -334,7 +334,7 @@ Verified by trace, not assumption:
 CI (`.github/workflows/ci.yml`, `quality` job): install → `prisma generate` → `format:check` → `lint` → `check` → `test`. Format gates everything after it. Reproduce in the same order:
 
 ```bash
-cd /home/hyuse/Desktop/VeentApps/veent_hris
+cd <repo-root>
 
 # 0. only if deps / Prisma client are stale (Node 22 + corepack pnpm per the local-dev notes)
 corepack pnpm install --frozen-lockfile
@@ -392,7 +392,7 @@ Only if end-to-end proof is wanted, using the PR #254 harness (`src/routes/api/v
 
 1. Confirm the branch: `git branch --show-current` → `fix/gov-id-patch-wipe-267`, `git status` clean, `git rev-parse HEAD` → `9e39689…`. Branch is already off an updated local `staging`; no new branch needed.
 2. **Write the tests first.** Create `tests/unit/employee-api-gov-ids.test.ts` with cases 1-5 from §6.2 (harness copied from `employee-api-compensation.test.ts:13-80`).
-3. `pnpm exec vitest run tests/unit/employee-api-gov-ids.test.ts` → **expect all 5 to FAIL.** If any passes, the reproduction is wrong; stop and re-derive before touching source.
+3. `pnpm exec vitest run tests/unit/employee-api-gov-ids.test.ts` → **expect cases 1-4 to FAIL and case 5 to pass** (§6.2). If 1-4 do not all fail, the reproduction is wrong; stop and re-derive before touching source.
 4. Append the `describe` block with cases 1-4 from §6.1 to `tests/unit/gov-ids.test.ts`; add `z` and `govIdSchema` to its imports. Run it → **expect case 1 to FAIL**, cases 2-4 to pass.
 5. `src/lib/utils/gov-ids.ts:129-145` — apply Step 1: the doc comment, `.transform((v) => (v === undefined ? undefined : v || null))`, and **both** `v === null` → `v == null` changes. _(Step 1)_
 6. Re-run steps 3-4's files → **all 9 cases green.**

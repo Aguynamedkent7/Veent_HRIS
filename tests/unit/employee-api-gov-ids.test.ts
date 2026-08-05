@@ -116,6 +116,10 @@ describe('PATCH /api/v1/employees/[id] — a partial update must not wipe govern
 		expect(dbMock.employee.update).toHaveBeenCalledTimes(1)
 		const { data } = dbMock.employee.update.mock.calls[0][0]
 		expect(data.sssNumber).toBeNull()
+		// Clearing one ID must not clear the other three: pre-fix, all four arrived as null.
+		for (const key of GOV_ID_KEYS.filter((k) => k !== 'sssNumber')) {
+			expect(data).not.toHaveProperty(key)
+		}
 	})
 
 	it('a malformed ID is rejected, and nothing is written', async () => {
