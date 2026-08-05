@@ -20,7 +20,7 @@ export const POST: RequestHandler = async ({ locals, params, request, url, getCl
 
 	try {
 		if (action === 'void') requireAnyCapability(locals.user.roles, 'OVERRIDE_FINALIZED')
-		else requirePayrollManage(locals.user.role)
+		else requirePayrollManage(locals.user.roles)
 	} catch {
 		return forbidden()
 	}

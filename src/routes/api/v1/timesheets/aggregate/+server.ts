@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit'
 import { z } from 'zod'
 import { db } from '$lib/server/db'
-import { requireMinRole } from '$lib/server/rbac'
+import { requireAnyMinRole } from '$lib/server/rbac'
 import { aggregateTimeLogsToTimesheet } from '$lib/server/services/timelog'
 import { apiError } from '$lib/server/api-error'
 import type { RequestHandler } from './$types'
@@ -21,7 +21,7 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 	const user = locals.user
 
 	try {
-		requireMinRole(user.role, 'HR_ADMIN')
+		requireAnyMinRole(user.roles, 'HR_ADMIN')
 	} catch {
 		return apiError(403, 'Insufficient permissions')
 	}

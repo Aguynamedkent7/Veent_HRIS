@@ -1,5 +1,5 @@
 import { fail } from '@sveltejs/kit'
-import { requireMinRole } from '$lib/server/rbac'
+import { requireAnyMinRole } from '$lib/server/rbac'
 import { failFromError } from '$lib/server/form-fail'
 import { paginate } from '$lib/server/pagination'
 import {
@@ -14,7 +14,7 @@ import { z } from 'zod'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals, url }) => {
-	requireMinRole(locals.user!.role, 'HR_ADMIN')
+	requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
 
 	// #64: paginate the postings list (the per-posting Kanban board is not paginated).
 	const total = await countJobPostings(locals.user!.organizationId)
@@ -43,7 +43,7 @@ const createSchema = z.object({
 export const actions: Actions = {
 	create: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		requireMinRole(user.role, 'HR_ADMIN')
+		requireAnyMinRole(user.roles, 'HR_ADMIN')
 
 		const raw = Object.fromEntries(await request.formData())
 		const parsed = createSchema.safeParse(raw)
@@ -65,7 +65,7 @@ export const actions: Actions = {
 	// Submit a draft for approval (#195); it goes OPEN only once its approver signs off.
 	submit: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		requireMinRole(user.role, 'HR_ADMIN')
+		requireAnyMinRole(user.roles, 'HR_ADMIN')
 
 		const data = await request.formData()
 		const id = data.get('id') as string
@@ -86,7 +86,7 @@ export const actions: Actions = {
 	// Bulk-submit selected draft postings for approval (mass posting).
 	submitMany: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		requireMinRole(user.role, 'HR_ADMIN')
+		requireAnyMinRole(user.roles, 'HR_ADMIN')
 
 		const ids = (await request.formData()).getAll('ids').map(String).filter(Boolean)
 		if (!ids.length) return fail(400, { error: 'No postings selected.' })
@@ -116,7 +116,7 @@ export const actions: Actions = {
 
 	advance: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		requireMinRole(user.role, 'HR_ADMIN')
+		requireAnyMinRole(user.roles, 'HR_ADMIN')
 
 		const data = await request.formData()
 		const applicantId = data.get('applicantId') as string

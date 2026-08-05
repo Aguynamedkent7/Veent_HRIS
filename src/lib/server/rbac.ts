@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit'
 import type { Role } from '@prisma/client'
-import { can, canAny, hasMinRole, CAPABILITIES, type Capability } from '$lib/rbac'
+import { can, canAny, hasMinRole, hasAnyMinRole, CAPABILITIES, type Capability } from '$lib/rbac'
 import { isFoodServiceOrg } from '$lib/orgs'
 
 // The capability table itself lives in $lib/rbac so the sidebar can ask the same
@@ -50,6 +50,11 @@ export function requireMinRole(userRole: Role, minimumRole: Role): void {
 	}
 }
 
+/** Multi-role floor (#256): passes if ANY of the user's roles clears the rank. */
+export function requireAnyMinRole(userRoles: Role[], minimumRole: Role): void {
+	if (!hasAnyMinRole(userRoles, minimumRole)) error(403, 'Insufficient permissions')
+}
+
 // ─── Payroll capabilities ─────────────────────────────────────────────────────
 // Payroll access does not follow the HR ladder: a Payroll Officer runs payroll
 // without full HR access, and Finance can read payroll reports only. These remain
@@ -66,10 +71,10 @@ export function canViewPayrollReports(role: Role): boolean {
 	return can(role, 'VIEW_PAYROLL_REPORTS')
 }
 
-export function requirePayrollManage(role: Role): void {
-	requireCapability(role, 'MANAGE_PAYROLL')
+export function requirePayrollManage(roles: Role[]): void {
+	requireAnyCapability(roles, 'MANAGE_PAYROLL')
 }
 
-export function requirePayrollReports(role: Role): void {
-	requireCapability(role, 'VIEW_PAYROLL_REPORTS')
+export function requirePayrollReports(roles: Role[]): void {
+	requireAnyCapability(roles, 'VIEW_PAYROLL_REPORTS')
 }

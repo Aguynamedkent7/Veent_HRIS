@@ -1,4 +1,4 @@
-import { requireMinRole } from '$lib/server/rbac'
+import { requireAnyMinRole } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { isFoodServiceOrg } from '$lib/orgs'
 import { autoDeriveFromPunches } from '$lib/server/services/attendance'
@@ -7,7 +7,7 @@ import type { PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals, url, getClientAddress }) => {
 	const user = locals.user!
-	requireMinRole(user.role, 'MANAGER')
+	requireAnyMinRole(user.roles, 'MANAGER')
 
 	const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
 	const isAdmin = ['HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)

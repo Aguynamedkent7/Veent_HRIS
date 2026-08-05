@@ -1,5 +1,5 @@
 import { fail, isHttpError } from '@sveltejs/kit'
-import { can, requireMinRole, requireCapability } from '$lib/server/rbac'
+import { can, requireAnyMinRole, requireCapability } from '$lib/server/rbac'
 import { failFromError } from '$lib/server/form-fail'
 import { assertCanTouchEmployee } from '$lib/server/services/employee-access'
 import {
@@ -85,7 +85,7 @@ function ctxOf(locals: App.Locals, ip: string) {
 // merge + per-org config lives in $lib/server/services/onboarding.
 
 export const load: PageServerLoad = async ({ locals, params }) => {
-	requireMinRole(locals.user!.role, 'MANAGER')
+	requireAnyMinRole(locals.user!.roles, 'MANAGER')
 
 	const canManage = can(locals.user!.role, 'MANAGE_HR')
 
@@ -418,7 +418,7 @@ export const actions: Actions = scopedToEmployee({
 	},
 
 	update: async ({ request, locals, params, getClientAddress }) => {
-		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
 		const user = locals.user!
 
 		const raw = Object.fromEntries(await request.formData())
@@ -480,7 +480,7 @@ export const actions: Actions = scopedToEmployee({
 	// their reports' profile but must not move pay). The service inserts the snapshot, re-derives the
 	// current cache and audits atomically; a backdate into an approved run comes back as a notice.
 	changeCompensation: async ({ request, locals, params, getClientAddress }) => {
-		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
 		// Discriminator: this form shares the page's single `form` prop with every other action, so its
 		// message block gates on `form.action` to ignore a sibling form's success/error.
 		const action = 'changeCompensation'
@@ -506,7 +506,7 @@ export const actions: Actions = scopedToEmployee({
 	// #222: promote — position, title, reporting line, employment type and pay as ONE audited event.
 	// Same HR_ADMIN+ gate as changeCompensation: it moves pay, so a MANAGER must not reach it.
 	promote: async ({ request, locals, params, getClientAddress }) => {
-		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
 		const action = 'promote'
 		const parsed = promoteSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) {
@@ -548,7 +548,7 @@ export const actions: Actions = scopedToEmployee({
 	},
 
 	offboard: async ({ request, locals, params, getClientAddress }) => {
-		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
 		const user = locals.user!
 
 		const data = await request.formData()
@@ -569,7 +569,7 @@ export const actions: Actions = scopedToEmployee({
 	// ponytail: only the two loan actions were folded into ctxOf — the rest of the inline ctx
 	// literals in this file are audit-only, and converting them would be churn.
 	addLoan: async ({ request, locals, params, getClientAddress }) => {
-		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
 		const user = locals.user!
 		const parsed = loanSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid loan details' })
@@ -587,7 +587,7 @@ export const actions: Actions = scopedToEmployee({
 	},
 
 	addCashAdvance: async ({ request, locals, params, getClientAddress }) => {
-		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
 		const user = locals.user!
 		const parsed = cashAdvanceSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid cash-advance details' })
@@ -605,7 +605,7 @@ export const actions: Actions = scopedToEmployee({
 	},
 
 	addEarning: async ({ request, locals, params, getClientAddress }) => {
-		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
 		const user = locals.user!
 		const parsed = earningSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid recurring earning details' })
@@ -623,7 +623,7 @@ export const actions: Actions = scopedToEmployee({
 	},
 
 	endEarning: async ({ request, locals, getClientAddress }) => {
-		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
 		const user = locals.user!
 		const id = (await request.formData()).get('id') as string
 		if (!id) return fail(400, { error: 'Missing earning id' })
@@ -642,7 +642,7 @@ export const actions: Actions = scopedToEmployee({
 	},
 
 	addDeduction: async ({ request, locals, params, getClientAddress }) => {
-		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
 		const user = locals.user!
 		const parsed = deductionSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid recurring deduction details' })
@@ -661,7 +661,7 @@ export const actions: Actions = scopedToEmployee({
 	},
 
 	endDeduction: async ({ request, locals, getClientAddress }) => {
-		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
 		const user = locals.user!
 		const id = (await request.formData()).get('id') as string
 		if (!id) return fail(400, { error: 'Missing deduction id' })

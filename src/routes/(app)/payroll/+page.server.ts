@@ -34,7 +34,7 @@ const createSchema = z.object({
 export const actions: Actions = {
 	create: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		requirePayrollManage(user.role)
+		requirePayrollManage(user.roles)
 
 		const raw = Object.fromEntries(await request.formData())
 		const parsed = createSchema.safeParse(raw)
@@ -57,7 +57,7 @@ export const actions: Actions = {
 
 	compute: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		requirePayrollManage(user.role)
+		requirePayrollManage(user.roles)
 
 		const data = await request.formData()
 		const id = data.get('id') as string

@@ -7,7 +7,8 @@ import {
 	canAny,
 	hasMinRole,
 	hasAnyMinRole,
-	ROLE_HIERARCHY
+	ROLE_HIERARCHY,
+	type Capability
 } from '../../src/lib/rbac'
 // Value import, not type-only: the generated enum object is the drift tripwire below.
 import { Role } from '@prisma/client'
@@ -230,6 +231,27 @@ describe('multi-role (canAny / hasAnyMinRole)', () => {
 		expect(canAny(['VERIFIER'], 'MANAGE_HR')).toBe(false)
 		expect(hasAnyMinRole(['VERIFIER'], 'MANAGER')).toBe(false)
 		expect(canAny(['VERIFIER'], 'VERIFY_REQUESTS')).toBe(true)
+	})
+
+	// The no-op proof for the #256 guard sweep. Converting ~190 route guards from the singular
+	// role to the full role set is only safe because every user carries exactly one role today,
+	// and on a one-element array `.some()` reduces to the singular check. Exhaustive over the
+	// whole domain rather than spot-checked: this is the evidence, so it has to be complete.
+	it('is identical to the singular check for every one-element role set', () => {
+		const capabilities = Object.keys(CAPABILITIES) as Capability[]
+		for (const role of ALL_ROLES) {
+			for (const capability of capabilities) {
+				expect(canAny([role], capability), `canAny([${role}], ${capability})`).toBe(
+					can(role, capability)
+				)
+			}
+			// Every role is also a valid floor, so the floor domain is ALL_ROLES too.
+			for (const floor of ALL_ROLES) {
+				expect(hasAnyMinRole([role], floor), `hasAnyMinRole([${role}], ${floor})`).toBe(
+					hasMinRole(role, floor)
+				)
+			}
+		}
 	})
 })
 

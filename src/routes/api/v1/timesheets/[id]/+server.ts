@@ -1,11 +1,11 @@
 import { json } from '@sveltejs/kit'
-import { requireMinRole } from '$lib/server/rbac'
+import { requireAnyMinRole } from '$lib/server/rbac'
 import { reviewTimesheet } from '$lib/server/services/timesheets'
 import { apiError } from '$lib/server/api-error'
 import type { RequestHandler } from './$types'
 
 // PATCH: body = { action: 'approve' | 'reject', rejectionReason?: string }
-// requireMinRole MANAGER
+// requireAnyMinRole MANAGER
 // call reviewTimesheet
 // return json(result)
 export const PATCH: RequestHandler = async ({ params, request, locals, getClientAddress }) => {
@@ -14,7 +14,7 @@ export const PATCH: RequestHandler = async ({ params, request, locals, getClient
 	const user = locals.user
 
 	try {
-		requireMinRole(user.role, 'MANAGER')
+		requireAnyMinRole(user.roles, 'MANAGER')
 	} catch {
 		return apiError(403, 'Insufficient permissions')
 	}

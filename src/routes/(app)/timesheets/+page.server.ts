@@ -1,5 +1,5 @@
 import { fail, isHttpError, redirect } from '@sveltejs/kit'
-import { can, requireCapability, requireMinRole } from '$lib/server/rbac'
+import { can, requireCapability, requireAnyMinRole } from '$lib/server/rbac'
 import {
 	countTimesheets,
 	listTimesheets,
@@ -170,7 +170,7 @@ function toEntryInputs(rows: z.infer<typeof entriesSchema>) {
 export const actions: Actions = {
 	// HR only — non-destructive preview of a week's punch aggregation (no DB writes).
 	previewAggregate: async (event) => {
-		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(event.locals.user!.roles, 'HR_ADMIN')
 		const org = event.locals.user!.organizationId
 		const parsed = aggregateSchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Pick an employee and a week.' })
@@ -189,7 +189,7 @@ export const actions: Actions = {
 
 	// HR only — commit the week's punches into a DRAFT timesheet (idempotent for drafts).
 	aggregate: async (event) => {
-		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(event.locals.user!.roles, 'HR_ADMIN')
 		const org = event.locals.user!.organizationId
 		const parsed = aggregateSchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Pick an employee and a week.' })
@@ -215,7 +215,7 @@ export const actions: Actions = {
 	// HR only — submit an aggregated draft on the employee's behalf. Approval itself
 	// happens exclusively in the review queue (/requests/timesheets).
 	submitDraft: async (event) => {
-		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(event.locals.user!.roles, 'HR_ADMIN')
 		const id = (await event.request.formData()).get('id')
 		if (typeof id !== 'string' || !id) return fail(400, { error: 'Missing timesheet id' })
 		try {
@@ -314,7 +314,7 @@ export const actions: Actions = {
 
 	// HR review edit: replace the timesheet's entries and recompute its total.
 	saveEntries: async (event) => {
-		requireMinRole(event.locals.user!.role, 'MANAGER')
+		requireAnyMinRole(event.locals.user!.roles, 'MANAGER')
 		const data = await event.request.formData()
 		const id = data.get('id') as string
 		let parsed

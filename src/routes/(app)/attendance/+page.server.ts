@@ -1,7 +1,7 @@
 import { fail } from '@sveltejs/kit'
 import { z } from 'zod'
 import { db } from '$lib/server/db'
-import { can, canAny, requireMinRole, requireAnyCapability } from '$lib/server/rbac'
+import { can, canAny, requireAnyMinRole, requireAnyCapability } from '$lib/server/rbac'
 import {
 	countAttendanceDays,
 	listAttendanceDays,
@@ -164,7 +164,7 @@ const correctSchema = z.object({
 
 export const actions: Actions = {
 	derive: async (event) => {
-		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(event.locals.user!.roles, 'HR_ADMIN')
 		const parsed = rangeSchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid range' })
 		if (spanExceeded(parsed.data.from, parsed.data.to))
@@ -181,7 +181,7 @@ export const actions: Actions = {
 	},
 
 	correct: async (event) => {
-		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(event.locals.user!.roles, 'HR_ADMIN')
 		const parsed = correctSchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid correction' })
 		const { id, date, timeIn, timeOut, ...rest } = parsed.data
@@ -200,7 +200,7 @@ export const actions: Actions = {
 
 	// Discard a manual override on a day and re-derive it from punches.
 	resetDay: async (event) => {
-		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(event.locals.user!.roles, 'HR_ADMIN')
 		const id = (await event.request.formData()).get('id') as string
 		if (!id) return fail(400, { error: 'Missing day id' })
 		try {
@@ -211,7 +211,7 @@ export const actions: Actions = {
 	},
 
 	lock: async (event) => {
-		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(event.locals.user!.roles, 'HR_ADMIN')
 		const parsed = rangeSchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid range' })
 		if (spanExceeded(parsed.data.from, parsed.data.to))
@@ -262,7 +262,7 @@ export const actions: Actions = {
 
 	// Persist the selected employee's range as a Timesheet record (per-employee tab only).
 	saveTimesheet: async (event) => {
-		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(event.locals.user!.roles, 'HR_ADMIN')
 		const parsed = rangeSchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid range' })
 		if (spanExceeded(parsed.data.from, parsed.data.to))
@@ -285,7 +285,7 @@ export const actions: Actions = {
 
 	// Whole-team single-day variants for the team view: no employeeId → all active employees.
 	deriveTeam: async (event) => {
-		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(event.locals.user!.roles, 'HR_ADMIN')
 		const parsed = teamDaySchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid date' })
 		try {
@@ -300,7 +300,7 @@ export const actions: Actions = {
 	},
 
 	lockTeam: async (event) => {
-		requireMinRole(event.locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(event.locals.user!.roles, 'HR_ADMIN')
 		const parsed = teamDaySchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid date' })
 		try {

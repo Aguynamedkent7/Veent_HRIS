@@ -59,7 +59,7 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
 	// unrestricted. The `export=csv` branch below serializes this same `results`, so it is covered.
 	let visiblePayIds: string[] | null = null
 	if (PAYROLL_REPORT_TYPES.includes(type as (typeof PAYROLL_REPORT_TYPES)[number])) {
-		requirePayrollReports(user.role)
+		requirePayrollReports(user.roles)
 		visiblePayIds = await listVisiblePayEmployeeIds({
 			id: user.id,
 			role: user.role,

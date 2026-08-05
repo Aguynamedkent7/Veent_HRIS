@@ -1,5 +1,5 @@
 import { fail, isHttpError } from '@sveltejs/kit'
-import { requireMinRole } from '$lib/server/rbac'
+import { requireAnyMinRole } from '$lib/server/rbac'
 import {
 	listBenefitPlans,
 	createBenefitPlan,
@@ -13,7 +13,7 @@ import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!
-	requireMinRole(user.role, 'HR_ADMIN')
+	requireAnyMinRole(user.roles, 'HR_ADMIN')
 
 	const [plans, enrollments, employees] = await Promise.all([
 		listBenefitPlans(user.organizationId),
@@ -48,7 +48,7 @@ const createPlanSchema = z.object({
 
 export const actions: Actions = {
 	createPlan: async ({ request, locals, getClientAddress }) => {
-		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
 		const user = locals.user!
 
 		const raw = Object.fromEntries(await request.formData())
@@ -73,7 +73,7 @@ export const actions: Actions = {
 	},
 
 	enroll: async ({ request, locals, getClientAddress }) => {
-		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
 		const data = await request.formData()
 		const parsed = z
 			.object({
@@ -103,7 +103,7 @@ export const actions: Actions = {
 	},
 
 	setEnrollmentStatus: async ({ request, locals, getClientAddress }) => {
-		requireMinRole(locals.user!.role, 'HR_ADMIN')
+		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
 		const data = await request.formData()
 		const id = data.get('id') as string
 		const status = data.get('status') as 'ACTIVE' | 'WAIVED' | 'TERMINATED'

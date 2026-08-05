@@ -31,7 +31,7 @@ const schema = z.object({
 export const POST: RequestHandler = async ({ locals, request }) => {
 	if (!locals.user) return apiError(401, 'Unauthorized')
 	try {
-		requirePayrollManage(locals.user.role)
+		requirePayrollManage(locals.user.roles)
 	} catch {
 		return forbidden()
 	}

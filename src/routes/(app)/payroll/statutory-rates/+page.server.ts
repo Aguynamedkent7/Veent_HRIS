@@ -1,5 +1,5 @@
 import { error, fail } from '@sveltejs/kit'
-import { canAny } from '$lib/server/rbac'
+import { canAny, requireAnyCapability } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { DEFAULT_STATUTORY_RATE_CONFIG } from '$lib/server/services/payroll/ph-statutory'
 import {
@@ -181,7 +181,7 @@ export const actions: Actions = {
 	// CEO / Super Admin edit directly — applies immediately (client confirms first).
 	saveStatutoryRates: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		if (!canAny(user.roles, 'MANAGE_STATUTORY_RATES')) error(403, 'Insufficient permissions')
+		requireAnyCapability(user.roles, 'MANAGE_STATUTORY_RATES')
 
 		const parsed = parseRates(await request.formData())
 		if (!parsed.success)
@@ -196,7 +196,7 @@ export const actions: Actions = {
 	// HR_ADMIN proposes — live rates unchanged until a CEO/Super Admin confirms.
 	proposeStatutoryRates: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		if (!canAny(user.roles, 'PROPOSE_STATUTORY_RATES')) error(403, 'Insufficient permissions')
+		requireAnyCapability(user.roles, 'PROPOSE_STATUTORY_RATES')
 
 		const parsed = parseRates(await request.formData())
 		if (!parsed.success)
@@ -210,7 +210,7 @@ export const actions: Actions = {
 
 	confirmProposal: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		if (!canAny(user.roles, 'MANAGE_STATUTORY_RATES')) error(403, 'Insufficient permissions')
+		requireAnyCapability(user.roles, 'MANAGE_STATUTORY_RATES')
 
 		const id = String((await request.formData()).get('proposalId') ?? '')
 		if (!id) return fail(400, { error: 'Missing proposal id.' })
@@ -221,7 +221,7 @@ export const actions: Actions = {
 
 	rejectProposal: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		if (!canAny(user.roles, 'MANAGE_STATUTORY_RATES')) error(403, 'Insufficient permissions')
+		requireAnyCapability(user.roles, 'MANAGE_STATUTORY_RATES')
 
 		const id = String((await request.formData()).get('proposalId') ?? '')
 		if (!id) return fail(400, { error: 'Missing proposal id.' })
