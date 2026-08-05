@@ -419,7 +419,7 @@ export async function createEmployee(
 	// #235: the reporting line comes straight off the request, so verify the manager is in this org
 	// before anything is written. Ahead of the hash — a single indexed lookup should not sit behind
 	// 300ms of bcrypt on a hire that cannot succeed.
-	if (input.reportsToId) await assertManagerInOrg(input.reportsToId, organizationId)
+	if (input.reportsToId !== undefined) await assertManagerInOrg(input.reportsToId, organizationId)
 
 	// Hashed once, outside the retry loop — bcrypt at cost 12 is by far the expensive part and
 	// the password does not change between attempts.
@@ -606,7 +606,7 @@ export async function updateEmployee(
 	// `data: input` writes this column straight through (the v1 PATCH accepts it). Skipped when
 	// unchanged, for the same reason the branch check is: re-saving a 201 file whose manager
 	// predates this check must not fail every unrelated edit on it.
-	if (input.reportsToId && input.reportsToId !== existing.reportsToId) {
+	if (input.reportsToId !== undefined && input.reportsToId !== existing.reportsToId) {
 		await assertManagerInOrg(input.reportsToId, organizationId, id)
 	}
 

@@ -1,6 +1,6 @@
 # Issue #263 — the v1 PATCH writes a reporting line (and an employment status) with no separation of duties
 
-**Repo:** `/home/hyuse/Desktop/VeentApps/veent_hris` · **Branch:** `fix/reports-to-org-scoping-235` · **HEAD:** `98ea3df4873bf487123f465279fdcdef82c1cc39`
+**Repo:** `veent_hris` (all paths below are repository-relative) · **Branch:** `fix/reports-to-org-scoping-235` · **HEAD:** `98ea3df4873bf487123f465279fdcdef82c1cc39`
 **Baseline is NOT plain `staging`.** #235's fix is already committed on this branch (`98ea3df`, on top of `9e39689`). Every line/quote below was re-read at `98ea3df`, on disk, after the #235 diff — not at `staging`.
 **Modes run:** PLAN → INNOVATE (per `.claude/skills/riper5/SKILL.md`). No repository file was modified by this pass.
 **Delivery:** no new branch, no separate PR — see §9.
@@ -252,7 +252,7 @@ The route passes `effectiveDate: new Date()`. So for an employee whose `startDat
 
 Every "before" block is the verbatim current text at `98ea3df`. Style: tabs, single quotes, no semicolons (prettier).
 
-### Step 1 — `src/routes/api/v1/employees/[id]/+server.ts`: split the two fields out and reject `employmentStatus`
+## Step 1 — `src/routes/api/v1/employees/[id]/+server.ts`: split the two fields out and reject `employmentStatus`
 
 Replace `:95-108`.
 
@@ -320,7 +320,7 @@ const ctx = {
 
 `apiError` is already imported (`:13`). No new imports.
 
-### Step 2 — same file: widen the `promoteEmployee` call
+## Step 2 — same file: widen the `promoteEmployee` call
 
 Replace `:123-146` (comment + condition + input + the head of the swallow comment).
 
@@ -389,7 +389,7 @@ Replace `:123-146` (comment + condition + input + the head of the swallow commen
 
 Nothing else in the `catch` changes: the match is still on `NO_CHANGE_STATUS` + `NO_CHANGE_MESSAGE` (`:148`).
 
-### Step 3 — same file: the 202 comment
+## Step 3 — same file: the 202 comment
 
 Replace `:160-162`.
 
@@ -412,7 +412,7 @@ Replace `:160-162`.
 
 Comment only. The `if (proposalId)` branch (`:163-165`) is unchanged: `AWAITING_CONFIRMATION` (`employees.ts:664-665`) is already domain-neutral wording.
 
-### Step 4 — `specs/001-hris-platform/contracts/employees.md`: the two endpoint blocks this change touches
+## Step 4 — `specs/001-hris-platform/contracts/employees.md`: the two endpoint blocks this change touches
 
 Replace `:83-105` (the `PATCH` block through the end of the offboard block). Markdown only.
 
@@ -484,7 +484,7 @@ Mark employee as offboarded.
 
 _Droppable without any code dependency if the reviewer prefers the drift as its own issue._
 
-### Step 5 — service layer: **verify only, no edit**
+## Step 5 — service layer: **verify only, no edit**
 
 Re-read and confirm, do not change:
 
@@ -571,7 +571,7 @@ Either way the `:204-212` cross-tenant case keeps asserting **404** with **no wr
 CI (`.github/workflows/ci.yml`, `quality` job): install → `prisma generate` → `format:check` → `lint` → `check` → `test`. Format gates everything after it.
 
 ```bash
-cd /home/hyuse/Desktop/VeentApps/veent_hris
+cd <repo-root>
 
 # 0. only if deps are stale (Node 22 + corepack pnpm, per the local-dev notes)
 corepack pnpm install --frozen-lockfile
@@ -614,6 +614,11 @@ Re-verified at `98ea3df`, against the actual branch, not the RESEARCH text:
 - **After Step 1:** the field goes to `promoteEmployee:955`, whose condition is `input.reportsToId !== undefined && input.reportsToId !== employee.reportsToId`. `'' !== undefined` and `'' !== null` ⇒ `assertManagerInOrg('', org, id)` ⇒ `'' !== selfId` ⇒ `db.employee.findFirst({ where: { id: '', … } })` ⇒ Prisma returns `null` for a non-matching id (it does not throw) ⇒ `error(404, 'Manager not found')` ⇒ clean **404**.
 
 **Closed on every reachable path, by the routing change, with no schema change and no `.min(1)`.** Test case 9 pins it. The residual falsy-skip inside `updateEmployee` is documented in the PR and **not** edited (§4.5 alternative I): after Step 1 nothing reaches it, the outcome is a 500 on a forged empty FK rather than an authorization failure, and #235's code was committed hours ago.
+
+> **Superseded in review (PR #268).** CodeRabbit flagged the truthiness guards anyway, so both
+> falsy-skips were closed after all: `createEmployee` and `updateEmployee` now test
+> `input.reportsToId !== undefined`, matching `promoteEmployee`. The routing argument above still
+> holds — this is defence in depth for the non-PATCH callers, not a fix for a reachable 500.
 
 ### 6.6 Optional live verification (not a gate)
 
@@ -755,7 +760,7 @@ and it is entirely #266's (a test written against the wrong floor semantics), wh
 
 ## 11.3 The order — and why "first" and "last" are what they are
 
-```
+```text
 1.  #264   .strict() on updateSchema                    (+server.ts:20-39)
 2.  #266   the conditional hire-date floor              (employees.ts, promoteEmployee)
 3.  #263   the core fix — Steps 1-3 + the new test file (+server.ts:95-165)
@@ -883,7 +888,7 @@ either, and both carve-outs behave exactly as §5 Steps 1–2 specify.**
 
 `updateSchema`'s exact field list at `98ea3df` (`+server.ts:20-39`), 15 keys:
 
-```
+```text
 firstName · lastName · middleName · contactPhone · contactAddress · departmentId · jobTitle
 employmentType · employmentStatus · basicMonthlySalary · rateType
 sssNumber · philhealthNumber · pagibigNumber · tinNumber · reportsToId
@@ -1030,7 +1035,7 @@ touch … `promoteEmployee`", which §18 rewrites.
 
 The function's execution order today, which the rest of this section depends on:
 
-```
+```text
 :904  getEmployee
 :906  eff / today
 :908  ── the floor ──────────────────────── unconditional
@@ -1101,7 +1106,7 @@ if (changes.length > 0) {
 
 and `HISTORY_FIELDS` (`:108-118`):
 
-```
+```text
 jobTitle · departmentId · positionId · basicMonthlySalary · rateType · employmentType
 employmentStatus · workScheduleId · branchId
 ```
@@ -1818,7 +1823,7 @@ call site plus one regression case; no more, because all four exercise the same 
 §6.4's commands stand; the inner-loop file list grows by two, and there are now per-commit gates.
 
 ```bash
-cd /home/hyuse/Desktop/VeentApps/veent_hris
+cd <repo-root>
 
 # ── after commit 1 (#264) ────────────────────────────────────────────────
 pnpm exec vitest run \
@@ -2013,7 +2018,7 @@ five checkpoints rather than two, and is why §17.6 lists it in commit 1's inner
 
 **This supersedes §10.** 28 steps. Run in order; the numbered commits are §20's.
 
-### Setup
+## Setup
 
 1. Confirm the working tree: `git status` clean on `fix/reports-to-org-scoping-235`,
    `git rev-parse HEAD` == `98ea3df…`. **Do not create a branch. Do not touch `staging`.** Nothing
@@ -2024,7 +2029,7 @@ five checkpoints rather than two, and is why §17.6 lists it in commit 1's inner
    `action-proposals.ts:29-33`, `:170-174`, `:224`, `:262-264`. If any has drifted, **stop** — the
    line numbers came from a clean tree and a drifted one means something else has landed.
 
-### Commit 1 — #264
+## Commit 1 — #264
 
 3. `+server.ts` — wrap `updateSchema`'s object in `z.object({…}).strict()` and add the two-paragraph
    comment above it, per **§12.3**. Field definitions are byte-identical; only the wrapper, the
@@ -2037,7 +2042,7 @@ five checkpoints rather than two, and is why §17.6 lists it in commit 1's inner
    the one that proves the parse gate precedes every query — read it, don't just watch it go green.
 6. **Commit 1.**
 
-### Commit 2 — #266
+## Commit 2 — #266
 
 7. `employees.ts` — **Hunk 1**: delete the `if` at `:908-910`, keeping `const eff` and `const today`
    (both are used five more times). **Hunk 2**: insert the gated floor immediately above the
@@ -2059,7 +2064,7 @@ five checkpoints rather than two, and is why §17.6 lists it in commit 1's inner
     `promoteEmployee` calls now run through the moved floor.
 12. **Commit 2.**
 
-### Commit 3 — #263 core
+## Commit 3 — #263 core
 
 13. `+server.ts` — add `employmentStatus` and `reportsToId` to the destructure at `:102`, extend the
     block comment, and insert the `employmentStatus` 400 immediately after, **before**
@@ -2085,12 +2090,12 @@ five checkpoints rather than two, and is why §17.6 lists it in commit 1's inner
     against a subtly wrong fix — read their assertions.
 21. **Commit 3.**
 
-### Commit 4 — the spec doc
+## Commit 4 — the spec doc
 
 22. `specs/001-hris-platform/contracts/employees.md:83-105` — replace the PATCH and offboard blocks
     per **§5 Step 4**. Markdown only. _(Droppable; if dropped, drop PR point 9 too.)_ **Commit 4.**
 
-### Commit 5 — #265
+## Commit 5 — #265
 
 23. `action-proposals.ts` — add `DOMAIN_NOUN` after `confirmerCapabilityFor`, and convert the three
     messages to template literals, per **§14.3**. `pending.domain` is available at both consumer
@@ -2099,7 +2104,7 @@ five checkpoints rather than two, and is why §17.6 lists it in commit 1's inner
     `const { notifyMany } = await import('$lib/server/services/notifications')` line. Case B is the
     regression half — the `COMPENSATION` copy must not move. Run commit 5's gate. **Commit 5.**
 
-### Ship
+## Ship
 
 25. Full gate at the tip, in CI order: `pnpm format:check` → `pnpm lint` → `pnpm check` →
     `pnpm test`, all green. `format:check` **will** flag the re-indented `updateSchema` if prettier

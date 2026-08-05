@@ -91,8 +91,9 @@ is additionally scoped to their own team and the branches they manage (#228).
 
 - `basicMonthlySalary`, `rateType`, `employmentType` — effective-dated; recorded as snapshots by the
   promotion writer, never written onto the employee row (#170 / #222).
-- `reportsToId` — routed through the same writer, so a change filed by a `MANAGER`, or by anyone on
-  their own record, needs a second authorized person to confirm it (#224 / #243 / #263).
+- `reportsToId` — routed through the same writer, so a change filed by an actor without
+  `ADMINISTER_HR_ORGWIDE` (a bare `MANAGER`), or by anyone on their own record, needs a second
+  authorized person to confirm it (#224 / #243 / #263).
 - `employmentStatus` — **rejected with 400.** Offboarding goes through the action below, which also
   records the end date and deactivates the login.
 
