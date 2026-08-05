@@ -15,13 +15,19 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!canViewHrReports && !canAny(roles, 'VIEW_PAYROLL_REPORTS'))
 		error(403, 'Insufficient permissions')
 
+	// #249: the summary is pre-aggregated run totals, so an employee allow-list cannot filter it the
+	// way `reports/[type]` filters the five per-employee reports. MANAGER holds VIEW_PAYROLL_REPORTS
+	// (#133) but is scoped to their reporting line on every other pay surface, so gate it on the
+	// org-wide capability rather than ship them the whole organization's payroll bill.
+	const canViewPayOrgwide = canAny(roles, 'VIEW_PAY_ORGWIDE')
+
 	const year = parseInt(url.searchParams.get('year') ?? String(new Date().getFullYear()))
 	const orgId = locals.user!.organizationId
 
 	const [headcountByDept, leaveUtilization, payrollSummary, attrition] = await Promise.all([
 		canViewHrReports ? getHeadcountByDepartment(orgId) : Promise.resolve([]),
 		canViewHrReports ? getLeaveUtilizationReport(orgId, year) : Promise.resolve([]),
-		getPayrollSummaryReport(orgId, year),
+		canViewPayOrgwide ? getPayrollSummaryReport(orgId, year) : Promise.resolve([]),
 		canViewHrReports
 			? getAttritionReport(orgId, year)
 			: Promise.resolve({ hired: 0, offboarded: 0 })
