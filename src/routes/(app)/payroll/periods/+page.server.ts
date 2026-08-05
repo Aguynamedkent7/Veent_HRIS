@@ -1,6 +1,6 @@
 import { fail } from '@sveltejs/kit'
 import { z } from 'zod'
-import { can, requireCapability, requirePayrollManage } from '$lib/server/rbac'
+import { canAny, requireAnyCapability, requirePayrollManage } from '$lib/server/rbac'
 import {
 	listPeriods,
 	openPeriod,
@@ -16,7 +16,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	requirePayrollManage(locals.user!.role)
 	return {
 		periods: await listPeriods(locals.user!.organizationId),
-		canVoid: can(locals.user!.role, 'OVERRIDE_FINALIZED')
+		canVoid: canAny(locals.user!.roles, 'OVERRIDE_FINALIZED')
 	}
 }
 
@@ -26,6 +26,7 @@ function ctxOf(event: RequestEvent) {
 		organizationId: user.organizationId,
 		actorId: user.id,
 		actorRole: user.role,
+		actorRoles: user.roles,
 		ipAddress: event.getClientAddress()
 	}
 }
@@ -110,7 +111,7 @@ export const actions: Actions = {
 	},
 
 	void: async (event) => {
-		requireCapability(event.locals.user!.role, 'OVERRIDE_FINALIZED')
+		requireAnyCapability(event.locals.user!.roles, 'OVERRIDE_FINALIZED')
 		const id = (await event.request.formData()).get('id') as string
 		try {
 			await voidPeriod(id, event.locals.user!.organizationId, ctxOf(event))

@@ -17,12 +17,22 @@ import type { Role } from '@prisma/client'
  * amortization-reversal transaction to learn that would be disproportionate — while the real
  * implementations are pulled in separately below to pin the guard itself. `voidRun` is left real
  * throughout, so the API twin above it runs the real check.
+ *
+ * #256 adds the other half. Every enforcement point above now judges the FULL role set, so each
+ * gets three more cases: a multi-role actor whose authority comes only from a secondary role is
+ * admitted (the fix), the write is asserted to have actually happened (a guard that silently
+ * no-ops would pass a bare `resolves`), and a ctx that omitted `actorRoles` still refuses — the
+ * fallback degrades to `[actorRole]`, i.e. CLOSED, never open.
  */
 
 const { dbMock, periodsMock, attendanceMock } = vi.hoisted(() => ({
 	dbMock: {
 		payrollRun: { findFirst: vi.fn(), update: vi.fn() },
-		employee: { findMany: vi.fn(), findUnique: vi.fn() }
+		employee: { findMany: vi.fn(), findUnique: vi.fn() },
+		// Only the first lookup each real service makes past its guard — enough to tell "refused"
+		// from "admitted" without standing up voidPeriod's amortization-reversal transaction.
+		payrollPeriod: { findFirst: vi.fn() },
+		attendanceDay: { updateMany: vi.fn() }
 	},
 	periodsMock: {
 		listPeriods: vi.fn(),
@@ -60,22 +70,44 @@ const { actions: periodActions } =
 const { actions: attendanceActions } =
 	await import('../../src/routes/(app)/attendance/+page.server')
 
-const user = (role: Role) => ({ id: 'u1', organizationId: 'org1', role })
-const ctx = (role: Role) => ({ organizationId: 'org1', actorId: 'u1', actorRole: role })
+const user = (role: Role, roles: Role[] = [role]) => ({
+	id: 'u1',
+	organizationId: 'org1',
+	role,
+	roles
+})
+const ctx = (role: Role, roles: Role[] = [role]) => ({
+	organizationId: 'org1',
+	actorId: 'u1',
+	actorRole: role,
+	actorRoles: roles
+})
+
+/**
+ * #256: the authority the actor holds through a SECOND role. Primary role is EMPLOYEE, so nothing
+ * but the full set can admit them — which is the whole point of the widening.
+ */
+const SECONDARY: Role[] = ['EMPLOYEE', 'SUPER_ADMIN']
+
+/**
+ * A ctx from a builder that forgot `actorRoles` — `AuditContext.actorRoles` is optional, so this
+ * is reachable, and the fallback must judge `[actorRole]` alone rather than admitting anyone.
+ */
+const ctxWithoutRoles = (role: Role) => ({ organizationId: 'org1', actorId: 'u1', actorRole: role })
 
 /** A form-action event; `body` becomes the POSTed fields. */
-const formEvent = (role: Role, body: Record<string, string> = {}) =>
+const formEvent = (role: Role, body: Record<string, string> = {}, roles: Role[] = [role]) =>
 	({
-		locals: { user: user(role) },
+		locals: { user: user(role, roles) },
 		request: { formData: async () => new Map(Object.entries(body)) },
 		getClientAddress: () => 'test'
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	}) as any
 
 /** An API event for POST /:id?action=void. */
-const apiEvent = (role: Role) =>
+const apiEvent = (role: Role, roles: Role[] = [role]) =>
 	({
-		locals: { user: user(role) },
+		locals: { user: user(role, roles) },
 		params: { id: 'x1' },
 		url: new URL('http://localhost/?action=void'),
 		request: { json: async () => ({}) },
@@ -89,6 +121,10 @@ beforeEach(() => {
 	vi.clearAllMocks()
 	dbMock.payrollRun.findFirst.mockResolvedValue({ id: 'x1', status: 'APPROVED' })
 	dbMock.payrollRun.update.mockResolvedValue({ id: 'x1', status: 'VOIDED' })
+	// No such period: an admitted caller gets 404 from the lookup, which distinguishes it from the
+	// 403 a refused one never gets past.
+	dbMock.payrollPeriod.findFirst.mockResolvedValue(null)
+	dbMock.attendanceDay.updateMany.mockResolvedValue({ count: 3 })
 })
 
 describe('voiding a payroll run (#224)', () => {
@@ -105,6 +141,30 @@ describe('voiding a payroll run (#224)', () => {
 
 	it('denies the CEO through the v1 API twin', async () => {
 		expect((await runApi(apiEvent('CEO'))).status).toBe(403)
+	})
+
+	it('admits an actor holding SUPER_ADMIN as a secondary role, and voids (#256)', async () => {
+		await expect(voidRun('x1', 'org1', ctx('EMPLOYEE', SECONDARY))).resolves.toMatchObject({
+			status: 'VOIDED'
+		})
+		expect(dbMock.payrollRun.update).toHaveBeenCalled()
+	})
+
+	it('refuses when the ctx omitted actorRoles — the fallback judges [actorRole] alone', async () => {
+		await expect(voidRun('x1', 'org1', ctxWithoutRoles('EMPLOYEE'))).rejects.toMatchObject({
+			status: 403
+		})
+		expect(dbMock.payrollRun.findFirst).not.toHaveBeenCalled()
+	})
+
+	it('still allows a single-role Super Admin through the v1 API twin', async () => {
+		expect((await runApi(apiEvent('SUPER_ADMIN'))).status).toBe(200)
+		expect(dbMock.payrollRun.update).toHaveBeenCalled()
+	})
+
+	it('admits the secondary-role actor through the v1 API twin (#256)', async () => {
+		expect((await runApi(apiEvent('EMPLOYEE', SECONDARY))).status).toBe(200)
+		expect(dbMock.payrollRun.update).toHaveBeenCalled()
 	})
 })
 
@@ -124,6 +184,31 @@ describe('voiding a payroll period (#224)', () => {
 	it('denies the CEO through the v1 API twin', async () => {
 		expect((await periodApi(apiEvent('CEO'))).status).toBe(403)
 		expect(periodsMock.voidPeriod).not.toHaveBeenCalled()
+	})
+
+	// The ctx assertion is the other half of the fix: widening the guard alone would let a
+	// secondary-role actor past the route and straight into the service's own 403.
+	it('admits the secondary-role actor on the form action, forwarding the set (#256)', async () => {
+		await periodActions.void!(formEvent('EMPLOYEE', { id: 'p1' }, SECONDARY))
+		expect(periodsMock.voidPeriod).toHaveBeenCalledWith(
+			'p1',
+			'org1',
+			expect.objectContaining({ actorRoles: SECONDARY })
+		)
+	})
+
+	it('admits the secondary-role actor through the v1 API twin, forwarding the set (#256)', async () => {
+		expect((await periodApi(apiEvent('EMPLOYEE', SECONDARY))).status).toBe(200)
+		expect(periodsMock.voidPeriod).toHaveBeenCalledWith(
+			'x1',
+			'org1',
+			expect.objectContaining({ actorRoles: SECONDARY })
+		)
+	})
+
+	it('still allows a single-role Super Admin through the v1 API twin', async () => {
+		expect((await periodApi(apiEvent('SUPER_ADMIN'))).status).toBe(200)
+		expect(periodsMock.voidPeriod).toHaveBeenCalled()
 	})
 })
 
@@ -153,6 +238,17 @@ describe('reopening locked attendance days (#224)', () => {
 		await attendanceActions.lock!(formEvent('HR_ADMIN', RANGE))
 		expect(attendanceMock.lockRange).toHaveBeenCalled()
 	})
+
+	it('admits the secondary-role actor on both, forwarding the set (#256)', async () => {
+		await attendanceActions.unlock!(formEvent('EMPLOYEE', RANGE, SECONDARY))
+		await attendanceActions.unlockTeam!(formEvent('EMPLOYEE', { date: '2026-07-01' }, SECONDARY))
+		expect(attendanceMock.unlockRange).toHaveBeenCalledTimes(2)
+		expect(attendanceMock.unlockRange).toHaveBeenLastCalledWith(
+			'org1',
+			expect.anything(),
+			expect.objectContaining({ actorRoles: SECONDARY })
+		)
+	})
 })
 
 /**
@@ -161,19 +257,64 @@ describe('reopening locked attendance days (#224)', () => {
  * too. The guard runs before any lookup, so nothing below it needs standing up.
  */
 describe('the services refuse a direct unauthorized caller (#224)', () => {
+	const realVoidPeriod = async () =>
+		(
+			await vi.importActual<typeof import('$lib/server/services/payroll/periods')>(
+				'$lib/server/services/payroll/periods'
+			)
+		).voidPeriod
+
+	const realUnlockRange = async () =>
+		(
+			await vi.importActual<typeof import('$lib/server/services/attendance')>(
+				'$lib/server/services/attendance'
+			)
+		).unlockRange
+
+	const RANGE_DATES = { from: new Date('2026-07-01'), to: new Date('2026-07-15') }
+
 	it('voidPeriod denies the CEO', async () => {
-		const { voidPeriod } = await vi.importActual<
-			typeof import('$lib/server/services/payroll/periods')
-		>('$lib/server/services/payroll/periods')
-		await expect(voidPeriod('p1', 'org1', ctx('CEO'))).rejects.toMatchObject({ status: 403 })
+		await expect((await realVoidPeriod())('p1', 'org1', ctx('CEO'))).rejects.toMatchObject({
+			status: 403
+		})
+		expect(dbMock.payrollPeriod.findFirst).not.toHaveBeenCalled()
 	})
 
 	it('unlockRange denies the CEO', async () => {
-		const { unlockRange } = await vi.importActual<typeof import('$lib/server/services/attendance')>(
-			'$lib/server/services/attendance'
-		)
+		await expect((await realUnlockRange())('org1', RANGE_DATES, ctx('CEO'))).rejects.toMatchObject({
+			status: 403
+		})
+		expect(dbMock.attendanceDay.updateMany).not.toHaveBeenCalled()
+	})
+
+	// The fallback is what a ctx builder that forgot `actorRoles` lands on. It must judge
+	// `[actorRole]` — so an actor whose authority lives only in the set is DENIED, not admitted.
+	it('voidPeriod refuses when actorRoles was omitted', async () => {
 		await expect(
-			unlockRange('org1', { from: new Date('2026-07-01'), to: new Date('2026-07-15') }, ctx('CEO'))
+			(await realVoidPeriod())('p1', 'org1', ctxWithoutRoles('EMPLOYEE'))
 		).rejects.toMatchObject({ status: 403 })
+		expect(dbMock.payrollPeriod.findFirst).not.toHaveBeenCalled()
+	})
+
+	it('unlockRange refuses when actorRoles was omitted', async () => {
+		await expect(
+			(await realUnlockRange())('org1', RANGE_DATES, ctxWithoutRoles('EMPLOYEE'))
+		).rejects.toMatchObject({ status: 403 })
+		expect(dbMock.attendanceDay.updateMany).not.toHaveBeenCalled()
+	})
+
+	// 404 rather than 403 is the proof of admission: the guard passed and the lookup ran.
+	it('voidPeriod admits a secondary-role actor (#256)', async () => {
+		await expect(
+			(await realVoidPeriod())('p1', 'org1', ctx('EMPLOYEE', SECONDARY))
+		).rejects.toMatchObject({ status: 404 })
+		expect(dbMock.payrollPeriod.findFirst).toHaveBeenCalled()
+	})
+
+	it('unlockRange admits a secondary-role actor, and unlocks (#256)', async () => {
+		await expect(
+			(await realUnlockRange())('org1', RANGE_DATES, ctx('EMPLOYEE', SECONDARY))
+		).resolves.toEqual({ unlocked: 3 })
+		expect(dbMock.attendanceDay.updateMany).toHaveBeenCalled()
 	})
 })

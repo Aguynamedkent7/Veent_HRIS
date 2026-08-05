@@ -79,12 +79,15 @@ export const CAPABILITIES = {
 	 * Overriding a record the system already finalized: voiding a payroll run or period, and
 	 * reopening attendance days that were locked. Super Admin only, deliberately (#224).
 	 *
-	 * These are the operations that survive separation of duties even after the CEO gained
-	 * system administration. Each one unmakes a record some earlier step signed off, and leaves
-	 * nothing behind to approve — so the authority to perform it must not sit with the authority
-	 * that finalized it. The CEO approves payroll (APPROVE_FINANCE) and runs it (MANAGE_PAYROLL);
-	 * letting the same role also void it would close the loop and leave no second pair of eyes.
-	 * Add a role here only if it holds neither side of the record it would be overriding.
+	 * This is a NARROWNESS control, not a separation-of-duties one. It does not achieve separation
+	 * and never did: SUPER_ADMIN holds MANAGE_PAYROLL and APPROVE_FINANCE below as well as this, so
+	 * one Super Admin can already run, approve AND void the same payroll. What the capability buys
+	 * is that the irreversible operations were split OUT of ADMINISTER_SYSTEM, so granting the CEO
+	 * routine administration in #224 did not hand them these along with it.
+	 *
+	 * Keep the list as small as these operations are irreversible. Real separation of duties would
+	 * need a holder that holds neither MANAGE_PAYROLL nor APPROVE_FINANCE, and belongs with #133's
+	 * multi-role work rather than with this list.
 	 */
 	OVERRIDE_FINALIZED: ['SUPER_ADMIN'],
 	/** Changing a user's role — CEO exclusively (#132), across every tenant. */

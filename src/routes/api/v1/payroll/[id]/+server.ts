@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit'
 import { canAny } from '$lib/rbac'
-import { requireCapability, requirePayrollManage } from '$lib/server/rbac'
+import { requireAnyCapability, requirePayrollManage } from '$lib/server/rbac'
 import { getRunWithEntries, voidRun } from '$lib/server/services/payroll/runs'
 import { decidePayrollRun } from '$lib/server/services/approvals'
 import { apiError } from '$lib/server/api-error'
@@ -68,7 +68,7 @@ export const POST: RequestHandler = async ({ locals, params, url }) => {
 
 	if (action === 'void') {
 		try {
-			requireCapability(user.role, 'OVERRIDE_FINALIZED')
+			requireAnyCapability(user.roles, 'OVERRIDE_FINALIZED')
 		} catch {
 			return apiError(403, 'Insufficient permissions')
 		}
@@ -76,7 +76,8 @@ export const POST: RequestHandler = async ({ locals, params, url }) => {
 		const run = await voidRun(params.id, user.organizationId, {
 			organizationId: user.organizationId,
 			actorId: user.id,
-			actorRole: user.role
+			actorRole: user.role,
+			actorRoles: user.roles
 		})
 		return json({ data: run })
 	}

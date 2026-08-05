@@ -1,7 +1,7 @@
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
-import { requireCapability } from '$lib/server/rbac'
+import { requireAnyCapability } from '$lib/server/rbac'
 import { sum } from './money'
 import type { AuditContext } from '../types'
 
@@ -90,7 +90,10 @@ export async function getRunWithEntries(
 // approving flagged entries is the opposite of what the flag is for.
 
 export async function voidRun(id: string, organizationId: string, ctx: AuditContext) {
-	requireCapability(ctx.actorRole, 'OVERRIDE_FINALIZED')
+	requireAnyCapability(
+		ctx.actorRoles?.length ? ctx.actorRoles : [ctx.actorRole],
+		'OVERRIDE_FINALIZED'
+	)
 
 	const run = await db.payrollRun.findFirst({ where: { id, organizationId } })
 	if (!run) error(404, 'Payroll run not found')

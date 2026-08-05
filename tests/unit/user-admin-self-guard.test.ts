@@ -63,6 +63,39 @@ beforeEach(() => {
 })
 
 describe('setUserRole', () => {
+	// #256: the writer had NO capability check — its only enforcement was the two routes, which
+	// makes MANAGE_USER_ROLES the one self-amplifying capability (it can grant itself) guarded
+	// solely at the route layer. Now checked here, on the full role set, above everything else.
+	it('refuses an actor who does not hold MANAGE_USER_ROLES', async () => {
+		await expect(
+			setUserRole('user-other', 'org1', 'MANAGER', { ...CTX, actorRole: 'SUPER_ADMIN' })
+		).rejects.toMatchObject({ status: 403 })
+		expect(dbMock.$transaction).not.toHaveBeenCalled()
+		expect(txMock.user.update).not.toHaveBeenCalled()
+	})
+
+	// The capability check runs BEFORE the self-check, so an unauthorized caller cannot use a
+	// self-targeted call to distinguish "you may not" from anything about the target at all.
+	it('refuses an unauthorized actor without any lookup, even targeting themselves', async () => {
+		await expect(
+			setUserRole(ACTOR, 'org1', 'MANAGER', { ...CTX, actorRole: 'EMPLOYEE' })
+		).rejects.toMatchObject({ status: 403 })
+		expect(dbMock.$transaction).not.toHaveBeenCalled()
+		expect(txMock.user.findFirst).not.toHaveBeenCalled()
+	})
+
+	// #256's fix: the authority is CEO, held as a secondary role.
+	it('admits an actor holding CEO through the role set (#256)', async () => {
+		await expect(
+			setUserRole('user-other', 'org1', 'MANAGER', {
+				...CTX,
+				actorRole: 'EMPLOYEE',
+				actorRoles: ['EMPLOYEE', 'CEO']
+			})
+		).resolves.toBeDefined()
+		expect(txMock.user.update).toHaveBeenCalled()
+	})
+
 	it('refuses to change the actor’s own role', async () => {
 		await expect(setUserRole(ACTOR, 'org1', 'SUPER_ADMIN', CTX)).rejects.toMatchObject({
 			status: 403,
