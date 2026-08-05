@@ -1,5 +1,5 @@
 import { fail, isHttpError } from '@sveltejs/kit'
-import { can, requireAnyMinRole, requireAnyCapability } from '$lib/server/rbac'
+import { canAny, requireAnyMinRole, requireAnyCapability } from '$lib/server/rbac'
 import { failFromError } from '$lib/server/form-fail'
 import { assertCanTouchEmployee } from '$lib/server/services/employee-access'
 import {
@@ -87,7 +87,7 @@ function ctxOf(locals: App.Locals, ip: string) {
 export const load: PageServerLoad = async ({ locals, params }) => {
 	requireAnyMinRole(locals.user!.roles, 'MANAGER')
 
-	const canManage = can(locals.user!.role, 'MANAGE_HR')
+	const canManage = canAny(locals.user!.roles, 'MANAGE_HR')
 
 	const employee = await getEmployee(params.id, locals.user!.organizationId, {
 		viewerRole: locals.user!.role
@@ -166,7 +166,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 
 	// #111: every sensitive field (gov IDs, salary, disbursement) leaves the server masked —
 	// full values are only obtainable through the audited ?/reveal action below.
-	const canReveal = can(locals.user!.role, 'MANAGE_HR')
+	const canReveal = canAny(locals.user!.roles, 'MANAGE_HR')
 
 	// Additional supervisors (#176) — shown to everyone, editable by HR. The picker offers
 	// every other active employee in the org (minus the primary manager, handled server-side).

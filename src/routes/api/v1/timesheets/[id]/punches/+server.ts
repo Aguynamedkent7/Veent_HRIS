@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
-import { ROLE_HIERARCHY } from '$lib/server/rbac'
+import { hasAnyMinRole } from '$lib/server/rbac'
 import { listPunches } from '$lib/server/services/timelog'
 import { apiError } from '$lib/server/api-error'
 import type { RequestHandler } from './$types'
@@ -25,7 +25,7 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
 
 	// HR_ADMIN and above see any employee's punches; otherwise the caller must be
 	// the owner or the owner's direct manager.
-	const isHrOrAbove = ROLE_HIERARCHY[user.role] >= ROLE_HIERARCHY.HR_ADMIN
+	const isHrOrAbove = hasAnyMinRole(user.roles, 'HR_ADMIN')
 	if (!isHrOrAbove) {
 		const requester = await db.employee.findUnique({
 			where: { userId: user.id },

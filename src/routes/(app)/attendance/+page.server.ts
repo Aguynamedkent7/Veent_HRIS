@@ -1,7 +1,7 @@
 import { fail } from '@sveltejs/kit'
 import { z } from 'zod'
 import { db } from '$lib/server/db'
-import { can, canAny, requireAnyMinRole, requireAnyCapability } from '$lib/server/rbac'
+import { canAny, requireAnyMinRole, requireAnyCapability } from '$lib/server/rbac'
 import {
 	countAttendanceDays,
 	listAttendanceDays,
@@ -33,7 +33,7 @@ function clampRange(fromKey: string, toKey: string) {
 
 export const load: PageServerLoad = async ({ locals, url, getClientAddress }) => {
 	const user = locals.user!
-	const canManage = can(user.role, 'MANAGE_HR')
+	const canManage = canAny(user.roles, 'MANAGE_HR')
 	const canUnlock = canAny(user.roles, 'OVERRIDE_FINALIZED') // reopening locked days is privileged
 
 	const today = manilaDayKey(new Date())

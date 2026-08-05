@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit'
-import { can, requireAnyCapability } from '$lib/server/rbac'
+import { canAny, requireAnyCapability } from '$lib/server/rbac'
 import { listJobPostings, createJobPosting } from '$lib/server/services/recruitment'
 import { apiError, badRequest, forbidden } from '$lib/server/api-error'
 import { z } from 'zod'
@@ -21,7 +21,7 @@ export const GET: RequestHandler = async ({ locals }) => {
 
 	const user = locals.user
 	// EMPLOYEE sees OPEN only; HR_ADMIN and above see all
-	const isHrAdmin = can(user.role, 'MANAGE_HR')
+	const isHrAdmin = canAny(user.roles, 'MANAGE_HR')
 
 	const postings = await listJobPostings(user.organizationId, isHrAdmin ? undefined : 'OPEN')
 

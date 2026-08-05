@@ -481,7 +481,8 @@ async function allocateAndCreate(
 						organizationId,
 						email: input.email,
 						passwordHash,
-						role: input.role
+						role: input.role,
+						roles: [input.role]
 					}
 				})
 

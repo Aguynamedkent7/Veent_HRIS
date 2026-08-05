@@ -15,7 +15,7 @@ import {
 	generateBIRWithholding
 } from '$lib/server/services/reports'
 import { generateSeparationReport } from '$lib/server/services/separation'
-import { canViewPayrollReports } from '$lib/server/rbac'
+import { canAny } from '$lib/server/rbac'
 import type { PageServerLoad } from './$types'
 
 const VALID_TYPES = [
@@ -53,7 +53,7 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 	// `null` = unrestricted, which is what the org-wide payroll roles get.
 	let visiblePayIds: string[] | null = null
 	if (PAYROLL_REPORT_TYPES.includes(type)) {
-		if (!canViewPayrollReports(user.role)) error(403, 'Insufficient permissions')
+		if (!canAny(user.roles, 'VIEW_PAYROLL_REPORTS')) error(403, 'Insufficient permissions')
 		visiblePayIds = await listVisiblePayEmployeeIds({
 			id: user.id,
 			role: user.role,

@@ -48,7 +48,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	return {
 		posting,
 		applicants,
-		userRole: user.role,
+		userRoles: user.roles,
 		boards,
 		postedCount: boards.filter((b) => b.live).length,
 		boardCount: boards.length,

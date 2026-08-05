@@ -2,7 +2,7 @@ import { error } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
 import { isPayslipVisible } from '$lib/server/services/payroll/runs'
 import { canReadPayslip } from '$lib/server/services/payroll/payslip-fetch'
-import { canViewPayrollReports } from '$lib/server/rbac'
+import { canAny } from '$lib/server/rbac'
 import type { PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals, params }) => {
@@ -47,7 +47,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		error(403, 'Access denied')
 	}
 	// Draft visibility keeps its own, broader rule, matching `fetchPayslipDocument`.
-	if (!canViewPayrollReports(user.role) && !isPayslipVisible(entry.payrollRun)) {
+	if (!canAny(user.roles, 'VIEW_PAYROLL_REPORTS') && !isPayslipVisible(entry.payrollRun)) {
 		error(403, 'Payslip not yet available')
 	}
 

@@ -1,5 +1,5 @@
 import { fail, isHttpError, redirect } from '@sveltejs/kit'
-import { can, requireAnyCapability, requireAnyMinRole } from '$lib/server/rbac'
+import { canAny, requireAnyCapability, requireAnyMinRole } from '$lib/server/rbac'
 import {
 	countTimesheets,
 	listTimesheets,
@@ -23,8 +23,8 @@ import type { Actions, PageServerLoad, RequestEvent } from './$types'
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	const user = locals.user!
-	const isManager = can(user.role, 'VIEW_TEAM')
-	const isHrAdmin = can(user.role, 'MANAGE_HR')
+	const isManager = canAny(user.roles, 'VIEW_TEAM')
+	const isHrAdmin = canAny(user.roles, 'MANAGE_HR')
 	// #165: /timesheets is view-only for the Employee role — they read their own sheets,
 	// but creating/submitting/deleting is the manager ladder's (HR aggregates from punches
 	// and submits drafts on their behalf). Mirrors the `requireModify` gate on the actions.

@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
 import { createRequest, listRequests } from '$lib/server/services/requests'
 import { requestSchema } from '$lib/server/schemas/requests'
-import { ROLE_HIERARCHY } from '$lib/server/rbac'
+import { hasAnyMinRole } from '$lib/server/rbac'
 import type { RequestHandler } from './$types'
 
 export const GET: RequestHandler = async ({ locals, url }) => {
@@ -10,7 +10,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	const user = locals.user
 
 	// Non-managers only ever see their own requests.
-	const isManager = ROLE_HIERARCHY[user.role] >= ROLE_HIERARCHY.MANAGER
+	const isManager = hasAnyMinRole(user.roles, 'MANAGER')
 	const myEmployee = await db.employee.findUnique({
 		where: { userId: user.id },
 		select: { id: true }

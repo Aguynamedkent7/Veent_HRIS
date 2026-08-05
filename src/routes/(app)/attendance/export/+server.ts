@@ -1,4 +1,4 @@
-import { can } from '$lib/server/rbac'
+import { canAny } from '$lib/server/rbac'
 import { error } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
 import { listAttendanceDays, listTeamDay } from '$lib/server/services/attendance'
@@ -25,7 +25,7 @@ const num = (x: unknown) => Number(x).toFixed(2)
 export const GET: RequestHandler = async ({ locals, url }) => {
 	if (!locals.user) error(401, 'Unauthorized')
 	const user = locals.user
-	const canManage = can(user.role, 'MANAGE_HR')
+	const canManage = canAny(user.roles, 'MANAGE_HR')
 	const view = canManage && url.searchParams.get('view') === 'team' ? 'team' : 'employee'
 	const today = manilaDayKey(new Date())
 
