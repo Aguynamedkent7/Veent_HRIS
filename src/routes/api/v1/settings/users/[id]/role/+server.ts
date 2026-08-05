@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit'
 import { z } from 'zod'
 import { ASSIGNABLE_ROLES } from '$lib/rbac'
-import { requireCapability } from '$lib/server/rbac'
+import { requireAnyCapability } from '$lib/server/rbac'
 import { setUserRole } from '$lib/server/services/settings/org'
 import type { RequestHandler } from './$types'
 
@@ -18,7 +18,7 @@ export const PATCH: RequestHandler = async ({ locals, params, request, getClient
 	if (!locals.user) error(401, 'Unauthorized')
 	const user = locals.user
 	// Role changes are CEO-exclusive (#132) — Super Admin / HR Admin no longer qualify.
-	requireCapability(user.role, 'MANAGE_USER_ROLES')
+	requireAnyCapability(user.roles, 'MANAGE_USER_ROLES')
 
 	const parsed = roleSchema.safeParse(await request.json())
 	if (!parsed.success) error(422, parsed.error.errors[0]?.message ?? 'Invalid role')
@@ -27,6 +27,7 @@ export const PATCH: RequestHandler = async ({ locals, params, request, getClient
 		organizationId: user.organizationId,
 		actorId: user.id,
 		actorRole: user.role,
+		actorRoles: user.roles,
 		ipAddress: getClientAddress()
 	})
 	return json({ data: { id: updated.id, role: updated.role } })

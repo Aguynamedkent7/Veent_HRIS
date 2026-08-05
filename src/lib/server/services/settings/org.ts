@@ -1,6 +1,7 @@
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
+import { requireAnyCapability } from '$lib/server/rbac'
 import type { AuditContext } from '../types'
 import { Prisma, type Role } from '@prisma/client'
 
@@ -231,6 +232,17 @@ export async function setUserRole(
 	newRole: Role,
 	ctx: AuditContext
 ) {
+	// GUARDRAIL: the caller must actually hold MANAGE_USER_ROLES. This writer had no capability
+	// check at all — its sole enforcement was the two routes, which makes it the one self-amplifying
+	// capability (it can grant itself) guarded only at the route layer. First statement on purpose,
+	// above the self-check: an unauthorized caller must not learn whether the target exists or what
+	// role they hold. `actorRoles` is optional on AuditContext, so it falls back to `[actorRole]`
+	// and fails closed.
+	requireAnyCapability(
+		ctx.actorRoles?.length ? ctx.actorRoles : [ctx.actorRole],
+		'MANAGE_USER_ROLES'
+	)
+
 	// GUARDRAIL: separation of duties — nobody sets their own role. This lived in the roles form
 	// action and again in the v1 PATCH twin, but never in this writer, so the protection was two
 	// copies of a rule the service itself did not know: a third caller would have inherited none of

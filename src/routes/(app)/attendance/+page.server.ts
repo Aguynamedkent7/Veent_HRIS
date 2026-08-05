@@ -1,7 +1,7 @@
 import { fail } from '@sveltejs/kit'
 import { z } from 'zod'
 import { db } from '$lib/server/db'
-import { can, requireMinRole, requireCapability } from '$lib/server/rbac'
+import { can, canAny, requireMinRole, requireAnyCapability } from '$lib/server/rbac'
 import {
 	countAttendanceDays,
 	listAttendanceDays,
@@ -34,7 +34,7 @@ function clampRange(fromKey: string, toKey: string) {
 export const load: PageServerLoad = async ({ locals, url, getClientAddress }) => {
 	const user = locals.user!
 	const canManage = can(user.role, 'MANAGE_HR')
-	const canUnlock = can(user.role, 'OVERRIDE_FINALIZED') // reopening locked days is privileged
+	const canUnlock = canAny(user.roles, 'OVERRIDE_FINALIZED') // reopening locked days is privileged
 
 	const today = manilaDayKey(new Date())
 	const rawFrom = url.searchParams.get('from') ?? manilaDayKey(new Date(Date.now() - 13 * DAY_MS))
@@ -124,6 +124,7 @@ function ctxOf(event: RequestEvent) {
 		organizationId: u.organizationId,
 		actorId: u.id,
 		actorRole: u.role,
+		actorRoles: u.roles,
 		ipAddress: event.getClientAddress()
 	}
 }
@@ -228,7 +229,7 @@ export const actions: Actions = {
 
 	// Reopening locked days overrides a finalized record — Super Admin only, not the CEO (#224).
 	unlock: async (event) => {
-		requireCapability(event.locals.user!.role, 'OVERRIDE_FINALIZED')
+		requireAnyCapability(event.locals.user!.roles, 'OVERRIDE_FINALIZED')
 		const parsed = rangeSchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid range' })
 		if (spanExceeded(parsed.data.from, parsed.data.to))
@@ -245,7 +246,7 @@ export const actions: Actions = {
 	},
 
 	unlockTeam: async (event) => {
-		requireCapability(event.locals.user!.role, 'OVERRIDE_FINALIZED')
+		requireAnyCapability(event.locals.user!.roles, 'OVERRIDE_FINALIZED')
 		const parsed = teamDaySchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid date' })
 		try {
