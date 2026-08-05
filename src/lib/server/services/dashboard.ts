@@ -264,8 +264,13 @@ export async function getManagerMetrics(userId: string, organizationId: string) 
 		}
 	}
 
+	// #259: `reportsToId` alone is not a tenant boundary — a row in another org naming this actor as
+	// its manager would be counted here, leaking that org's pending-approval and headcount totals.
+	// #235 closed the write side, but rows planted before it are still on disk, so the read scopes
+	// itself. Same re-check every other consumer of this relation does (`canTouchEmployee`,
+	// `listVisibleEmployeeIds`).
 	const directReports = await db.employee.findMany({
-		where: { reportsToId: employee.id },
+		where: { reportsToId: employee.id, user: { organizationId } },
 		select: { id: true }
 	})
 	const directReportIds = directReports.map((e) => e.id)
@@ -287,7 +292,8 @@ export async function getManagerMetrics(userId: string, organizationId: string) 
 		db.employee.count({
 			where: {
 				reportsToId: employee.id,
-				employmentStatus: 'ACTIVE'
+				employmentStatus: 'ACTIVE',
+				user: { organizationId }
 			}
 		}),
 		db.auditLog.findMany({
