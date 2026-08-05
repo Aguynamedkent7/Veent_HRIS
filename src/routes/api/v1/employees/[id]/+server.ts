@@ -43,7 +43,9 @@ const updateSchema = z
 		basicMonthlySalary: z.coerce.number().positive().optional(),
 		rateType: z.enum(['MONTHLY', 'DAILY', 'HOURLY']).optional(),
 		// #191: a PATCH only carries the fields the caller intends to change, so anything sent
-		// here is by definition new and is format-checked and stored canonically.
+		// here is by definition new and is format-checked and stored canonically. #267: "sent" is
+		// literal — an omitted field is absent from parsed.data and is never written; an explicit ""
+		// is a request to clear. Both depend on govIdSchema keeping absent and empty distinct.
 		sssNumber: govIdSchema('sssNumber'),
 		philhealthNumber: govIdSchema('philhealthNumber'),
 		pagibigNumber: govIdSchema('pagibigNumber'),
