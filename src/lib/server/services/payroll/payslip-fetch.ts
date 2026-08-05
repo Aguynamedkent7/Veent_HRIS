@@ -6,7 +6,6 @@
 
 import { db } from '$lib/server/db'
 import { canAny } from '$lib/rbac'
-import { canViewPayrollReports } from '$lib/server/rbac'
 import { canTouchEmployee } from '$lib/server/services/employee-access'
 import type { Role } from '@prisma/client'
 import { isPayslipVisible } from './runs'
@@ -118,7 +117,9 @@ export async function fetchPayslipDocument(
 	// "not-yet-approved" gate applies to owners so an employee can't preview an unreleased run,
 	// while payroll-report roles inspect drafts. Narrowing this too would be a second behaviour
 	// change — a MANAGER can already read an unapproved run wholesale at /payroll/[id].
-	const isPrivileged = canViewPayrollReports(ctx.role)
+	// #272 reads the caller's full role set rather than their primary role. That is orthogonal to
+	// the warning above: which roles clear the gate is unchanged, only where we look for them.
+	const isPrivileged = canAny(ctx.roles, 'VIEW_PAYROLL_REPORTS')
 	if (!isPrivileged && !isPayslipVisible(entry.payrollRun)) {
 		return { ok: false, status: 403, message: 'Payslip not yet available' }
 	}

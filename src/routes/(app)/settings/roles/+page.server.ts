@@ -1,7 +1,7 @@
 import { fail, error } from '@sveltejs/kit'
 import { z } from 'zod'
 import { ASSIGNABLE_ROLES } from '$lib/rbac'
-import { can, canAny, requireAnyCapability } from '$lib/server/rbac'
+import { canAny, requireAnyCapability } from '$lib/server/rbac'
 import { failFromError } from '$lib/server/form-fail'
 import { listOrgUsers, setUserRole, setUserActive } from '$lib/server/services/settings/org'
 import type { Actions, PageServerLoad } from './$types'
@@ -12,7 +12,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	// page serves both, so it opens for either capability and the UI shows only the
 	// controls each caller may use.
 	const canManageRoles = canAny(user.roles, 'MANAGE_USER_ROLES')
-	const canManageActive = can(user.role, 'ADMINISTER_SYSTEM')
+	const canManageActive = canAny(user.roles, 'ADMINISTER_SYSTEM')
 	if (!canManageRoles && !canManageActive) error(403, 'Insufficient permissions')
 
 	const users = await listOrgUsers(user.organizationId)

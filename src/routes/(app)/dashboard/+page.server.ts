@@ -2,7 +2,7 @@ import { fail } from '@sveltejs/kit'
 import { z } from 'zod'
 import { db } from '$lib/server/db'
 import { manilaDayKey } from '$lib/utils/dates'
-import { can, requireAnyCapability } from '$lib/server/rbac'
+import { canAny, requireAnyCapability } from '$lib/server/rbac'
 import { listRecentAnnouncements, createAnnouncement } from '$lib/server/services/announcements'
 import { countPendingApprovals } from '$lib/server/services/approvals'
 import { listRecent } from '$lib/server/services/notifications'
@@ -20,12 +20,12 @@ import type { Actions, PageServerLoad } from './$types'
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!
 	const orgId = user.organizationId
-	const canPost = can(user.role, 'MANAGE_HR')
+	const canPost = canAny(user.roles, 'MANAGE_HR')
 	// The "Last Payroll" tile is payroll-report data, not general dashboard info (#132).
-	const canViewPayroll = can(user.role, 'VIEW_PAYROLL_REPORTS')
+	const canViewPayroll = canAny(user.roles, 'VIEW_PAYROLL_REPORTS')
 	// Since #165 employees don't create timesheets, so the quick action would only send them
 	// to a 403. Same capability the /timesheets create action enforces.
-	const canCreateTimesheet = can(user.role, 'MANAGE_HR')
+	const canCreateTimesheet = canAny(user.roles, 'MANAGE_HR')
 
 	// Today's PHT day, stored as the UTC-midnight date key used by AttendanceDay.
 	const todayKey = manilaDayKey(new Date())

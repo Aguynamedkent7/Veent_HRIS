@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit'
-import { ROLE_HIERARCHY, canViewPayrollReports } from '$lib/server/rbac'
+import { canAny, hasAnyMinRole } from '$lib/server/rbac'
 import {
 	getHeadcountByDepartment,
 	getLeaveUtilizationReport,
@@ -9,10 +9,11 @@ import {
 import type { PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals, url }) => {
-	const role = locals.user!.role
+	const roles = locals.user!.roles
 	// HR ladder (Manager+) sees all reports; Payroll Officer / Finance see payroll only.
-	const canViewHrReports = ROLE_HIERARCHY[role] >= ROLE_HIERARCHY.MANAGER
-	if (!canViewHrReports && !canViewPayrollReports(role)) error(403, 'Insufficient permissions')
+	const canViewHrReports = hasAnyMinRole(roles, 'MANAGER')
+	if (!canViewHrReports && !canAny(roles, 'VIEW_PAYROLL_REPORTS'))
+		error(403, 'Insufficient permissions')
 
 	const year = parseInt(url.searchParams.get('year') ?? String(new Date().getFullYear()))
 	const orgId = locals.user!.organizationId
