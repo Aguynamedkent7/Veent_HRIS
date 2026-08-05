@@ -45,6 +45,9 @@ const {
 	confirmerCapabilityFor,
 	listActionableProposals
 } = await import('$lib/server/services/action-proposals')
+// Mocked above but never pulled into scope until #265, which is the first thing here to assert on
+// what a notification actually says rather than merely that one was sent.
+const { notifyMany } = await import('$lib/server/services/notifications')
 
 const CEO_USER = 'user-ceo'
 const TARGET_EMP = 'emp-ceo'
@@ -477,6 +480,71 @@ describe('rejecting', () => {
 			expect.objectContaining({
 				data: expect.objectContaining({ decisionNote: 'over the band for this grade' })
 			})
+		)
+	})
+})
+
+/**
+ * #265 — every one of the three notifications said "pay change" whatever the domain. Wrong since
+ * #222 for a PROMOTION carrying only a job title or a reporting line, and #263 makes that shape
+ * reachable from the v1 PATCH too, so a confirmer was told to approve a raise that is a re-org.
+ * One case per call site, plus the COMPENSATION regression half — all four exercise the same
+ * one-line lookup, so there is no fifth.
+ */
+describe('proposal notifications name the domain (#265)', () => {
+	const promotionInput = {
+		targetEmployeeId: TARGET_EMP,
+		targetUserId: CEO_USER,
+		domain: 'PROMOTION' as const,
+		payload: { reportsToId: 'mgr2' }
+	}
+
+	const pendPromotion = () => {
+		dbMock.actionProposal.findFirst.mockResolvedValue({
+			...onBehalfProposal,
+			domain: 'PROMOTION'
+		})
+		dbMock.employee.findUnique.mockResolvedValue({ userId: CEO_USER })
+	}
+
+	it('calls a promotion a promotion when one is filed', async () => {
+		await createProposal('org1', promotionInput, ctxOf())
+
+		expect(notifyMany).toHaveBeenCalledWith(
+			['user-sa'],
+			'A promotion is waiting for your confirmation.',
+			'/requests/proposals'
+		)
+	})
+
+	it('still calls a pay change a pay change', async () => {
+		// The regression half: the existing copy must not move.
+		await createProposal('org1', { ...promotionInput, domain: 'COMPENSATION' }, ctxOf())
+
+		expect(notifyMany).toHaveBeenCalledWith(
+			['user-sa'],
+			'A pay change is waiting for your confirmation.',
+			'/requests/proposals'
+		)
+	})
+
+	it('names the domain when a proposal is confirmed', async () => {
+		pendPromotion()
+		await confirmProposal('org1', 'p1', vi.fn().mockResolvedValue(undefined), ctxOf())
+
+		expect(notifyMany).toHaveBeenCalledWith(
+			['user-manager'],
+			'Your proposed promotion was confirmed and applied.'
+		)
+	})
+
+	it('names the domain when a proposal is rejected', async () => {
+		pendPromotion()
+		await rejectProposal('org1', 'p1', 'wrong manager', ctxOf())
+
+		expect(notifyMany).toHaveBeenCalledWith(
+			['user-manager'],
+			'Your proposed promotion was rejected: wrong manager'
 		)
 	})
 })

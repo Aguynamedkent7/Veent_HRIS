@@ -62,10 +62,10 @@ export async function canTouchEmployee(
 	if (!isReport && managedBranches.length === 0) return false
 
 	// Org-scoped for BOTH paths, not just the branch one. `listReportIdsFor` matches on
-	// `reportsToId`/`EmployeeSupervisor` alone, and while `updateEmployee` validates a new
-	// `reportsToId` against the org, `createEmployee` does not — a hire POST takes the id as given.
-	// So a report row can point across tenants, and without this it would become a reach into
-	// another organization. An employee outside the actor's org is unreachable however they relate.
+	// `reportsToId`/`EmployeeSupervisor` alone, with no org filter of its own. Every writer of
+	// `reportsToId` validates the manager's org since #235, but a row written before that can still
+	// point across tenants, so this stays as the fail-closed backstop: an employee outside the
+	// actor's org is unreachable however they relate.
 	const target = await db.employee.findFirst({
 		where: { id: employeeId, user: { organizationId: user.organizationId } },
 		select: { branchId: true }
@@ -112,8 +112,8 @@ export async function listVisibleEmployeeIds(user: EmployeeAccessActor): Promise
 		})
 		for (const e of staff) visible.add(e.id)
 	}
-	// Org-scoped: a report row can point across tenants (createEmployee takes reportsToId as
-	// given), and the roster must not surface an employee from another organization.
+	// Org-scoped: a report row written before #235 can still point across tenants, and the roster
+	// must not surface an employee from another organization.
 	const inOrg = await db.employee.findMany({
 		where: { id: { in: [...visible] }, user: { organizationId: user.organizationId } },
 		select: { id: true }
