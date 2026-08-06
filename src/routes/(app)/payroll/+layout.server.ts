@@ -17,7 +17,7 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 	const canSignOff = canAny(roles, 'VERIFY_REQUESTS') || canAny(roles, 'APPROVE_FINANCE')
 	if (!canManage && !canSignOff) error(403, 'Insufficient permissions')
 
-	return canManage
-		? await loadCalculatorData(user.organizationId)
-		: { employees: [], recurringDefaults: {} }
+	// #275: the roster is scoped inside `loadCalculatorData` to the caller's visible PAY roster —
+	// `canManage` says what they may do, never whose compensation they may see.
+	return canManage ? await loadCalculatorData(user) : { employees: [], recurringDefaults: {} }
 }

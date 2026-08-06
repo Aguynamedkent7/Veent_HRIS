@@ -3,6 +3,7 @@ import { db } from '$lib/server/db'
 import { createRequest, listRequests } from '$lib/server/services/requests'
 import { requestSchema } from '$lib/server/schemas/requests'
 import { hasAnyMinRole } from '$lib/server/rbac'
+import { listVisibleEmployeeIds } from '$lib/server/services/employee-access'
 import type { RequestHandler } from './$types'
 
 export const GET: RequestHandler = async ({ locals, url }) => {
@@ -16,9 +17,26 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 		select: { id: true }
 	})
 
+	// #275: a MANAGER used to get whatever `employeeId` they asked for — or, with none, the whole
+	// organization's leave and OT. The roster helper, NOT `listVisiblePayEmployeeIds`: the pay
+	// helper's only difference is that it opens up for VIEW_PAY_ORGWIDE, which here would WIDEN this
+	// route for PAYROLL_OFFICER and FINANCE, who are self-only today.
+	//
+	// `[]` rather than `undefined` for a caller with no employee record: an undefined filter is
+	// dropped from the where clause and the response becomes the entire org.
+	const visibleEmployeeIds = isManager
+		? await listVisibleEmployeeIds(user)
+		: myEmployee
+			? [myEmployee.id]
+			: []
+	const requestedId = isManager ? (url.searchParams.get('employeeId') ?? undefined) : undefined
+	if (requestedId && visibleEmployeeIds && !visibleEmployeeIds.includes(requestedId))
+		error(403, 'You can only manage your own team or a branch you manage.')
+
 	const results = await listRequests({
 		organizationId: user.organizationId,
-		employeeId: isManager ? (url.searchParams.get('employeeId') ?? undefined) : myEmployee?.id,
+		// `null` from the helper means unrestricted, so no employee filter at all.
+		employeeIds: requestedId ? [requestedId] : (visibleEmployeeIds ?? undefined),
 		type: (url.searchParams.get('type') as never) ?? undefined,
 		status: url.searchParams.get('status') ?? undefined
 	})

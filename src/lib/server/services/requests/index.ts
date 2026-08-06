@@ -92,6 +92,8 @@ export async function createRequest(
 interface RequestListParams {
 	organizationId: string
 	employeeId?: string
+	/** Allow-list form, for callers that scope a list to the employees they may see (#275). */
+	employeeIds?: string[]
 	type?: RequestInput['type']
 	status?: string
 }
@@ -99,7 +101,17 @@ interface RequestListParams {
 function requestListWhere(params: RequestListParams): Prisma.RequestWhereInput {
 	return {
 		employee: { user: { organizationId: params.organizationId } },
-		...(params.employeeId && { employeeId: params.employeeId }),
+		// Both forms combine rather than overwrite. As two spreads onto the same key the allow-list
+		// won, so a caller supplying both would have had its single-id filter silently widened to the
+		// whole list — the fail-open direction, and the exact class of bug #275 is about.
+		...(params.employeeId || params.employeeIds
+			? {
+					employeeId: {
+						...(params.employeeId && { equals: params.employeeId }),
+						...(params.employeeIds && { in: params.employeeIds })
+					}
+				}
+			: {}),
 		...(params.type && { type: params.type }),
 		...(params.status && { status: params.status as never })
 	}

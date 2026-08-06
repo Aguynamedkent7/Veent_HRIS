@@ -1,5 +1,9 @@
 import { db } from '$lib/server/db'
 import { error } from '@sveltejs/kit'
+import {
+	listVisiblePayEmployeeIds,
+	type EmployeeAccessActor
+} from '$lib/server/services/employee-access'
 import { computeEarnings } from './earnings'
 import { ratesFromRule, type PayRates } from './rates'
 import { statutoryRatesFromConfig } from './statutory-rates'
@@ -275,18 +279,33 @@ export function computeEmployeeResult(
 /**
  * Roster + recurring-earning defaults for the calculator UI (full page and the floating
  * panel on payroll pages, #72). Prefill amounts are prorated exactly like computePayroll.
+ *
+ * #275: MANAGE_PAYROLL gates the only call site and holds MANAGER (#133), so an unscoped load
+ * handed every branch manager the whole org's roster AND its per-employee allowance/incentive
+ * amounts. Scoped with the PAY helper — not the roster one — because this is compensation, so
+ * VIEW_PAY_ORGWIDE holders (FINANCE, PAYROLL_OFFICER) legitimately see org-wide; it is also the
+ * helper `api/v1/payroll/calculator` uses, which keeps the dropdown and the preview guard in step.
+ * `null` = unrestricted, so no id filter at all.
  */
-export async function loadCalculatorData(organizationId: string) {
+export async function loadCalculatorData(actor: EmployeeAccessActor) {
+	const organizationId = actor.organizationId
+	const visibleIds = await listVisiblePayEmployeeIds(actor)
+	const idFilter = visibleIds ? { id: { in: visibleIds } } : {}
+
 	const [employees, config, recurring] = await Promise.all([
 		db.employee.findMany({
-			where: { user: { organizationId }, employmentStatus: 'ACTIVE' },
+			where: { user: { organizationId }, employmentStatus: 'ACTIVE', ...idFilter },
 			select: { id: true, firstName: true, lastName: true, employeeNumber: true },
 			orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }]
 		}),
 		db.payrollConfig.findUnique({ where: { organizationId }, select: { payFrequency: true } }),
 		db.employeeEarning.groupBy({
 			by: ['employeeId', 'kind'],
-			where: { employee: { organizationId }, isActive: true },
+			where: {
+				employee: { organizationId },
+				isActive: true,
+				...(visibleIds ? { employeeId: { in: visibleIds } } : {})
+			},
 			_sum: { monthlyAmount: true }
 		})
 	])
