@@ -15,6 +15,11 @@ import type { Role } from '@prisma/client'
  * than against a spy on `createRequest`, which would survive any mutation to the service.
  *
  * OVERTIME for the two non-leave paths so the LEAVE balance/eligibility branch needs no fixtures.
+ *
+ * #279 adds the deletion half. `deleteRequest` resolves privilege through the same `rolesOf(ctx)`,
+ * so the leave list's bulk delete needs `actorRoles` for the identical reason — and its `ctxOf`
+ * omitted it. That action swallows per-item errors into a "skipped" count, so the observable is
+ * whether `request.delete` was reached at all.
  */
 
 const { dbMock, uploadsFromForm, saveRequestDocuments, leaveHelpers } = vi.hoisted(() => ({
@@ -28,7 +33,7 @@ const { dbMock, uploadsFromForm, saveRequestDocuments, leaveHelpers } = vi.hoist
 	},
 	dbMock: {
 		employee: { findUnique: vi.fn(), findFirst: vi.fn() },
-		request: { create: vi.fn() }
+		request: { create: vi.fn(), findFirst: vi.fn(), delete: vi.fn() }
 	}
 }))
 
@@ -43,10 +48,12 @@ vi.mock('$lib/server/services/requests/leave', () => leaveHelpers)
 const { POST: apiRoute } = await import('../../src/routes/api/v1/requests/+server')
 const { actions: requestActions } = await import('../../src/routes/(app)/requests/+page.server')
 const { actions: leaveActions } = await import('../../src/routes/(app)/leave/new/+page.server')
+const { actions: leaveListActions } = await import('../../src/routes/(app)/leave/+page.server')
 
 const ACTOR_USER = 'user-actor'
 const ORG = 'org1'
 const SELF_EMP = 'self-emp'
+const OTHER_EMP = 'other-emp'
 
 const locals = (roles: Role[]) => ({
 	user: { id: ACTOR_USER, organizationId: ORG, role: 'EMPLOYEE' as Role, roles }
@@ -96,6 +103,15 @@ beforeEach(() => {
 		startDate: new Date('2020-01-01')
 	})
 	dbMock.request.create.mockResolvedValue({ id: 'req-new', steps: [] })
+	// Someone else's pending leave request — deletable only by an HR-capable caller.
+	dbMock.request.findFirst.mockResolvedValue({
+		id: 'req-1',
+		status: 'PENDING',
+		type: 'LEAVE',
+		employeeId: OTHER_EMP,
+		documents: []
+	})
+	dbMock.request.delete.mockResolvedValue({ id: 'req-1' })
 })
 
 describe('POST /api/v1/requests', () => {
@@ -145,5 +161,22 @@ describe('(app)/leave/new ?/create', () => {
 		const { currentStage, make } = writtenChain()
 		expect(currentStage).toBe(1)
 		expect(make).toMatchObject({ decision: 'APPROVED', actorId: ACTOR_USER })
+	})
+})
+
+describe('(app)/leave ?/deleteMany', () => {
+	const deleteOther = (roles: Role[]) =>
+		leaveListActions.deleteMany!(formEvent(roles, { ids: 'req-1' }))
+
+	it('refuses a plain [EMPLOYEE] deleting a request they do not own', async () => {
+		const res = await deleteOther(['EMPLOYEE'])
+		expect(dbMock.request.delete).not.toHaveBeenCalled()
+		expect(res).toMatchObject({ saved: expect.stringContaining('1 skipped') })
+	})
+
+	it('lets an [EMPLOYEE, HR_ADMIN] deleter through on their secondary role', async () => {
+		const res = await deleteOther(['EMPLOYEE', 'HR_ADMIN'])
+		expect(dbMock.request.delete).toHaveBeenCalledWith({ where: { id: 'req-1' } })
+		expect(res).toMatchObject({ saved: expect.not.stringContaining('skipped') })
 	})
 })

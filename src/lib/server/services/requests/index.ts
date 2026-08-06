@@ -222,7 +222,7 @@ export async function deleteRequest(id: string, organizationId: string, ctx: Aud
 	})
 	if (!req) error(404, 'Request not found')
 
-	const isPrivileged = ctx.actorRole === 'HR_ADMIN' || ctx.actorRole === 'SUPER_ADMIN'
+	const isPrivileged = canAny(rolesOf(ctx), 'ADMINISTER_HR_RECORDS')
 	if (!isPrivileged) {
 		const me = await db.employee.findUnique({
 			where: { userId: ctx.actorId },

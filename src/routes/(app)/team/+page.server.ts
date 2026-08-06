@@ -1,4 +1,4 @@
-import { requireAnyMinRole } from '$lib/server/rbac'
+import { requireAnyMinRole, canAny } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { isFoodServiceOrg } from '$lib/orgs'
 import { autoDeriveFromPunches } from '$lib/server/services/attendance'
@@ -10,7 +10,7 @@ export const load: PageServerLoad = async ({ locals, url, getClientAddress }) =>
 	requireAnyMinRole(user.roles, 'MANAGER')
 
 	const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
-	const isAdmin = ['HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)
+	const isAdmin = canAny(user.roles, 'ADMINISTER_HR_RECORDS')
 
 	// Date range from URL params, default to current week (Mon-Sun)
 	const today = new Date()

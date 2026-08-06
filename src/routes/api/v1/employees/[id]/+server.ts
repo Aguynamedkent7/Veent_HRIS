@@ -69,7 +69,7 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 
 	try {
 		const employee = await getEmployee(params.id, locals.user.organizationId, {
-			viewerRole: locals.user.role
+			viewerRoles: locals.user.roles
 		})
 
 		// Object-level access control (#228): a MANAGER is scoped to their own team and the branches
@@ -200,7 +200,7 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 		}
 		// #111: re-fetch masked so the response reflects the new salary, never the pre-change record.
 		const employee = await getEmployee(params.id, locals.user.organizationId, {
-			viewerRole: locals.user.role
+			viewerRoles: locals.user.roles
 		})
 		// 202, not 200: the pay and/or reporting-line change is on file awaiting a second authorized
 		// person, so `data` does NOT yet reflect it. Returning 200 would tell the caller their raise or

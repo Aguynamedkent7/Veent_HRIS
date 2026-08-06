@@ -104,9 +104,10 @@ export async function fetchPayslipDocument(
 		return { ok: false, status: 404, message: 'Payslip not found' }
 	}
 
-	// #249: one shared rule with the JSON endpoint and the /payslips page. This previously read
-	// `canViewPayrollReports` alone, with a comment claiming "MANAGER stays blocked from peers'
-	// compensation" — the opposite of what it did, since #133 put MANAGER in VIEW_PAYROLL_REPORTS.
+	// #249: one shared rule with the JSON endpoint and the /payslips page. This previously tested
+	// VIEW_PAYROLL_REPORTS alone (through a `canViewPayrollReports` helper, deleted in #273), with a
+	// comment claiming "MANAGER stays blocked from peers' compensation" — the opposite of what it
+	// did, since #133 put MANAGER in VIEW_PAYROLL_REPORTS.
 	const allowed = await canReadPayslip(
 		{ id: ctx.userId, role: ctx.role, roles: ctx.roles, organizationId: ctx.organizationId },
 		{ id: entry.employeeId, userId: entry.employee.userId }

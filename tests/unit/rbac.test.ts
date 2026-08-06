@@ -33,6 +33,8 @@ const EXPECTED: Record<string, Role[]> = {
 	// #228: HR authority over the whole roster. Excludes MANAGER, who is scoped to their own
 	// branch and team — the distinction MANAGE_HR cannot express.
 	ADMINISTER_HR_ORGWIDE: ['HR_ADMIN', 'SUPER_ADMIN', 'CEO'],
+	// #279: the team page's org-wide view and 201-file document reads. HR back-office only.
+	ADMINISTER_HR_RECORDS: ['HR_ADMIN', 'SUPER_ADMIN'],
 	VIEW_TEAM: ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN', 'CEO'],
 	// #224: the CEO gained system administration. The irreversible half moved out to
 	// OVERRIDE_FINALIZED rather than following it.
@@ -74,10 +76,18 @@ const EXPECTED: Record<string, Role[]> = {
 // VIEW_PAY_ORGWIDE is the third exception (#249), and for the same reason as the second: a
 // payslip is employee data, so MANAGER reads their reporting line and nobody else. It exists because
 // VIEW_PAYROLL_REPORTS gained MANAGER in #133 and could no longer express "a stranger's pay".
+// ADMINISTER_HR_RECORDS is the fourth exception (#279). It is not a new policy: it names the set
+// two sites already hardcoded as `['HR_ADMIN','SUPER_ADMIN'].includes(user.role)` — the team page's
+// org-wide toggle and 201-file document reads. They were hardcoded precisely BECAUSE no capability
+// could express the set: MANAGER is excluded for the same reason as the second and third exceptions
+// (employee records are not a manager's to read org-wide), and CEO is excluded as it was before,
+// like the first exception. Converting them to a capability without this entry would have silently
+// widened both to MANAGER and CEO, so the exception is what keeps #279 a no-op change.
 const HR_ADMIN_SUPERSET_EXCEPTIONS: (keyof typeof CAPABILITIES)[] = [
 	'PROPOSE_STATUTORY_RATES',
 	'ADMINISTER_HR_ORGWIDE',
-	'VIEW_PAY_ORGWIDE'
+	'VIEW_PAY_ORGWIDE',
+	'ADMINISTER_HR_RECORDS'
 ]
 
 describe('capability table', () => {

@@ -1,4 +1,4 @@
-import { can } from '$lib/server/rbac'
+import { canAny } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
@@ -121,7 +121,7 @@ export async function assertCanModifyTimesheet(ctx: AuditContext, ts: { employee
 	})
 	const isOwner = actorEmployee?.id === ts.employeeId
 	if (isOwner) return { isOwner: true }
-	if (can(ctx.actorRole, 'VIEW_TEAM')) return { isOwner: false }
+	if (canAny(rolesOf(ctx), 'VIEW_TEAM')) return { isOwner: false }
 	error(403, 'You can only modify your own timesheet')
 }
 

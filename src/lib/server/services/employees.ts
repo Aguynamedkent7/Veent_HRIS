@@ -1,6 +1,6 @@
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
-import { canAny, ROLE_HIERARCHY } from '$lib/server/rbac'
+import { canAny, hasAnyMinRole } from '$lib/server/rbac'
 import { error } from '@sveltejs/kit'
 import bcrypt from 'bcrypt'
 import { Prisma } from '@prisma/client'
@@ -215,7 +215,7 @@ export async function listEmployees(
 export async function getEmployee(
 	id: string,
 	organizationId: string,
-	opts?: { viewerRole?: Role; isSelf?: boolean }
+	opts?: { viewerRoles?: Role[]; isSelf?: boolean }
 ) {
 	const employee = await db.employee.findFirst({
 		where: { id, user: { organizationId } },
@@ -279,11 +279,7 @@ export async function getEmployee(
 	// rank, and not the record's owner, they come back null. Note MANAGER is *not* below it —
 	// #133 made MANAGER on-branch HR and ranks it level with HR_ADMIN — so a manager falls
 	// through to the masked branch. Self always reaches masking too (own data, decision #2).
-	if (
-		!opts.isSelf &&
-		opts.viewerRole &&
-		ROLE_HIERARCHY[opts.viewerRole] < ROLE_HIERARCHY.HR_ADMIN
-	) {
+	if (!opts.isSelf && opts.viewerRoles && !hasAnyMinRole(opts.viewerRoles, 'HR_ADMIN')) {
 		return {
 			...employee,
 			basicMonthlySalary: null,

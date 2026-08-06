@@ -7,7 +7,7 @@ import {
 	deleteRequestDocument,
 	setRequestDocumentVerified
 } from '$lib/server/services/requests/documents'
-import { APPROVER_ROLES } from '$lib/server/services/approvals'
+import { canAny } from '$lib/server/rbac'
 import { getLeaveBalances } from '$lib/server/services/leave'
 import type { Actions, PageServerLoad } from './$types'
 
@@ -24,7 +24,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		select: { id: true }
 	})
 	const isOwner = myEmployee?.id === req.employeeId
-	const canReview = APPROVER_ROLES.includes(user.role)
+	const canReview = canAny(user.roles, 'APPROVE_REQUESTS')
 	if (!isOwner && !canReview) error(403, 'Insufficient permissions')
 
 	// LEAVE requests store their leaveTypeId in the JSON payload (no relation); resolve it to a
@@ -144,7 +144,7 @@ export const actions: Actions = {
 	// Approver signs off on a document (or clears the sign-off).
 	verifyDoc: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		if (!APPROVER_ROLES.includes(user.role)) {
+		if (!canAny(user.roles, 'APPROVE_REQUESTS')) {
 			return fail(403, { error: 'Insufficient permissions' })
 		}
 
