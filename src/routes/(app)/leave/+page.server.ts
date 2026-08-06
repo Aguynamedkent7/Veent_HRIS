@@ -4,6 +4,7 @@ import { db } from '$lib/server/db'
 import { paginate } from '$lib/server/pagination'
 import { getLeaveBalances } from '$lib/server/services/leave'
 import { countRequests, listRequests, deleteRequest } from '$lib/server/services/requests'
+import { listVisibleEmployeeIds } from '$lib/server/services/employee-access'
 import type { Actions, PageServerLoad, RequestEvent } from './$types'
 
 // Read-only leave view. Leave filing/approval now flows through the unified
@@ -24,10 +25,22 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	// list rather than passing an undefined employeeId (which would leak org-wide rows).
 	const canListLeave = isManager || Boolean(myEmployee)
 
+	// #275: the page twin of `GET /api/v1/requests`. `isManager` said WHAT the actor may do, never
+	// WHOSE rows — so an undefined employeeId dropped the filter and this page listed the whole
+	// organization's leave. The roster helper, NOT `listVisiblePayEmployeeIds`: the pay helper's only
+	// difference is that it opens up for VIEW_PAY_ORGWIDE, which here would WIDEN the page for
+	// PAYROLL_OFFICER and FINANCE. `null` means unrestricted (ADMINISTER_HR_ORGWIDE) — no filter at
+	// all; `[]` for a caller with no employee record, since an undefined filter leaks the org.
+	const visibleEmployeeIds = isManager
+		? await listVisibleEmployeeIds(user)
+		: myEmployee
+			? [myEmployee.id]
+			: []
+
 	// #64: paginate the requests table only; balances/types stay whole.
 	const listParams = {
 		organizationId: user.organizationId,
-		employeeId: isManager ? undefined : myEmployee?.id,
+		employeeIds: visibleEmployeeIds ?? undefined,
 		type: 'LEAVE' as const
 	}
 	const total = canListLeave ? await countRequests(listParams) : 0
