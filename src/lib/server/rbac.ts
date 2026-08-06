@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit'
 import type { Role } from '@prisma/client'
-import { can, canAny, hasMinRole, hasAnyMinRole, CAPABILITIES, type Capability } from '$lib/rbac'
+import { canAny, hasAnyMinRole, type Capability } from '$lib/rbac'
 import { isFoodServiceOrg } from '$lib/orgs'
 
 // The capability table itself lives in $lib/rbac so the sidebar can ask the same
@@ -15,11 +15,6 @@ export {
 	hasAnyMinRole,
 	type Capability
 } from '$lib/rbac'
-
-/** Guard a route on a named capability — prefer this over spelling out role lists. */
-export function requireCapability(userRole: Role, capability: Capability): void {
-	if (!can(userRole, capability)) error(403, 'Insufficient permissions')
-}
 
 /**
  * Branches exist only for the food-service tenants (JoJo Potato / Sweetleaf). The nav hides
@@ -38,18 +33,6 @@ export function requireAnyCapability(userRoles: Role[], capability: Capability):
 	if (!canAny(userRoles, capability)) error(403, 'Insufficient permissions')
 }
 
-export function requireRole(userRole: Role, ...allowedRoles: Role[]): void {
-	if (!allowedRoles.includes(userRole)) {
-		error(403, 'Insufficient permissions')
-	}
-}
-
-export function requireMinRole(userRole: Role, minimumRole: Role): void {
-	if (!hasMinRole(userRole, minimumRole)) {
-		error(403, 'Insufficient permissions')
-	}
-}
-
 /** Multi-role floor (#256): passes if ANY of the user's roles clears the rank. */
 export function requireAnyMinRole(userRoles: Role[], minimumRole: Role): void {
 	if (!hasAnyMinRole(userRoles, minimumRole)) error(403, 'Insufficient permissions')
@@ -58,18 +41,7 @@ export function requireAnyMinRole(userRoles: Role[], minimumRole: Role): void {
 // ─── Payroll capabilities ─────────────────────────────────────────────────────
 // Payroll access does not follow the HR ladder: a Payroll Officer runs payroll
 // without full HR access, and Finance can read payroll reports only. These remain
-// as named helpers because they read better at call sites than can(role, '…').
-
-export const PAYROLL_MANAGE_ROLES: readonly Role[] = CAPABILITIES.MANAGE_PAYROLL
-export const PAYROLL_REPORT_ROLES: readonly Role[] = CAPABILITIES.VIEW_PAYROLL_REPORTS
-
-export function canManagePayroll(role: Role): boolean {
-	return can(role, 'MANAGE_PAYROLL')
-}
-
-export function canViewPayrollReports(role: Role): boolean {
-	return can(role, 'VIEW_PAYROLL_REPORTS')
-}
+// as named helpers because they read better at call sites than canAny(roles, '…').
 
 export function requirePayrollManage(roles: Role[]): void {
 	requireAnyCapability(roles, 'MANAGE_PAYROLL')
