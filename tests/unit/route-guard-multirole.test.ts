@@ -34,7 +34,12 @@ const AUTHORITY_PATTERNS = [
 	// Membership test against a role list, named (`APPROVER_ROLES`) or inline (`['HR_ADMIN', …]`).
 	new RegExp(String.raw`\.includes\([^)]*${SINGULAR_ROLE}`),
 	// Hand-rolled rank comparison.
-	new RegExp(String.raw`ROLE_HIERARCHY\[[^\]]*${SINGULAR_ROLE}`)
+	new RegExp(String.raw`ROLE_HIERARCHY\[[^\]]*${SINGULAR_ROLE}`),
+	// Direct equality against a role literal — `ctx.actorRole === 'HR_ADMIN'`. The literal is
+	// required: comparing two expressions (`newRole !== existing.role`) is change detection, not an
+	// authority decision, and flagging it would make the scan noisy enough that someone deletes it.
+	// `!==` counts too — a negated gate is the same defect.
+	new RegExp(String.raw`${SINGULAR_ROLE}\s*[!=]==\s*'[A-Z][A-Z_]*'`)
 ]
 
 // Comment lines are skipped: documenting a converted site by quoting its old shape is legitimate,
@@ -57,7 +62,9 @@ describe('authority is judged on the full role set (#279)', () => {
 				`if (!can(locals.user.role, 'VIEW_PAY_ORGWIDE')) error(403)`,
 				`APPROVER_ROLES.includes(user.role)`,
 				`['HR_ADMIN', 'SUPER_ADMIN'].includes(user.role)`,
-				`ROLE_HIERARCHY[opts.viewerRole] < ROLE_HIERARCHY.HR_ADMIN`
+				`ROLE_HIERARCHY[opts.viewerRole] < ROLE_HIERARCHY.HR_ADMIN`,
+				`const isPrivileged = ctx.actorRole === 'HR_ADMIN' || ctx.actorRole === 'SUPER_ADMIN'`,
+				`if (locals.user.role !== 'SUPER_ADMIN') error(403)`
 			].filter((line) => !isOffender(line))
 		).toEqual([])
 	})
@@ -71,7 +78,11 @@ describe('authority is judged on the full role set (#279)', () => {
 				`APPROVER_ROLES.some((r) => user.roles.includes(r))`,
 				`await logAudit(db, { actorRole: user.role, action: 'UPDATE' })`,
 				`// replaced APPROVER_ROLES.includes(user.role) here — see #279`,
-				` * ROLE_HIERARCHY[opts.viewerRole] was the old masking gate`
+				` * ROLE_HIERARCHY[opts.viewerRole] was the old masking gate`,
+				// Real near-misses in the tree — the equality pattern must leave all three alone.
+				`if (newRole !== existing.role) {`,
+				`const label = IRREPLACEABLE_ROLES[target.role]`,
+				`const role = $derived(data.user.role)`
 			].filter(isOffender)
 		).toEqual([])
 	})
