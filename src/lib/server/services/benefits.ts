@@ -2,6 +2,7 @@ import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import { Prisma } from '@prisma/client'
+import { requireEmployee } from './employee-access'
 import type { AuditContext } from './types'
 
 type BenefitPlanType = 'HMO' | 'INSURANCE' | 'RETIREMENT' | 'ALLOWANCE' | 'LEAVE_CREDIT' | 'OTHER'
@@ -133,6 +134,11 @@ export async function enrollEmployee(
 	data: { coverageLevel?: string; effectiveDate: Date; status?: BenefitEnrollmentStatus },
 	ctx: AuditContext
 ) {
+	// #275: the employee was never org-checked, so a cross-tenant id enrolled fine. In the service,
+	// not the route — the benefits page action gates on `requireAnyMinRole('HR_ADMIN')`, which
+	// MANAGER clears, so a route-level fix would leave that door open (#235/#259).
+	await requireEmployee(employeeId, ctx.organizationId)
+
 	// Ensure the plan belongs to the acting organization before enrolling.
 	const plan = await db.benefitPlan.findFirst({
 		where: { id: benefitPlanId, organizationId: ctx.organizationId }
