@@ -27,7 +27,9 @@ const { dbMock, listReportIdsFor, listLoans, listCashAdvances, previewPayroll } 
 		previewPayroll: vi.fn(),
 		dbMock: {
 			employee: { findUnique: vi.fn(), findMany: vi.fn() },
-			branch: { findMany: vi.fn() }
+			branch: { findMany: vi.fn() },
+			payrollConfig: { findUnique: vi.fn() },
+			employeeEarning: { groupBy: vi.fn() }
 		}
 	})
 )
@@ -40,8 +42,14 @@ vi.mock('$lib/server/services/payroll/loans', () => ({
 	listCashAdvances,
 	createCashAdvance: vi.fn()
 }))
-vi.mock('$lib/server/services/payroll/calculator', () => ({ previewPayroll }))
+// Partial mock: the routes below need `previewPayroll` stubbed, but `loadCalculatorData` is itself
+// under test here, so the rest of the module stays real.
+vi.mock('$lib/server/services/payroll/calculator', async (importOriginal) => ({
+	...(await importOriginal<Record<string, unknown>>()),
+	previewPayroll
+}))
 
+const { loadCalculatorData } = await import('$lib/server/services/payroll/calculator')
 const { GET: loansRoute } = await import('../../src/routes/api/v1/payroll/loans/+server')
 const { GET: cashAdvancesRoute } =
 	await import('../../src/routes/api/v1/payroll/cash-advances/+server')
@@ -55,6 +63,8 @@ const ORG = 'org1'
 const SELF = 'self-emp'
 const REPORT = 'report-emp'
 const STRANGER = 'stranger-emp'
+/** Every active employee in the org, in the order the roster query returns them. */
+const ROSTER = [SELF, REPORT, STRANGER]
 
 /** The primary role is irrelevant to these guards — `roles` is what both layers read (#247). */
 const user = (roles: Role[]) => ({
@@ -96,10 +106,29 @@ beforeEach(() => {
 	dbMock.employee.findUnique.mockResolvedValue({ id: SELF })
 	listReportIdsFor.mockResolvedValue([REPORT])
 	dbMock.branch.findMany.mockResolvedValue([])
-	// `listVisibleEmployeeIds` closes with an org-scoped re-read of the ids it gathered.
-	dbMock.employee.findMany.mockImplementation(({ where }) =>
-		Promise.resolve((where.id?.in ?? []).map((id: string) => ({ id })))
-	)
+	// Two different reads land on `employee.findMany`: `listVisibleEmployeeIds` closes with an
+	// org-scoped re-read of the ids it gathered, and `loadCalculatorData` pulls the active roster
+	// (the only one carrying `employmentStatus`), optionally id-filtered.
+	dbMock.employee.findMany.mockImplementation(({ where }) => {
+		if (where.employmentStatus) {
+			const allowed: string[] = where.id?.in ?? ROSTER
+			return Promise.resolve(ROSTER.filter((id) => allowed.includes(id)).map((id) => ({ id })))
+		}
+		return Promise.resolve((where.id?.in ?? []).map((id: string) => ({ id })))
+	})
+	// Every employee in the org carries a recurring allowance — that amount is the thing that must
+	// not travel to a manager who cannot see the employee.
+	dbMock.payrollConfig.findUnique.mockResolvedValue({ payFrequency: 'MONTHLY' })
+	dbMock.employeeEarning.groupBy.mockImplementation(({ where }) => {
+		const allowed: string[] = where.employeeId?.in ?? ROSTER
+		return Promise.resolve(
+			ROSTER.filter((id) => allowed.includes(id)).map((id) => ({
+				employeeId: id,
+				kind: 'ALLOWANCE',
+				_sum: { monthlyAmount: 2000 }
+			}))
+		)
+	})
 	listLoans.mockResolvedValue([])
 	listCashAdvances.mockResolvedValue([])
 	previewPayroll.mockResolvedValue(PREVIEW)
@@ -295,5 +324,60 @@ describe('the /payroll/calculator preview action', () => {
 		const res = await calculatorPage.preview(formEvent(['HR_ADMIN'], fields(STRANGER)))
 		expect(res).toMatchObject({ employeeId: STRANGER })
 		expect(previewPayroll.mock.calls[0][0]).toBe(STRANGER)
+	})
+})
+
+/**
+ * `loadCalculatorData` — the roster feeding the calculator dropdown, loaded by
+ * `/payroll/+layout.server.ts` for anyone with MANAGE_PAYROLL, i.e. every MANAGER (#133).
+ *
+ * Two leaks in one call: the roster names the whole org, and `recurringDefaults` carries each
+ * employee's allowance/incentive amount. The second is the one that matters — scoping only the
+ * dropdown would still ship the money. Scoped with the PAY helper, the same one the v1 calculator
+ * route above uses, so the dropdown offers exactly the employees the preview will accept.
+ */
+describe('loadCalculatorData (calculator roster + recurring defaults)', () => {
+	const actor = (roles: Role[]) => user(roles)
+
+	it('gives a MANAGER only the employees in their line', async () => {
+		const { employees } = await loadCalculatorData(actor(['MANAGER']))
+		expect(employees.map((e) => e.id)).toEqual([SELF, REPORT])
+	})
+
+	it('withholds the stranger from a MANAGER, roster and money alike', async () => {
+		const { employees, recurringDefaults } = await loadCalculatorData(actor(['MANAGER']))
+		expect(employees.map((e) => e.id)).not.toContain(STRANGER)
+		expect(recurringDefaults[STRANGER]).toBeUndefined()
+	})
+
+	it('still prefills the MANAGER their own and their report’s amounts', async () => {
+		const { recurringDefaults } = await loadCalculatorData(actor(['MANAGER']))
+		expect(Object.keys(recurringDefaults).sort()).toEqual([REPORT, SELF].sort())
+		expect(recurringDefaults[REPORT]).toEqual({ allowances: 2000, incentives: 0 })
+	})
+
+	it('pushes the id filter into the earnings query, not just the roster one', async () => {
+		await loadCalculatorData(actor(['MANAGER']))
+		const [{ where }] = dbMock.employeeEarning.groupBy.mock.calls[0]
+		expect(where.employeeId).toEqual({ in: [SELF, REPORT] })
+	})
+
+	it('never carries an amount for an employee absent from the roster', async () => {
+		const { employees, recurringDefaults } = await loadCalculatorData(actor(['MANAGER']))
+		const visible = employees.map((e) => e.id)
+		for (const id of Object.keys(recurringDefaults)) expect(visible).toContain(id)
+	})
+
+	it('leaves an HR_ADMIN the unfiltered roster', async () => {
+		const { employees, recurringDefaults } = await loadCalculatorData(actor(['HR_ADMIN']))
+		expect(employees.map((e) => e.id)).toEqual(ROSTER)
+		expect(Object.keys(recurringDefaults).sort()).toEqual([...ROSTER].sort())
+	})
+
+	it('leaves a PAYROLL_OFFICER unfiltered — VIEW_PAY_ORGWIDE, and no id filter is applied', async () => {
+		const { employees } = await loadCalculatorData(actor(['PAYROLL_OFFICER']))
+		expect(employees.map((e) => e.id)).toEqual(ROSTER)
+		const [{ where }] = dbMock.employeeEarning.groupBy.mock.calls[0]
+		expect(where.employeeId).toBeUndefined()
 	})
 })
