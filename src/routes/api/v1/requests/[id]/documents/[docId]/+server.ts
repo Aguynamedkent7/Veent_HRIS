@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit'
 import { getRequestDocument } from '$lib/server/services/requests/documents'
-import { APPROVER_ROLES } from '$lib/server/services/approvals'
+import { canAny } from '$lib/server/rbac'
 import { readStoredFile } from '$lib/server/storage'
 import { db } from '$lib/server/db'
 import type { RequestHandler } from './$types'
@@ -14,7 +14,7 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 	const doc = await getRequestDocument(params.docId, user.organizationId)
 	if (doc.requestId !== params.id) error(404, 'Document not found')
 
-	if (!APPROVER_ROLES.includes(user.role)) {
+	if (!canAny(user.roles, 'APPROVE_REQUESTS')) {
 		const me = await db.employee.findUnique({ where: { userId: user.id }, select: { id: true } })
 		if (me?.id !== doc.request.employeeId) error(403, 'Insufficient permissions')
 	}

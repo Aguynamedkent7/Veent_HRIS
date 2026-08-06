@@ -90,7 +90,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	const canManage = canAny(locals.user!.roles, 'MANAGE_HR')
 
 	const employee = await getEmployee(params.id, locals.user!.organizationId, {
-		viewerRole: locals.user!.role
+		viewerRoles: locals.user!.roles
 	})
 
 	// Object-level access control (#228): a MANAGER may only open a 201 file for their own team or

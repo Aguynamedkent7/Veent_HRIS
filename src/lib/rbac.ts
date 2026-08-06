@@ -63,6 +63,16 @@ export const CAPABILITIES = {
 	 * employee record" — `assertCanTouchEmployee` is the enforcement point.
 	 */
 	ADMINISTER_HR_ORGWIDE: ['HR_ADMIN', 'SUPER_ADMIN', 'CEO'],
+	/**
+	 * HR back-office proper: the whole-org view on the team page, and reading any employee's
+	 * 201-file documents.
+	 *
+	 * Named in #279 to replace two hardcoded `['HR_ADMIN','SUPER_ADMIN'].includes(user.role)` sites
+	 * that had no capability to convert to. Deliberately EXCLUDES the CEO, preserving exactly what
+	 * those sites allowed — ADMINISTER_HR_ORGWIDE was the near match and would have widened them.
+	 * If the CEO should reach these, that is a policy change: grant it here explicitly.
+	 */
+	ADMINISTER_HR_RECORDS: ['HR_ADMIN', 'SUPER_ADMIN'],
 	/** The manager ladder: sees a team, approves timesheets. */
 	VIEW_TEAM: ['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN', 'CEO'],
 	/**
