@@ -37,3 +37,7 @@ coverage/
 
 # Private HR document storage (T162)
 /uploads/
+
+# Scratch schemas/seeds written by the schema-upgrade CI job (#236)
+prisma/.deployed-*
+prisma/.selftest-*

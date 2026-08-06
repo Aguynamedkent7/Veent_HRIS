@@ -112,3 +112,83 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  schema-upgrade:
+    name: db push against a populated database
+    runs-on: ubuntu-latest
+
+    # Production applies the schema to a database that already holds data; the e2e job only
+    # ever pushes to an empty one. A destructive change therefore passes CI and then fails
+    # inside the container on deploy, where compose runs `prestart.sh && node build` — so the
+    # server never starts and the app crash-loops (#236; #172 was the near-miss).
+    #
+    # pull_request only, deliberately: on the release PR into `main`, origin/main IS the
+    # deployed schema. A push-triggered run would compare main against itself and pass
+    # vacuously, and by then the merge — and the auto-deploy — has already happened.
+    if: github.event_name == 'pull_request'
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: veent_upgrade
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/veent_upgrade
+      LUCIA_SECRET: ci-lucia-secret-do-not-use-in-prod-000000
+      TIMELOG_API_SECRET: ci-timelog-secret-do-not-use-in-prod-0000
+      NODE_ENV: test
+      CI: 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch the deployed schema
+        run: git fetch --depth=1 --no-tags origin main:refs/remotes/origin/main
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Materialise the deployed schema and seed
+        # These must land inside prisma/: Prisma infers the project root from the schema
+        # file's directory, so a --schema outside the repo makes `generate` try to install
+        # into / and `db push` abort. seed-e2e's own import is rewritten so the old entry
+        # point keeps its old internals.
+        run: |
+          git show origin/main:prisma/schema.prisma > prisma/.deployed-schema.prisma
+          git show origin/main:prisma/seed-core.ts  > prisma/.deployed-seed-core.ts
+          git show origin/main:prisma/seed-e2e.ts \
+            | sed "s|'./seed-core'|'./.deployed-seed-core'|" > prisma/.deployed-seed-e2e.ts
+
+      - name: Provision the deployed schema
+        run: |
+          pnpm exec prisma generate --schema=prisma/.deployed-schema.prisma
+          pnpm exec prisma db push --schema=prisma/.deployed-schema.prisma --skip-generate
+
+      - name: Populate it
+        # The deployed seed, so the rows match the deployed schema. It still pulls
+        # DEFAULT_STATUTORY_RATE_CONFIG from the checked-out (new) src tree — the one place
+        # old data meets new code here, and identical across the two as of #236.
+        run: pnpm exec tsx prisma/.deployed-seed-e2e.ts
+
+      - name: Upgrade to this branch's schema
+        # The actual test, and the exact file the droplet runs on deploy.
+        run: sh scripts/prestart.sh
