@@ -92,6 +92,8 @@ export async function createRequest(
 interface RequestListParams {
 	organizationId: string
 	employeeId?: string
+	/** Allow-list form, for callers that scope a list to the employees they may see (#275). */
+	employeeIds?: string[]
 	type?: RequestInput['type']
 	status?: string
 }
@@ -100,6 +102,7 @@ function requestListWhere(params: RequestListParams): Prisma.RequestWhereInput {
 	return {
 		employee: { user: { organizationId: params.organizationId } },
 		...(params.employeeId && { employeeId: params.employeeId }),
+		...(params.employeeIds && { employeeId: { in: params.employeeIds } }),
 		...(params.type && { type: params.type }),
 		...(params.status && { status: params.status as never })
 	}
