@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { requirePayrollManage } from '$lib/server/rbac'
 import { apiError, badRequest, forbidden } from '$lib/server/api-error'
 import { listCashAdvances, createCashAdvance } from '$lib/server/services/payroll/loans'
+import { listVisiblePayEmployeeIds } from '$lib/server/services/employee-access'
 import type { RequestHandler } from './$types'
 
 const createSchema = z.object({
@@ -20,6 +21,18 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	}
 	const employeeId = url.searchParams.get('employeeId')
 	if (!employeeId) return badRequest('employeeId is required')
+
+	// #275: the guard above says WHAT the caller may do, never WHOSE record — and MANAGE_PAYROLL
+	// holds MANAGER (#133), so without this a branch manager reads any employee's cash-advance
+	// balances by passing their id. `null` = unrestricted.
+	const visibleEmployeeIds = await listVisiblePayEmployeeIds({
+		id: locals.user.id,
+		role: locals.user.role,
+		roles: locals.user.roles,
+		organizationId: locals.user.organizationId
+	})
+	if (visibleEmployeeIds && !visibleEmployeeIds.includes(employeeId)) return forbidden()
+
 	return json({ data: await listCashAdvances(employeeId, locals.user.organizationId) })
 }
 
