@@ -93,6 +93,22 @@ describe('GET /api/v1/requests', () => {
 		expect(params().employeeIds).not.toContain(STRANGER)
 	})
 
+	/**
+	 * The allow-list has two sources — direct reports and managed-branch staff — and the 403 guard
+	 * must honour both. Without this case, dropping the branch arm from the helper would still leave
+	 * every test above green, since STRANGER is outside the reporting line in all of them.
+	 */
+	it('lets a MANAGER ask for an employee reachable only through a branch they manage', async () => {
+		dbMock.branch.findMany.mockResolvedValue([{ id: 'branch1' }])
+		dbMock.employee.findMany.mockImplementation(({ where }) =>
+			Promise.resolve(
+				where.branchId ? [{ id: STRANGER }] : (where.id?.in ?? []).map((id: string) => ({ id }))
+			)
+		)
+		await GET(event(['MANAGER'], STRANGER))
+		expect(params().employeeIds).toEqual([STRANGER])
+	})
+
 	it('leaves an HR_ADMIN unrestricted', async () => {
 		await GET(event(['HR_ADMIN']))
 		expect(params().employeeIds).toBeUndefined()
