@@ -8,7 +8,7 @@ import { z } from 'zod'
 import { ensureLeaveBalances } from './leave'
 import { sendDiscordInviteEmail } from '$lib/server/notifications'
 import { notify } from './notifications'
-import { maskEmployee, SENSITIVE_FIELDS } from '$lib/utils/format'
+import { maskEmployee, MASKED_SALARY, SENSITIVE_FIELDS } from '$lib/utils/format'
 import { utcMidnight } from '$lib/utils/pay-periods'
 import { isRateBasisAllowed, RATE_BASIS_MISMATCH } from '$lib/utils/rate-basis'
 import { employmentTypeAt, EMPLOYMENT_TYPES } from '$lib/utils/employment-type'
@@ -1257,9 +1257,13 @@ export interface EmploymentHistoryEvent {
 // Surface an employee's employment history (FR-051) from the audit trail:
 // hiring, promotions, salary adjustments, department/position transfers, and
 // status changes — derived by diffing the HISTORY_FIELDS on each audit entry.
+// #290: salary figures are masked by default and released only through the audited ?/reveal,
+// matching how the current basic monthly salary is handled (#111). Pass { unmask: true } only
+// from that action — it is what writes the VIEW audit row covering both surfaces.
 export async function getEmploymentHistory(
 	employeeId: string,
-	organizationId: string
+	organizationId: string,
+	opts: { unmask?: boolean } = {}
 ): Promise<EmploymentHistoryEvent[]> {
 	const logs = await db.auditLog.findMany({
 		where: {
@@ -1285,6 +1289,10 @@ export async function getEmploymentHistory(
 	const branchMap = new Map(branches.map((b) => [b.id, b.name]))
 	const money = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' })
 
+	// #290: do NOT mask in here, however tidy it looks. display() feeds the `from === to`
+	// equality check below, so a mask here makes both sides of every salary change compare
+	// equal — the change is dropped, and when salary is the only surviving change the whole
+	// timeline event (date, actor and all) is dropped with it. Mask after the check instead.
 	const display = (field: string, raw: unknown): string => {
 		if (raw == null || raw === '') return '—'
 		const v = String(raw)
@@ -1319,7 +1327,12 @@ export async function getEmploymentHistory(
 			const from = display(field, oldValue[field])
 			const to = display(field, newValue[field])
 			if (from === to) continue
-			changes.push({ label: HISTORY_LABELS[field], from, to })
+			// #290: mask AFTER the equality check — masking inside display() makes every salary
+			// change compare equal, dropping the change and (when salary is the only surviving
+			// field) the whole event. '—' passes through: absence hides nothing.
+			const mask = (s: string) =>
+				field === 'basicMonthlySalary' && !opts.unmask && s !== '—' ? MASKED_SALARY : s
+			changes.push({ label: HISTORY_LABELS[field], from: mask(from), to: mask(to) })
 		}
 		if (changes.length > 0) {
 			// #170: a comp change carries the effective date in newValue — surface it so the timeline
