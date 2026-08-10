@@ -52,6 +52,50 @@ const REQUESTS = [
 	{ employeeId: 'empB1', type: 'LEAVE', status: 'PENDING' }
 ]
 
+// #242 — a real compensation-change row, the shape `recordCompensationChange` writes. The salary
+// figures below are what must never reach the dashboard payload.
+const OLD_SALARY = 41234
+const NEW_SALARY = 57891
+
+const AUDIT_LOGS = [
+	{
+		id: 'log1',
+		organizationId: ORG_A,
+		action: 'UPDATE',
+		entityType: 'Employee',
+		entityId: 'empA1',
+		oldValue: { basicMonthlySalary: OLD_SALARY, rateType: 'MONTHLY' },
+		newValue: {
+			basicMonthlySalary: NEW_SALARY,
+			rateType: 'MONTHLY',
+			effectiveDate: '2026-01-01'
+		},
+		ipAddress: '203.0.113.7',
+		userAgent: 'Mozilla/5.0 (audit)',
+		actorId: 'uHR',
+		actorRole: 'HR_ADMIN',
+		createdAt: new Date('2026-01-01T00:00:00Z'),
+		actor: { email: 'hr@orga.test', role: 'HR_ADMIN' }
+	}
+]
+
+/**
+ * Emulates Prisma's projection, so the fixture narrows only when the query actually asks it to:
+ * a `select` returns its listed fields, an `include` returns every scalar. Without this the
+ * assertions below would be vacuous — the mock would hand back the full row either way.
+ */
+const project = (row: Record<string, unknown>, args: Record<string, unknown>) => {
+	const select = args.select as Record<string, unknown> | undefined
+	if (!select) return { ...row }
+	const out: Record<string, unknown> = {}
+	for (const [key, spec] of Object.entries(select)) {
+		if (spec === true) out[key] = row[key]
+		else if (spec && typeof spec === 'object')
+			out[key] = project(row[key] as Record<string, unknown>, spec as Record<string, unknown>)
+	}
+	return out
+}
+
 // Only the operators getManagerMetrics actually uses.
 type Where = Record<string, unknown>
 const matches = (row: Record<string, unknown>, where: Where): boolean =>
@@ -83,7 +127,9 @@ beforeEach(() => {
 	dbMock.request.count.mockImplementation(
 		async ({ where }: { where: Where }) => REQUESTS.filter((r) => matches(r, where)).length
 	)
-	dbMock.auditLog.findMany.mockResolvedValue([])
+	dbMock.auditLog.findMany.mockImplementation(async (args: { where: Where }) =>
+		AUDIT_LOGS.filter((l) => matches(l, args.where)).map((l) => project(l, args))
+	)
 })
 
 describe('getManagerMetrics — a cross-tenant reportsToId must not leak counts (#259)', () => {
@@ -104,5 +150,56 @@ describe('getManagerMetrics — a cross-tenant reportsToId must not leak counts 
 
 		const { where } = dbMock.employee.findMany.mock.calls[0][0]
 		expect(where).toMatchObject({ reportsToId: 'empA', user: { organizationId: ORG_A } })
+	})
+})
+
+/**
+ * #242 — the same `recentActivity` rows were fetched with a bare `include`, so every AuditLog
+ * scalar shipped to whoever called `GET /api/v1/dashboard`: the before/after salary payload of
+ * every compensation change, plus the actor's IP and user agent. Only PAYROLL_OFFICER and FINANCE
+ * reach this branch (MANAGE_HR holders get `getAdminMetrics`), and neither holds
+ * ADMINISTER_SYSTEM — the capability that gates the same payload on `/reports/audit-log`.
+ */
+describe('getManagerMetrics — audit-log payloads must not ride along (#242)', () => {
+	it('does not return the before/after values of a compensation change', async () => {
+		const metrics = await getManagerMetrics('uA', ORG_A)
+
+		expect(metrics.recentActivity).toHaveLength(1)
+		const serialized = JSON.stringify(metrics.recentActivity)
+		expect(serialized).not.toContain(String(OLD_SALARY))
+		expect(serialized).not.toContain(String(NEW_SALARY))
+	})
+
+	it('does not return the actor’s IP address or user agent', async () => {
+		const metrics = await getManagerMetrics('uA', ORG_A)
+
+		expect(metrics.recentActivity[0]).not.toHaveProperty('ipAddress')
+		expect(metrics.recentActivity[0]).not.toHaveProperty('userAgent')
+	})
+
+	// The assertion that still bites if the fixture is ever emptied: it pins the query, not the rows.
+	it('asks for an explicit column list, never a bare include', async () => {
+		await getManagerMetrics('uA', ORG_A)
+
+		const args = dbMock.auditLog.findMany.mock.calls[0][0]
+		expect(args.include).toBeUndefined()
+		expect(args.select).toEqual({
+			id: true,
+			action: true,
+			entityType: true,
+			entityId: true,
+			createdAt: true,
+			actor: { select: { email: true, role: true } }
+		})
+	})
+
+	it('still shows the actor of each recent entry', async () => {
+		const metrics = await getManagerMetrics('uA', ORG_A)
+
+		expect(metrics.recentActivity[0]).toMatchObject({
+			id: 'log1',
+			action: 'UPDATE',
+			actor: { email: 'hr@orga.test', role: 'HR_ADMIN' }
+		})
 	})
 })
