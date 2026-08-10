@@ -588,3 +588,180 @@ are its verification. **Uncertain** whether to break precedent here.
 13. Whether `+layout.svelte:92`'s `role` binding is genuinely unused. Grep says yes; confirm before deleting.
 14. Exact size of the Part-2 `actorRole:` sweep — ~160 raw occurrences in `src/`, of which ~30 are
     `actorRoles` and 11 are the fallbacks; true assignment count near 120. Mechanical either way.
+
+---
+
+## Validate Contract
+
+Status: CONDITIONAL
+Date: 10-08-26
+date: 2026-08-10
+generated-by: outer-pvl
+
+Parallel strategy: sequential
+Rationale: 4/7 signals present (S2 auth surface, S6 high-risk class, S7 5+ files, S3 3+ decision branches) would normally recommend agent-team, but the validating agent had no Agent/Task tool available in this session — fan-out was structurally impossible. All Layer 1 dimensions and Layer 2 sections were executed sequentially in one context by direct source reads. Every finding below is backed by a file:line the validator personally read; no finding is inferred.
+
+### Verdict on the central claim (§0c set-identity) — CONFIRMED
+
+Independently re-derived, not taken from the plan:
+
+- `grep -rhoE '(requireAnyMinRole|hasAnyMinRole|hasMinRole)\([^)]*\)' src/` yields exactly two floor literals across the whole tree: `'HR_ADMIN'` x54, `'MANAGER'` x13 (one of the 54 is the comment at `src/lib/server/services/benefits.ts:138`, giving 66 live sites). No third floor value exists. No multi-line call evades the regex (verified: zero matches for an unclosed call).
+- `src/lib/rbac.ts:16-30` — `MANAGER: 2`, `HR_ADMIN: 2`, `CEO: 2`, `SUPER_ADMIN: 3`, all other five roles `0`. Therefore `clears('MANAGER')` = `clears('HR_ADMIN')` = `{MANAGER, HR_ADMIN, CEO, SUPER_ADMIN}`.
+- `src/lib/rbac.ts:55` `MANAGE_HR = ['MANAGER','HR_ADMIN','SUPER_ADMIN','CEO']` — set-identical.
+- `src/lib/rbac.ts:77` `VIEW_TEAM = ['MANAGER','HR_ADMIN','SUPER_ADMIN','CEO']` — set-identical.
+
+**The claim holds exactly.** The mechanical conversion is zero behaviour change, and no new capability is required. §7's "commits 1-3 and 7 are green by construction" rests on solid ground.
+
+### Test gates
+
+| criterion id | behavior | strategy | proving test | gap-resolution |
+|---|---|---|---|---|
+| G1 | Every rank-helper name is gone from `src/` | Fully-Automated | new `tests/unit/rbac-no-rank-helpers.test.ts` (§8b T1 scan), `pnpm test` exits 0 | B |
+| G2 | All 66 conversions compile and the suite still typechecks (src AND tests) | Fully-Automated | `pnpm check` exits 0 — baseline verified green today: 889 files, 0 errors | A |
+| G3 | Converted guards preserve the exact admitted set | Fully-Automated | `pnpm test` — `tests/unit/rbac.test.ts` one-element-equivalence loop (capability half retained) + `tests/unit/employee-access.test.ts` rewritten §8a assertion | B |
+| G4 | MANAGER cannot read a stranger's raw punches; can read a report's and branch staff's; HR unaffected | Fully-Automated | new `tests/unit/punch-access.test.ts` (§8b T2), `pnpm test` exits 0 | B |
+| G5 | MANAGER cannot read a stranger's performance review; HR can | Fully-Automated | `tests/unit/performance-redact.test.ts` extension (§8b T3), `pnpm test` exits 0 | B |
+| G6 | MANAGER gets 403 on `override-approve`, 200 on plain `approve` | Fully-Automated | new leave-override test (§8b T4), `pnpm test` exits 0 | B |
+| G7 | Maker-checker survives: a MANAGER's pay change still routes to propose→confirm | Fully-Automated | existing `tests/unit/pay-proposal-routing.test.ts`, `pnpm test` exits 0 | A |
+| G8 | `setUserRole` writes only `roles`; `assertNotLastOfRole` still 409s per-role | Fully-Automated | `tests/unit/user-admin-self-guard.test.ts` extension (§8b T5), `pnpm test` exits 0 | B |
+| G9 | No site judges authority on a singular `.role` | Fully-Automated | `tests/unit/route-guard-multirole.test.ts` (carve-out removed per §8b T6), `pnpm test` exits 0 | B |
+| G10 | Migration script is idempotent, no-ops on a fresh DB, and leaves no empty `roles` set | Hybrid | `docker exec veent-db-5434 …` + `pnpm exec tsx scripts/migrate-user-role-to-roles.ts` run TWICE against the local Postgres on 5434 — precondition: `./start.sh` up, `.env.dev` loaded | B |
+| G11 | `prestart.sh` completes without `--accept-data-loss` on a populated DB | Hybrid | `sh scripts/prestart.sh` against the seeded local DB — precondition: DB seeded via `pnpm db:seed` | B |
+| G12 | The three behaviour changes look right in the running app | Agent-Probe | Log in as MANAGER via `_dev/login-as`; attempt a stranger's `/api/v1/timesheets/:id/punches`, a stranger's `/performance/reviews/:id`, and a leave `override-approve`; confirm 403 each and confirm own-team access still works | C |
+| G13 | Production migration against real audit-log volume | — | — | D |
+| G14 | End-to-end browser coverage of the converted guards | — | — | D |
+
+Failing stub (G1):
+test("should find zero occurrences of ROLE_HIERARCHY|hasMinRole|hasAnyMinRole|requireAnyMinRole in src/", () => { throw new Error("NOT IMPLEMENTED — TDD stub: rank-helper finish-line scan") })
+
+Failing stub (G4):
+test("should deny a MANAGER a stranger's punches and allow a report's", () => { throw new Error("NOT IMPLEMENTED — TDD stub: punch access object-scoping") })
+
+Failing stub (G5):
+test("should deny a MANAGER a stranger's performance review", () => { throw new Error("NOT IMPLEMENTED — TDD stub: review privacy") })
+
+Failing stub (G6):
+test("should return 403 for a MANAGER on override-approve and 200 on approve", () => { throw new Error("NOT IMPLEMENTED — TDD stub: leave override narrowing") })
+
+Failing stub (G8):
+test("should write only roles in setUserRole and 409 on losing the last irreplaceable role", () => { throw new Error("NOT IMPLEMENTED — TDD stub: setUserRole roles-only write") })
+
+Legacy line form (retained for existing validate-contract consumers):
+- rbac conversion: Fully-automated: `pnpm check && pnpm test`
+- punch / review / leave-override narrowing: Fully-automated: `pnpm test` (new T2/T3/T4)
+- migration script: hybrid: `pnpm exec tsx scripts/migrate-user-role-to-roles.ts` run twice — precondition: local Postgres on 5434 up via `./start.sh`, seeded
+- deploy sequence: hybrid: `sh scripts/prestart.sh` — precondition: populated local DB
+- behaviour-change smoke: agent-probe: `_dev/login-as` MANAGER, three 403 probes
+- production audit-log migration volume: known-gap: documented
+- e2e browser coverage: known-gap: documented (#287 — `page.goto('/login')` 120s timeouts make e2e unusable as evidence)
+
+### Dimension findings
+
+- Infra fit: CONCERN — `scripts/prestart.sh:18` runs `prisma db push --skip-generate` with no `--accept-data-loss`, exactly as §6a claims (verified by reading the file). `scripts/migrate-employment-type-regular.ts` is a faithful precedent for §6b's shape (existence-guarded, idempotent, fresh-DB no-op, raw SQL to bypass the regenerated client). Two operational concerns remain: the unconditional `audit_logs` backfill (C8) and the single-column idempotency guard (C9).
+- Test coverage: CONCERN — the plan's stated coverage gap (§8c) is factually WRONG in the plan's favour (C2): the suite IS typechecked. All §8a test line references verified accurate. Residual gaps are the migration script (no precedent test) and e2e (unusable per #287).
+- Breaking changes: CONCERN — one public v1 API response shape changes without a stated decision (C5); one live call site is unenumerated and would break the build at commit 7 (C1).
+- Security surface: CONCERN — all three claimed leaks CONFIRMED as real. One proposed fix (§3-B B3) carries an undisclosed widening (C3). No new hole is opened by any proposed change; §9.9/§9.10/§9.11 are neither broken nor worsened (verified).
+- Section §1 (what gets deleted): PASS — `src/lib/server/rbac.ts:9-17` re-exports and `:36-39` `requireAnyMinRole` confirmed at the stated lines. Highest-risk edit: none; pure deletion.
+- Section §2 (call-site classification): CONCERN — 65 of 66 sites enumerated; `benefits/+page.server.ts:76` missing (C1). Every spot-checked §2b downstream object check exists where claimed. Highest-risk edit: none once C1 is added.
+- Section §3 (behaviour changes): CONCERN — A, C, D, E all confirmed correct. B carries an undisclosed widening (C3). Highest-risk edit: §3-B; mitigate by choosing B2 or by disclosing the widening before choosing B3.
+- Section §5 (Part 2 enumeration): CONCERN — Groups 1-8 are directionally right but miss ~10 sites (C4, C5). Highest-risk edit: deleting `EmployeeAccessActor.role`; mitigated because the compiler catches every consequence.
+- Section §6 (schema + migration): CONCERN — design sound and precedent-faithful; C8/C9/C10 are refinements, not redesigns. Highest-risk edit: §6b step 5's DROP; mitigate by running G10/G11 twice locally before any deploy.
+- Section §7 (sequencing): CONCERN — the argument for #282-first is sound and the "green by construction" claim is verified. Two mechanical issues: C6 (commit-site counts contradict §2) and C7 (commit 7 is not atomic as written).
+- Section §8 (test strategy): CONCERN — §8a verified accurate line-by-line; §8c's premise is false (C2).
+
+### Findings
+
+| # | Finding | Confidence | Severity | Proposed fix |
+|---|---|---|---|---|
+| C1 | `src/routes/(app)/benefits/+page.server.ts:76` (`enroll`) is a live `requireAnyMinRole(locals.user!.roles,'HR_ADMIN')` that appears in NO §2 conversion table. §2a lists benefits `:16,51,106` only. Enumerated total is 65, actual is 66. Commit 7 would delete the helper while this caller survives — build break. | CONFIRMED | CONCERN | Add `:76` to the §2a table as `-> MANAGE_HR` (set-identical no-op). Do NOT add `canTouchEmployee` here — that is §9.10, out of scope. |
+| C2 | §8c's premise is FALSE. `.svelte-kit/tsconfig.json` `include` contains BOTH `../test/**/*.ts` AND `../tests/**/*.ts`. `tsc -p tsconfig.json --listFiles` resolves 129 files under `/tests/` — the exact count of test `.ts` files. `pnpm check` is green today (889 files, 0 errors) and CI runs it at `.github/workflows/ci.yml:43`. The compiler DOES typecheck the suite. | CONFIRMED | CONCERN | Rewrite §8c's first paragraph and demote §9.8. Making `AuditContext.actorRoles` required + deleting `actorRole` produces a hard compile error at every test that omits `actorRoles`. The grep sweep remains worth doing for cosmetic dead `actorRole:` keys sitting beside a correct `actorRoles:` in non-fresh object literals, but it is a tidy-up, not the safety net. |
+| C3 | §3-B option B3 is presented as narrowing only. It also WIDENS: `assertCanTouchEmployee` admits any actor whose `listReportIdsFor`/managed-branch set contains the review subject — including an EMPLOYEE-role supervisor or branch manager, who is 403'd today by `requireAnyMinRole(user.roles,'HR_ADMIN')` at `src/routes/(app)/performance/reviews/[id]/+page.server.ts:26`. Private performance reviews are more sensitive than the punches in §3-A, where the plan did disclose the equivalent widening. | CONFIRMED | CONCERN | Disclose the widening in §3-B's option table before the user chooses. If an EMPLOYEE-role supervisor reading their report's private review is not wanted, B2 (`ADMINISTER_HR_ORGWIDE`) is the option that matches the code comment at `:22-24` exactly and widens nothing. |
+| C4 | Nine `role: user.role` literals construct an `EmployeeAccessActor` for `canTouchEmployee`/`listVisiblePayEmployeeIds` and appear in no §5 group: `(app)/payroll/[id]/+page.server.ts:48`, `(app)/payroll/calculator/+page.server.ts:39`, `(app)/reports/[type]/+page.server.ts:59`, `api/v1/payroll/loans/+server.ts:32`, `api/v1/payroll/[id]/+server.ts:23`, `api/v1/payroll/calculator/+server.ts:54`, `api/v1/payroll/cash-advances/+server.ts:30`, `api/v1/payroll/payslips/[id]/pdf/+server.ts:11`, `api/v1/reports/[type]/+server.ts:65`. §5a deletes `EmployeeAccessActor.role` (`employee-access.ts:29`), which makes all nine excess properties. | CONFIRMED | CONCERN | Add a "Group 6b — EmployeeAccessActor literals" entry listing all nine. Not a correctness risk: these are fresh object literals passed directly as arguments, so TypeScript excess-property checking errors on every one and `pnpm check` catches them. It is a scope-estimate correction. |
+| C5 | `src/routes/api/v1/settings/users/[id]/role/+server.ts:33` returns `json({ data: { id: updated.id, role: updated.role } })` — a PUBLIC v1 API response shape. §5 Group 4 lists the line number but states no decision for it. | CONFIRMED | CONCERN | Decide explicitly and record it: either return `roles: updated.roles` (breaking, honest) or keep a `role` key derived as `updated.roles[0]` (non-breaking, but reintroduces the primary-role pick §5c exists to forbid). Recommend `roles` + note the v1 break, since the same PATCH already takes a single `role` in its body. |
+| C6 | §7's per-commit site counts contradict §2. §7 says commits 1/2/3 cover 30/20/6 sites; §2a/2b/2c actually enumerate 35/19/8. 30+20+6+3 = 59, not 66. | CONFIRMED | CONCERN | Correct §7 to 35/19/8 (+1 for C1 = 36/19/8), so 36+19+8+3 = 66. The "provably 66" audit trail is the plan's main asset; the arithmetic must close. |
+| C7 | Commit 7 as written ("delete ROLE_HIERARCHY and the three rank helpers + guard test") is NOT green alone. `tests/unit/rbac.test.ts` imports all three names at `:8-10`; `tests/unit/employee-access.test.ts:3` imports `ROLE_HIERARCHY`; `route-guard-multirole.test.ts:77` carries the `hasAnyMinRole` fixture string. CI runs both `pnpm check` (:43) and `pnpm test` (:46). | CONFIRMED | CONCERN | Restate commit 7 as atomic with every §8a test edit. Note the five prose-only files (`employee-patch-authorization.test.ts:12`, `benefits-enroll-scoping.test.ts:12`, `requests-read-scoping.test.ts:7`, `self-action-guards.test.ts:9`, `pay-proposal-routing.test.ts:15`) are genuinely comment-only — verified — and do not gate the commit. |
+| C8 | §6b step 4's `UPDATE "audit_logs" SET "actorRoles" = ARRAY["actorRole"]::"Role"[] WHERE cardinality("actorRoles") = 0` rewrites every row of the audit table inside `prestart.sh`, which gates app startup. On a PH HRIS retaining payroll and 201-file audit history this is an unbounded full-table rewrite holding a lock during deploy. The plan does not mention volume. | PLAUSIBLE (cannot size the production table from here) | CONCERN | Keep `ADD COLUMN ... DEFAULT '{}'` (metadata-only on PG11+, so it is already cheap), but batch the backfill with a bounded loop (`WHERE ctid IN (SELECT ctid ... LIMIT 10000)`) and log progress. Or measure `SELECT count(*) FROM audit_logs` on production first and accept a one-off stall if the count is small. |
+| C9 | §6b step 1's guard keys on `users.role` alone, but step 5 drops two columns. If the process dies between the two `ALTER TABLE` statements, the next run early-returns at step 1 and `audit_logs.actorRole` is never dropped — after which `prisma db push` sees a populated NOT NULL column to drop and halts the deploy for want of `--accept-data-loss`, which is the exact outcome §6b exists to prevent. | PLAUSIBLE (narrow crash window; no evidence it has occurred) | CONCERN | Make step 1's guard the union: early-return only when NEITHER `users.role` NOR `audit_logs.actorRole` exists in `information_schema.columns`. One-line change, removes the window entirely. |
+| C10 | §6b step 2 `SET roles = ARRAY[role]::"Role"[] WHERE cardinality(roles) = 0 OR NOT (role = ANY(roles))` REPLACES the whole set. A genuine multi-role user whose scalar `role` drifted outside their set (e.g. `roles = [VERIFIER, APPROVER]`, `role = EMPLOYEE`) would be flattened to `['EMPLOYEE']` — silent authority loss. | PLAUSIBLE (unreachable today: every writer — `settings/org.ts:279`, `employees.ts:480-481`, `seed-core.ts:24` — keeps `role` inside `roles`) | CONCERN | Inherited verbatim from the shipped `scripts/migrate-user-roles-backfill.ts`, where REPLACE is deliberate (it repairs the #255 desync, and appending would retain stale authority). Keep REPLACE, but add step 2a: `SELECT count(*) FROM "users" WHERE cardinality(roles) > 1 AND NOT (role = ANY(roles))` and THROW if non-zero. Cheap, and turns a silent flatten into a loud stop. |
+| C11 | Minor line-number drift, all cosmetic: §2b cites `performance/+page.server.ts:46` (actual `listGoalsForManager` call is `:43`); §2c cites `timesheets.ts:100-116` (comment starts `:99`); §8a cites `route-guard-multirole.test.ts:37,65,81` (offender fixture is `:64`); §3-D's heading cites `481,507` (those are the comment lines; the guards are `:483,:509`, which §2b lists correctly). | CONFIRMED | CONCERN | Correct on the next plan edit. No execution impact. |
+| C12 | `node .claude/skills/vc-generate-plan/scripts/validate-plan-artifact.mjs` reports 7 FAILs against the plan file (missing Status/Complexity metadata, Blast Radius, Touchpoints, Public Contracts, Verification Evidence, Acceptance Criteria, Phase Completion Rules sections). | CONFIRMED | CONCERN | Template-shape only — this is a hand-written prose plan, not a vc-template plan. Blast Radius was INFERRED from §1 and §2's file tables (28 files in `src/`, plus `prisma/schema.prisma`, `scripts/prestart.sh`, 8 seed/migration scripts, ~10 test files). Stated explicitly here per the deviation-handling rule. Not worth restructuring the plan for; execution is unaffected. |
+| — | §0c set-identity claim | CONFIRMED CORRECT | PASS | — |
+| — | §2b downstream object checks (all spot-checked sites) | CONFIRMED CORRECT | PASS | — |
+| — | §2c timesheets deliberate-reversal reading | CONFIRMED CORRECT | PASS | — |
+| — | §3-A / §3-C leaks | CONFIRMED REAL | PASS | — |
+| — | §3-D `proposeIfRequired` maker-checker claim | CONFIRMED CORRECT | PASS | — |
+| — | §5b `AuditLog.actorRole` is write-only | CONFIRMED CORRECT | PASS | — |
+| — | §9.9 / §9.10 / §9.11 not worsened by this plan | CONFIRMED | PASS | — |
+
+### Verified-correct claims (evidence)
+
+- **§2c timesheets non-narrowing** — `src/lib/server/services/timesheets.ts:99-116` says verbatim: *"MANAGER used to be narrowed further, to its direct reports only. That was dropped… it failed outright for the many employees with no `reportsTo` set at all."* The plan's reading is exactly right, and §9.7's warning is justified.
+- **§3-A punches leak** — `src/routes/api/v1/timesheets/[id]/punches/+server.ts:28` `hasAnyMinRole(user.roles,'HR_ADMIN')` is true for MANAGER, short-circuiting the owner/direct-manager check at `:29-37`. The doc comment at `:10` ("the owner, the owner's manager, HR_ADMIN, or SUPER_ADMIN") is contradicted by the code. Real leak.
+- **§3-C leave override** — `src/routes/api/v1/leave/[id]/+server.ts:38` gates on the `'HR_ADMIN'` floor while `:40` returns *"override-approve requires HR_ADMIN or higher"*. MANAGER clears the floor. The message is false as the plan states.
+- **§3-D maker-checker** — `src/lib/server/services/employees.ts:704` `if (employee.userId !== ctx.actorId && canAny(roles,'ADMINISTER_HR_ORGWIDE')) return null` — a MANAGER lacks that capability and falls to `createProposal`. Confirmed reached from both writers: `recordCompensationChange` calls `proposeIfRequired` at `:786`, `promoteEmployee` at `:1038`. Narrowing the routes to `ADMINISTER_HR_ORGWIDE` would 403 the MANAGER before the proposal is filed. **The plan is right; do not narrow.**
+- **`scopedToEmployee` wrapper** — `src/routes/(app)/employees/[id]/+page.server.ts:390-401`, and there is exactly ONE `export const actions` in the file (`:402`), wrapped. All ten actions are guarded by `assertCanTouchEmployee(event.locals.user!, event.params.id)` before their handler body runs. Verified by reading the export, not the handlers — this is the specific trap a prior review fell into.
+- **§5b write-only** — the only `AuditLog.actorRole` appearances are the schema (`prisma/schema.prisma:1361`), the write interface (`src/lib/server/audit.ts:7`), and assignments. The audit-log page selects `actor: { select: { email: true, role: true } }` (`src/routes/(app)/reports/audit-log/+page.server.ts:53`) — the User relation's CURRENT role, never the historical column. Confirmed: nothing reads it.
+- **§9.9 / §9.10 / §9.11 not worsened** — every conversion at those sites (`employees/[id]:597,652`; `benefits:76`; `separations:37`; `api/v1/leave/[id]:17`, `api/v1/timesheets/[id]:17`) is set-identical, so the pre-existing gaps are preserved exactly, neither widened nor deepened. §3-C's narrowing does not touch §9.11: VERIFIER/APPROVER are already excluded at `api/v1/leave/[id]/+server.ts:17` before the override branch is reached.
+
+### Open gaps
+
+- Production audit-log volume for §6b step 4 — cannot be measured from this environment. Carried as C8.
+- Migration-script test precedent — none of the seven existing `scripts/migrate-*.ts` has a test. Matching that precedent is reasonable; G10/G11 (run the script twice locally against the seeded DB on 5434) is the substitute evidence and is stronger than the precedent offers.
+- e2e coverage: known-gap: documented — #287's `page.goto('/login')` 120s timeouts make the suite unusable as evidence. Nothing in this contract depends on it.
+- The five §9 decisions (AuditLog B2/B3, §3-A approval, §3-B option, §3-C option, §5c `<select>` prefill) remain open and are the user's to make. C3 changes the information available for the §3-B decision.
+
+### What this coverage does NOT prove
+
+- `pnpm check` proves the tree typechecks; it does NOT prove any guard admits the right set. Type-identical guards with different capability arguments both compile.
+- `pnpm test` (G1-G9) proves unit-level behaviour against mocked `$lib/server/db`; it does NOT prove the real Prisma queries in `listReportIdsFor`/`canTouchEmployee` return the same ids against real rows, nor that `reportsToId`/`EmployeeSupervisor` data in production has the shape the tests assume.
+- G3's equivalence loop proves `canAny([role], cap) === can(role, cap)` for one-element sets; it does NOT prove the 66 sites were each given the *correct* capability — only that whichever capability was chosen behaves consistently. C1's missed site is exactly the class of error this gate cannot catch; only the enumeration audit catches it.
+- G4/G5/G6 prove the three narrowings at the unit level; they do NOT prove no OTHER surface exposes the same data by a different route (e.g. a punch visible through an aggregate endpoint, a review's text via a performance export).
+- G10/G11 prove the migration is idempotent against a locally seeded DB; they do NOT prove behaviour against production row counts, production lock contention, or a DB whose `users.roles` was hand-edited. C8 and C10 are unproven by any gate here.
+- G12 (agent probe) proves the three 403s render; it does NOT prove the negative space — that nothing a MANAGER legitimately needs newly 403s. Only the passing halves of T4 and the untouched §2a/2b/2c sites speak to that, and they speak by construction, not by observation.
+- Nothing here proves session behaviour across the `User.role` column drop (§6e). That is stated as high-confidence-unverified in the plan and remains so; it needs a staging run.
+- No gate covers §9.9/§9.10/§9.11. They are confirmed not-worsened by reading, not by test.
+
+Gate: CONDITIONAL (12 concerns; C1 is a build-breaker that must be applied to the plan before EXECUTE, C2/C3/C5 change decisions the user is about to make, the rest are refinements)
+
+Accepted by: PENDING USER — this contract is presented at the V5 gate and is not yet accepted. Concerns requiring explicit acceptance: C1 (missed call site), C2 (§8c premise false), C3 (undisclosed widening in §3-B), C4 (Part 2 enumeration gap), C5 (v1 API response shape), C6 (commit-count arithmetic), C7 (commit 7 atomicity), C8 (audit-log backfill volume), C9 (migration idempotency window), C10 (multi-role flatten), C11 (line drift), C12 (plan template shape).
+
+### Execute-agent instructions
+
+| # | Instruction | Trigger condition |
+|---|---|---|
+| E1 | Before commit 1, re-run `grep -rn "requireAnyMinRole\|hasAnyMinRole\|hasMinRole" src/` and reconcile against §2's tables. The count must be 66 live sites. Do not begin converting until the enumeration closes. | Commit 1 entry |
+| E2 | `benefits/+page.server.ts:76` converts to `requireAnyCapability(locals.user!.roles,'MANAGE_HR')`. Do NOT add `canTouchEmployee` there — that is §9.10, explicitly out of scope. | Commit 1 |
+| E3 | Do NOT narrow any timesheet site to a manager's direct reports. `src/lib/server/services/timesheets.ts:99-116` records a deliberate reversal. If a review comment suggests it, point at that comment. | Commit 3 |
+| E4 | Do NOT convert `employees/[id]/+page.server.ts:483,509` to `ADMINISTER_HR_ORGWIDE`. `MANAGE_HR` only. `ADMINISTER_HR_ORGWIDE` would 403 the MANAGER before `proposeIfRequired` (`employees.ts:704`) can file the proposal, breaking maker-checker and `tests/unit/pay-proposal-routing.test.ts`. | Commit 2 |
+| E5 | Commit 7 is atomic: delete the helpers AND apply every §8a test edit AND add T1 in the same commit. Verify with `pnpm check && pnpm test` before committing. Partial commit 7 fails CI. | Commit 7 |
+| E6 | For §3-B, use whichever option the user selects at V5. If B3, add a one-line comment at the guard naming the widening (EMPLOYEE-role supervisors gain access) so the next reader is not surprised. | Commit 5 |
+| E7 | Run the migration script TWICE against the local DB on 5434 before wiring it into `prestart.sh`. The second run must be a clean no-op. Then run `sh scripts/prestart.sh` end-to-end and confirm `db push` emits no data-loss warning. | Commit 8 |
+| E8 | Do NOT add `--accept-data-loss` to `scripts/prestart.sh:18` under any circumstance. If the push warns about data loss, the migration script is incomplete — fix the script. | Commit 8, 11 |
+| E9 | Part 2: after deleting `EmployeeAccessActor.role`, run `pnpm check` and fix every reported site. Expect ~9 additional `role:` literals beyond §5's Groups (C4). Trust the compiler here — it does typecheck `tests/**`. | Commit 9-10 |
+| E10 | `scripts/migrate-leave-to-request.ts:63,71` and `seed-issues-demo.ts:227,229` are `ApprovalStep.role`, a different column. Leave alone. Same for `approvals.ts:406` and `requests/approvals/+page.svelte:101`. | Commit 10 |
+
+## Autonomous Goal Block
+
+SESSION GOAL: Execute the RBAC four-mechanism collapse (#282 Part 1, then the User.role -> User.roles collapse) on branch refactor/rbac-simplification-282, per process/general-plans/active/rbac-simplification-282_PLAN_10-08-26.md and its Validate Contract.
+
+CHARTER: Convert all 66 rank-floor call sites to capability checks (set-identical, zero behaviour change), fix the three confirmed leaks, delete ROLE_HIERARCHY and the three rank helpers, then collapse the scalar User.role into User.roles behind an idempotent migration script.
+
+AUTONOMY RULES:
+- One issue, one PR, many commits. Do not split into multiple PRs.
+- Follow the 11-commit sequence in section 7, corrected per C6 (36/19/8 sites for commits 1/2/3).
+- Bias to deletion. No new abstractions, no Scope enum, no policy engine, no new dependencies.
+- Run `pnpm check && pnpm test` before every commit. Both must be green.
+- Use pnpm, never npm.
+- Never add a Co-Authored-By or Co-Author trailer to any commit.
+
+HARD STOPS (require the user):
+- The five open decisions in section 9 (AuditLog B2/B3, sections 3-A, 3-B, 3-C options, and the 5c select prefill). Do not pick one autonomously.
+- Any push to a remote, any PR creation, any deploy.
+- Adding `--accept-data-loss` to scripts/prestart.sh — forbidden outright.
+- Running the migration script against anything other than the local DB on 5434.
+
+NEXT PHASE: EXECUTE, after the V5 gate is accepted and the five section-9 decisions are made.
+
+CONTRACT SUMMARY: Gate CONDITIONAL. Set-identity claim CONFIRMED — all 66 conversions are provably no-ops. 12 concerns; C1 (missed call site benefits/+page.server.ts:76) must be applied to the plan first or commit 7 breaks the build. C2 means the test suite IS typechecked, which lowers Part 2 risk materially. C3 means section 3-B option B3 widens as well as narrows — disclose before deciding.
+
+EXECUTE START COMMAND: Read process/general-plans/active/rbac-simplification-282_PLAN_10-08-26.md in full including the Validate Contract, apply plan corrections C1/C6/C7 first, then begin commit 1.
