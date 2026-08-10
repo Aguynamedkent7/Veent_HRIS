@@ -43,12 +43,16 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 	if (!entry) return apiError(404, 'Payslip not found')
 
 	// #249: owner, or an org-wide payroll role, or a manager reaching their own reporting line.
-	// Shared with the PDF and the /payslips page so no door is a way around another — this gate
-	// used to be the payroll-view capability alone, which #133 had quietly opened to every MANAGER.
+	// This gate used to be the payroll-view capability alone, which #133 had quietly opened to every
+	// MANAGER.
 	if (!(await canReadPayslip(user, { id: entry.employeeId, userId: entry.employee.userId }))) {
 		return apiError(403, 'Access denied')
 	}
 
+	// #278: both gates above and below are now shared verbatim with the PDF and the /payslips page,
+	// so no door is a way around another. The claim used to cover the access gate only — this door
+	// was already strict about drafts while the other two let VIEW_PAYROLL_REPORTS holders straight
+	// through, which is the bug #278 closed.
 	if (!isPayslipVisible(entry.payrollRun)) {
 		return apiError(403, 'Payslip not yet available')
 	}

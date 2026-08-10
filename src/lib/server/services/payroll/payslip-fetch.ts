@@ -114,14 +114,12 @@ export async function fetchPayslipDocument(
 	)
 	if (!allowed) return { ok: false, status: 403, message: 'Access denied' }
 
-	// Draft visibility is a separate question from access and keeps its old, broader rule: the
-	// "not-yet-approved" gate applies to owners so an employee can't preview an unreleased run,
-	// while payroll-report roles inspect drafts. Narrowing this too would be a second behaviour
-	// change — a MANAGER can already read an unapproved run wholesale at /payroll/[id].
-	// #272 reads the caller's full role set rather than their primary role. That is orthogonal to
-	// the warning above: which roles clear the gate is unchanged, only where we look for them.
-	const isPrivileged = canAny(ctx.roles, 'VIEW_PAYROLL_REPORTS')
-	if (!isPrivileged && !isPayslipVisible(entry.payrollRun)) {
+	// #278: visibility begins at filing, and no capability opens a draft. This used to let any
+	// VIEW_PAYROLL_REPORTS holder read a payslip out of a DRAFT or COMPUTED run, which the JSON door
+	// never did — so the same entry answered 200 or 403 depending on which door you knocked on.
+	// Finance still reconciles a run before approval, through the payroll exports and /payroll/[id];
+	// a payslip is the filed document, not a preview of one.
+	if (!isPayslipVisible(entry.payrollRun)) {
 		return { ok: false, status: 403, message: 'Payslip not yet available' }
 	}
 
