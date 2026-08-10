@@ -80,4 +80,18 @@ describe('?/reveal object-level access (#290 / #228)', () => {
 		// (and written the VIEW audit row for a read that was refused).
 		expect(revealEmployeeSensitive).not.toHaveBeenCalled()
 	})
+
+	it('T9 — returns the unmasked history alongside the revealed fields', async () => {
+		getEmploymentHistory.mockResolvedValue([{ id: 'log-1', changes: [] }])
+
+		const result = await actions.reveal(revealEvent(['HR_ADMIN'], 'emp-1'))
+
+		expect(result).toMatchObject({
+			revealed: { basicMonthlySalary: 25000 },
+			history: [{ id: 'log-1' }]
+		})
+		// Without the third argument the history comes back masked and the reveal silently
+		// releases only half of what it claims to.
+		expect(getEmploymentHistory).toHaveBeenCalledWith('emp-1', ORG, { unmask: true })
+	})
 })

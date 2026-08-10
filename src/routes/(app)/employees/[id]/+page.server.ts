@@ -544,7 +544,14 @@ export const actions: Actions = scopedToEmployee({
 			ctxOf(locals, getClientAddress()),
 			{ audit: !isSelf }
 		)
-		return { revealed }
+		// #290: the Employment History panel masks its salary figures the same way, and is
+		// released by this same reveal — deliberately with NO second audit write. The single VIEW
+		// row above covers both surfaces; a second one would be byte-identical and tell an
+		// auditor nothing.
+		const history = await getEmploymentHistory(params.id, locals.user!.organizationId, {
+			unmask: true
+		})
+		return { revealed, history }
 	},
 
 	offboard: async ({ request, locals, params, getClientAddress }) => {

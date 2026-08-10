@@ -37,6 +37,9 @@
 	// The full values exist client-side only after the audited ?/reveal action, and any other
 	// action result (e.g. a save) drops back to the masked display.
 	const revealed = $derived(form?.revealed ?? null)
+	// #290: the Employment History panel's salary figures arrive masked from the load and are
+	// released by the same ?/reveal, which returns the unmasked timeline alongside `revealed`.
+	const history = $derived(form?.history ?? data.history)
 
 	const DOC_CATEGORIES = [
 		{ value: 'CONTRACT', label: 'Contract' },
@@ -1679,9 +1682,9 @@
 					>
 				</h2>
 
-				{#if data.history.length}
+				{#if history.length}
 					<ol class="relative space-y-5 border-l pl-6">
-						{#each data.history as ev (ev.id)}
+						{#each history as ev (ev.id)}
 							<li class="relative">
 								<span
 									class="absolute -left-[27px] mt-1 h-3 w-3 rounded-full border-2 border-background {ev.type ===
