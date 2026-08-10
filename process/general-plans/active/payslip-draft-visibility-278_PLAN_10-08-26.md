@@ -1,7 +1,7 @@
 # PLAN — #278 Draft-payslip visibility: make every door strict
 
 **Date**: 10-08-26
-**Status**: PLANNED (not executed)
+**Status**: EXECUTED — unit/lint/format/check/mutation-sweep/manual-probe all green; `pnpm test:e2e` still running at UPDATE PROCESS time, result not yet confirmed. Not merged, not pushed.
 **Complexity**: SIMPLE
 **Issue**: #278
 **Branch**: `fix/payslip-draft-visibility-278` @ af10325
@@ -457,24 +457,42 @@ commit 2 leaves a link that 403s — i.e. today's bug — so if only one is reve
 
 ## Implementation Checklist
 
-1. Create `tests/unit/payslip-draft-visibility.test.ts` with rows U1–U8 (mock idiom from
+1. [x] Create `tests/unit/payslip-draft-visibility.test.ts` with rows U1–U8 (mock idiom from
    `tests/unit/payslip-access.test.ts:19-53`); run `pnpm test` and record U1–U4 failing. Commit 1.
-2. `src/lib/server/services/payroll/payslip-fetch.ts`: delete line 123 (`isPrivileged`), drop the
+   — Done: `a07718d`. Observed RED (U1–U4 failing, 4 rows passed as positive controls).
+2. [x] `src/lib/server/services/payroll/payslip-fetch.ts`: delete line 123 (`isPrivileged`), drop the
    conjunct at line 124, rewrite the 117-122 comment. Keep the `canAny` import at line 8.
-3. `src/routes/(app)/payslips/[id]/+page.server.ts`: drop the `canAny(...)` conjunct at line 50,
+   — Done: `058e673`.
+3. [x] `src/routes/(app)/payslips/[id]/+page.server.ts`: drop the `canAny(...)` conjunct at line 50,
    rewrite the line-49 comment, delete the now-orphaned import at line 5.
-4. `src/routes/api/v1/payroll/payslips/[id]/+server.ts`: correct the lines 45-47 comment so its
+   — Done: `058e673`.
+4. [x] `src/routes/api/v1/payroll/payslips/[id]/+server.ts`: correct the lines 45-47 comment so its
    "no door is a way around another" claim covers the draft gate too. Run `pnpm test` (green) and
    `pnpm lint` (green). Commit 2.
-5. Create `tests/e2e/payslip-draft-visibility.spec.ts` with the seed/teardown and rows E1–E10;
+   — Done: `058e673`. Doors A + B fix and comment landed in one commit as planned.
+5. [x] Create `tests/e2e/payslip-draft-visibility.spec.ts` with the seed/teardown and rows E1–E10;
    `pnpm test:e2e`. Commit 3.
-6. `src/lib/server/services/payroll/index.ts`: add `period: { select: { status: true } }` to
+   — Done: `083f663` (206-line spec). **`pnpm test:e2e` result not yet confirmed at UPDATE PROCESS
+   time — the suite was still running.** Do not mark this row's gate green until the run completes.
+6. [x] `src/lib/server/services/payroll/index.ts`: add `period: { select: { status: true } }` to
    `getPayrollRun`'s include (opens line 620).
-7. `src/routes/(app)/payroll/[id]/+page.server.ts`: import `isPayslipVisible` and return
+   — Done: `a841024`.
+7. [x] `src/routes/(app)/payroll/[id]/+page.server.ts`: import `isPayslipVisible` and return
    `payslipVisible: isPayslipVisible(run)`; `src/routes/(app)/payroll/[id]/+page.svelte`: wrap the
    line-186 anchor in `{#if data.payslipVisible}`. Add E11–E12 to the spec. Full CI order. Commit 4.
-8. Run the commit-5 mutation sweep (M1/M2/M3, scratchpad `cp` for restore — never `git checkout`),
+   — Done: `a841024`. E11/E12 added inside the commit-3 spec file per plan.
+8. [x] Run the commit-5 mutation sweep (M1/M2/M3, scratchpad `cp` for restore — never `git checkout`),
    then the manual probe. Record both in the PR body.
+   — Done: `3edbff6`. Mutation sweep ran **M1–M4** (M4 added at VALIDATE, see Fail-CLOSED discipline);
+   all four bit — M1 5 failed, M2 7 failed, M3 4 failed, M4 5 failed. No mutation left the suite
+   green. Manual probe run against real DB/sessions — see Execution Record below.
+
+Additional commit made outside the original 5-commit sequence:
+
+- `e7d02f4` `test(e2e): raise the per-test timeout to 120s so CI does not flake` — `playwright.config.ts`
+  only. Not anticipated by the plan; added because the real two-step login costs ~60s cold against a
+  30s Playwright default, which was flaking the pre-existing `payslip-tenancy` spec too. Suite-wide
+  timeout bump, not scoped to this fix's own spec.
 
 ## Phase Completion Rules
 
@@ -492,6 +510,69 @@ This is a single-phase SIMPLE plan; each commit is its own gate.
 - Testing context: `process/context/all-context.md` and `process/context/tests/all-tests.md` do not
   exist in this repo (vc-setup was never run) — the test routing used here is the repo's own
   `vitest.config.ts` (`tests/unit/**`) and `playwright.config` (`tests/e2e/**`).
+
+## Execution Record (added by UPDATE PROCESS, 10-08-26)
+
+**Commits, in order** (7 on top of `af10325`, none pushed):
+
+1. `a07718d` test: pin draft-payslip visibility at the PDF door
+2. `058e673` fix: no payslip is readable while its run is a draft
+3. `083f663` test: e2e draft-payslip 403 at every payslip door
+4. `a841024` fix: hide the Payslip link on a run whose payslips are not yet visible
+5. `3edbff6` chore: record the #278 mutation sweep and real-DB probe
+6. `e7d02f4` test(e2e): raise the per-test timeout to 120s so CI does not flake
+7. `16f2c05` docs(plans): record the #278 draft-payslip visibility plan
+
+**Deviations from the plan text — both anticipated, both already justified inline (see "Commit
+sequence (test-first)" above), confirmed as executed exactly as written:**
+
+1. Commit 1 added an APPROVED positive control alongside the RED unit rows, so the same commit
+   proves the gate isn't simply always-403. Executed as planned.
+2. Commit 4 routed the run-detail template gate through a server-side `payslipVisible: boolean`
+   computed by `isPayslipVisible(run)` in the load, rather than re-testing run/period status inline
+   in the `.svelte` file. Executed as planned — avoids a fourth place the visibility rule could drift.
+
+No unplanned deviations in the gate logic itself. One unplanned *addition* (not a deviation from the
+fix): the `e7d02f4` Playwright timeout bump, see checklist item 8's note above.
+
+**Gate results, as verified — do not re-run, use these:**
+
+| Gate | Result |
+|---|---|
+| `pnpm format:check` | clean |
+| `pnpm lint` | 0 errors; 1 pre-existing `CalculatorWindow.svelte:82` a11y warning, unrelated to this fix |
+| `pnpm check` | 885 files, 0 errors |
+| `pnpm test` | 94 files / 1178 tests passed (baseline at af10325 was 93 files / 1170 tests) |
+| `pnpm test:e2e` | **PENDING CONFIRMATION** — still running as of this UPDATE PROCESS session; do not treat as green |
+| Mutation sweep M1–M4 | M1 deleted → 5 failed; M2 inverted → 7 failed; M3 escape restored → 4 failed; M4 escape kept, visibility test deleted → 5 failed. No mutation left the suite green — AC-10 holds |
+| Real-DB probe (AC-11) | `ceo`/`admin` both 200 → 403 on `GET /api/v1/payroll/payslips/<draft>/pdf`; page door 200 with `133,713` in body → 403; APPROVED control stayed 200/200; Payslip link count on the draft run went 1 → 0, stayed 1 → 1 on the approved run |
+
+**Durable learnings from this task:**
+
+1. VALIDATE caught a real defect in the plan's own sentinel attribution: U5 (owner on DRAFT → 403)
+   was credited as the fail-OPEN catch-all, but it does not catch the inverse mistake of deleting
+   `isPayslipVisible(...)` while keeping the privileged escape — under that mutation the guard becomes
+   `if (!isPrivileged)`, an owner is not privileged, so U5 stays green. U7 (owner on APPROVED →
+   `ok: true`) is the row that actually dies under that mutation. Mutation M4 was added at VALIDATE to
+   close the gap. **General lesson: a sentinel test's claimed coverage must be traced through the
+   specific mutation it is supposed to catch, not assigned by intuition.**
+2. RESIDUAL-1 (Door B's guard identity is unpinned) is accepted, not closed — `+error.svelte` renders
+   a fixed 403 body and never surfaces `$page.error.message`, and `accept: application/json` did not
+   change that. Doors A and C pin gate order by message (U8, E6); Door B cannot.
+3. This is the **6th occurrence** in this repo of the twin-door pattern (guard one door, its twin
+   stays open). The RESEARCH phase proving the four-door list exhaustive — grepping
+   `isPayslipVisible`, `payslipVisibleRunFilter`, `canReadPayslip`, `fetchPayslipDocument`, and every
+   `db.payrollEntry.find*` call site — is what made this fix trustworthy. Worth grepping for a guard's
+   call sites exhaustively before considering any RBAC/visibility fix complete.
+4. `pnpm lint` was the *only* gate that caught the orphaned `canAny` import at Door B; `pnpm test`
+   stayed green with it still present. `pnpm check` also did not catch it (unused imports are a lint
+   rule, not a type error).
+5. Test-infra gap, recorded not fixed: `finance@veent.ph` and `payroll@veent.ph` are seeded but absent
+   from `tests/e2e/helpers.ts`'s `USERS`, so FINANCE and PAYROLL_OFFICER coverage of this fix rests on
+   unit rows U2/U3 only, never at the HTTP layer.
+6. The real two-step login form costs ~60s cold against Playwright's 30s default timeout, and was
+   flaking the pre-existing `payslip-tenancy` spec for the same reason this fix's new spec would have
+   flaked. Fixed suite-wide via `playwright.config.ts` rather than per-spec.
 
 ## Resume and Execution Handoff
 
