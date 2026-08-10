@@ -5,6 +5,19 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 
+	// `fail()` contributes its own shape to the ActionData union, so narrow before reading.
+	// Without this the 400 from a reveal with no id renders as silence.
+	const failure = $derived(form && 'message' in form ? form.message : null)
+
+	/**
+	 * The reveal is a full-page POST, so focus resets to the top of the document and the payload
+	 * is rendered in the same pass as the rest of the page — the weakest case for a live region
+	 * announcing. Move focus to it instead, so it is both announced and reachable.
+	 */
+	const focusOnMount = (node: HTMLElement) => {
+		node.focus()
+	}
+
 	const ACTIONS = [
 		'CREATE',
 		'UPDATE',
@@ -23,6 +36,12 @@
 
 <div class="space-y-6">
 	<h1 class="text-2xl font-bold tracking-tight">Audit Log</h1>
+
+	{#if failure}
+		<div role="alert" class="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">
+			{failure}
+		</div>
+	{/if}
 
 	<!-- Filter form -->
 	<form method="GET" class="flex flex-wrap items-end gap-3 rounded-lg border bg-card p-4">
@@ -184,7 +203,12 @@
 								{#if !log.hasChanges}
 									<span class="text-xs text-muted-foreground">—</span>
 								{:else if revealed && revealed.id === log.id}
-									<div class="space-y-1" aria-live="polite">
+									<div
+										class="space-y-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+										aria-live="polite"
+										tabindex="-1"
+										use:focusOnMount
+									>
 										{#if revealed.oldValue !== null}
 											<div>
 												<span class="text-xs font-medium text-red-600">Before:</span>

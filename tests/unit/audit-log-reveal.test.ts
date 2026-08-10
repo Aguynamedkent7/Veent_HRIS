@@ -52,7 +52,31 @@ const ENTRY = {
 	oldValue: { basicMonthlySalary: OLD_SALARY, rateType: 'MONTHLY' },
 	newValue: { basicMonthlySalary: NEW_SALARY, rateType: 'MONTHLY', effectiveDate: '2026-01-01' },
 	createdAt: new Date('2026-01-01T00:00:00Z'),
-	actor: { email: 'hr@orga.test', role: 'HR_ADMIN' }
+	actor: { email: 'hr@orga.test', role: 'HR_ADMIN' },
+	// Present on the fixture on purpose: the loader spreads the row, so an unprojected query
+	// ships these to the client. They must not survive the load. See NEVER_SHIPPED below.
+	ipAddress: '203.0.113.7',
+	userAgent: 'Mozilla/5.0 (audit-log-reveal fixture)'
+}
+
+/** Columns the client must never receive, whatever the caller's capabilities. */
+const NEVER_SHIPPED = ['ipAddress', 'userAgent'] as const
+
+/**
+ * Emulates Prisma's projection so the fixture narrows only when the query asks it to: a `select`
+ * returns its listed fields, a bare `include` returns every scalar. Mirrors the helper in
+ * dashboard-org-scoping.test.ts, added there for the same reason.
+ */
+const project = (row: Record<string, unknown>, args: Record<string, unknown>) => {
+	const select = args.select as Record<string, unknown> | undefined
+	if (!select) return { ...row }
+	const out: Record<string, unknown> = {}
+	for (const [key, spec] of Object.entries(select)) {
+		if (spec === true) out[key] = row[key]
+		else if (spec && typeof spec === 'object')
+			out[key] = project(row[key] as Record<string, unknown>, spec as Record<string, unknown>)
+	}
+	return out
 }
 
 /** An entry with no payload at all — a LOGIN row. The reveal control must not offer itself here. */
@@ -92,7 +116,12 @@ const revealEvent = (roles: Role[], id: string | null = 'log1') => {
 beforeEach(() => {
 	vi.clearAllMocks()
 	dbMock.auditLog.count.mockResolvedValue(2)
-	dbMock.auditLog.findMany.mockResolvedValue([ENTRY, BARE_ENTRY])
+	// Projected, not a flat resolve: the loader spreads each row, so a bare `include` would ship
+	// every scalar. Handing back the whole fixture regardless of the query would make the
+	// NEVER_SHIPPED assertions below pass even with the leak restored.
+	dbMock.auditLog.findMany.mockImplementation(async (args: Record<string, unknown>) =>
+		[ENTRY, BARE_ENTRY].map((row) => project(row as Record<string, unknown>, args))
+	)
 	dbMock.user.findMany.mockResolvedValue([])
 	// Scoped like the real query: an entry outside the caller's organization is simply not found.
 	dbMock.auditLog.findFirst.mockImplementation(
@@ -123,6 +152,28 @@ describe('/reports/audit-log load — the list never carries the payload (#242)'
 		const data = await loadData(['HR_ADMIN'])
 
 		expect(data.logs[0]).toMatchObject({ oldValue: null, newValue: null })
+	})
+
+	// The payload is not the only thing a bare `include` leaks: the row also carries the actor's
+	// IP and user agent. SUPER_ADMIN is the strongest caller, so if these are absent here they are
+	// absent for everyone.
+	it('never ships the actor IP or user agent, even to a SUPER_ADMIN', async () => {
+		const data = await loadData(['SUPER_ADMIN'])
+
+		for (const column of NEVER_SHIPPED) {
+			expect(data.logs[0]).not.toHaveProperty(column)
+		}
+		expect(JSON.stringify(data.logs)).not.toContain(ENTRY.ipAddress)
+		expect(JSON.stringify(data.logs)).not.toContain(ENTRY.userAgent)
+
+		// The query itself must ask for a projection — the assertions above only bite because the
+		// mock honours it, so pin the shape too.
+		const args = dbMock.auditLog.findMany.mock.calls[0][0]
+		expect(args.include).toBeUndefined()
+		expect(args.select).toBeDefined()
+		for (const column of NEVER_SHIPPED) {
+			expect(args.select).not.toHaveProperty(column)
+		}
 	})
 
 	it('tells the page which entries have a payload to reveal', async () => {

@@ -38,7 +38,20 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			orderBy: { createdAt: 'desc' },
 			skip: pagination.skip,
 			take: pagination.take,
-			include: { actor: { select: { email: true, role: true } } }
+			// An explicit select, not `include`: `include` returns every scalar, and the rows are
+			// spread wholesale below, so `ipAddress`, `userAgent`, `actorId` and `actorRole` would
+			// ship to the client. The same bare-`include` shape was the dashboard leak this issue
+			// fixed (#242) — the type annotation on the map below hides it, it does not prevent it.
+			select: {
+				id: true,
+				action: true,
+				entityType: true,
+				entityId: true,
+				oldValue: true,
+				newValue: true,
+				createdAt: true,
+				actor: { select: { email: true, role: true } }
+			}
 		}),
 		db.user.findMany({
 			where: { organizationId: user.organizationId },

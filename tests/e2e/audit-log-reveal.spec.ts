@@ -53,6 +53,10 @@ test.beforeAll(async () => {
 })
 
 test.afterAll(async () => {
+	// A seed that failed before assigning this left nothing to clean up, and deleting on an
+	// undefined id throws a Prisma validation error that buries the real failure.
+	if (!auditId) return
+
 	const db = new PrismaClient()
 	try {
 		// By id, never by a date or value filter: the log is shared with every other tenant and
