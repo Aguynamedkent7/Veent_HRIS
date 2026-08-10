@@ -1,5 +1,9 @@
 # Veent HRIS — Claude Instructions
 
+This file governs ordinary work and is authoritative. `AGENTS.md` holds the vc-pro-max /
+RIPER-5 harness, which is **dormant** — it applies only in a turn that explicitly names it.
+See the override block at the top of that file; do not activate or suggest it unasked.
+
 ## Git commits
 
 - **Never** add a `Co-Authored-By` line to any commit message.
