@@ -2,7 +2,6 @@ import { error } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
 import { isPayslipVisible } from '$lib/server/services/payroll/runs'
 import { canReadPayslip } from '$lib/server/services/payroll/payslip-fetch'
-import { canAny } from '$lib/server/rbac'
 import type { PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals, params }) => {
@@ -46,8 +45,9 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	if (!(await canReadPayslip(user, { id: entry.employeeId, userId: entry.employee.userId }))) {
 		error(403, 'Access denied')
 	}
-	// Draft visibility keeps its own, broader rule, matching `fetchPayslipDocument`.
-	if (!canAny(user.roles, 'VIEW_PAYROLL_REPORTS') && !isPayslipVisible(entry.payrollRun)) {
+	// #278: the same strict rule as the JSON and PDF doors — no capability opens a payslip whose run
+	// is still a draft.
+	if (!isPayslipVisible(entry.payrollRun)) {
 		error(403, 'Payslip not yet available')
 	}
 
