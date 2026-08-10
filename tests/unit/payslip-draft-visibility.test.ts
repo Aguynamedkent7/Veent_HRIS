@@ -109,12 +109,16 @@ beforeEach(() => {
 
 describe('fetchPayslipDocument — draft visibility (#278)', () => {
 	describe('no capability opens a payslip whose run is not visible', () => {
-		// U1–U3: the three org-wide payroll roles. Each held VIEW_PAYROLL_REPORTS and each used to
-		// read straight through a draft.
+		// U1–U3b: every org-wide payroll role. Each holds VIEW_PAYROLL_REPORTS and each used to
+		// read straight through a draft. All five non-MANAGER holders are listed on purpose —
+		// the guard is capability-based, but a bypass restored for one role would otherwise
+		// leave this suite green.
 		const privileged: [string, Role, string, string | null][] = [
 			['U1 CEO on a DRAFT run with no period', 'CEO', 'DRAFT', null],
 			['U2 HR_ADMIN on a COMPUTED run in a LOCKED period', 'HR_ADMIN', 'COMPUTED', 'LOCKED'],
-			['U3 FINANCE on a COMPUTED run in a GENERATED period', 'FINANCE', 'COMPUTED', 'GENERATED']
+			['U3 FINANCE on a COMPUTED run in a GENERATED period', 'FINANCE', 'COMPUTED', 'GENERATED'],
+			['U3a PAYROLL_OFFICER on a DRAFT run in an OPEN period', 'PAYROLL_OFFICER', 'DRAFT', 'OPEN'],
+			['U3b SUPER_ADMIN on a COMPUTED run with no period', 'SUPER_ADMIN', 'COMPUTED', null]
 		]
 		for (const [name, role, runStatus, periodStatus] of privileged) {
 			it(`${name} → 403 '${NOT_YET}'`, async () => {

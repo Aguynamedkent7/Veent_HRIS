@@ -1,10 +1,10 @@
 # PLAN — #278 Draft-payslip visibility: make every door strict
 
 **Date**: 10-08-26
-**Status**: EXECUTED — unit/lint/format/check/mutation-sweep/manual-probe all green; `pnpm test:e2e` still running at UPDATE PROCESS time, result not yet confirmed. Not merged, not pushed.
+**Status**: COMPLETE — 8 commits on the branch, all gates green (`format:check`, `lint`, `check`, `test`, `test:e2e` 12/12, mutation sweep M1–M4, manual probe). Pushed; PR #288 open against `staging`. Remaining work: merge only.
 **Complexity**: SIMPLE
 **Issue**: #278
-**Branch**: `fix/payslip-draft-visibility-278` @ af10325
+**Branch**: `fix/payslip-draft-visibility-278` (planned off `af10325`; now 8 commits ahead, pushed)
 
 ## Overview
 
@@ -13,8 +13,8 @@ single-payslip doors match the strict JSON door: nobody sees a payslip until its
 or its period is `RELEASED`. ~15 source lines across 5 files, plus the first tests the draft gate has
 ever had. Complexity: **SIMPLE** (8 checklist steps, one session).
 
-Branch: `fix/payslip-draft-visibility-278` @ af10325 (clean, zero commits of its own).
-INNOVATE deliberately skipped — the policy is settled; this plan is the *how*.
+Branch: `fix/payslip-draft-visibility-278`, planned off `af10325` (clean at PLAN time; the executed
+work is the 8 commits recorded in *Execution Record*). INNOVATE deliberately skipped — the policy is settled; this plan is the *how*.
 
 ---
 
@@ -37,7 +37,9 @@ MANAGER. Finance keeps its pre-approval reconciliation path through the payroll 
 | D | List | `src/routes/(app)/payslips/+page.server.ts:20-23` | strict at the query, self-only | unchanged |
 
 Plus one UI consequence: `src/routes/(app)/payroll/[id]/+page.svelte:186` renders the "Payslip" link
-unconditionally at every run status. After the fix that link is a guaranteed 403 on DRAFT/COMPUTED.
+unconditionally at every run status. After the fix that link is a guaranteed 403 whenever the run is
+not visible — i.e. DRAFT/COMPUTED *and* the period is not RELEASED. A RELEASED period still opens a
+DRAFT or COMPUTED run, so those statuses are not 403 on their own.
 
 ---
 
@@ -99,7 +101,7 @@ Read-only references: `src/lib/server/services/payroll/runs.ts:17-22`, `src/lib/
 | `GET /api/v1/payroll/payslips/[id]/pdf` | 200 → 403 for VIEW_PAYROLL_REPORTS holders on a DRAFT/COMPUTED run whose period is not RELEASED. |
 | `GET /payslips/[id]` | 200 → 403, same population. |
 | `GET /api/v1/payroll/payslips/[id]` | Unchanged. |
-| `getPayrollRun(...)` return shape | Gains `period: { status } | null`. Additive. |
+| `getPayrollRun(...)` return shape | Gains `period: { status } \| null`. Additive. |
 | `/payroll/[id]` load data | Gains `payslipVisible: boolean`. Additive. |
 | `isPayslipVisible`, `canReadPayslip`, `CAPABILITIES` | Unchanged. No RBAC change is needed or permitted here. |
 
@@ -269,7 +271,7 @@ Enum values are the real ones: `PayrollRunStatus` ∈ {DRAFT, COMPUTED, APPROVED
 | U5 | EMPLOYEE (owner) | self | DRAFT | OPEN | 403 `'Payslip not yet available'` — **fail-OPEN sentinel** |
 | U6 | CEO | stranger | DRAFT | RELEASED | `ok: true` — the period arm still opens it |
 | U7 | EMPLOYEE (owner) | self | APPROVED | LOCKED | `ok: true` — the run arm still opens it |
-| U8 | EMPLOYEE | stranger (`canTouchEmployee` → false) | DRAFT | OPEN | 403 **`'Access denied'`** — access gate answers first; pins gate ORDER |
+| U8 | EMPLOYEE | stranger | DRAFT | OPEN | 403 **`'Access denied'`** — access gate answers first; pins gate ORDER |
 
 U8 is why every row asserts the message: it is the only row that distinguishes "the draft gate fired"
 from "the access gate fired".
@@ -318,7 +320,7 @@ pnpm test:e2e
 | Gate / Scenario | Strategy | Proves SPEC criterion |
 |---|---|---|
 | U1–U4 (privileged, non-visible run → 403 + message) | Fully-Automated | AC-1 no capability opens a draft payslip |
-| U5, E4 (owner on DRAFT → 403) | Fully-Automated | AC-2 fail-CLOSED: the escape was deleted, not the visibility test |
+| U5, E4 (owner on DRAFT → 403) | Fully-Automated | AC-2 fail-CLOSED: the guard was not deleted outright (M1/M3). They do **not** discriminate M4 — under `if (!isPrivileged)` an owner is still not privileged, so both stay green; U7 is M4's sentinel |
 | U6, U7, E7–E9 (APPROVED run / RELEASED period → 200) | Fully-Automated | AC-3 the fix does not over-block |
 | U8, E6 (`'Access denied'` vs `'Payslip not yet available'`) | Fully-Automated | AC-4 gate order and identity preserved |
 | E1–E3, E5 (all three doors 403 on the same DRAFT entry) | Fully-Automated | AC-5 the three doors agree |
@@ -340,7 +342,10 @@ Acceptance criteria, each with its proving gate:
   *proven by:* U6, U7, E7, E8, E9. *strategy:* Fully-Automated.
 - **AC-4** — the access gate and the draft gate remain distinct and ordered.
   *proven by:* U8, E6. *strategy:* Fully-Automated.
-- **AC-5** — Doors A, B and C return the identical status and message for the same entry.
+- **AC-5** — Doors A, B and C return the identical **status** for the same entry, and the identical
+  **message** wherever the response exposes one. Doors A and C expose it and are asserted on it;
+  Door B's 403 body is fixed by `src/routes/+error.svelte` and carries no message, so E3/E4 assert
+  status and payload-absence only (RESIDUAL-1).
   *proven by:* E1, E3, E5. *strategy:* Fully-Automated.
 - **AC-6** — no 403 response body contains payslip figures.
   *proven by:* E1–E6 `133713` grep. *strategy:* Fully-Automated.
@@ -372,7 +377,9 @@ five commands in the order above locally anyway — it is still the cheapest fai
 
 Setup (see `.claude/skills/verify/SKILL.md`; Postgres must be up, env is `.env.dev`):
 
-1. `pnpm db:push` then `pnpm db:seed` if the DB is empty.
+1. **Do not run `pnpm db:push`.** This change has no schema component (see *Public Contracts*: "No
+   schema change, no migration, no `db push`") and the Autonomous Goal Block's hard stops forbid it.
+   Use an already-provisioned local dev database; if it is empty, run `pnpm db:seed` alone.
 2. Seed the fixtures with a one-off script (scratchpad, `node --input-type=module -e` or `tsx`, using
    `@prisma/client`): in `employee@veent.ph`'s org create
    - DRAFT run `2026-01-01 .. 2026-01-15`, one entry for that employee, `grossPay`/`netPay` **133713**
@@ -416,16 +423,25 @@ Teardown: delete the two entries then the two runs by their period dates.
 
 ## Rollback
 
-`git revert` the commit-2 hash restores the prior behaviour exactly — no state to unwind, no data
-written, no schema to reverse. Commit 4 is independently revertible (it only re-shows a link).
-Reverting commit 2 without commit 4 leaves the link correctly shown again; reverting commit 4 without
-commit 2 leaves a link that 403s — i.e. today's bug — so if only one is reverted, revert commit 2.
+Revert **both** commit 2 (`058e673`, the gates) and commit 4 (`a841024`, the `payslipVisible` flag and
+the `{#if}` on the link) together — `git revert a841024 058e673` — and the prior behaviour is restored
+exactly. No state to unwind, no data written, no schema to reverse.
+
+Neither commit is safe to revert alone:
+
+- Commit 2 alone reopens direct access at Doors A and B, but commit 4's `payslipVisible` still hides
+  the Payslip link on a non-visible run, so the run-detail page offers no route to a payslip that is
+  once again readable.
+- Commit 4 alone re-shows a link that the still-strict gates answer with 403 — i.e. today's bug.
+
+If a partial revert is unavoidable, document which of those two inconsistent states was chosen and why.
 
 ## Risks and mitigations
 
 | Risk | Mitigation |
 |---|---|
-| Fail-OPEN inverse: `isPayslipVisible` deleted instead of the escape | U5 + E4 owner-on-draft sentinels; mutation M1/M3 in commit 5 |
+| Guard deleted outright (fails OPEN) | U5 + E4 owner-on-draft sentinels; mutations M1/M3 in commit 5 |
+| Fail-OPEN inverse: `isPayslipVisible` deleted while the escape is kept (`if (!isPrivileged)`) | **U7** owner-on-APPROVED sentinel; mutation M4. U5 and E4 stay green under M4 — an owner is not privileged either way — so they are not mitigations for this row |
 | Wrong guard deleted (access instead of draft) | Every assertion checks the message string; U8 + E6 |
 | Orphaned `canAny` import breaks CI at `lint`, after `test` was already green | Called out explicitly in commit 2b; `pnpm lint` is step 2 of the verification order |
 | `getPayrollRun` include change breaking a caller | Verified: one production caller, one test that never asserts include shape |
@@ -472,8 +488,8 @@ commit 2 leaves a link that 403s — i.e. today's bug — so if only one is reve
    — Done: `058e673`. Doors A + B fix and comment landed in one commit as planned.
 5. [x] Create `tests/e2e/payslip-draft-visibility.spec.ts` with the seed/teardown and rows E1–E10;
    `pnpm test:e2e`. Commit 3.
-   — Done: `083f663` (206-line spec). **`pnpm test:e2e` result not yet confirmed at UPDATE PROCESS
-   time — the suite was still running.** Do not mark this row's gate green until the run completes.
+   — Done: `083f663` (206-line spec). **`pnpm test:e2e` confirmed GREEN: 12/12 passed in 52.8s**, run
+   in isolation against a clean server.
 6. [x] `src/lib/server/services/payroll/index.ts`: add `period: { select: { status: true } }` to
    `getPayrollRun`'s include (opens line 620).
    — Done: `a841024`.
@@ -513,7 +529,7 @@ This is a single-phase SIMPLE plan; each commit is its own gate.
 
 ## Execution Record (added by UPDATE PROCESS, 10-08-26)
 
-**Commits, in order** (7 on top of `af10325`, none pushed):
+**Commits, in order** (8 on top of `af10325`, all pushed; PR #288 open against `staging`):
 
 1. `a07718d` test: pin draft-payslip visibility at the PDF door
 2. `058e673` fix: no payslip is readable while its run is a draft
@@ -522,6 +538,7 @@ This is a single-phase SIMPLE plan; each commit is its own gate.
 5. `3edbff6` chore: record the #278 mutation sweep and real-DB probe
 6. `e7d02f4` test(e2e): raise the per-test timeout to 120s so CI does not flake
 7. `16f2c05` docs(plans): record the #278 draft-payslip visibility plan
+8. `07615f3` docs(plans): reconcile #278 execution against plan; add backlog notes
 
 **Deviations from the plan text — both anticipated, both already justified inline (see "Commit
 sequence (test-first)" above), confirmed as executed exactly as written:**
@@ -543,7 +560,7 @@ fix): the `e7d02f4` Playwright timeout bump, see checklist item 8's note above.
 | `pnpm lint` | 0 errors; 1 pre-existing `CalculatorWindow.svelte:82` a11y warning, unrelated to this fix |
 | `pnpm check` | 885 files, 0 errors |
 | `pnpm test` | 94 files / 1178 tests passed (baseline at af10325 was 93 files / 1170 tests) |
-| `pnpm test:e2e` | **PENDING CONFIRMATION** — still running as of this UPDATE PROCESS session; do not treat as green |
+| `pnpm test:e2e` | **12/12 passed in 52.8s**, run in isolation against a clean server |
 | Mutation sweep M1–M4 | M1 deleted → 5 failed; M2 inverted → 7 failed; M3 escape restored → 4 failed; M4 escape kept, visibility test deleted → 5 failed. No mutation left the suite green — AC-10 holds |
 | Real-DB probe (AC-11) | `ceo`/`admin` both 200 → 403 on `GET /api/v1/payroll/payslips/<draft>/pdf`; page door 200 with `133,713` in body → 403; APPROVED control stayed 200/200; Payslip link count on the draft run went 1 → 0, stayed 1 → 1 on the approved run |
 
@@ -577,15 +594,19 @@ fix): the `e7d02f4` Playwright timeout bump, see checklist item 8's note above.
 ## Resume and Execution Handoff
 
 1. **Selected plan file:** `process/general-plans/active/payslip-draft-visibility-278_PLAN_10-08-26.md`
-2. **Last completed step:** none — PLAN written, no source touched. Branch
-   `fix/payslip-draft-visibility-278` @ af10325, clean, zero commits of its own.
-3. **Validate-contract status:** pending (VALIDATE has not run).
-4. **Context files loaded:** `CLAUDE.md` (repo root), `.claude/skills/verify/SKILL.md`, the four door
-   files, `runs.ts`, `rbac.ts`, `prisma/schema.prisma`, `tests/unit/payslip-access.test.ts`,
-   `tests/e2e/payslip-tenancy.spec.ts`, `tests/e2e/helpers.ts`, `package.json`, `vitest.config.ts`.
-   `process/context/all-context.md` does not exist (vc-setup never run) — not a blocker.
-5. **Next step for a fresh agent:** start at checklist item 1. Do not skip the RED observation. Read
-   the *Fail-CLOSED discipline* section before editing either gate. Use `pnpm`, not `npm`.
+2. **Last completed step:** all of them — checklist items 1–8 are done. Branch
+   `fix/payslip-draft-visibility-278`, 8 commits on top of `af10325`, pushed.
+3. **Validate-contract status:** CONDITIONAL, accepted; see *Validate Contract* below. One named
+   residual (RESIDUAL-1) carried deliberately.
+4. **Gate status:** all green — `format:check` clean, `lint` 0 errors (1 pre-existing
+   `CalculatorWindow.svelte:82` a11y warning), `check` 885 files / 0 errors, `test` 94 files / 1178
+   passed, `test:e2e` 12/12 in 52.8s. Mutation sweep M1–M4 and the real-DB probe both recorded above.
+5. **Next step:** **merge only.** PR #288 is open against `staging`. There is no implementation work
+   left — do NOT re-run the checklist or re-apply any commit. Anything further is review feedback on
+   the existing diff.
+6. **Known unrelated issue:** **#287** — the full local e2e suite fails non-deterministically on
+   `page.goto('/login')` timeouts, caused by Vite dev compiling routes on demand. Unrelated to this
+   change; run this spec in isolation to reproduce the 12/12.
 
 ## Validate Contract
 
@@ -616,14 +637,14 @@ Cost guard: not triggered (1 agent).
 | AC-8 | Run-detail page renders no Payslip link for a non-visible run | Fully-Automated | `pnpm test:e2e` — E11/E12 via `getByRole('link', { name: 'Payslip' })` count 0/1 | B |
 | AC-9 | Repo lints clean after the orphaned `canAny` import is deleted | Fully-Automated | `pnpm lint` exits 0 | B |
 | AC-10 | The new tests are not vacuous | Hybrid | Commit-5 mutation sweep M1/M2/M3/**M4**; precondition: scratchpad `cp` of each gate file, never `git checkout` | B |
-| AC-11 | Change is observable against a real DB and real sessions | Agent-Probe | Manual before/after probe table; precondition: Postgres up, `.env.dev`, `pnpm db:push && pnpm db:seed`, fixture seed script, `pnpm dev --port 5434` | B |
+| AC-11 | Change is observable against a real DB and real sessions | Agent-Probe | Manual before/after probe table; precondition: Postgres up, `.env.dev`, an already-provisioned local dev DB (`pnpm db:seed` alone if empty — **never `db:push`**), fixture seed script, `pnpm dev --port 5434` | B |
 | RESIDUAL-1 | *Which* of Door B's two 403 guards fired | — | none — `src/routes/+error.svelte` renders a fixed 403 body for both guards; a Door-B access-guard e2e is out of scope by USER DECISION | D |
 
 gap-resolution legend: A — proven now. B — gate added by this plan's checklist. C — deferred to a named later phase. D — backlog test-building stub (named residual; keep-active; continue).
 
 Failing stubs (Fully-Automated rows — red-first starting points for EXECUTE):
 
-```
+```ts
 test("should 403 'Payslip not yet available' for a VIEW_PAYROLL_REPORTS holder on a non-visible run", () => {
   throw new Error("NOT IMPLEMENTED — TDD stub: AC-1 U1-U4")
 })
@@ -690,18 +711,23 @@ Gate: CONDITIONAL — 0 FAILs, 5 CONCERNs, all 5 fixed in the plan text during V
 
 Accepted by: session (autonomous run — user granted full autonomy for this validate pass and was not available for the V4 menu). Accepted concerns, by name: (1) U5/U7 sentinel misattribution — fixed in plan; (2) mutation sweep missing M4 — fixed in plan; (3) mock-idiom citation drift and missing `period` key in the unit fixture — fixed in plan; (4) E11/E12 raw-HTML link assertion — fixed in plan; (5) RESIDUAL-1 Door B guard identity — accepted as a named residual, closure is out of scope by prior USER DECISION.
 
-## Autonomous Goal Block
+## Autonomous Goal Block — SPENT (execution finished; kept as a record, not as instructions)
 
-```
-SESSION GOAL
+**Do not act on this block.** It was written before EXECUTE and its directives are all discharged.
+The authoritative state is the *Status* header, the *Execution Record* and *Resume and Execution
+Handoff* above: work complete, 8 commits, all gates green, PR #288 open, remaining work is merge only.
+
+```text
+SESSION GOAL (achieved)
 Fix GitHub issue #278 in veent_hris: delete the two VIEW_PAYROLL_REPORTS escapes from the payslip
-draft gate so all four payslip doors are strict — nobody reads a payslip while its payroll run is a
-draft. Follow process/general-plans/active/payslip-draft-visibility-278_PLAN_10-08-26.md exactly,
-commits 1 through 5, test-first.
+draft gate so all four payslip doors are strict — nobody reads a payslip whose run is not visible
+(run not APPROVED and period not RELEASED). Follow
+process/general-plans/active/payslip-draft-visibility-278_PLAN_10-08-26.md exactly, commits 1
+through 5, test-first.
 
-Branch: fix/payslip-draft-visibility-278 (off af10325, clean). Package manager: pnpm, never npm.
+Branch: fix/payslip-draft-visibility-278 (off af10325). Package manager: pnpm, never npm.
 
-AUTONOMY RULES
+AUTONOMY RULES (all discharged)
 - Work commit by commit. Do not start commit N+1 until commit N's gates are green.
 - Commit 1 must be observed RED before commit 2 is written. Record the failure output.
 - Apply the seven execute-agent instructions in the plan's Validate Contract verbatim.
@@ -709,26 +735,23 @@ AUTONOMY RULES
 - Do not relitigate the visibility policy. Do not touch the CSV generators, the /payroll/[id] inline
   table, the VOIDED+RELEASED case, or anything RBAC.
 
-HARD STOPS
+HARD STOPS (as they stood during EXECUTE)
 - Do not push, open a PR, or merge. Local commits only.
+  [superseded after EXECUTE completed: the branch is now pushed and PR #288 is open.]
 - Never 'git checkout <file>' to undo a temp edit — copy to the scratchpad and restore from there.
-- Do not run pnpm db:push or any migration; this change has no schema component.
+- Do not run pnpm db:push or any migration; this change has no schema component. [still binding]
 - Escalate if any pre-existing test outside the blast radius fails.
 
 NEXT PHASE
-EXECUTE — start at Implementation Checklist item 1.
+Merge PR #288. No implementation work remains — the Implementation Checklist is fully done.
 
 CONTRACT SUMMARY
 Gate CONDITIONAL. 0 FAILs. 5 concerns, all fixed in the plan text. One named residual: Door B's
 403 body is identical for both of its guards (src/routes/+error.svelte hides the message), so no
 test pins which guard fired at Door B — accepted, closure out of scope by user decision.
 Gates, in CI order: pnpm format:check -> pnpm lint -> pnpm check -> pnpm test -> pnpm test:e2e.
+All five ran green; e2e was 12/12 in 52.8s.
 pnpm lint is the only gate that catches the orphaned canAny import at Door B line 5.
-Baseline at af10325: 93 test files, 1170 tests, all green.
-
-EXECUTE START COMMAND
-Read process/general-plans/active/payslip-draft-visibility-278_PLAN_10-08-26.md in full, then begin
-Implementation Checklist item 1: create tests/unit/payslip-draft-visibility.test.ts with rows U1-U8
-and run 'pnpm test' to observe U1-U4 failing.
+Baseline at af10325: 93 test files, 1170 tests, all green; after the fix, 94 files / 1178 tests.
 ```
 

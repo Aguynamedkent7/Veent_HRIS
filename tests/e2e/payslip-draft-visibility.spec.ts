@@ -103,15 +103,13 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
 	const db = new PrismaClient()
 	try {
+		// By id, not by period: runs are unique per (organizationId, periodStart, periodEnd),
+		// so another tenant may legitimately hold a run over the same dates and a date-only
+		// delete would take it with us.
 		// Children first — the relation is RESTRICT on delete.
-		for (const period of [DRAFT_PERIOD, APPROVED_PERIOD]) {
-			await db.payrollEntry.deleteMany({
-				where: { payrollRun: { periodStart: period.start, periodEnd: period.end } }
-			})
-			await db.payrollRun.deleteMany({
-				where: { periodStart: period.start, periodEnd: period.end }
-			})
-		}
+		const runIds = [draftRunId, approvedRunId]
+		await db.payrollEntry.deleteMany({ where: { payrollRunId: { in: runIds } } })
+		await db.payrollRun.deleteMany({ where: { id: { in: runIds } } })
 	} finally {
 		await db.$disconnect()
 	}
