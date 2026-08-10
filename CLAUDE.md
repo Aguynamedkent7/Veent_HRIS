@@ -14,7 +14,7 @@ See the override block at the top of that file; do not activate or suggest it un
 ## Tech stack
 
 - SvelteKit 2 + Svelte 5 (runes: `$state`, `$derived`, `$effect`, `$props`)
-- Prisma 5 + PostgreSQL 16 (Docker `veent_wifiportal-db-1`, root/mysecretpassword, db=local)
+- Prisma 5 + PostgreSQL 18 (Docker `veent-db-5434` on host networking, veent/veent, db=`veent_hris`, port 5434 — inside the container too, so `docker exec … psql -p 5434`). Start it with `./start.sh`; env lives in `.env.dev`, there is no `.env`.
 - Lucia v3 + `@lucia-auth/adapter-prisma` for session auth
 - Tailwind CSS v3 with HSL design tokens (`src/app.css`)
 - pnpm 10 as package manager — use `pnpm` not `npm`
