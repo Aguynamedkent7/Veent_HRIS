@@ -296,11 +296,21 @@ export async function getManagerMetrics(userId: string, organizationId: string) 
 				user: { organizationId }
 			}
 		}),
+		// #242: an explicit column list, not `include` — a bare include ships every AuditLog
+		// scalar, and `oldValue`/`newValue` hold the before/after salary of every compensation
+		// change. Reaching that payload is an audited event (`/reports/audit-log` ?/reveal), and
+		// the callers who reach this branch (PAYROLL_OFFICER, FINANCE) do not hold the capability
+		// that gates it. `ipAddress`/`userAgent` are dropped for the same reason.
 		db.auditLog.findMany({
 			where: { organizationId },
 			orderBy: { createdAt: 'desc' },
 			take: 5,
-			include: {
+			select: {
+				id: true,
+				action: true,
+				entityType: true,
+				entityId: true,
+				createdAt: true,
 				actor: { select: { email: true, role: true } }
 			}
 		})
