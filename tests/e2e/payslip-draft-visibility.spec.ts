@@ -28,6 +28,8 @@ const SECRET_FORMATTED = '133,713'
 
 let draftEntryId: string
 let approvedEntryId: string
+let draftRunId: string
+let approvedRunId: string
 
 const MONEY = {
 	sssEe: 0,
@@ -58,6 +60,7 @@ test.beforeAll(async () => {
 				status: 'DRAFT'
 			}
 		})
+		draftRunId = draftRun.id
 		const draftEntry = await db.payrollEntry.create({
 			data: {
 				payrollRunId: draftRun.id,
@@ -79,6 +82,7 @@ test.beforeAll(async () => {
 				status: 'APPROVED'
 			}
 		})
+		approvedRunId = approvedRun.id
 		const approvedEntry = await db.payrollEntry.create({
 			data: {
 				payrollRunId: approvedRun.id,
@@ -203,4 +207,22 @@ test('E10 the payslip list shows the APPROVED run and not the DRAFT one', async 
 	await expect(page.locator(`a[href="/payslips/${approvedEntryId}"]`).first()).toBeVisible()
 	await expect(page.locator(`a[href="/payslips/${draftEntryId}"]`)).toHaveCount(0)
 	expectNoLeak(await page.content())
+})
+
+// ─── The UI affordance: no link to a guaranteed 403 ───────────────────────────
+// By role, not by raw-HTML substring: the word "Payslip" appears elsewhere in the run-detail
+// markup, so a text search over the body is vacuous in one direction and flaky in the other.
+// `exact` matters: role-name matching is substring by default, and the sidebar's "My Payslips" nav
+// link would satisfy a loose match on every page. `admin` holds VIEW_PAY_ORGWIDE, so the entries
+// table is unscoped and both runs show their rows.
+test('E11 a DRAFT run offers no Payslip link', async ({ page }) => {
+	await login(page, USERS.admin)
+	await page.goto(`/payroll/${draftRunId}`, { waitUntil: 'domcontentloaded' })
+	await expect(page.getByRole('link', { name: 'Payslip', exact: true })).toHaveCount(0)
+})
+
+test('E12 an APPROVED run still offers its Payslip link', async ({ page }) => {
+	await login(page, USERS.admin)
+	await page.goto(`/payroll/${approvedRunId}`, { waitUntil: 'domcontentloaded' })
+	await expect(page.getByRole('link', { name: 'Payslip', exact: true })).toHaveCount(1)
 })

@@ -638,6 +638,9 @@ export async function getPayrollRun(
 				},
 				orderBy: { employee: { lastName: 'asc' } }
 			},
+			// #278: the run-detail page needs the period's status to decide whether its payslips are
+			// visible yet — `isPayslipVisible` reads the RELEASED arm from here.
+			period: { select: { status: true } },
 			// Maker-checker chain (#134), append-only across attempts, with the acting
 			// user's email for attribution in the history view.
 			approvalSteps: {

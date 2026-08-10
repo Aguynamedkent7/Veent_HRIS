@@ -8,6 +8,7 @@ import {
 	overridePayrollEntry,
 	computePayroll
 } from '$lib/server/services/payroll/index'
+import { isPayslipVisible } from '$lib/server/services/payroll/runs'
 import {
 	livePayrollStage,
 	decidePayrollRun,
@@ -77,7 +78,11 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		liveStage: live?.currentStep?.stage ?? null,
 		canAct,
 		canManage,
-		scopedToTeam: visibleEmployeeIds != null
+		scopedToTeam: visibleEmployeeIds != null,
+		// #278: every payslip door 403s until the run is filed, so the table must not offer a link
+		// that is a guaranteed dead end. Decided here rather than in the component: the rule already
+		// lives in one place, and a fourth copy of it is the defect #278 is about.
+		payslipVisible: isPayslipVisible(run)
 	}
 }
 
