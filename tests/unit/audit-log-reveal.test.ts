@@ -72,6 +72,10 @@ const loadEvent = (roles: Role[]) =>
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	}) as any
 
+/** `PageServerLoad` widens its return to `void | …`; every case here wants the object. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const loadData = (roles: Role[]) => load(loadEvent(roles)) as Promise<any>
+
 const revealEvent = (roles: Role[], id: string | null = 'log1') => {
 	const body = new FormData()
 	if (id !== null) body.set('id', id)
@@ -101,7 +105,7 @@ beforeEach(() => {
 describe('/reports/audit-log load — the list never carries the payload (#242)', () => {
 	// The regression this issue is about: ADMINISTER_SYSTEM used to get it in cleartext, untraced.
 	it('masks old and new values for a SUPER_ADMIN', async () => {
-		const data = await load(loadEvent(['SUPER_ADMIN']))
+		const data = await loadData(['SUPER_ADMIN'])
 
 		expect(data.logs[0]).toMatchObject({ oldValue: null, newValue: null })
 		expect(JSON.stringify(data.logs)).not.toContain(String(OLD_SALARY))
@@ -109,20 +113,20 @@ describe('/reports/audit-log load — the list never carries the payload (#242)'
 	})
 
 	it('masks old and new values for a CEO', async () => {
-		const data = await load(loadEvent(['CEO']))
+		const data = await loadData(['CEO'])
 
 		expect(JSON.stringify(data.logs)).not.toContain(String(NEW_SALARY))
 	})
 
 	// The pre-existing HR_ADMIN masking must survive the change.
 	it('keeps masking for an HR_ADMIN', async () => {
-		const data = await load(loadEvent(['HR_ADMIN']))
+		const data = await loadData(['HR_ADMIN'])
 
 		expect(data.logs[0]).toMatchObject({ oldValue: null, newValue: null })
 	})
 
 	it('tells the page which entries have a payload to reveal', async () => {
-		const data = await load(loadEvent(['SUPER_ADMIN']))
+		const data = await loadData(['SUPER_ADMIN'])
 
 		expect(data.logs[0].hasChanges).toBe(true)
 		expect(data.logs[1].hasChanges).toBe(false)
@@ -131,9 +135,9 @@ describe('/reports/audit-log load — the list never carries the payload (#242)'
 	// So a caller who cannot reveal is not shown a button that will 403 (Constitution P2 — the
 	// flag is cosmetic; the action re-checks).
 	it('offers the reveal control only to ADMINISTER_SYSTEM holders', async () => {
-		expect((await load(loadEvent(['SUPER_ADMIN']))).canReveal).toBe(true)
-		expect((await load(loadEvent(['CEO']))).canReveal).toBe(true)
-		expect((await load(loadEvent(['HR_ADMIN']))).canReveal).toBe(false)
+		expect((await loadData(['SUPER_ADMIN'])).canReveal).toBe(true)
+		expect((await loadData(['CEO'])).canReveal).toBe(true)
+		expect((await loadData(['HR_ADMIN'])).canReveal).toBe(false)
 	})
 
 	it('still refuses the page to a caller without MANAGE_HR', async () => {
