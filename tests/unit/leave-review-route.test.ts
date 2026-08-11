@@ -2,15 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { Role } from '@prisma/client'
 
 /**
- * #282 §3-C — `PATCH /api/v1/leave/[id]`.
+ * `PATCH /api/v1/leave/[id]` — the route's own gate, with the service mocked out.
  *
- * The override branch read `requireAnyMinRole(user.roles,'HR_ADMIN')` and 403'd with
- * "override-approve requires HR_ADMIN or higher" — a false message, because MANAGER clears that
- * floor (#133). `override-approve` bypasses the approval chain outright, so every manager could
- * skip it.
+ * Only the two actions the route accepts. The third, `override-approve`, was deleted in #295:
+ * it collapsed into the same `approved` boolean and took the identical path through
+ * `reviewLeaveRequest` → `decide`, so it overrode nothing — it was a stricter 403 in front of
+ * the ordinary approve. #282 tightened that gate on the written premise that it "bypasses the
+ * approval chain outright"; the code never did.
  *
- * Narrowed to `ADMINISTER_HR_ORGWIDE` (HR_ADMIN / CEO / SUPER_ADMIN). This is a WHAT question, not
- * a WHOSE one: overriding a chain is an authority level, not a data scope.
+ * Who may act on a given *stage* is `decide`'s question, not this route's — that is covered
+ * against the real chain in `approval-api-role-context.test.ts`.
  */
 
 const { reviewLeaveRequest } = vi.hoisted(() => ({ reviewLeaveRequest: vi.fn() }))
@@ -18,11 +19,11 @@ vi.mock('$lib/server/services/leave', () => ({ reviewLeaveRequest }))
 
 const { PATCH } = await import('../../src/routes/api/v1/leave/[id]/+server')
 
-const event = (roles: Role[], action: string) =>
+const event = (roles: Role[], body: Record<string, unknown>) =>
 	({
 		locals: { user: { id: 'user-actor', organizationId: 'org1', roles } },
 		params: { id: 'req1' },
-		request: { json: async () => ({ action, note: 'x' }) },
+		request: { json: async () => body },
 		getClientAddress: () => '127.0.0.1'
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	}) as any
@@ -32,30 +33,25 @@ beforeEach(() => {
 	reviewLeaveRequest.mockResolvedValue({ id: 'req1', status: 'APPROVED' })
 })
 
-describe('override-approve is org-wide HR only (#282 §3-C)', () => {
-	it('403s a MANAGER on override-approve', async () => {
-		const res = await PATCH(event(['MANAGER'], 'override-approve'))
+describe('PATCH /api/v1/leave/[id] — route gate', () => {
+	it('403s a role without VIEW_TEAM, and decides nothing', async () => {
+		const res = await PATCH(event(['EMPLOYEE'], { action: 'approve' }))
 		expect(res.status).toBe(403)
-		// The point of the fix is that the chain is not bypassed — assert the service never ran.
 		expect(reviewLeaveRequest).not.toHaveBeenCalled()
 	})
 
-	it('lets HR_ADMIN, CEO and SUPER_ADMIN override', async () => {
-		for (const role of ['HR_ADMIN', 'CEO', 'SUPER_ADMIN'] as const) {
-			const res = await PATCH(event([role], 'override-approve'))
-			expect(res.status).toBe(200)
-		}
-		expect(reviewLeaveRequest).toHaveBeenCalledTimes(3)
+	it('admits a MANAGER to approve and reject', async () => {
+		expect((await PATCH(event(['MANAGER'], { action: 'approve' }))).status).toBe(200)
+		const rejected = await PATCH(
+			event(['MANAGER'], { action: 'reject', rejectionReason: 'no' })
+		)
+		expect(rejected.status).toBe(200)
 	})
 
-	// The other half of the fix: it must not have over-narrowed the ordinary path. A MANAGER
-	// approving through the chain is exactly what the route is for.
-	it('still lets a MANAGER approve and reject normally', async () => {
-		expect((await PATCH(event(['MANAGER'], 'approve'))).status).toBe(200)
-		const rejected = await PATCH({
-			...event(['MANAGER'], 'reject'),
-			request: { json: async () => ({ action: 'reject', rejectionReason: 'no' }) }
-		})
-		expect(rejected.status).toBe(200)
+	// #295: the action is gone, not silently aliased to `approve`.
+	it('400s on override-approve', async () => {
+		const res = await PATCH(event(['HR_ADMIN'], { action: 'override-approve' }))
+		expect(res.status).toBe(400)
+		expect(reviewLeaveRequest).not.toHaveBeenCalled()
 	})
 })
