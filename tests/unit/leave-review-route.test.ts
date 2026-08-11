@@ -40,12 +40,26 @@ describe('PATCH /api/v1/leave/[id] — route gate', () => {
 		expect(reviewLeaveRequest).not.toHaveBeenCalled()
 	})
 
+	// The decision arguments, not just the status: a flipped `approved` boolean still answers 200.
 	it('admits a MANAGER to approve and reject', async () => {
 		expect((await PATCH(event(['MANAGER'], { action: 'approve' }))).status).toBe(200)
-		const rejected = await PATCH(
-			event(['MANAGER'], { action: 'reject', rejectionReason: 'no' })
+		expect(reviewLeaveRequest).toHaveBeenLastCalledWith(
+			'req1',
+			'org1',
+			true,
+			undefined,
+			expect.anything()
 		)
+
+		const rejected = await PATCH(event(['MANAGER'], { action: 'reject', rejectionReason: 'no' }))
 		expect(rejected.status).toBe(200)
+		expect(reviewLeaveRequest).toHaveBeenLastCalledWith(
+			'req1',
+			'org1',
+			false,
+			'no',
+			expect.anything()
+		)
 	})
 
 	// #295: the action is gone, not silently aliased to `approve`.
