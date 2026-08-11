@@ -1,5 +1,5 @@
-// One-off: collapse the scalar `User.role` into the `User.roles` set, and give `AuditLog` an
-// `actorRoles` array alongside its scalar `actorRole` (#282).
+// One-off: collapse the scalar `User.role` into the `User.roles` set, and replace the scalar
+// `AuditLog.actorRole` with an `actorRoles` array (#282).
 //
 //   pnpm tsx scripts/migrate-user-role-to-roles.ts
 //
@@ -8,12 +8,24 @@
 // and backfilled in the same pass is not something push can express. So this script adds the
 // column itself and fills it. Same reasoning as scripts/migrate-employment-type-regular.ts.
 //
-// This half of the migration is ADDITIVE ONLY. The two `DROP COLUMN`s (`users.role`,
-// `audit_logs.actorRole`) land in a later commit, once nothing reads or writes either.
+// Three steps, strictly in this order:
+//   1. every user's scalar `role` is folded into their `roles` set, then asserted non-empty;
+//   2. `audit_logs.actorRoles` is added and backfilled from `actorRole`, then asserted non-empty;
+//   3. only then are `users.role` and `audit_logs.actorRole` dropped.
+//
+// The drops must not run before those two assertions: a user left with an empty roles set is an
+// unrecoverable lockout, and an audit row with an empty actorRoles has lost its historical actor
+// role for good.
+//
+// Why the drops live HERE rather than being left to `prisma db push`: push refuses to drop a
+// populated NOT NULL column without `--accept-data-loss`, and `scripts/prestart.sh` deliberately
+// passes no such flag. Dropping here means push finds nothing to drop, emits no data-loss warning,
+// and prestart needs no flag — a flag which, once added, would silently permit every future
+// destructive change.
 //
 // Idempotent: safe to run before every push, a no-op on a fresh database, and a no-op on every
-// run after the first. Also re-entrant — each step re-derives its own precondition, so a run
-// that dies halfway can simply be run again.
+// run after the first (the drops are `IF EXISTS`). Also re-entrant — each step re-derives its own
+// precondition, so a run that dies halfway can simply be run again.
 
 import { PrismaClient } from '@prisma/client'
 
@@ -138,9 +150,26 @@ async function migrateAuditLogs() {
 	}
 }
 
+// Last, and only last: both halves above have asserted that no authority and no history is lost.
+// `IF EXISTS` covers the second and every later run; the `columnExists` guard additionally covers a
+// fresh database, where the tables themselves do not exist yet and a bare ALTER would throw —
+// prestart.sh is a `set -e` chain, so throwing here means the app never starts. Each column is
+// guarded independently, so a run that dies between the two drops simply finishes on the next one.
+async function dropScalarColumns() {
+	if (await columnExists('users', 'role')) {
+		await db.$executeRawUnsafe(`ALTER TABLE "users" DROP COLUMN IF EXISTS "role"`)
+		console.log('✔ Dropped users.role.')
+	}
+	if (await columnExists('audit_logs', 'actorRole')) {
+		await db.$executeRawUnsafe(`ALTER TABLE "audit_logs" DROP COLUMN IF EXISTS "actorRole"`)
+		console.log('✔ Dropped audit_logs.actorRole.')
+	}
+}
+
 async function main() {
 	await migrateUsers()
 	await migrateAuditLogs()
+	await dropScalarColumns()
 	console.log('  Run `pnpm db:push` next.')
 }
 

@@ -39,7 +39,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			skip: pagination.skip,
 			take: pagination.take,
 			// An explicit select, not `include`: `include` returns every scalar, and the rows are
-			// spread wholesale below, so `ipAddress`, `userAgent`, `actorId` and `actorRole` would
+			// spread wholesale below, so `ipAddress`, `userAgent` and `actorId` would
 			// ship to the client. The same bare-`include` shape was the dashboard leak this issue
 			// fixed (#242) — the type annotation on the map below hides it, it does not prevent it.
 			select: {

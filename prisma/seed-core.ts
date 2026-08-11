@@ -494,7 +494,7 @@ export async function seedProd(db: PrismaClient) {
 	})
 
 	// --- System actor (#136) ---
-	// AuditLog.actorId is a non-nullable FK to User and actorRole is a required Role, so an
+	// AuditLog.actorId is a non-nullable FK to User, so an
 	// automated job (the nightly regularization sweep) cannot write its audit row without a
 	// real user. This is that user — and it must never be able to log in:
 	//   • the password hash is of a random secret nobody holds, so bcrypt can never match, and

@@ -23,8 +23,11 @@ import { join } from 'node:path'
  *
  * `\.\w*[Rr]ole\b` matches `.role`, `.viewerRole`, `.actorRole` — and cannot match `.roles`, since
  * there is no word boundary before the `s`. So the check is idempotent: a converted site stops
- * matching. A bare `actorRole: user.role` property assignment (the audit-log writers) is not an
- * authority decision and is deliberately not flagged.
+ * matching.
+ *
+ * #282 dropped `User.role` and `AuditLog.actorRole` outright, so the carve-out that used to exempt
+ * the audit-log writers' `actorRole: user.role` assignments is gone with the columns — nothing
+ * writes either, and the scan now covers every singular role accessor left in the tree.
  */
 const SINGULAR_ROLE = String.raw`\.\w*[Rr]ole\b`
 
@@ -76,13 +79,13 @@ describe('authority is judged on the full role set (#279)', () => {
 				`canAny(user.roles, 'APPROVE_REQUESTS')`,
 				`requireAnyCapability(user.roles, 'MANAGE_HR')`,
 				`APPROVER_ROLES.some((r) => user.roles.includes(r))`,
-				`await logAudit(db, { actorRole: user.role, action: 'UPDATE' })`,
 				`// replaced APPROVER_ROLES.includes(user.role) here — see #279`,
 				` * ROLE_HIERARCHY[opts.viewerRole] was the old masking gate`,
-				// Real near-misses in the tree — the equality pattern must leave all three alone.
-				`if (newRole !== existing.role) {`,
-				`const label = IRREPLACEABLE_ROLES[target.role]`,
-				`const role = $derived(data.user.role)`
+				// Real near-misses in the tree today — none of these is an authority decision, and
+				// the patterns must leave all three alone.
+				`const updated = await setUserRole(params.id, user.organizationId, parsed.data.role, {`,
+				`return step.stageKind === 'SUPERVISOR' ? 'Supervisor' : roleLabel(step.role ?? 'APPROVER')`,
+				`roles: [input.role]`
 			].filter(isOffender)
 		).toEqual([])
 	})

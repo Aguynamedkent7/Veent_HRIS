@@ -28,8 +28,6 @@ export async function writeAuditLog(
 		data: {
 			organizationId: ctx.organizationId,
 			actorId: ctx.actorId,
-			// ponytail: actorRole is dropped in commit 11; fed from the set until then
-			actorRole: ctx.actorRoles[0],
 			actorRoles: ctx.actorRoles,
 			action: payload.action,
 			entityType: payload.entityType,
