@@ -21,8 +21,8 @@ import type { Role } from '@prisma/client'
  * #256 adds the other half. Every enforcement point above now judges the FULL role set, so each
  * gets three more cases: a multi-role actor whose authority comes only from a secondary role is
  * admitted (the fix), the write is asserted to have actually happened (a guard that silently
- * no-ops would pass a bare `resolves`), and a ctx that omitted `actorRoles` still refuses — the
- * fallback degrades to `[actorRole]`, i.e. CLOSED, never open.
+ * no-ops would pass a bare `resolves`), and an actor carrying an EMPTY role set still refuses —
+ * no roles means no authority, i.e. CLOSED, never open.
  */
 
 const { dbMock, periodsMock, attendanceMock } = vi.hoisted(() => ({
@@ -79,7 +79,6 @@ const user = (role: Role, roles: Role[] = [role]) => ({
 const ctx = (role: Role, roles: Role[] = [role]) => ({
 	organizationId: 'org1',
 	actorId: 'u1',
-	actorRole: role,
 	actorRoles: roles
 })
 
@@ -90,10 +89,10 @@ const ctx = (role: Role, roles: Role[] = [role]) => ({
 const SECONDARY: Role[] = ['EMPLOYEE', 'SUPER_ADMIN']
 
 /**
- * A ctx from a builder that forgot `actorRoles` — `AuditContext.actorRoles` is optional, so this
- * is reachable, and the fallback must judge `[actorRole]` alone rather than admitting anyone.
+ * An actor carrying no roles at all — the one shape left now that `AuditContext.actorRoles` is
+ * required. No roles means no authority: it must be refused, never admitted.
  */
-const ctxWithoutRoles = (role: Role) => ({ organizationId: 'org1', actorId: 'u1', actorRole: role })
+const ctxWithNoRoles = () => ({ organizationId: 'org1', actorId: 'u1', actorRoles: [] as Role[] })
 
 /** A form-action event; `body` becomes the POSTed fields. */
 const formEvent = (role: Role, body: Record<string, string> = {}, roles: Role[] = [role]) =>
@@ -150,8 +149,8 @@ describe('voiding a payroll run (#224)', () => {
 		expect(dbMock.payrollRun.update).toHaveBeenCalled()
 	})
 
-	it('refuses when the ctx omitted actorRoles — the fallback judges [actorRole] alone', async () => {
-		await expect(voidRun('x1', 'org1', ctxWithoutRoles('EMPLOYEE'))).rejects.toMatchObject({
+	it('refuses an actor carrying an empty role set', async () => {
+		await expect(voidRun('x1', 'org1', ctxWithNoRoles())).rejects.toMatchObject({
 			status: 403
 		})
 		expect(dbMock.payrollRun.findFirst).not.toHaveBeenCalled()
@@ -287,18 +286,17 @@ describe('the services refuse a direct unauthorized caller (#224)', () => {
 		expect(dbMock.attendanceDay.updateMany).not.toHaveBeenCalled()
 	})
 
-	// The fallback is what a ctx builder that forgot `actorRoles` lands on. It must judge
-	// `[actorRole]` — so an actor whose authority lives only in the set is DENIED, not admitted.
-	it('voidPeriod refuses when actorRoles was omitted', async () => {
-		await expect(
-			(await realVoidPeriod())('p1', 'org1', ctxWithoutRoles('EMPLOYEE'))
-		).rejects.toMatchObject({ status: 403 })
+	// No roles, no authority — the fail-closed floor now that the set is the only carrier.
+	it('voidPeriod refuses an empty role set', async () => {
+		await expect((await realVoidPeriod())('p1', 'org1', ctxWithNoRoles())).rejects.toMatchObject({
+			status: 403
+		})
 		expect(dbMock.payrollPeriod.findFirst).not.toHaveBeenCalled()
 	})
 
-	it('unlockRange refuses when actorRoles was omitted', async () => {
+	it('unlockRange refuses an empty role set', async () => {
 		await expect(
-			(await realUnlockRange())('org1', RANGE_DATES, ctxWithoutRoles('EMPLOYEE'))
+			(await realUnlockRange())('org1', RANGE_DATES, ctxWithNoRoles())
 		).rejects.toMatchObject({ status: 403 })
 		expect(dbMock.attendanceDay.updateMany).not.toHaveBeenCalled()
 	})

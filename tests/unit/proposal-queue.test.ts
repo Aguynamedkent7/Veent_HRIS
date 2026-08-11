@@ -85,7 +85,8 @@ const event = (
 	body: Record<string, string> = {}
 ) =>
 	({
-		locals: { user: { ...user, organizationId: 'org1' } },
+		// `roles` is what Lucia hands every route (`auth.ts`), so the fixture carries it too.
+		locals: { user: { ...user, roles: user.roles ?? [user.role], organizationId: 'org1' } },
 		url: new URL('http://localhost/requests/proposals'),
 		request: { formData: async () => new Map(Object.entries(body)) },
 		getClientAddress: () => 'test'

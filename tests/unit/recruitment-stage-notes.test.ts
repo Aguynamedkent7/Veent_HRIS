@@ -31,7 +31,7 @@ const { writeAuditLog } = await import('$lib/server/audit')
 const CTX: AuditContext = {
 	organizationId: 'org1',
 	actorId: 'u1',
-	actorRole: 'HR_ADMIN',
+	actorRoles: ['HR_ADMIN'],
 	ipAddress: 'test'
 }
 

@@ -74,7 +74,7 @@ export const actions: Actions = {
 				{
 					organizationId: user.organizationId,
 					actorId: user.id,
-					actorRole: user.role,
+					actorRoles: user.roles,
 					ipAddress: ip
 				},
 				{ action: 'LOGIN_FAILED', entityType: 'User', entityId: user.id }
@@ -100,7 +100,7 @@ export const actions: Actions = {
 				{
 					organizationId: selectedOrg,
 					actorId: user.id,
-					actorRole: user.role,
+					actorRoles: user.roles,
 					ipAddress: ip
 				},
 				{ action: 'LOGIN', entityType: 'User', entityId: user.id }

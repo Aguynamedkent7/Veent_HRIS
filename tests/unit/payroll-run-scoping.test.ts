@@ -40,15 +40,13 @@ const STRANGER_EMP = 'stranger-emp'
 
 const actor = (role: Role, roles?: Role[]) => ({
 	id: ACTOR,
-	role,
-	roles,
+	roles: roles ?? [role],
 	organizationId: 'org1'
 })
 const ctxOf = (role: Role, roles?: Role[]) => ({
 	organizationId: 'org1',
 	actorId: ACTOR,
-	actorRole: role,
-	actorRoles: roles,
+	actorRoles: roles ?? [role],
 	ipAddress: '127.0.0.1'
 })
 

@@ -32,7 +32,7 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 	const goal = await createGoal(me.id, parsed.data, {
 		organizationId: locals.user.organizationId,
 		actorId: locals.user.id,
-		actorRole: locals.user.role,
+		actorRoles: locals.user.roles,
 		ipAddress: getClientAddress()
 	})
 	return json({ goal }, { status: 201 })

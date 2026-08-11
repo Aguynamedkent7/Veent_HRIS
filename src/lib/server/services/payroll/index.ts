@@ -544,12 +544,11 @@ export async function overridePayrollEntry(
 	// The capability arm comes first and is not optional: `assertCanTouchEmployee` opens up only for
 	// ADMINISTER_HR_ORGWIDE, which PAYROLL_OFFICER does not hold, so delegating to it alone would
 	// scope the one role whose job is running payroll down to a reporting line it does not have.
-	const actorRoles = ctx.actorRoles?.length ? ctx.actorRoles : [ctx.actorRole]
-	if (!canAny(actorRoles, 'VIEW_PAY_ORGWIDE')) {
+	if (!canAny(ctx.actorRoles, 'VIEW_PAY_ORGWIDE')) {
 		// ponytail: `roles` is a no-op here today, for the same containment reason as the arm above —
 		// passed so reordering the two cannot silently reintroduce the single-role bug (#247).
 		await assertCanTouchEmployee(
-			{ id: ctx.actorId, role: ctx.actorRole, roles: actorRoles, organizationId },
+			{ id: ctx.actorId, roles: ctx.actorRoles, organizationId },
 			entry.employeeId
 		)
 	}

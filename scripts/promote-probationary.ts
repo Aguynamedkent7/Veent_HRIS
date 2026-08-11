@@ -94,7 +94,7 @@ async function main() {
 		const ctx = {
 			organizationId,
 			actorId: systemUser.id,
-			actorRole: systemUser.role
+			actorRoles: systemUser.roles
 		}
 
 		const done: typeof employees = []

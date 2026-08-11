@@ -4,7 +4,7 @@ import { db } from './db'
 interface AuditContext {
 	organizationId: string
 	actorId: string
-	actorRole: Role
+	actorRoles: Role[]
 	ipAddress?: string
 	userAgent?: string
 }
@@ -28,7 +28,9 @@ export async function writeAuditLog(
 		data: {
 			organizationId: ctx.organizationId,
 			actorId: ctx.actorId,
-			actorRole: ctx.actorRole,
+			// ponytail: actorRole is dropped in commit 11; fed from the set until then
+			actorRole: ctx.actorRoles[0],
+			actorRoles: ctx.actorRoles,
 			action: payload.action,
 			entityType: payload.entityType,
 			entityId: payload.entityId,

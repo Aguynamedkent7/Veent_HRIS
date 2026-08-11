@@ -26,21 +26,17 @@ const DENIED = 'You can only manage your own team or a branch you manage.'
 
 export interface EmployeeAccessActor {
 	id: string
-	role: Role
-	/** Full role set (#133). Absent falls back to `[role]`, so a single-role caller is unchanged. */
-	roles?: Role[]
+	/** #247: authority comes from every role the actor holds, so the full set is required. */
+	roles: Role[]
 	organizationId: string
 }
-
-/** #247: authority comes from every role the actor holds, not just the primary one. */
-const rolesOf = (user: EmployeeAccessActor) => (user.roles?.length ? user.roles : [user.role])
 
 /** True if this actor may read/modify that employee record. Org scoping is the caller's job. */
 export async function canTouchEmployee(
 	user: EmployeeAccessActor,
 	employeeId: string
 ): Promise<boolean> {
-	if (canAny(rolesOf(user), 'ADMINISTER_HR_ORGWIDE')) return true
+	if (canAny(user.roles, 'ADMINISTER_HR_ORGWIDE')) return true
 
 	const self = await db.employee.findUnique({
 		where: { userId: user.id },
@@ -85,7 +81,7 @@ export async function canTouchEmployee(
  * list can never show a row whose 201 file then 403s. `employee-access.test.ts` pins that.
  */
 export async function listVisibleEmployeeIds(user: EmployeeAccessActor): Promise<string[] | null> {
-	if (canAny(rolesOf(user), 'ADMINISTER_HR_ORGWIDE')) return null
+	if (canAny(user.roles, 'ADMINISTER_HR_ORGWIDE')) return null
 
 	const self = await db.employee.findUnique({
 		where: { userId: user.id },
@@ -177,6 +173,6 @@ export async function assertCanTouchEmployee(
 export async function listVisiblePayEmployeeIds(
 	user: EmployeeAccessActor
 ): Promise<string[] | null> {
-	if (canAny(rolesOf(user), 'VIEW_PAY_ORGWIDE')) return null
+	if (canAny(user.roles, 'VIEW_PAY_ORGWIDE')) return null
 	return listVisibleEmployeeIds(user)
 }

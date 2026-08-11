@@ -73,7 +73,7 @@ const AUDIT_LOGS = [
 		ipAddress: '203.0.113.7',
 		userAgent: 'Mozilla/5.0 (audit)',
 		actorId: 'uHR',
-		actorRole: 'HR_ADMIN',
+		actorRoles: ['HR_ADMIN'],
 		createdAt: new Date('2026-01-01T00:00:00Z'),
 		actor: { email: 'hr@orga.test', role: 'HR_ADMIN' }
 	}

@@ -43,7 +43,7 @@ const ACTOR = 'user-self'
 const CTX: AuditContext = {
 	organizationId: 'org1',
 	actorId: ACTOR,
-	actorRole: 'CEO',
+	actorRoles: ['CEO'],
 	ipAddress: 'test'
 }
 
@@ -68,7 +68,7 @@ describe('setUserRole', () => {
 	// solely at the route layer. Now checked here, on the full role set, above everything else.
 	it('refuses an actor who does not hold MANAGE_USER_ROLES', async () => {
 		await expect(
-			setUserRole('user-other', 'org1', 'MANAGER', { ...CTX, actorRole: 'SUPER_ADMIN' })
+			setUserRole('user-other', 'org1', 'MANAGER', { ...CTX, actorRoles: ['SUPER_ADMIN'] })
 		).rejects.toMatchObject({ status: 403 })
 		expect(dbMock.$transaction).not.toHaveBeenCalled()
 		expect(txMock.user.update).not.toHaveBeenCalled()
@@ -78,7 +78,7 @@ describe('setUserRole', () => {
 	// self-targeted call to distinguish "you may not" from anything about the target at all.
 	it('refuses an unauthorized actor without any lookup, even targeting themselves', async () => {
 		await expect(
-			setUserRole(ACTOR, 'org1', 'MANAGER', { ...CTX, actorRole: 'EMPLOYEE' })
+			setUserRole(ACTOR, 'org1', 'MANAGER', { ...CTX, actorRoles: ['EMPLOYEE'] })
 		).rejects.toMatchObject({ status: 403 })
 		expect(dbMock.$transaction).not.toHaveBeenCalled()
 		expect(txMock.user.findFirst).not.toHaveBeenCalled()
@@ -89,7 +89,6 @@ describe('setUserRole', () => {
 		await expect(
 			setUserRole('user-other', 'org1', 'MANAGER', {
 				...CTX,
-				actorRole: 'EMPLOYEE',
 				actorRoles: ['EMPLOYEE', 'CEO']
 			})
 		).resolves.toBeDefined()

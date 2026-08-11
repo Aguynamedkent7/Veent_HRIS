@@ -70,10 +70,9 @@ function ctxOf(locals: App.Locals, ip: string) {
 	return {
 		organizationId: locals.user!.organizationId,
 		actorId: locals.user!.id,
-		actorRole: locals.user!.role,
 		// #247: `proposeIfRequired` decides whether a pay change is written directly or filed for
-		// confirmation from the FULL role set, so omitting this scoped a [MANAGER, HR_ADMIN] user
-		// down to MANAGER and routed a change they may make straight through the proposal queue.
+		// confirmation from the FULL role set — the primary role alone scoped a [MANAGER, HR_ADMIN]
+		// user down to MANAGER and routed a change they may make straight through the queue.
 		actorRoles: locals.user!.roles,
 		ipAddress: ip
 	}
@@ -462,7 +461,7 @@ export const actions: Actions = scopedToEmployee({
 			await updateEmployee(params.id, user.organizationId, input, {
 				organizationId: user.organizationId,
 				actorId: user.id,
-				actorRole: user.role,
+				actorRoles: user.roles,
 				ipAddress: getClientAddress()
 			})
 		} catch (e: unknown) {
@@ -568,7 +567,7 @@ export const actions: Actions = scopedToEmployee({
 			await offboardEmployee(params.id, user.organizationId, endDate, {
 				organizationId: user.organizationId,
 				actorId: user.id,
-				actorRole: user.role,
+				actorRoles: user.roles,
 				ipAddress: getClientAddress()
 			})
 		} catch (e) {
@@ -623,7 +622,7 @@ export const actions: Actions = scopedToEmployee({
 			await createEmployeeEarning(params.id, user.organizationId, parsed.data, {
 				organizationId: user.organizationId,
 				actorId: user.id,
-				actorRole: user.role,
+				actorRoles: user.roles,
 				ipAddress: getClientAddress()
 			})
 		} catch (e) {
@@ -641,7 +640,7 @@ export const actions: Actions = scopedToEmployee({
 			await endEmployeeEarning(id, user.organizationId, {
 				organizationId: user.organizationId,
 				actorId: user.id,
-				actorRole: user.role,
+				actorRoles: user.roles,
 				ipAddress: getClientAddress()
 			})
 		} catch (e: unknown) {
@@ -660,7 +659,7 @@ export const actions: Actions = scopedToEmployee({
 			await createEmployeeDeduction(params.id, user.organizationId, parsed.data, {
 				organizationId: user.organizationId,
 				actorId: user.id,
-				actorRole: user.role,
+				actorRoles: user.roles,
 				ipAddress: getClientAddress()
 			})
 		} catch (e: unknown) {
@@ -679,7 +678,7 @@ export const actions: Actions = scopedToEmployee({
 			await endEmployeeDeduction(id, user.organizationId, {
 				organizationId: user.organizationId,
 				actorId: user.id,
-				actorRole: user.role,
+				actorRoles: user.roles,
 				ipAddress: getClientAddress()
 			})
 		} catch (e: unknown) {

@@ -95,7 +95,7 @@ function ctxOf(event: RequestEvent) {
 	return {
 		organizationId: u.organizationId,
 		actorId: u.id,
-		actorRole: u.role,
+		actorRoles: u.roles,
 		ipAddress: event.getClientAddress()
 	}
 }

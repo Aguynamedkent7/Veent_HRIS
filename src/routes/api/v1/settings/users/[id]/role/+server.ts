@@ -26,7 +26,6 @@ export const PATCH: RequestHandler = async ({ locals, params, request, getClient
 	const updated = await setUserRole(params.id, user.organizationId, parsed.data.role, {
 		organizationId: user.organizationId,
 		actorId: user.id,
-		actorRole: user.role,
 		actorRoles: user.roles,
 		ipAddress: getClientAddress()
 	})

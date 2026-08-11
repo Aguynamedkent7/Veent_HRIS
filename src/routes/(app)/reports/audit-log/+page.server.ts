@@ -134,7 +134,7 @@ export const actions: Actions = {
 			{
 				organizationId: user.organizationId,
 				actorId: user.id,
-				actorRole: user.role,
+				actorRoles: user.roles,
 				ipAddress: getClientAddress(),
 				userAgent: request.headers.get('user-agent') ?? undefined
 			},

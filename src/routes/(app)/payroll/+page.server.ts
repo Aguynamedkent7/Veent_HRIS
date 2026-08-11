@@ -46,7 +46,7 @@ export const actions: Actions = {
 			await createPayrollRun(user.organizationId, parsed.data.periodStart, parsed.data.periodEnd, {
 				organizationId: user.organizationId,
 				actorId: user.id,
-				actorRole: user.role,
+				actorRoles: user.roles,
 				ipAddress: getClientAddress()
 			})
 		} catch (e: unknown) {
@@ -66,7 +66,7 @@ export const actions: Actions = {
 			await computePayroll(id, user.organizationId, {
 				organizationId: user.organizationId,
 				actorId: user.id,
-				actorRole: user.role,
+				actorRoles: user.roles,
 				ipAddress: getClientAddress()
 			})
 		} catch (e: unknown) {

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import type { Role } from '@prisma/client'
 
 /**
  * #275, the benefits half — `enrollEmployee` checked that the PLAN belonged to the acting
@@ -30,7 +31,7 @@ const { enrollEmployee } = await import('$lib/server/services/benefits')
 const ORG = 'org1'
 const EMPLOYEE = 'emp1'
 const PLAN = 'plan1'
-const ctx = { organizationId: ORG, actorId: 'user-actor', actorRole: 'HR_ADMIN' as const }
+const ctx = { organizationId: ORG, actorId: 'user-actor', actorRoles: ['HR_ADMIN'] as Role[] }
 const data = { effectiveDate: new Date('2026-01-01') }
 
 beforeEach(() => {

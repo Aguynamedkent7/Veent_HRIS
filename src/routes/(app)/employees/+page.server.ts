@@ -82,7 +82,7 @@ export const actions: Actions = {
 			await offboardEmployee(id, user.organizationId, endDate, {
 				organizationId: user.organizationId,
 				actorId: user.id,
-				actorRole: user.role,
+				actorRoles: user.roles,
 				ipAddress: getClientAddress()
 			})
 		} catch (e) {

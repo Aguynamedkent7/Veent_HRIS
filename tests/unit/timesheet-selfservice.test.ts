@@ -51,7 +51,7 @@ const makeTs = (over: Record<string, unknown> = {}) => ({
 const ctx = (actorRole: Role, actorId = 'user1') => ({
 	organizationId: ORG,
 	actorId,
-	actorRole,
+	actorRoles: [actorRole],
 	ipAddress: 'test'
 })
 

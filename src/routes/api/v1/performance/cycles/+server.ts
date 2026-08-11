@@ -25,7 +25,7 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 	const cycle = await createReviewCycle(user.organizationId, parsed.data, {
 		organizationId: user.organizationId,
 		actorId: user.id,
-		actorRole: user.role,
+		actorRoles: user.roles,
 		ipAddress: getClientAddress()
 	})
 	return json({ cycle }, { status: 201 })

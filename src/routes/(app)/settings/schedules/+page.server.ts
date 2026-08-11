@@ -51,7 +51,7 @@ export const actions: Actions = {
 				{
 					organizationId: locals.user!.organizationId,
 					actorId: locals.user!.id,
-					actorRole: locals.user!.role,
+					actorRoles: locals.user!.roles,
 					ipAddress: getClientAddress()
 				}
 			)
@@ -69,7 +69,7 @@ export const actions: Actions = {
 		await setOrgTardiness(locals.user!.organizationId, enabled, {
 			organizationId: locals.user!.organizationId,
 			actorId: locals.user!.id,
-			actorRole: locals.user!.role,
+			actorRoles: locals.user!.roles,
 			ipAddress: getClientAddress()
 		})
 		return { success: true }
@@ -85,7 +85,7 @@ export const actions: Actions = {
 			await setScheduleTardiness(locals.user!.organizationId, id, enabled, {
 				organizationId: locals.user!.organizationId,
 				actorId: locals.user!.id,
-				actorRole: locals.user!.role,
+				actorRoles: locals.user!.roles,
 				ipAddress: getClientAddress()
 			})
 		} catch (e: unknown) {

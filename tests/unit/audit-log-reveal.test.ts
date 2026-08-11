@@ -213,7 +213,7 @@ describe('?/reveal — reaching a payload is itself audited (#242)', () => {
 		expect(ctx).toMatchObject({
 			organizationId: ORG_A,
 			actorId: ACTOR,
-			actorRole: 'SUPER_ADMIN',
+			actorRoles: ['SUPER_ADMIN'],
 			ipAddress: '203.0.113.7'
 		})
 		expect(payload).toMatchObject({

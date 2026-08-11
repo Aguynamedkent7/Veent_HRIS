@@ -29,7 +29,7 @@ export const PATCH: RequestHandler = async ({ locals, params, request, getClient
 	const position = await updatePosition(params.id, user.organizationId, parsed.data, {
 		organizationId: user.organizationId,
 		actorId: user.id,
-		actorRole: user.role,
+		actorRoles: user.roles,
 		ipAddress: getClientAddress()
 	})
 	return json({ data: position })

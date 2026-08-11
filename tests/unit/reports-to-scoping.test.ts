@@ -50,7 +50,7 @@ const ORG = 'org1'
 const CTX = {
 	organizationId: ORG,
 	actorId: 'user1',
-	actorRole: 'HR_ADMIN' as Role,
+	actorRoles: ['HR_ADMIN'] as Role[],
 	ipAddress: 'test'
 }
 

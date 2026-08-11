@@ -96,7 +96,7 @@ async function main() {
 		{
 			organizationId: org.id,
 			actorId: admin.id,
-			actorRole: admin.role,
+			actorRoles: admin.roles,
 			ipAddress: '127.0.0.1'
 		},
 		{ allowNonStandardPeriod: true }

@@ -36,7 +36,6 @@ export const actions: Actions = {
 		// way around it. `null` = unrestricted.
 		const visibleEmployeeIds = await listVisiblePayEmployeeIds({
 			id: locals.user!.id,
-			role: locals.user!.role,
 			roles: locals.user!.roles,
 			organizationId: locals.user!.organizationId
 		})

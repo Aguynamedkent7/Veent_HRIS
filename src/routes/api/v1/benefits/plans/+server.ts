@@ -30,7 +30,7 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 	const plan = await createBenefitPlan(user.organizationId, parsed.data, {
 		organizationId: user.organizationId,
 		actorId: user.id,
-		actorRole: user.role,
+		actorRoles: user.roles,
 		ipAddress: getClientAddress()
 	})
 	return json({ plan }, { status: 201 })

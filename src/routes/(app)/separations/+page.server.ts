@@ -50,7 +50,7 @@ export const actions: Actions = {
 			const record = await createSeparation(user.organizationId, parsed.data, {
 				organizationId: user.organizationId,
 				actorId: user.id,
-				actorRole: user.role,
+				actorRoles: user.roles,
 				ipAddress: getClientAddress()
 			})
 			id = record.id

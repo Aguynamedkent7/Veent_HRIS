@@ -67,7 +67,7 @@ export const load: PageServerLoad = async ({ locals, url, getClientAddress }) =>
 	const ctx = {
 		organizationId: user.organizationId,
 		actorId: user.id,
-		actorRole: user.role,
+		actorRoles: user.roles,
 		ipAddress: getClientAddress()
 	}
 	if (view === 'employee' && selectedEmployeeId) {
@@ -123,7 +123,6 @@ function ctxOf(event: RequestEvent) {
 	return {
 		organizationId: u.organizationId,
 		actorId: u.id,
-		actorRole: u.role,
 		actorRoles: u.roles,
 		ipAddress: event.getClientAddress()
 	}

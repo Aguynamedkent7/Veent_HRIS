@@ -143,7 +143,6 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	const ctx = {
 		organizationId: locals.user.organizationId,
 		actorId: locals.user.id,
-		actorRole: locals.user.role,
 		actorRoles: locals.user.roles
 	}
 
@@ -251,7 +250,7 @@ export const POST: RequestHandler = async ({ locals, params, request, url }) => 
 				{
 					organizationId: locals.user.organizationId,
 					actorId: locals.user.id,
-					actorRole: locals.user.role
+					actorRoles: locals.user.roles
 				}
 			)
 			return json({ data: result })

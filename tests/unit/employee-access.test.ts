@@ -26,7 +26,11 @@ const { canTouchEmployee, assertCanTouchEmployee, listVisibleEmployeeIds } =
 	await import('$lib/server/services/employee-access')
 
 /** `roles` omitted leaves it undefined, so the fallback reproduces the single-role rule exactly. */
-const actor = (role: Role, roles?: Role[]) => ({ id: 'user1', role, roles, organizationId: 'org1' })
+const actor = (role: Role, roles?: Role[]) => ({
+	id: 'user1',
+	roles: roles ?? [role],
+	organizationId: 'org1'
+})
 /** The manager's own employee record. */
 const SELF = { id: 'mgr-emp' }
 

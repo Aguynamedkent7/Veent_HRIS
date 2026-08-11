@@ -82,8 +82,7 @@ async function assertMayDecide(
 
 	// 3. Holds the capability the proposal's shape demands.
 	const isSelfAction = target?.userId === pending.initiatorId
-	const roles = ctx.actorRoles?.length ? ctx.actorRoles : [ctx.actorRole]
-	if (!canAny(roles, confirmerCapabilityFor(isSelfAction))) {
+	if (!canAny(ctx.actorRoles, confirmerCapabilityFor(isSelfAction))) {
 		error(403, 'You are not authorized to confirm this proposal.')
 	}
 }

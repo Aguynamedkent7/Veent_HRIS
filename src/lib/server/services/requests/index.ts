@@ -15,7 +15,7 @@ import type { AuditContext } from '../types'
 
 // The filer's live role set — approval-stage authority is multi-role aware (#133/#134).
 function rolesOf(ctx: AuditContext) {
-	return ctx.actorRoles?.length ? ctx.actorRoles : [ctx.actorRole]
+	return ctx.actorRoles
 }
 
 // Create a request and its resolved approval chain in one transaction. The chain

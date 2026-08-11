@@ -62,7 +62,6 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
 		requirePayrollReports(user.roles)
 		visiblePayIds = await listVisiblePayEmployeeIds({
 			id: user.id,
-			role: user.role,
 			roles: user.roles,
 			organizationId: user.organizationId
 		})

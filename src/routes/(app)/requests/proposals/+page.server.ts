@@ -34,10 +34,9 @@ const RATE_TYPE_LABELS: Record<string, string> = {
 const ctxOf = (locals: App.Locals, ip: string) => ({
 	organizationId: locals.user!.organizationId,
 	actorId: locals.user!.id,
-	actorRole: locals.user!.role,
-	// Not optional here. `assertMayDecide` falls back to [actorRole], which would refuse a
-	// [MANAGER, HR_ADMIN] user a confirmation they are entitled to (#133).
-	actorRoles: locals.user!.roles ?? [locals.user!.role],
+	// `assertMayDecide` reads the full set, so a [MANAGER, HR_ADMIN] user gets the confirmation
+	// they are entitled to (#133).
+	actorRoles: locals.user!.roles,
 	ipAddress: ip
 })
 

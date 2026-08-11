@@ -584,10 +584,7 @@ export async function unlockRange(
 ) {
 	// Reopening locked days overrides a finalized record — Super-Admin-only (#224). Enforced here so
 	// every caller is covered, not only the two form actions that happen to check today.
-	requireAnyCapability(
-		ctx.actorRoles?.length ? ctx.actorRoles : [ctx.actorRole],
-		'OVERRIDE_FINALIZED'
-	)
+	requireAnyCapability(ctx.actorRoles, 'OVERRIDE_FINALIZED')
 
 	const fromKey = manilaDayKey(range.from)
 	const toKey = manilaDayKey(range.to)

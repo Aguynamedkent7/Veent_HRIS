@@ -50,7 +50,7 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 		const result = await aggregateTimeLogsToTimesheet(employeeId, new Date(weekOf), {
 			organizationId: user.organizationId,
 			actorId: user.id,
-			actorRole: user.role,
+			actorRoles: user.roles,
 			ipAddress: getClientAddress()
 		})
 		return json(result)

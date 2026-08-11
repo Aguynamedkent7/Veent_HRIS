@@ -59,7 +59,6 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 	const created = await createRequest(myEmployee.id, user.organizationId, parsed.data, {
 		organizationId: user.organizationId,
 		actorId: user.id,
-		actorRole: user.role,
 		actorRoles: user.roles,
 		ipAddress: getClientAddress()
 	})

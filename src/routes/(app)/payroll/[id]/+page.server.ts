@@ -21,7 +21,6 @@ function ctxOf(locals: App.Locals, ip: string) {
 	return {
 		organizationId: user.organizationId,
 		actorId: user.id,
-		actorRole: user.role,
 		actorRoles: user.roles,
 		ipAddress: ip
 	}
@@ -45,7 +44,6 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	// here, the same leak the payslip doors were narrowed to close. `null` = unrestricted.
 	const visibleEmployeeIds = await listVisiblePayEmployeeIds({
 		id: user.id,
-		role: user.role,
 		roles,
 		organizationId: user.organizationId
 	})

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import type { Role } from '@prisma/client'
 
 /**
  * Guard behaviour of the page-load derive (`skipUnpunched`). The DB and audit log are mocked so
@@ -31,7 +32,7 @@ const EMP = { id: 'emp1', organizationId: 'org1', workSchedule: null }
 const CTX = {
 	organizationId: 'org1',
 	actorId: 'user1',
-	actorRole: 'EMPLOYEE' as const,
+	actorRoles: ['EMPLOYEE'] as Role[],
 	ipAddress: 'test'
 }
 // Single PHT day: Mon 2026-07-13, a regular weekday. The employee has no assigned schedule and

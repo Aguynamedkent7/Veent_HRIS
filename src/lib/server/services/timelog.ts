@@ -35,7 +35,7 @@ export async function recordPunch(
 ) {
 	const employee = await db.employee.findUnique({
 		where: { discordId: input.discordId },
-		include: { user: { select: { id: true, role: true, isActive: true } } }
+		include: { user: { select: { id: true, roles: true, isActive: true } } }
 	})
 
 	if (!employee || !employee.user.isActive || employee.employmentStatus !== 'ACTIVE') {
@@ -88,7 +88,7 @@ export async function recordPunch(
 		{
 			organizationId: employee.organizationId,
 			actorId: employee.user.id,
-			actorRole: employee.user.role,
+			actorRoles: employee.user.roles,
 			ipAddress: meta?.ipAddress
 		},
 		{

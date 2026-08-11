@@ -37,8 +37,7 @@ const REPORT = { id: 'report-emp', userId: 'user-report' }
 
 const actor = (role: Role, roles?: Role[]) => ({
 	id: ACTOR_USER,
-	role,
-	roles,
+	roles: roles ?? [role],
 	organizationId: 'org1'
 })
 

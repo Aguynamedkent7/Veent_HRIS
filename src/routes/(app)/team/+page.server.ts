@@ -52,7 +52,7 @@ export const load: PageServerLoad = async ({ locals, url, getClientAddress }) =>
 		{
 			organizationId: user.organizationId,
 			actorId: user.id,
-			actorRole: user.role,
+			actorRoles: user.roles,
 			ipAddress: getClientAddress()
 		}
 	)

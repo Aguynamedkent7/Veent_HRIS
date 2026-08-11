@@ -38,7 +38,7 @@ export const actions: Actions = {
 			await setClearanceItem(itemId, user.organizationId, cleared, {
 				organizationId: user.organizationId,
 				actorId: user.id,
-				actorRole: user.role,
+				actorRoles: user.roles,
 				ipAddress: getClientAddress()
 			})
 		} catch (e: unknown) {
@@ -57,7 +57,7 @@ export const actions: Actions = {
 			await finalizeSeparation(params.id, user.organizationId, {
 				organizationId: user.organizationId,
 				actorId: user.id,
-				actorRole: user.role,
+				actorRoles: user.roles,
 				ipAddress: getClientAddress()
 			})
 		} catch (e: unknown) {

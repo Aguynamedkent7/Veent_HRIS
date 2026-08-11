@@ -50,8 +50,7 @@ const STRANGER = { id: 'stranger-emp', userId: 'user-stranger', branchId: null }
 const ctx = (role: Role, roles?: Role[]): AuditContext => ({
 	organizationId: ORG,
 	actorId: ACTOR_USER,
-	actorRole: role,
-	...(roles && { actorRoles: roles })
+	actorRoles: roles ?? [role]
 })
 
 /**

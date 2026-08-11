@@ -28,7 +28,7 @@ const PAYROLL_STAGE_CAPABILITY: Record<ApprovalStage, keyof typeof CAPABILITIES>
 }
 
 export function rolesOf(ctx: AuditContext): Role[] {
-	return ctx.actorRoles?.length ? ctx.actorRoles : [ctx.actorRole]
+	return ctx.actorRoles
 }
 
 // Any maker-checker subject (request/timesheet/payroll run) stores append-only steps.

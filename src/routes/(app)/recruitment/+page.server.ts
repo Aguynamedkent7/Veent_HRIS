@@ -53,7 +53,7 @@ export const actions: Actions = {
 			await createJobPosting(user.organizationId, parsed.data, {
 				organizationId: user.organizationId,
 				actorId: user.id,
-				actorRole: user.role,
+				actorRoles: user.roles,
 				ipAddress: getClientAddress()
 			})
 		} catch (e) {
@@ -74,7 +74,7 @@ export const actions: Actions = {
 			await submitJobPostingForApproval(id, user.organizationId, {
 				organizationId: user.organizationId,
 				actorId: user.id,
-				actorRole: user.role,
+				actorRoles: user.roles,
 				ipAddress: getClientAddress()
 			})
 		} catch (e) {
@@ -94,7 +94,7 @@ export const actions: Actions = {
 		const ctx = {
 			organizationId: user.organizationId,
 			actorId: user.id,
-			actorRole: user.role,
+			actorRoles: user.roles,
 			ipAddress: getClientAddress()
 		}
 		// Submit each; skip any that aren't drafts rather than failing the batch.
@@ -126,7 +126,7 @@ export const actions: Actions = {
 		await advanceApplicant(applicantId, user.organizationId, stage as never, notes, {
 			organizationId: user.organizationId,
 			actorId: user.id,
-			actorRole: user.role,
+			actorRoles: user.roles,
 			ipAddress: getClientAddress()
 		})
 	}

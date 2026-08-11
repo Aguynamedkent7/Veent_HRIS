@@ -28,7 +28,7 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 	const position = await createPosition(user.organizationId, parsed.data, {
 		organizationId: user.organizationId,
 		actorId: user.id,
-		actorRole: user.role,
+		actorRoles: user.roles,
 		ipAddress: getClientAddress()
 	})
 	return json({ data: position }, { status: 201 })

@@ -303,7 +303,7 @@ async function deleteEmployee(employeeId: string) {
 				data: {
 					organizationId: employee.organizationId,
 					actorId: actor.id,
-					actorRole: actor.role,
+					actorRoles: actor.roles,
 					action: 'DELETE',
 					entityType: 'Employee',
 					entityId: employee.id,
@@ -420,7 +420,7 @@ async function deletePayrollRun(runId: string) {
 				data: {
 					organizationId: run.organizationId,
 					actorId: actor.id,
-					actorRole: actor.role,
+					actorRoles: actor.roles,
 					action: 'DELETE',
 					entityType: 'PayrollRun',
 					entityId: run.id,

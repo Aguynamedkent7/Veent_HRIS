@@ -700,8 +700,8 @@ async function proposeIfRequired(
 	payload: unknown,
 	ctx: AuditContext
 ): Promise<PayWriteResult | null> {
-	const roles = ctx.actorRoles?.length ? ctx.actorRoles : [ctx.actorRole]
-	if (employee.userId !== ctx.actorId && canAny(roles, 'ADMINISTER_HR_ORGWIDE')) return null
+	if (employee.userId !== ctx.actorId && canAny(ctx.actorRoles, 'ADMINISTER_HR_ORGWIDE'))
+		return null
 
 	const proposal = await createProposal(
 		organizationId,

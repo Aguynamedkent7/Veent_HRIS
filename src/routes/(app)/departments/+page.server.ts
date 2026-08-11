@@ -61,7 +61,7 @@ export const actions: Actions = {
 		await createDepartment(user.organizationId, parsed.data.name, {
 			organizationId: user.organizationId,
 			actorId: user.id,
-			actorRole: user.role,
+			actorRoles: user.roles,
 			ipAddress: getClientAddress()
 		})
 	},
@@ -80,7 +80,7 @@ export const actions: Actions = {
 		await updateDepartment(parsed.data.id, user.organizationId, parsed.data.name, {
 			organizationId: user.organizationId,
 			actorId: user.id,
-			actorRole: user.role,
+			actorRoles: user.roles,
 			ipAddress: getClientAddress()
 		})
 	},
@@ -107,7 +107,7 @@ export const actions: Actions = {
 			{
 				organizationId: user.organizationId,
 				actorId: user.id,
-				actorRole: user.role,
+				actorRoles: user.roles,
 				ipAddress: getClientAddress()
 			}
 		)

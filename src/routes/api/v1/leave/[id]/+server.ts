@@ -58,10 +58,8 @@ export const PATCH: RequestHandler = async ({ params, request, locals, getClient
 			{
 				organizationId: user.organizationId,
 				actorId: user.id,
-				actorRole: user.role,
-				// #247: reaches `rolesOf` indirectly — `reviewLeaveRequest` delegates to `decide`,
-				// which resolves stage authority from the full set. Its page twin
-				// (`(app)/requests/approvals/+page.server.ts:124,160`) already passed this.
+				// #247: `reviewLeaveRequest` delegates to `decide`, which resolves stage authority
+				// from the full set.
 				actorRoles: user.roles,
 				ipAddress: getClientAddress()
 			}
