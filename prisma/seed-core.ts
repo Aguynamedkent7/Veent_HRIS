@@ -239,8 +239,8 @@ async function seedFoodServiceOrg(
 		const h = await bcrypt.hash(pw, 12)
 		const signoffUser = await db.user.upsert({
 			where: { email },
-			update: { role },
-			create: { organizationId: tenant.id, email, passwordHash: h, role }
+			update: { roles: [role] },
+			create: { organizationId: tenant.id, email, passwordHash: h, roles: [role] }
 		})
 		await ensureEmployeeProfile(db, signoffUser, {
 			firstName: first,
