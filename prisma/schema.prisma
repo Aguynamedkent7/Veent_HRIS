@@ -1358,7 +1358,12 @@ model AuditLog {
   id             String      @id @default(cuid())
   organizationId String
   actorId        String
+  // `actorRole` is being replaced by `actorRoles` (#282). Both columns coexist while the
+  // write sites move across; `actorRole` is dropped once nothing writes it. `actorRoles`
+  // records the actor's whole role set as held at the time of the action — unlike the
+  // `actor` relation, which always shows today's roles.
   actorRole      Role
+  actorRoles     Role[]      @default([])
   action         AuditAction
   entityType     String
   entityId       String
