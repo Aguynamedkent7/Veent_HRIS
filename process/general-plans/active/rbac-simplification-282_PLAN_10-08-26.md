@@ -664,8 +664,8 @@ Independently re-derived, not taken from the plan:
 | G7 | Maker-checker survives: a MANAGER's pay change still routes to propose→confirm | Fully-Automated | existing `tests/unit/pay-proposal-routing.test.ts`, `pnpm test` exits 0 | A |
 | G8 | `setUserRole` writes only `roles`; `assertNotLastOfRole` still 409s per-role | Fully-Automated | `tests/unit/user-admin-self-guard.test.ts` extension (§8b T5), `pnpm test` exits 0 | B |
 | G9 | No site judges authority on a singular `.role` | Fully-Automated | `tests/unit/route-guard-multirole.test.ts` (carve-out removed per §8b T6), `pnpm test` exits 0 | B |
-| G10 | Migration script is idempotent, no-ops on a fresh DB, and leaves no empty `roles` set | Hybrid | `docker exec veent-db-5434 …` + `pnpm exec tsx scripts/migrate-user-role-to-roles.ts` run TWICE against the local Postgres on 5434 — precondition: `./start.sh` up, `.env.dev` loaded | B |
-| G11 | `prestart.sh` completes without `--accept-data-loss` on a populated DB | Hybrid | `sh scripts/prestart.sh` against the seeded local DB — precondition: DB seeded via `pnpm db:seed` | B |
+| G10 | Migration script is idempotent, no-ops on a fresh DB, and leaves no empty `roles` set | Hybrid | **✅ RUN AND PASSED 2026-08-11** — run twice at commit 8 (1405 audit rows backfilled, then a clean no-op) and twice again at commit 11 (both columns dropped, then a clean no-op). | B |
+| G11 | `prestart.sh` completes without `--accept-data-loss` on a populated DB | Hybrid | **✅ RUN AND PASSED 2026-08-11** — run at commit 8 and again at commit 11; both ended "The database is already in sync with the Prisma schema", no data-loss warning, no flag added. | B |
 | G12 | The three behaviour changes look right in the running app | Agent-Probe | **✅ RUN AND PASSED 2026-08-11** — 9 checks, each narrowing plus its negative control. See the G12 result block below. | C |
 | G13 | Production migration against real audit-log volume | — | — | D |
 | G14 | End-to-end browser coverage of the converted guards | — | — | D |
@@ -842,3 +842,82 @@ NEXT PHASE: EXECUTE, after the V5 gate is accepted and the five section-9 decisi
 CONTRACT SUMMARY: Gate CONDITIONAL. Set-identity claim CONFIRMED — all 66 conversions are provably no-ops. 12 concerns; C1 (missed call site benefits/+page.server.ts:76) must be applied to the plan first or commit 7 breaks the build. C2 means the test suite IS typechecked, which lowers Part 2 risk materially. C3 means section 3-B option B3 widens as well as narrows — disclose before deciding.
 
 EXECUTE START COMMAND: Read process/general-plans/active/rbac-simplification-282_PLAN_10-08-26.md in full including the Validate Contract, apply plan corrections C1/C6/C7 first, then begin commit 1.
+
+---
+
+## Part 2 execution record — 2026-08-11, COMPLETE
+
+Commits 8-11 landed as `b030a0e`, `5b26da8`, `fb5107d`, `7bd346e`, plus a follow-up fix `2c2b9ab`.
+Sixteen commits on `refactor/rbac-simplification-282`, 163 files, +1966/-736 against `staging`.
+Final state: lint 0 errors, `pnpm check` 893 files / 0 errors, `pnpm test` 1225 passing / 101 files.
+
+### Deviations from the plan, and why
+
+1. **The DROPs were deferred out of commit 8.** §6b's script sketch ends with step 5, and §7's
+   commit sequence puts "add the column" at 8 and "drop the scalars" at 11 — those two readings
+   conflict. Commit 8 shipped steps 1-4 only; commit 11 appended step 5. Writing the drops at
+   commit 8 would have broken the build for three commits, because `audit.ts` still wrote
+   `actorRole` until commit 9.
+
+2. **Each DROP is guarded by `columnExists()` as well as `IF EXISTS`.** `IF EXISTS` covers the
+   second run; it does not cover a *fresh* database, where the tables do not exist yet — the
+   script runs before `db push`, and `prestart.sh` is a `set -e` chain, so a bare `ALTER` there
+   would stop the app from ever starting. Guarded per-column, so the C9 crash window between the
+   two drops stays closed.
+
+3. **`@default([])` on `AuditLog.actorRoles`**, which §6d does not specify. It mirrors
+   `User.roles` and makes the schema's DDL match the script's `DEFAULT '{}'`, so the subsequent
+   push sees no default to remove.
+
+4. **T5 needed no new test.** Commit 10 already added both assertions §8b asks for
+   (`.not.toHaveProperty('role')` on the update payload, and the per-role `roles: { has: 'CEO' }`
+   count) in `tests/unit/user-admin-self-guard.test.ts`. Test count held at the 1225 baseline.
+
+### What the plan's enumeration missed
+
+§5a undercounted materially. Found and fixed during execution:
+
+- **A twelfth fallback** — `services/payroll/payslip-fetch.ts`'s `canReadPayslip` carried its own
+  `roles?.length ? roles : [role]`, and `FetchPayslipContext.role` fed it. §5a Group 1 lists eleven.
+- **Eleven more `roles ?? [role]` idioms on `locals.user`**, not the one the plan names in
+  `payroll/[id]`: `dashboard/+page.server.ts` (x2), `payroll/+layout.server.ts`,
+  `payroll/+page.server.ts`, `api/v1/payroll/[id]/+server.ts`, `requests/approvals/+page.server.ts`
+  (x3), `requests/timesheets/+page.server.ts` (x4), `requests/proposals/+page.server.ts`,
+  `approvals.ts:252`.
+- **Five Prisma `user: { select: { role: true } }` display projections** — four in `employees.ts`,
+  one in `dashboard.ts` — in no §5 Group. They compiled fine until commit 11.
+- **`services/timelog.ts`** selected `role: true` to build its audit ctx, so it had no set to pass.
+- **§5a Group 3 is wrong about `(app)/+layout.svelte`.** The plan says "no other use of `role`
+  found in that file; verify, then delete the line." False — the sidebar user card renders it.
+  Converted to render the whole set per §5c point 3 rather than deleted.
+
+### The one real bug this shipped and then fixed
+
+`prisma/seed-core.ts:242` still wrote the dropped `User.role` when creating the sign-off accounts.
+`pnpm check` passed anyway: **`prisma/**` and `scripts/**` are outside
+`.svelte-kit/tsconfig.json`'s `include`**, so the compiler never sees them. `pnpm db:seed` would
+have thrown at runtime. Fixed in `2c2b9ab`, after which every file in both directories was
+typechecked individually — that was the only one.
+
+This is the sharp edge of C2's good news. The contract established that `tests/**` IS typechecked,
+which is true and did lower Part 2's risk. It does not extend to `prisma/**` or `scripts/**`, and
+Groups 5 and 6 of §5a live largely in those directories. **A future schema-wide refactor must
+typecheck those two directories explicitly; `pnpm check` is not evidence about them.**
+
+### Also found: `as any` fixtures escape the type gate
+
+`tests/unit/proposal-queue.test.ts` builds its route event `as any`, so seven tests broke at
+runtime with `Cannot read properties of undefined` after commit 9 — invisible to `pnpm check`.
+`pnpm test` remains mandatory, not a formality, on typed refactors.
+
+### Deliberately not done
+
+- **`getManagerMetrics`'s `recentActivity[].actor.roles` still follows the `actor` relation**, so
+  it reports the actor's roles *today*, not at the time of the action — exactly the flaw B3 fixed
+  on the audit-log page. Confirmed live: a LOGIN entry written while the user was EMPLOYEE renders
+  `PAYROLL_OFFICER` after a role change. `/api/v1/dashboard` is a public response shape and
+  changing its meaning is beyond #282. Worth its own issue.
+- **`override-approve` does not bypass the approval chain.** §3-C assumed it did. Both actions map
+  to the same `decide()` call and differ only by the capability gate. Pre-existing, unrelated to
+  this issue, worth filing separately.
+- The role-assignment API stays single-valued (#283).
