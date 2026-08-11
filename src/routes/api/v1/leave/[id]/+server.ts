@@ -1,5 +1,5 @@
 import { json } from '@sveltejs/kit'
-import { requireAnyCapability, requireAnyMinRole } from '$lib/server/rbac'
+import { requireAnyCapability } from '$lib/server/rbac'
 import { reviewLeaveRequest } from '$lib/server/services/leave'
 import { apiError } from '$lib/server/api-error'
 import type { RequestHandler } from './$types'
@@ -32,12 +32,14 @@ export const PATCH: RequestHandler = async ({ params, request, locals, getClient
 		return apiError(400, 'action must be "approve", "reject", or "override-approve"')
 	}
 
-	// override-approve requires HR_ADMIN or higher
+	// #282: override-approve bypasses the approval chain outright, so it is org-wide HR authority —
+	// not the VIEW_TEAM the rest of the route runs on. The old `requireAnyMinRole('HR_ADMIN')` here
+	// admitted MANAGER (#133 ranks them level), which contradicted its own error message.
 	if (action === 'override-approve') {
 		try {
-			requireAnyMinRole(user.roles, 'HR_ADMIN')
+			requireAnyCapability(user.roles, 'ADMINISTER_HR_ORGWIDE')
 		} catch {
-			return apiError(403, 'override-approve requires HR_ADMIN or higher')
+			return apiError(403, 'override-approve requires org-wide HR (HR_ADMIN, CEO or SUPER_ADMIN)')
 		}
 	}
 
