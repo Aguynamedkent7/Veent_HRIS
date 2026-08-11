@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit'
-import { canAny, hasAnyMinRole } from '$lib/server/rbac'
+import { canAny } from '$lib/server/rbac'
 import {
 	getHeadcountByDepartment,
 	getLeaveUtilizationReport,
@@ -10,8 +10,8 @@ import type { PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	const roles = locals.user!.roles
-	// HR ladder (Manager+) sees all reports; Payroll Officer / Finance see payroll only.
-	const canViewHrReports = hasAnyMinRole(roles, 'MANAGER')
+	// MANAGE_HR sees all reports; Payroll Officer / Finance see payroll only.
+	const canViewHrReports = canAny(roles, 'MANAGE_HR')
 	if (!canViewHrReports && !canAny(roles, 'VIEW_PAYROLL_REPORTS'))
 		error(403, 'Insufficient permissions')
 

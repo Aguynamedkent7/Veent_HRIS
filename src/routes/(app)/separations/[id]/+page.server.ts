@@ -1,5 +1,5 @@
 import { fail, isHttpError } from '@sveltejs/kit'
-import { requireAnyMinRole } from '$lib/server/rbac'
+import { requireAnyCapability } from '$lib/server/rbac'
 import {
 	getSeparation,
 	computeFinalPay,
@@ -11,7 +11,7 @@ import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals, params }) => {
 	const user = locals.user!
-	requireAnyMinRole(user.roles, 'HR_ADMIN')
+	requireAnyCapability(user.roles, 'MANAGE_HR')
 
 	const separation = await getSeparation(params.id, user.organizationId)
 	// Finalized cases show the snapshot persisted at finalization; open cases get a
@@ -27,7 +27,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 export const actions: Actions = {
 	toggleClearance: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		requireAnyMinRole(user.roles, 'HR_ADMIN')
+		requireAnyCapability(user.roles, 'MANAGE_HR')
 
 		const data = await request.formData()
 		const itemId = data.get('itemId') as string
@@ -51,7 +51,7 @@ export const actions: Actions = {
 
 	finalize: async ({ locals, params, getClientAddress }) => {
 		const user = locals.user!
-		requireAnyMinRole(user.roles, 'HR_ADMIN')
+		requireAnyCapability(user.roles, 'MANAGE_HR')
 
 		try {
 			await finalizeSeparation(params.id, user.organizationId, {
