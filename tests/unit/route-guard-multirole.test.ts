@@ -74,7 +74,7 @@ describe('authority is judged on the full role set (#279)', () => {
 			[
 				`requireAnyCapability(user.roles, 'MANAGE_PAYROLL')`,
 				`canAny(user.roles, 'APPROVE_REQUESTS')`,
-				`hasAnyMinRole(user.roles, 'HR_ADMIN')`,
+				`requireAnyCapability(user.roles, 'MANAGE_HR')`,
 				`APPROVER_ROLES.some((r) => user.roles.includes(r))`,
 				`await logAudit(db, { actorRole: user.role, action: 'UPDATE' })`,
 				`// replaced APPROVER_ROLES.includes(user.role) here — see #279`,

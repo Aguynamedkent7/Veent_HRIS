@@ -687,10 +687,10 @@ export interface ProposalWriteOpts {
  * Two shapes route here, and `createProposal` re-derives which from initiator vs target so the
  * confirmer requirement can't be understated:
  *   - the actor IS the target — self-dealing, needs `APPROVE_FINANCE` to confirm;
- *   - the actor lacks `ADMINISTER_HR_ORGWIDE` — i.e. a MANAGER, who clears the route's
- *     `requireMinRole('HR_ADMIN')` because `ROLE_HIERARCHY` ranks them level with HR_ADMIN (#243).
+ *   - the actor lacks `ADMINISTER_HR_ORGWIDE` — i.e. a MANAGER, who passes the route's own
+ *     `requireAnyCapability('MANAGE_HR')` gate, since MANAGE_HR holds MANAGER (#243).
  *
- * Capability-keyed, never a rank floor, for exactly that reason. And in the service rather than the
+ * Keyed on the narrower capability, for exactly that reason. And in the service rather than the
  * route, so the form action and its v1 API twin are covered by one check.
  */
 async function proposeIfRequired(

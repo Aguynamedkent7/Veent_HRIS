@@ -1,20 +1,12 @@
 import { error } from '@sveltejs/kit'
 import type { Role } from '@prisma/client'
-import { canAny, hasAnyMinRole, type Capability } from '$lib/rbac'
+import { canAny, type Capability } from '$lib/rbac'
 import { isFoodServiceOrg } from '$lib/orgs'
 
 // The capability table itself lives in $lib/rbac so the sidebar can ask the same
 // questions the server enforces. This module is the enforcement half: every helper
 // here throws 403 rather than returning a boolean.
-export {
-	ROLE_HIERARCHY,
-	CAPABILITIES,
-	can,
-	canAny,
-	hasMinRole,
-	hasAnyMinRole,
-	type Capability
-} from '$lib/rbac'
+export { CAPABILITIES, can, canAny, type Capability } from '$lib/rbac'
 
 /**
  * Branches exist only for the food-service tenants (JoJo Potato / Sweetleaf). The nav hides
@@ -31,11 +23,6 @@ export function requireFoodServiceOrg(organizationId: string): void {
 /** Multi-role guard (#133): passes if ANY of the user's roles holds the capability. */
 export function requireAnyCapability(userRoles: Role[], capability: Capability): void {
 	if (!canAny(userRoles, capability)) error(403, 'Insufficient permissions')
-}
-
-/** Multi-role floor (#256): passes if ANY of the user's roles clears the rank. */
-export function requireAnyMinRole(userRoles: Role[], minimumRole: Role): void {
-	if (!hasAnyMinRole(userRoles, minimumRole)) error(403, 'Insufficient permissions')
 }
 
 // ─── Payroll capabilities ─────────────────────────────────────────────────────

@@ -135,8 +135,8 @@ export async function enrollEmployee(
 	ctx: AuditContext
 ) {
 	// #275: the employee was never org-checked, so a cross-tenant id enrolled fine. In the service,
-	// not the route — the benefits page action gates on `requireAnyMinRole('HR_ADMIN')`, which
-	// MANAGER clears, so a route-level fix would leave that door open (#235/#259).
+	// not the route — the benefits page action gates on `requireAnyCapability('MANAGE_HR')`, which
+	// MANAGER holds, so a route-level fix would leave that door open (#235/#259).
 	await requireEmployee(employeeId, ctx.organizationId)
 
 	// Ensure the plan belongs to the acting organization before enrolling.
