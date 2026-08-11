@@ -1,5 +1,5 @@
 import { fail, isHttpError } from '@sveltejs/kit'
-import { canAny, requireAnyMinRole, requireAnyCapability } from '$lib/server/rbac'
+import { canAny, requireAnyCapability } from '$lib/server/rbac'
 import { failFromError } from '$lib/server/form-fail'
 import { assertCanTouchEmployee } from '$lib/server/services/employee-access'
 import {
@@ -85,7 +85,7 @@ function ctxOf(locals: App.Locals, ip: string) {
 // merge + per-org config lives in $lib/server/services/onboarding.
 
 export const load: PageServerLoad = async ({ locals, params }) => {
-	requireAnyMinRole(locals.user!.roles, 'MANAGER')
+	requireAnyCapability(locals.user!.roles, 'VIEW_TEAM')
 
 	const canManage = canAny(locals.user!.roles, 'MANAGE_HR')
 
@@ -418,7 +418,7 @@ export const actions: Actions = scopedToEmployee({
 	},
 
 	update: async ({ request, locals, params, getClientAddress }) => {
-		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 		const user = locals.user!
 
 		const raw = Object.fromEntries(await request.formData())
@@ -476,11 +476,13 @@ export const actions: Actions = scopedToEmployee({
 		return { success: true }
 	},
 
-	// #170: record an effective-dated salary / pay-type change. HR_ADMIN and up (a MANAGER may edit
-	// their reports' profile but must not move pay). The service inserts the snapshot, re-derives the
-	// current cache and audits atomically; a backdate into an approved run comes back as a notice.
+	// #170: record an effective-dated salary / pay-type change. Gated on MANAGE_HR, which a MANAGER
+	// holds — the control that stops a MANAGER moving pay directly is `proposeIfRequired`
+	// (`$lib/server/services/employees.ts`), which routes their change through propose→confirm (#243).
+	// The service inserts the snapshot, re-derives the current cache and audits atomically; a
+	// backdate into an approved run comes back as a notice.
 	changeCompensation: async ({ request, locals, params, getClientAddress }) => {
-		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 		// Discriminator: this form shares the page's single `form` prop with every other action, so its
 		// message block gates on `form.action` to ignore a sibling form's success/error.
 		const action = 'changeCompensation'
@@ -504,9 +506,10 @@ export const actions: Actions = scopedToEmployee({
 	},
 
 	// #222: promote — position, title, reporting line, employment type and pay as ONE audited event.
-	// Same HR_ADMIN+ gate as changeCompensation: it moves pay, so a MANAGER must not reach it.
+	// Same MANAGE_HR gate as changeCompensation, and the same real control: a MANAGER reaches the
+	// action but `proposeIfRequired` (#243) turns their pay move into a proposal rather than a write.
 	promote: async ({ request, locals, params, getClientAddress }) => {
-		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 		const action = 'promote'
 		const parsed = promoteSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) {
@@ -555,7 +558,7 @@ export const actions: Actions = scopedToEmployee({
 	},
 
 	offboard: async ({ request, locals, params, getClientAddress }) => {
-		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 		const user = locals.user!
 
 		const data = await request.formData()
@@ -576,7 +579,7 @@ export const actions: Actions = scopedToEmployee({
 	// ponytail: only the two loan actions were folded into ctxOf — the rest of the inline ctx
 	// literals in this file are audit-only, and converting them would be churn.
 	addLoan: async ({ request, locals, params, getClientAddress }) => {
-		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 		const user = locals.user!
 		const parsed = loanSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid loan details' })
@@ -594,7 +597,7 @@ export const actions: Actions = scopedToEmployee({
 	},
 
 	addCashAdvance: async ({ request, locals, params, getClientAddress }) => {
-		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 		const user = locals.user!
 		const parsed = cashAdvanceSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid cash-advance details' })
@@ -612,7 +615,7 @@ export const actions: Actions = scopedToEmployee({
 	},
 
 	addEarning: async ({ request, locals, params, getClientAddress }) => {
-		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 		const user = locals.user!
 		const parsed = earningSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid recurring earning details' })
@@ -630,7 +633,7 @@ export const actions: Actions = scopedToEmployee({
 	},
 
 	endEarning: async ({ request, locals, getClientAddress }) => {
-		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 		const user = locals.user!
 		const id = (await request.formData()).get('id') as string
 		if (!id) return fail(400, { error: 'Missing earning id' })
@@ -649,7 +652,7 @@ export const actions: Actions = scopedToEmployee({
 	},
 
 	addDeduction: async ({ request, locals, params, getClientAddress }) => {
-		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 		const user = locals.user!
 		const parsed = deductionSchema.safeParse(Object.fromEntries(await request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Invalid recurring deduction details' })
@@ -668,7 +671,7 @@ export const actions: Actions = scopedToEmployee({
 	},
 
 	endDeduction: async ({ request, locals, getClientAddress }) => {
-		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 		const user = locals.user!
 		const id = (await request.formData()).get('id') as string
 		if (!id) return fail(400, { error: 'Missing deduction id' })

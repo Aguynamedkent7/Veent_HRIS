@@ -1,6 +1,6 @@
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
-import { canAny, hasAnyMinRole } from '$lib/server/rbac'
+import { canAny } from '$lib/server/rbac'
 import { error } from '@sveltejs/kit'
 import bcrypt from 'bcrypt'
 import { Prisma } from '@prisma/client'
@@ -275,11 +275,11 @@ export async function getEmployee(
 	// passes opts, so masking is inherited by default: nothing leaks by omission (#111).
 	if (!opts) return employee
 
-	// Compensation, government IDs, and disbursement details are HR-only: below the HR_ADMIN
-	// rank, and not the record's owner, they come back null. Note MANAGER is *not* below it —
-	// #133 made MANAGER on-branch HR and ranks it level with HR_ADMIN — so a manager falls
-	// through to the masked branch. Self always reaches masking too (own data, decision #2).
-	if (!opts.isSelf && opts.viewerRoles && !hasAnyMinRole(opts.viewerRoles, 'HR_ADMIN')) {
+	// Compensation, government IDs, and disbursement details are HR-only: without MANAGE_HR,
+	// and not the record's owner, they come back null. Note MANAGER *does* hold MANAGE_HR —
+	// #133 made MANAGER on-branch HR — so a manager does not fall into the masked branch.
+	// Self always reaches masking too (own data, decision #2).
+	if (!opts.isSelf && opts.viewerRoles && !canAny(opts.viewerRoles, 'MANAGE_HR')) {
 		return {
 			...employee,
 			basicMonthlySalary: null,

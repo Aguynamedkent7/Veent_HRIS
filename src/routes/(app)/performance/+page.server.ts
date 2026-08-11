@@ -1,5 +1,5 @@
 import { fail, isHttpError } from '@sveltejs/kit'
-import { canAny, hasAnyMinRole, requireAnyCapability } from '$lib/server/rbac'
+import { canAny, requireAnyCapability } from '$lib/server/rbac'
 import {
 	listGoalsForEmployee,
 	listReviewsForEmployee,
@@ -21,7 +21,7 @@ const GOAL_STATUS = ['DRAFT', 'ACTIVE', 'COMPLETED', 'CANCELLED'] as const
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!
-	const isManager = hasAnyMinRole(user.roles, 'MANAGER')
+	const isManager = canAny(user.roles, 'VIEW_TEAM')
 	const isAdmin = canAny(user.roles, 'MANAGE_HR')
 
 	const cycles = isAdmin ? await listReviewCycles(user.organizationId) : []
