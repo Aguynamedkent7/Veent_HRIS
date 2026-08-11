@@ -311,7 +311,11 @@ export async function getManagerMetrics(userId: string, organizationId: string) 
 				entityType: true,
 				entityId: true,
 				createdAt: true,
-				actor: { select: { email: true, roles: true } }
+				// #294: the actor's role set AS RECORDED AT THE TIME. Reaching through the `actor`
+				// relation for `roles` reported today's roles on a historical entry, the same way
+				// `/reports/audit-log` did before #282. `email` is genuinely the live relation.
+				actorRoles: true,
+				actor: { select: { email: true } }
 			}
 		})
 	])

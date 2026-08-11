@@ -4,7 +4,7 @@ import { reviewLeaveRequest } from '$lib/server/services/leave'
 import { apiError } from '$lib/server/api-error'
 import type { RequestHandler } from './$types'
 
-// PATCH: body = { action: 'approve' | 'reject' | 'override-approve', rejectionReason?: string, note?: string }
+// PATCH: body = { action: 'approve' | 'reject', rejectionReason?: string }
 // requireAnyCapability VIEW_TEAM
 // call reviewLeaveRequest
 // return json(result)
@@ -19,7 +19,7 @@ export const PATCH: RequestHandler = async ({ params, request, locals, getClient
 		return apiError(403, 'Insufficient permissions')
 	}
 
-	let body: { action?: string; rejectionReason?: string; note?: string }
+	let body: { action?: string; rejectionReason?: string }
 	try {
 		body = await request.json()
 	} catch {
@@ -28,22 +28,15 @@ export const PATCH: RequestHandler = async ({ params, request, locals, getClient
 
 	const { action, rejectionReason } = body
 
-	if (action !== 'approve' && action !== 'reject' && action !== 'override-approve') {
-		return apiError(400, 'action must be "approve", "reject", or "override-approve"')
+	if (action !== 'approve' && action !== 'reject') {
+		return apiError(400, 'action must be "approve" or "reject"')
 	}
 
-	// #282: override-approve bypasses the approval chain outright, so it is org-wide HR authority —
-	// not the VIEW_TEAM the rest of the route runs on. The old `requireAnyMinRole('HR_ADMIN')` here
-	// admitted MANAGER (#133 ranks them level), which contradicted its own error message.
-	if (action === 'override-approve') {
-		try {
-			requireAnyCapability(user.roles, 'ADMINISTER_HR_ORGWIDE')
-		} catch {
-			return apiError(403, 'override-approve requires org-wide HR (HR_ADMIN, CEO or SUPER_ADMIN)')
-		}
-	}
-
-	const approved = action === 'approve' || action === 'override-approve'
+	// #295: there was a third action, `override-approve`, gated on ADMINISTER_HR_ORGWIDE. It
+	// overrode nothing — it collapsed into this same boolean and took the identical path through
+	// `reviewLeaveRequest` → `decide`, skipping no stage and bypassing no approver. A real
+	// escape hatch for a stuck chain is a `decide()` change, not another action string here.
+	const approved = action === 'approve'
 
 	if (!approved && !rejectionReason) {
 		return apiError(400, 'rejectionReason is required when rejecting')

@@ -73,9 +73,11 @@ const AUDIT_LOGS = [
 		ipAddress: '203.0.113.7',
 		userAgent: 'Mozilla/5.0 (audit)',
 		actorId: 'uHR',
+		// #294: the two deliberately disagree — the entry was written while the actor was HR_ADMIN,
+		// and the actor holds PAYROLL_OFFICER today. An assertion where both match proves nothing.
 		actorRoles: ['HR_ADMIN'],
 		createdAt: new Date('2026-01-01T00:00:00Z'),
-		actor: { email: 'hr@orga.test', roles: ['HR_ADMIN'] }
+		actor: { email: 'hr@orga.test', roles: ['PAYROLL_OFFICER'] }
 	}
 ]
 
@@ -189,7 +191,8 @@ describe('getManagerMetrics — audit-log payloads must not ride along (#242)', 
 			entityType: true,
 			entityId: true,
 			createdAt: true,
-			actor: { select: { email: true, roles: true } }
+			actorRoles: true,
+			actor: { select: { email: true } }
 		})
 	})
 
@@ -199,7 +202,16 @@ describe('getManagerMetrics — audit-log payloads must not ride along (#242)', 
 		expect(metrics.recentActivity[0]).toMatchObject({
 			id: 'log1',
 			action: 'UPDATE',
-			actor: { email: 'hr@orga.test', roles: ['HR_ADMIN'] }
+			actor: { email: 'hr@orga.test' }
 		})
+	})
+
+	// #294 — the roles came from the `actor` relation, so a role change rewrote the authority
+	// reported on every historical entry that actor had ever written.
+	it('reports the roles held when the entry was written, not the actor’s roles today', async () => {
+		const metrics = await getManagerMetrics('uA', ORG_A)
+
+		expect(metrics.recentActivity[0]).toMatchObject({ actorRoles: ['HR_ADMIN'] })
+		expect(JSON.stringify(metrics.recentActivity)).not.toContain('PAYROLL_OFFICER')
 	})
 })
