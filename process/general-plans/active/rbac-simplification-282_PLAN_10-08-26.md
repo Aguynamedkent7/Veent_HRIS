@@ -666,9 +666,47 @@ Independently re-derived, not taken from the plan:
 | G9 | No site judges authority on a singular `.role` | Fully-Automated | `tests/unit/route-guard-multirole.test.ts` (carve-out removed per §8b T6), `pnpm test` exits 0 | B |
 | G10 | Migration script is idempotent, no-ops on a fresh DB, and leaves no empty `roles` set | Hybrid | `docker exec veent-db-5434 …` + `pnpm exec tsx scripts/migrate-user-role-to-roles.ts` run TWICE against the local Postgres on 5434 — precondition: `./start.sh` up, `.env.dev` loaded | B |
 | G11 | `prestart.sh` completes without `--accept-data-loss` on a populated DB | Hybrid | `sh scripts/prestart.sh` against the seeded local DB — precondition: DB seeded via `pnpm db:seed` | B |
-| G12 | The three behaviour changes look right in the running app | Agent-Probe | Log in as MANAGER via `_dev/login-as`; attempt a stranger's `/api/v1/timesheets/:id/punches`, a stranger's `/performance/reviews/:id`, and a leave `override-approve`; confirm 403 each and confirm own-team access still works | C |
+| G12 | The three behaviour changes look right in the running app | Agent-Probe | **✅ RUN AND PASSED 2026-08-11** — 9 checks, each narrowing plus its negative control. See the G12 result block below. | C |
 | G13 | Production migration against real audit-log volume | — | — | D |
 | G14 | End-to-end browser coverage of the converted guards | — | — | D |
+
+### G12 result — RUN 2026-08-11, PASSED (9/9)
+
+Dev server on :5199, `_dev/login-as`, seeded probe rows marked `G12-PROBE`.
+
+| probe | expect | got |
+|---|---|---|
+| MANAGER → stranger's punches | 403 | 403 `Insufficient permissions` |
+| MANAGER → own report's punches | 200 | 200, rows carry `employeeId cms5ps4qs…`, ts `:01` |
+| SUPER_ADMIN → stranger's punches | 200 | 200, rows carry `employeeId cms5ps3q7…`, ts `:47` |
+| MANAGER → stranger's review | 403 | 403 (confirmed in-browser) |
+| MANAGER → own report's review | 200 | 200, renders (confirmed in-browser) |
+| SUPER_ADMIN → stranger's review | 200 | 200 (confirmed in-browser) |
+| MANAGER → `override-approve` | 403 | 403 `override-approve requires org-wide HR (HR_ADMIN, CEO or SUPER_ADMIN)` |
+| MANAGER → plain `approve` (own report) | 200 | 200 `{status: PENDING, currentStage: 1}` |
+| HR_ADMIN → `override-approve` (stage 0) | 200 | 200 |
+
+**Three traps hit while running it, all recorded so the next run doesn't repeat them:**
+
+1. **`performance_reviews`, `requests` and `time_logs` were ALL empty for the probe targets.** The
+   first punch run returned `200 {"data":[],"count":0}` — a pass that proves only "not refused". Rows
+   were seeded with *distinguishable* values (Elena's punches at `:01`, Hannah's at `:47`) so the
+   response identifies **whose** data came back, not merely that some did. This is the #275 vacuous-
+   control lesson; assert the returned rows, never the status alone.
+2. **The leave route is `PATCH`, and its `[id]` is a `Request` id, not a `LeaveRequest` id** — it
+   routes through `decide()` on the unified requests table. A `POST` gives 405 and a `LeaveRequest`
+   id gives 404 from inside the service; neither is an authorization verdict.
+3. **A filer who holds the stage-0 role auto-clears it.** Hannah is HR_ADMIN, so her own filings land
+   at `currentStage: 1` (VERIFIER) immediately, and any HR/admin probe against them returns
+   `You cannot act on this stage` — a 403 from `decide()`, NOT from the #282 gate. Positive controls
+   need a **fresh stage-0 request filed by a non-HR employee**.
+
+**A plan premise falsified, out of scope, NOT acted on.** §3-C says `override-approve` "bypasses the
+approval chain outright". It does not: the route maps both `approve` and `override-approve` to the
+same `reviewLeaveRequest(..., approved: true, ...)` → `decide()` call, so the two actions are
+identical apart from the capability gate. Proven by SUPER_ADMIN receiving `You cannot act on this
+stage` on a stage-1 request. Pre-existing, unchanged by #282, and it does not affect the decision —
+narrowing who may call the action is still right. Worth filing separately.
 
 Failing stub (G1):
 test("should find zero occurrences of ROLE_HIERARCHY|hasMinRole|hasAnyMinRole|requireAnyMinRole in src/", () => { throw new Error("NOT IMPLEMENTED — TDD stub: rank-helper finish-line scan") })
