@@ -424,6 +424,25 @@ marked APPROVED, and it is excluded from their actionable-runs count.
 - proven by: `approvals.test.ts › decidePayrollRun › a VERIFIER+CEO cannot approve a run they verified` + `› countActionablePayrollRuns › excludes it`
 - strategy: Fully-Automated (unit)
 
+**AC-28 — Un-verifying a document does not clear the bar (D11).**
+Given an actor who marked a document on request A verified and is therefore barred, when they clear
+that verification (`verifyDoc` with `verified=false`) and then attempt a decision on request A,
+then it is **still refused**; the document reads as not-currently-verified (`verifiedAt` is null)
+while `verifiedById` still records them.
+- proven by: `approval-self-guard.test.ts › canActOnStage › the bar survives un-verifying the document` + `requests-documents.test.ts › setRequestDocumentVerified › clearing keeps verifiedById`
+- strategy: Fully-Automated (unit)
+
+**AC-29 — The UI and the service agree about a barred actor (D12).**
+Given a barred actor on a payroll run they verified, when they open `/payroll/[id]`, then the
+Verify/Approve control is rendered non-actionable **and** carries a reason that is reachable by
+keyboard and exposed to assistive tech; **and** when the same action is posted directly, the
+service refuses it with the matching message.
+- proven by: `tests/e2e/multi-role-sod.spec.ts › a barred verifier sees a disabled sign-off control with a reason` (UI half) + `approvals.test.ts › decidePayrollRun › …` (service half, shared with AC-27)
+- strategy: Fully-Automated — **E2E** for the UI half, unit for the service half. The only
+  criterion in the set a unit test cannot carry alone: the claim is about rendered state and its
+  accessible description, which needs a real DOM. Both halves are required; the point of AC-29 is
+  that the two agree.
+
 ---
 
 ## Out Of Scope
@@ -493,6 +512,17 @@ marked APPROVED, and it is excluded from their actionable-runs count.
   until HR remaps or unmaps the department. The escape hatch is accepted, and the refusal
   message must name it so nobody is stranded without a clue.
 - **D10.** **F5 is in scope**, reusing the F1 mechanism rather than a guard of its own.
+- **D11.** **Clearing a document verification keeps `verifiedById`** and nulls only `verifiedAt`.
+  Without this, F3 is bypassable in one click — a barred actor clears their own sign-off and
+  decides, with the audit marker never firing. Every consumer keys on `verifiedAt`, so nothing
+  else changes; `verifiedById` becomes the durable record of *who signed off*. Known ceiling,
+  accepted: a later sign-off by a different actor overwrites it, so a colluding pair can still
+  launder the bar. The upgrade path is a verification-history table.
+- **D12.** **A barred actor's decision control is disabled with a keyboard-reachable reason**, not
+  silently permissive and not merely absent — on *detail pages*. Queues continue to **filter**
+  barred items out, because that is what US-8 requires; the two rules do not conflict once the
+  surfaces are separated. Known gap, recorded not hidden: timesheets and the dashboard posting
+  card have no detail page, so a barred actor there gets no explanation anywhere (risk R-P).
 
 **System / technical constraints:**
 
