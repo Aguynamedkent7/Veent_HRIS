@@ -27,10 +27,6 @@ const PAYROLL_STAGE_CAPABILITY: Record<ApprovalStage, keyof typeof CAPABILITIES>
 	APPROVE: 'APPROVE_FINANCE'
 }
 
-export function rolesOf(ctx: AuditContext): Role[] {
-	return ctx.actorRoles
-}
-
 // Any maker-checker subject (request/timesheet/payroll run) stores append-only steps.
 // This resolves the live attempt and the step currently awaiting a decision (#134), so
 // timesheets and payroll reuse the same chain semantics as requests.
@@ -126,7 +122,7 @@ export async function decide(
 	const step = liveSteps.find((s) => s.stageIndex === req.currentStage)
 	if (!step) error(500, 'Approval chain is inconsistent')
 
-	if (!canActOnStage(step.stage, rolesOf(ctx), actorEmployeeId, req.employeeId)) {
+	if (!canActOnStage(step.stage, ctx.actorRoles, actorEmployeeId, req.employeeId)) {
 		error(403, 'You cannot act on this stage')
 	}
 	// A returned reason is required so the maker knows what to fix.
@@ -245,11 +241,10 @@ export interface PendingApprovalCounts {
 // non-approver roles.
 export async function countPendingApprovals(user: {
 	id: string
-	role: Role
-	roles?: Role[]
+	roles: Role[]
 	organizationId: string
 }): Promise<PendingApprovalCounts> {
-	const roles = user.roles?.length ? user.roles : [user.role]
+	const roles = user.roles
 	// Harmless for proposals too: every confirmer capability (ADMINISTER_HR_ORGWIDE /
 	// APPROVE_FINANCE) is held only by HR_ADMIN, CEO and SUPER_ADMIN, all of whom hold
 	// APPROVE_REQUESTS — so no confirmer is short-circuited here.
@@ -425,7 +420,7 @@ export async function decidePayrollRun(
 ) {
 	// A finance approver (CEO / Super Admin) signs off payroll for every tenant, so they
 	// reach a run by id alone; everyone else stays scoped to their own org (#174).
-	const financeApprover = canAny(rolesOf(ctx), 'APPROVE_FINANCE')
+	const financeApprover = canAny(ctx.actorRoles, 'APPROVE_FINANCE')
 	const run = await db.payrollRun.findFirst({
 		where: { id: runId, ...(financeApprover ? {} : { organizationId }) },
 		include: { approvalSteps: true }
@@ -437,7 +432,7 @@ export async function decidePayrollRun(
 	if (!live || !live.currentStep) error(400, 'This run has no open approval stage')
 
 	const step = live.currentStep
-	const roles = rolesOf(ctx)
+	const roles = ctx.actorRoles
 	// Stage authority is a capability (VERIFY → Verifier, APPROVE → finance approver:
 	// CEO / Super Admin, #174). No employee owner exists for a run, so the owner-based
 	// guard args are null.

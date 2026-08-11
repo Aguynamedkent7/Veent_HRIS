@@ -50,7 +50,10 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 				oldValue: true,
 				newValue: true,
 				createdAt: true,
-				actor: { select: { email: true, role: true } }
+				// The actor's role set AS RECORDED AT THE TIME (#282). The `actor` relation would
+				// show today's roles on a year-old entry.
+				actorRoles: true,
+				actor: { select: { email: true } }
 			}
 		}),
 		db.user.findMany({
@@ -71,7 +74,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			oldValue: unknown
 			newValue: unknown
 			createdAt: Date
-			actor: { email: string; role: string }
+			actorRoles: string[]
+			actor: { email: string }
 		}) => ({
 			...log,
 			oldValue: null,

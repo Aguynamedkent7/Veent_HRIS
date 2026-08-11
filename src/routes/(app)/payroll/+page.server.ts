@@ -11,7 +11,7 @@ import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!
-	const roles = user.roles?.length ? user.roles : [user.role]
+	const roles = user.roles
 	// Managers run/override; the sign-off roles (Verifier/Approver) need the list to find
 	// a computed run and open it to sign off (#134). Sign-off roles get a read-only view —
 	// `canManage` gates the create/compute controls in the page.

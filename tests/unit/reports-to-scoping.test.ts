@@ -82,7 +82,6 @@ const EMP = {
 const HR_USER = {
 	id: 'u1',
 	organizationId: ORG,
-	role: 'HR_ADMIN' as Role,
 	roles: ['HR_ADMIN'] as Role[]
 }
 

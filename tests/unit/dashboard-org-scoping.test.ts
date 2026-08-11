@@ -75,7 +75,7 @@ const AUDIT_LOGS = [
 		actorId: 'uHR',
 		actorRoles: ['HR_ADMIN'],
 		createdAt: new Date('2026-01-01T00:00:00Z'),
-		actor: { email: 'hr@orga.test', role: 'HR_ADMIN' }
+		actor: { email: 'hr@orga.test', roles: ['HR_ADMIN'] }
 	}
 ]
 
@@ -189,7 +189,7 @@ describe('getManagerMetrics — audit-log payloads must not ride along (#242)', 
 			entityType: true,
 			entityId: true,
 			createdAt: true,
-			actor: { select: { email: true, role: true } }
+			actor: { select: { email: true, roles: true } }
 		})
 	})
 
@@ -199,7 +199,7 @@ describe('getManagerMetrics — audit-log payloads must not ride along (#242)', 
 		expect(metrics.recentActivity[0]).toMatchObject({
 			id: 'log1',
 			action: 'UPDATE',
-			actor: { email: 'hr@orga.test', role: 'HR_ADMIN' }
+			actor: { email: 'hr@orga.test', roles: ['HR_ADMIN'] }
 		})
 	})
 })

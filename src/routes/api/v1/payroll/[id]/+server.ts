@@ -41,7 +41,7 @@ export const POST: RequestHandler = async ({ locals, params, url }) => {
 		// undecided, so the audit trail showed an approved run nobody had approved. Delegating
 		// means the stage capability, the separation-of-duties check and the step records come
 		// from one implementation shared with the UI action.
-		const roles = user.roles?.length ? user.roles : [user.role]
+		const roles = user.roles
 		if (!canAny(roles, 'APPROVE_REQUESTS')) return apiError(403, 'Insufficient permissions')
 
 		try {

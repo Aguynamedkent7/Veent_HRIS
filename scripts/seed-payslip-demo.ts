@@ -83,7 +83,7 @@ async function main() {
 		await db.payrollRun.deleteMany({ where: { id: { in: runIds } } })
 	}
 	const admin = await db.user.findFirst({
-		where: { organizationId: org.id, role: 'SUPER_ADMIN' }
+		where: { organizationId: org.id, roles: { has: 'SUPER_ADMIN' } }
 	})
 	if (!admin) {
 		throw new Error('No SUPER_ADMIN user in the org — run `pnpm db:seed` first for the base seed.')

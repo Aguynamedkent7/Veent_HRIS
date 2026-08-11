@@ -18,7 +18,7 @@ function canReviewTimesheets(roles: Role[]) {
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!
-	const roles = user.roles ?? [user.role]
+	const roles = user.roles
 	if (!canReviewTimesheets(roles)) redirect(303, '/requests')
 
 	const myEmployee = await db.employee.findUnique({
@@ -71,7 +71,7 @@ export const actions: Actions = {
 	// Single approve/reject from the review modal (matches the modal's ?/review contract).
 	review: async (event) => {
 		const user = event.locals.user!
-		const roles = user.roles ?? [user.role]
+		const roles = user.roles
 		if (!canReviewTimesheets(roles)) return fail(403, { error: 'Insufficient permissions' })
 
 		const data = await event.request.formData()
@@ -100,7 +100,7 @@ export const actions: Actions = {
 	// Bulk approve each selected (submitted) timesheet; non-submitted ones are skipped.
 	approveMany: async (event) => {
 		const user = event.locals.user!
-		const roles = user.roles ?? [user.role]
+		const roles = user.roles
 		if (!canReviewTimesheets(roles)) return fail(403, { error: 'Insufficient permissions' })
 
 		const ids = String((await event.request.formData()).get('ids') ?? '')
@@ -129,7 +129,7 @@ export const actions: Actions = {
 	// throw and are counted as skipped rather than aborting the batch.
 	rejectMany: async (event) => {
 		const user = event.locals.user!
-		const roles = user.roles ?? [user.role]
+		const roles = user.roles
 		if (!canReviewTimesheets(roles)) return fail(403, { error: 'Insufficient permissions' })
 
 		const data = await event.request.formData()

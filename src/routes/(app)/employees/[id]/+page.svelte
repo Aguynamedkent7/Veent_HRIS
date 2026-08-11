@@ -280,7 +280,7 @@
 					</dd>
 				{/if}
 				<dt class="text-muted-foreground">Role</dt>
-				<dd>{employee.user.role}</dd>
+				<dd>{employee.user.roles.join(', ')}</dd>
 			</dl>
 		</div>
 

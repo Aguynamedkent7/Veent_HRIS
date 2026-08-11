@@ -107,7 +107,7 @@ async function resolveActor(organizationId: string, forbiddenUserId?: string) {
 	if (!actorEmail) die(`--actor=<email> is required with --execute.\n${USAGE}`)
 	const actor = await db.user.findUnique({
 		where: { email: actorEmail },
-		select: { id: true, role: true, organizationId: true, isActive: true }
+		select: { id: true, roles: true, organizationId: true, isActive: true }
 	})
 	if (!actor) die(`No user with email ${actorEmail}.`)
 	if (actor.id === forbiddenUserId)

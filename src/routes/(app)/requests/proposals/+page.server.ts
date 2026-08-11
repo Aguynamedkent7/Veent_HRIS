@@ -42,7 +42,7 @@ const ctxOf = (locals: App.Locals, ip: string) => ({
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	const user = locals.user!
-	const roles = user.roles ?? [user.role]
+	const roles = user.roles
 	// Display gating only: `listActionableProposals` returns [] for these users anyway and every
 	// action 403s regardless. It exists so the route is not a dead end, as /requests/approvals does.
 	if (!canAny(roles, 'ADMINISTER_HR_ORGWIDE') && !canAny(roles, 'APPROVE_FINANCE')) {

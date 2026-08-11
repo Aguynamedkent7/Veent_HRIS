@@ -38,7 +38,7 @@ test.beforeAll(async () => {
 				organizationId: org.id,
 				email: `${FOREIGN}@rival.test`,
 				passwordHash: 'not-a-real-hash',
-				role: 'EMPLOYEE'
+				roles: ['EMPLOYEE']
 			}
 		})
 		const employee = await db.employee.create({

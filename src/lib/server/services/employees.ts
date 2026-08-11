@@ -205,7 +205,7 @@ export async function listEmployees(
 			endDate: true,
 			department: { select: { id: true, name: true } },
 			branch: { select: { id: true, name: true } },
-			user: { select: { email: true, role: true, isActive: true } }
+			user: { select: { email: true, roles: true, isActive: true } }
 		},
 		orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
 		...(pageArgs && { skip: pageArgs.skip, take: pageArgs.take })
@@ -221,7 +221,7 @@ export async function getEmployee(
 		where: { id, user: { organizationId } },
 		include: {
 			department: true,
-			user: { select: { email: true, role: true, isActive: true, lastLoginAt: true } },
+			user: { select: { email: true, roles: true, isActive: true, lastLoginAt: true } },
 			reportsTo: { select: { id: true, firstName: true, lastName: true } },
 			position: { include: { salaryGrade: true } },
 			emergencyContacts: { orderBy: { createdAt: 'asc' } }
@@ -477,7 +477,6 @@ async function allocateAndCreate(
 						organizationId,
 						email: input.email,
 						passwordHash,
-						role: input.role,
 						roles: [input.role]
 					}
 				})
@@ -522,7 +521,7 @@ async function allocateAndCreate(
 						workScheduleId: input.workScheduleId || null,
 						positionId: input.positionId || null
 					},
-					include: { department: true, user: { select: { email: true, role: true } } }
+					include: { department: true, user: { select: { email: true, roles: true } } }
 				})
 
 				// Allocate this year's leave entitlement from the org's leave-type defaults (#137).
@@ -610,7 +609,7 @@ export async function updateEmployee(
 	const updated = await db.employee.update({
 		where: { id },
 		data: input,
-		include: { department: true, user: { select: { email: true, role: true } } }
+		include: { department: true, user: { select: { email: true, roles: true } } }
 	})
 
 	// Curated audit diff: before/after values for the employment-history fields

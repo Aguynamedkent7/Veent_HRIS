@@ -56,7 +56,7 @@ const WRONG_STAGE = 'You cannot act on this stage'
 /** MANAGER is the primary role throughout — it clears both routes' gate and no stage capability. */
 const event = (roles: Role[], id: string) =>
 	({
-		locals: { user: { id: ACTOR_USER, organizationId: ORG, role: 'MANAGER' as Role, roles } },
+		locals: { user: { id: ACTOR_USER, organizationId: ORG, roles } },
 		params: { id },
 		request: { json: async () => ({ action: 'approve' }) },
 		getClientAddress: () => '127.0.0.1'

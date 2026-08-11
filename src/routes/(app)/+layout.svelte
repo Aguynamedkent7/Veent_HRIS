@@ -89,8 +89,7 @@
 	// Same capability table the server enforces with ($lib/rbac) — a nav item shown to
 	// a role the server would reject is its own bug, so both read one source of truth.
 	// Nav uses the full role set (#133) so a multi-role user sees every entry they hold.
-	const role = $derived(data.user.role)
-	const roles = $derived(data.user.roles ?? [data.user.role])
+	const roles = $derived(data.user.roles)
 	const isManager = $derived(canAny(roles, 'VIEW_TEAM'))
 	const isAdmin = $derived(canAny(roles, 'MANAGE_HR'))
 	const isSuperAdmin = $derived(canAny(roles, 'ADMINISTER_SYSTEM'))
@@ -645,7 +644,10 @@
 				</div>
 				<div class="min-w-0 flex-1">
 					<p class="truncate text-xs font-medium text-foreground">{data.user.email}</p>
-					<p class="text-[10px] text-muted-foreground">{roleLabel[role] ?? role}</p>
+					<!-- The whole set, never "the highest" — there is no role ranking (#282). -->
+					<p class="text-[10px] text-muted-foreground">
+						{roles.map((r) => roleLabel[r] ?? r).join(', ')}
+					</p>
 				</div>
 				<!-- Theme toggle -->
 				<button

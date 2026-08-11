@@ -318,26 +318,26 @@ describe('filing a proposal', () => {
 	}
 
 	it('looks for a finance confirmer on a self-action and an HR one otherwise', async () => {
-		// Read off the multi-role branch: `roles` is the set `assertMayDecide` judges against, so it
-		// is the one that has to carry the right capability's roles.
-		const rolesUsed = async (t: string) => (await whereUsed(t)).OR[0].roles.hasSome
+		// Read off `roles`: it is the set `assertMayDecide` judges against, so it is the one that
+		// has to carry the right capability's roles.
+		const rolesUsed = async (t: string) => (await whereUsed(t)).roles.hasSome
 		expect(await rolesUsed(CEO_USER)).not.toContain('HR_ADMIN') // self → APPROVE_FINANCE
 		expect(await rolesUsed('user-other')).toContain('HR_ADMIN') // on behalf → HR org-wide
 	})
 
 	/**
 	 * A [MANAGER, HR_ADMIN] user CAN confirm — `assertMayDecide` reads `ctx.actorRoles` (#133) — so
-	 * the eligibility query has to find them too. Matching on the primary `role` column alone would
-	 * miss them, and the `confirmers.length === 0` guard would then 409 a proposal as unconfirmable
+	 * the eligibility query has to find them too. Matching on a single primary role would miss
+	 * them, and the `confirmers.length === 0` guard would then 409 a proposal as unconfirmable
 	 * while a qualified confirmer was sitting right there.
+	 *
+	 * #282 collapsed the old two-branch OR (set, then the scalar `role` for an empty set) into one
+	 * `hasSome`: the scalar column is gone and `roles` is never empty.
 	 */
-	it('finds confirmers by their full role set, not just their primary role', async () => {
+	it('finds confirmers by their full role set', async () => {
 		const where = await whereUsed('user-other')
-		expect(where.OR).toEqual([
-			{ roles: { hasSome: expect.arrayContaining(['HR_ADMIN']) } },
-			// The primary column still answers for single-role users, whose `roles` defaults to [].
-			{ roles: { isEmpty: true }, role: { in: expect.arrayContaining(['HR_ADMIN']) } }
-		])
+		expect(where.roles).toEqual({ hasSome: expect.arrayContaining(['HR_ADMIN']) })
+		expect(where).not.toHaveProperty('OR')
 	})
 })
 

@@ -151,7 +151,7 @@ export async function listOrgUsers(organizationId: string) {
 		select: {
 			id: true,
 			email: true,
-			role: true,
+			roles: true,
 			isActive: true,
 			employee: {
 				select: { firstName: true, lastName: true }
@@ -163,7 +163,7 @@ export async function listOrgUsers(organizationId: string) {
 	return users.map((u) => ({
 		id: u.id,
 		email: u.email,
-		role: u.role,
+		roles: u.roles,
 		isActive: u.isActive,
 		employeeName: u.employee ? `${u.employee.lastName}, ${u.employee.firstName}` : null
 	}))
@@ -195,12 +195,19 @@ const IRREPLACEABLE_ROLES: Partial<Record<Role, string>> = {
 // Scope note: offboarding deactivates the user account directly (services/separation.ts,
 // services/employees.ts) and does NOT pass through here. That is a pre-existing gap in #160's
 // guard, inherited rather than introduced by #248, and recoverable by reactivation.
+//
+// `roles` is a set, so the check is per-role rather than on a single primary role (#282): every
+// irreplaceable role the target is about to LOSE is counted separately. `newRoles` is the set they
+// will hold afterwards — empty for a deactivation, which loses all of them.
 async function assertNotLastOfRole(
 	tx: Prisma.TransactionClient,
-	target: { id: string; organizationId: string; role: Role; isActive: boolean }
+	target: { id: string; organizationId: string; roles: Role[]; isActive: boolean },
+	newRoles: Role[] = []
 ) {
-	const label = IRREPLACEABLE_ROLES[target.role]
-	if (!label || !target.isActive) return
+	if (!target.isActive) return
+
+	const lost = target.roles.filter((r) => IRREPLACEABLE_ROLES[r] && !newRoles.includes(r))
+	if (lost.length === 0) return
 
 	const memberships = await tx.userOrganization.findMany({
 		where: { userId: target.id },
@@ -211,17 +218,22 @@ async function assertNotLastOfRole(
 		...memberships.map((m) => m.organizationId)
 	])
 
-	for (const organizationId of affectedOrgIds) {
-		const otherActiveHolders = await tx.user.count({
-			where: {
-				role: target.role,
-				isActive: true,
-				id: { not: target.id },
-				OR: [{ organizationId }, { memberships: { some: { organizationId } } }]
+	for (const role of lost) {
+		for (const organizationId of affectedOrgIds) {
+			const otherActiveHolders = await tx.user.count({
+				where: {
+					roles: { has: role },
+					isActive: true,
+					id: { not: target.id },
+					OR: [{ organizationId }, { memberships: { some: { organizationId } } }]
+				}
+			})
+			if (otherActiveHolders === 0) {
+				error(
+					409,
+					`Cannot remove the last active ${IRREPLACEABLE_ROLES[role]} from the organization.`
+				)
 			}
-		})
-		if (otherActiveHolders === 0) {
-			error(409, `Cannot remove the last active ${label} from the organization.`)
 		}
 	}
 }
@@ -260,19 +272,17 @@ export async function setUserRole(
 			// GUARDRAIL: don't strip the last active super admin — or, since #248, the last active
 			// CEO. Keyed on the role being LOST rather than the one being set, so re-saving a
 			// user's existing role is never blocked (the select is prefilled with it, so that Save
-			// is one click away).
-			if (newRole !== existing.role) {
-				await assertNotLastOfRole(tx, existing)
+			// is one click away) — which is exactly the case where the set already is `[newRole]`.
+			if (!existing.roles.includes(newRole) || existing.roles.length > 1) {
+				await assertNotLastOfRole(tx, existing, [newRole])
 			}
 
-			// GUARDRAIL: #255 — `roles` is the set every capability check actually reads (`rolesOf`
-			// falls back to `[role]` only when the set is empty, which it never is post-#133
-			// backfill). Writing `role` alone left the user judged on their OLD authority forever.
-			// This screen sets one primary role, so the set is reset to match it rather than merged
-			// into.
+			// `roles` is the set every capability check reads (#282: the scalar `role` is gone).
+			// This screen sets one primary role, so the set is reset to match it rather than
+			// merged into; widening the picker to a set is #283.
 			const updated = await tx.user.update({
 				where: { id: userId },
-				data: { role: newRole, roles: [newRole] }
+				data: { roles: [newRole] }
 			})
 
 			return { existing, updated }
@@ -284,7 +294,7 @@ export async function setUserRole(
 		action: 'UPDATE',
 		entityType: 'User',
 		entityId: userId,
-		oldValue: { role: existing.role },
+		oldValue: { roles: existing.roles },
 		newValue: { role: newRole }
 	})
 

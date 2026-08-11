@@ -311,7 +311,7 @@ export async function getManagerMetrics(userId: string, organizationId: string) 
 				entityType: true,
 				entityId: true,
 				createdAt: true,
-				actor: { select: { email: true, role: true } }
+				actor: { select: { email: true, roles: true } }
 			}
 		})
 	])

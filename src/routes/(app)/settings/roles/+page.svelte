@@ -102,9 +102,13 @@
 									class="flex items-center gap-2"
 								>
 									<input type="hidden" name="userId" value={u.id} />
+									<!-- A single-valued <select> prefilled from a set has to pick one. `roles[0]` is
+									     valid ONLY while this picker sets exactly one role, so the set is always
+									     length 1 (setUserRole resets it). Revisit at #283, which makes the
+									     picker multi-valued. -->
 									<select
 										name="role"
-										value={u.role}
+										value={u.roles[0]}
 										class="flex h-9 w-40 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 									>
 										{#each ASSIGNABLE_ROLES as r (r)}
@@ -120,7 +124,9 @@
 									</button>
 								</form>
 							{:else}
-								<span class="text-sm text-muted-foreground">{u.role.replace('_', ' ')}</span>
+								<span class="text-sm text-muted-foreground"
+									>{u.roles.map((r) => r.replace('_', ' ')).join(', ')}</span
+								>
 							{/if}
 						</td>
 					</tr>

@@ -26,13 +26,9 @@ function ctxOf(locals: App.Locals, ip: string) {
 	}
 }
 
-function rolesOf(user: App.Locals['user']) {
-	return user!.roles?.length ? user!.roles : [user!.role]
-}
-
 export const load: PageServerLoad = async ({ locals, params }) => {
 	const user = locals.user!
-	const roles = rolesOf(user)
+	const roles = user.roles
 	// Payroll managers run/override; the sign-off roles (Verifier/Approver) need to see
 	// the run to check its numbers and act on their stage (#134). Everyone else is out.
 	const canManagePayroll = canAny(roles, 'MANAGE_PAYROLL')

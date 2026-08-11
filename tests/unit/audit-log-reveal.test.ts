@@ -52,7 +52,8 @@ const ENTRY = {
 	oldValue: { basicMonthlySalary: OLD_SALARY, rateType: 'MONTHLY' },
 	newValue: { basicMonthlySalary: NEW_SALARY, rateType: 'MONTHLY', effectiveDate: '2026-01-01' },
 	createdAt: new Date('2026-01-01T00:00:00Z'),
-	actor: { email: 'hr@orga.test', role: 'HR_ADMIN' },
+	actorRoles: ['HR_ADMIN'],
+	actor: { email: 'hr@orga.test' },
 	// Present on the fixture on purpose: the loader spreads the row, so an unprojected query
 	// ships these to the client. They must not survive the load. See NEVER_SHIPPED below.
 	ipAddress: '203.0.113.7',
