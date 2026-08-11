@@ -119,7 +119,7 @@ scope untouched); **!** = the rank floor is the *only* object gate (see §3).
 | `src/routes/api/v1/settings/positions/+server.ts:9,23` | HR_ADMIN | W |
 | `src/routes/api/v1/settings/positions/[id]/+server.ts:9,24` | HR_ADMIN | W |
 | `src/routes/(app)/recruitment/+page.server.ts:17,46,68,89,119` | HR_ADMIN | W — job postings are org-level |
-| `src/routes/(app)/benefits/+page.server.ts:16,51,106` | HR_ADMIN | W (plan CRUD + enrollment status) |
+| `src/routes/(app)/benefits/+page.server.ts:16,51,76,106` | HR_ADMIN | W (plan CRUD + enrollment status). `:76` added per VALIDATE C1 — the original table listed three of four, leaving commit 7 deleting the helper with a live caller standing. `:76` converts to `MANAGE_HR` only; adding `canTouchEmployee` there is the separate out-of-scope item (§9-R10). |
 | `src/routes/(app)/separations/+page.server.ts:10,37` | HR_ADMIN | W — see §9-R10 |
 | `src/routes/(app)/separations/[id]/+page.server.ts:14,30,54` | HR_ADMIN | W |
 | `src/routes/(app)/reports/+page.server.ts:14` | MANAGER | W -> `MANAGE_HR`. `:22` already narrows the *pay* report to `VIEW_PAY_ORGWIDE` (#249); HR reports stay org-wide for MANAGER deliberately. |
@@ -168,6 +168,38 @@ scope untouched); **!** = the rank floor is the *only* object gate (see §3).
 
 ## 3. The decisions that change behaviour — each needs explicit user approval
 
+> ### ✅ ALL FIVE DECIDED — 2026-08-11. EXECUTE is unblocked on decisions.
+>
+> | # | decision | resolution |
+> |---|---|---|
+> | 1 | `AuditLog.actorRole` (§5b) | **B3** — array-ify to `actorRoles Role[]`. **Plus:** tighten `employees.ts:1268`'s bare `include` to an explicit `select`, in the same commit. |
+> | 2 | §3-A punches | **Fix** — replace the 12 hand-rolled lines with `canTouchEmployee`. |
+> | 3 | §3-B review privacy | **B3** — `assertCanTouchEmployee(user, review.employee.id)`. Narrow-and-widen accepted knowingly (see C3 note in §3-B). |
+> | 4 | §3-C leave override | **Narrow** to `ADMINISTER_HR_ORGWIDE`. |
+> | 5 | §5c role picker | **(i)** `value={u.roles[0]}` + comment scoping it to the single-valued picker, revisit at #283. |
+>
+> **Re-verification done 2026-08-11 before these were taken** (method: enumerate every *read of the
+> table*, inspect each projection — a name-grep cannot see a bare `include`):
+> - `AuditLog` has **exactly four** production readers: `dashboard.ts:304`, `employees.ts:1268`,
+>   `audit-log/+page.server.ts:36` and `:125`. Three use an explicit `select`; none selects
+>   `actorRole`.
+> - **`employees.ts:1268` uses a bare `include`**, so `actorRole` (plus `ipAddress`/`userAgent`) *is*
+>   loaded into memory. It does not escape — the loop hand-builds `EmploymentHistoryEvent` objects
+>   with no `...log` spread — but it is one careless refactor from becoming the #242 leak verbatim.
+>   That is why the `select` fix is folded into decision 1 rather than filed.
+> - Every other `actorRole` mention in `src/` (4 of them) is a **comment**. No `where`, no `orderBy`,
+>   no raw SQL against `audit_logs`, no `/api/v1` audit route. **Write-only confirmed on evidence.**
+> - `audit-log/+page.svelte:176` renders `{log.actor.role}` through the User *relation* — it shows
+>   today's role on a year-old entry. B3 fixes this as a side effect; switch it to `actorRoles`.
+> - **Write-site count corrected: 165, not ~120** — 103 in `src/`, 58 in `tests/`, 4 in `scripts/`,
+>   0 in `prisma/`. All funnel through `AuditContext.actorRole` (`audit.ts:7`) → the single `create`
+>   at `:31`. `ServiceContext` already carries `actorRoles?: Role[]` (`types.ts:9`, from #247), so
+>   B3 finishes a half-done conversion rather than starting a new one.
+> - **66 call sites re-confirmed:** 68 raw matches − 1 comment (`benefits.ts:138`) − 1 definition
+>   (`src/lib/rbac.ts:37`). Note commit 7 spans **two** files: `ROLE_HIERARCHY`/`hasMinRole`/
+>   `hasAnyMinRole` live in `src/lib/rbac.ts` (shared, client-reachable); `requireAnyMinRole` lives
+>   in `src/lib/server/rbac.ts`.
+
 Everything in §2 outside 2d is exactly equivalent. These are not.
 
 ### A. `punches/+server.ts:28` — CONFIRMED leak, recommend fixing
@@ -202,9 +234,13 @@ org."* Any MANAGER currently clears that floor.
 | B2 `requireAnyCapability(user.roles,'ADMINISTER_HR_ORGWIDE')` | narrows; matches the comment exactly | 0 |
 | **B3** `await assertCanTouchEmployee(user, review.employee.id)` | narrows to strangers, keeps a manager's own team | +1 import |
 
-**Recommend B3**, fallback B2. B3 is the object-level answer and preserves a real use case (a
-department head reading their own report's review when someone else was the reviewer). **B1 is a
-decision to ship a known leak** — if chosen, say so in a comment.
+**DECIDED 2026-08-11: B3.** It is the object-level answer and preserves a real use case (a
+department head reading their own report's review when someone else was the reviewer).
+
+**VALIDATE C3 — disclosed before the decision was taken:** B3 is a narrow *and* a widen. Because
+`canTouchEmployee` resolves supervisor and branch relationships, it admits EMPLOYEE-role supervisors
+and branch managers who are 403'd today. B2 would have widened nothing. The widening is accepted
+knowingly, on the grounds that it matches how `/employees/[id]` already scopes the same people.
 
 ### C. `api/v1/leave/[id]/+server.ts:38` — the error message contradicts the code
 
@@ -350,16 +386,18 @@ You cannot delete `User.role` without answering what feeds this non-nullable sca
 Under B3, `audit-log/+page.svelte:176` should switch from the relation (`log.actor.role`, which
 shows *today's* role for a year-old event — arguably a latent bug) to `log.actorRoles.join(', ')`.
 
-**Needs a decision before any code is written** — it determines the migration script's shape.
+**DECIDED 2026-08-11: B3**, plus tightening `employees.ts:1268`'s bare `include` to an explicit
+`select` in the same commit (fields the loop actually uses: `id`, `createdAt`, `action`, `oldValue`,
+`newValue`, `actor.email` — six, so timeline output is unchanged). See the resolution block in §3.
 
 ### 5c. Ranking danger spots — where `ROLE_HIERARCHY` could return through the back door
 
 1. **`AuditLog.actorRole`** — the primary one. Neutralised by B3.
 2. **`src/routes/(app)/settings/roles/+page.svelte:107`** `<select value={u.role}>`. A single-valued
-   `<select>` prefilled from a set requires picking one. Options: (i) `value={u.roles[0]}` with a
-   comment that this holds *only* while the picker is single-valued (#283); (ii) leave unprefilled
-   when `roles.length > 1`. **Uncertain — product call.** Today `roles.length` is always 1, so (i) is
-   behaviourally identical and (ii) is dead code. Lean (i) + comment.
+   `<select>` prefilled from a set requires picking one. **DECIDED 2026-08-11: (i)**
+   `value={u.roles[0]}` with a comment that this holds *only* while the picker is single-valued
+   (#283). Today `roles.length` is always 1, so (i) is behaviourally identical and the rejected
+   alternative (leave unprefilled when `roles.length > 1`) is dead code.
 3. **Any "show the user's role" label.** Must render the whole set, never "the highest". The
    `route-guard-multirole.test.ts` scan will not catch this.
 
@@ -535,11 +573,12 @@ deletion.
 
 ### 8c. Two coverage gaps
 
-**The compiler will NOT find the test-side `.role` mocks.** `.svelte-kit/tsconfig.json`'s `include`
-covers `../src/**` and `../test/**` — but this repo's tests live in `tests/**`. So `pnpm check` does
-not typecheck the suite, and Vitest strips types without checking. The 58 `actorRole:` occurrences in
-`tests/` become dead properties that **silently keep passing**. Sweep by grep; do not trust the build.
-Same for `{ role: 'X' }` mocks in ~25 files.
+**~~The compiler will NOT find the test-side `.role` mocks.~~ FALSE — corrected by VALIDATE C2.**
+`.svelte-kit/tsconfig.json` lists `../tests/**/*.{js,ts,svelte}` at **lines 43-45**, and
+`tsc --listFiles` resolves 129 files under `/tests/`. **`pnpm check` DOES typecheck the suite**, so
+making `actorRoles` required hard-errors at every one of the 58 `tests/` sites that still passes
+`actorRole:`. The compiler is a safety net for Part 2, not a blind spot. Still sweep by grep as a
+cross-check, but this is no longer the top risk — see §9.8, demoted.
 
 **No e2e evidence.** Per #287 (`page.goto('/login')` 120s timeouts) nothing above depends on the e2e
 suite. `tests/e2e/manager-org-wide-timesheets.spec.ts` is the only spec that directly exercises the
@@ -553,21 +592,21 @@ are its verification. **Uncertain** whether to break precedent here.
 
 ## 9. Risks, unknowns, decisions
 
-**Decisions needed before coding:**
-1. **`AuditLog.actorRole`: array-ify (B3) or drop (B2)?** Blocks the migration script. Recommend B3.
-2. **§3-A punches fix** — approve the narrow-for-MANAGER? Recommend yes.
-3. **§3-B review privacy** — B1 (ship the leak), B2 (org-wide HR only), or B3 (object-scoped)?
-   Recommend B3.
-4. **§3-C leave override** — narrow to `ADMINISTER_HR_ORGWIDE`, or keep `MANAGE_HR` and fix the
-   message? Recommend narrow.
-5. **§5c `settings/roles` `<select>` prefill** under a set. Uncertain; low stakes today.
+**Decisions needed before coding — ALL FIVE RESOLVED 2026-08-11 (see the block in §3):**
+1. **`AuditLog.actorRole`** — **B3, array-ify**, + the `employees.ts:1268` `include`→`select` fold-in.
+2. **§3-A punches fix** — **yes**, narrow for MANAGER.
+3. **§3-B review privacy** — **B3**, object-scoped.
+4. **§3-C leave override** — **narrow** to `ADMINISTER_HR_ORGWIDE`.
+5. **§5c `settings/roles` `<select>` prefill** — **(i)** `roles[0]` + comment.
 
 **Will fight you:**
 6. **`--accept-data-loss`.** Mitigated by putting the DROP in the script (§6b step 5). Adding the flag
    to `prestart.sh:18` instead leaves it there forever, permitting every future destructive push.
 7. **`timesheets.ts:104-116`.** Several sites *look* like they should be narrowed to a manager's
    reports; that was tried and reverted. Point any reviewer suggesting it at this comment.
-8. **Untypechecked tests** (§8c) — most likely source of a silently-wrong Part 2.
+8. ~~**Untypechecked tests** (§8c) — most likely source of a silently-wrong Part 2.~~ **DEMOTED —
+   the premise was false (VALIDATE C2).** `pnpm check` does typecheck `tests/**`; the 58 stale
+   `actorRole:` mocks will hard-error rather than silently pass.
 
 **Adjacent, OUT OF SCOPE, file separately:**
 9. `employees/[id]/+page.server.ts:597` (`endEarning`) and `:652` (`endDeduction`) take an
