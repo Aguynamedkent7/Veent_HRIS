@@ -1,7 +1,7 @@
 import { fail, isHttpError } from '@sveltejs/kit'
 import { z } from 'zod'
 import { db } from '$lib/server/db'
-import { requireAnyMinRole } from '$lib/server/rbac'
+import { assertCanTouchEmployee } from '$lib/server/services/employee-access'
 import {
 	getReview,
 	redactHrAuthored,
@@ -21,9 +21,14 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 
 	// A review is private to its two participants. Org scoping alone let any colleague
 	// read someone's self-assessment, manager comments and rating by walking ids —
-	// isSubject/isReviewer only drove the UI. HR may read any review in the org.
+	// isSubject/isReviewer only drove the UI.
+	//
+	// #282: this was `requireAnyMinRole(user.roles,'HR_ADMIN')`, which MANAGER clears (#133), so
+	// every manager read every review. Object-scoped instead: org-wide HR still reads any review,
+	// and a manager reads their own people's. Note this also WIDENS — an EMPLOYEE-role supervisor
+	// or branch manager now reaches their own people's reviews, matching /employees/[id].
 	if (!isSubject && !isReviewer) {
-		requireAnyMinRole(user.roles, 'HR_ADMIN')
+		await assertCanTouchEmployee(user, review.employee.id)
 	}
 
 	// #179: the reviewed employee never sees the HR-authored review — redact the manager
