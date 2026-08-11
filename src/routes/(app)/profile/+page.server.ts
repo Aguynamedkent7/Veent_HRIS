@@ -115,7 +115,7 @@ export const actions: Actions = {
 		const ctx = {
 			organizationId: user.organizationId,
 			actorId: user.id,
-			actorRole: user.role
+			actorRoles: user.roles
 		}
 
 		try {

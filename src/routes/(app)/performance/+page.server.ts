@@ -1,5 +1,5 @@
 import { fail, isHttpError } from '@sveltejs/kit'
-import { canAny, hasAnyMinRole, requireAnyCapability } from '$lib/server/rbac'
+import { canAny, requireAnyCapability } from '$lib/server/rbac'
 import {
 	listGoalsForEmployee,
 	listReviewsForEmployee,
@@ -21,7 +21,7 @@ const GOAL_STATUS = ['DRAFT', 'ACTIVE', 'COMPLETED', 'CANCELLED'] as const
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!
-	const isManager = hasAnyMinRole(user.roles, 'MANAGER')
+	const isManager = canAny(user.roles, 'VIEW_TEAM')
 	const isAdmin = canAny(user.roles, 'MANAGE_HR')
 
 	const cycles = isAdmin ? await listReviewCycles(user.organizationId) : []
@@ -63,7 +63,7 @@ function ctxOf(locals: App.Locals, ip: string) {
 	return {
 		organizationId: locals.user!.organizationId,
 		actorId: locals.user!.id,
-		actorRole: locals.user!.role,
+		actorRoles: locals.user!.roles,
 		ipAddress: ip
 	}
 }
@@ -95,7 +95,7 @@ export const actions: Actions = {
 			await createGoal(myEmployee.id, parsed.data, {
 				organizationId: user.organizationId,
 				actorId: user.id,
-				actorRole: user.role,
+				actorRoles: user.roles,
 				ipAddress: getClientAddress()
 			})
 		} catch (e: unknown) {
@@ -121,7 +121,7 @@ export const actions: Actions = {
 				{
 					organizationId: user.organizationId,
 					actorId: user.id,
-					actorRole: user.role,
+					actorRoles: user.roles,
 					ipAddress: getClientAddress()
 				}
 			)

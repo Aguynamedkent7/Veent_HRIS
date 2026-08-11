@@ -60,7 +60,11 @@ const runFixture = (over: Record<string, unknown> = {}) => ({
 
 const call = (role: Role | null, roles?: Role[], actorId = ACTOR) =>
 	POST({
-		locals: role === null ? {} : { user: { id: actorId, organizationId: 'org1', role, roles } },
+		// A single `role` argument means a one-element set — the route reads \`roles\` only (#282).
+		locals:
+			role === null
+				? {}
+				: { user: { id: actorId, organizationId: 'org1', roles: roles ?? [role] } },
 		params: { id: RUN_ID },
 		url: new URL(`http://x/api/v1/payroll/${RUN_ID}?action=approve`)
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any

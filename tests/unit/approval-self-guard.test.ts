@@ -38,7 +38,7 @@ const MAKER_USER = 'user-maker'
 const ctxOf = (over: Partial<AuditContext> = {}): AuditContext => ({
 	organizationId: 'org1',
 	actorId: 'user-other',
-	actorRole: 'HR_ADMIN',
+	actorRoles: ['HR_ADMIN'],
 	...over
 })
 
@@ -80,7 +80,7 @@ describe('decide — nobody decides their own request (#75)', () => {
 	// about which layer stopped it.
 	it('refuses even when the actor holds the stage capability', async () => {
 		await expect(
-			decide('req1', 'APPROVED', undefined, ctxOf({ actorRole: 'SUPER_ADMIN' }), OWNER_EMP)
+			decide('req1', 'APPROVED', undefined, ctxOf({ actorRoles: ['SUPER_ADMIN'] }), OWNER_EMP)
 		).rejects.toMatchObject({
 			status: 403,
 			body: { message: 'You cannot decide your own request' }
@@ -135,7 +135,7 @@ describe('decidePayrollRun — the preparer cannot sign off their own run (#174)
 				'org1',
 				true,
 				undefined,
-				ctxOf({ actorId: MAKER_USER, actorRole: 'CEO' })
+				ctxOf({ actorId: MAKER_USER, actorRoles: ['CEO'] })
 			)
 		).rejects.toMatchObject({
 			status: 403,
@@ -152,7 +152,7 @@ describe('decidePayrollRun — the preparer cannot sign off their own run (#174)
 				'org1',
 				false,
 				'looks wrong',
-				ctxOf({ actorId: MAKER_USER, actorRole: 'CEO' })
+				ctxOf({ actorId: MAKER_USER, actorRoles: ['CEO'] })
 			)
 		).rejects.toMatchObject({ status: 403 })
 	})
@@ -164,7 +164,7 @@ describe('decidePayrollRun — the preparer cannot sign off their own run (#174)
 				'org1',
 				true,
 				undefined,
-				ctxOf({ actorId: 'user-ceo', actorRole: 'CEO' })
+				ctxOf({ actorId: 'user-ceo', actorRoles: ['CEO'] })
 			)
 		).resolves.toMatchObject({ decision: 'APPROVED', stage: 'APPROVE', status: 'APPROVED' })
 		// APPROVE is the last stage, so a clean sign-off commits the run.

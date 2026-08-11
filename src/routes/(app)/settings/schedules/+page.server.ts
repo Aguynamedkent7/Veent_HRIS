@@ -1,6 +1,6 @@
 import { fail } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
-import { requireAnyMinRole } from '$lib/server/rbac'
+import { requireAnyCapability } from '$lib/server/rbac'
 import {
 	listSchedules,
 	createSchedule,
@@ -10,7 +10,7 @@ import {
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
-	requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
+	requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 	const organizationId = locals.user!.organizationId
 	const [schedules, org] = await Promise.all([
 		listSchedules(organizationId),
@@ -28,7 +28,7 @@ function hhmmToMin(s: string): number | null {
 
 export const actions: Actions = {
 	create: async ({ request, locals, getClientAddress }) => {
-		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 		const fd = await request.formData()
 		const name = String(fd.get('name') ?? '').trim()
 		const startMinutes = hhmmToMin(String(fd.get('start') ?? ''))
@@ -51,7 +51,7 @@ export const actions: Actions = {
 				{
 					organizationId: locals.user!.organizationId,
 					actorId: locals.user!.id,
-					actorRole: locals.user!.role,
+					actorRoles: locals.user!.roles,
 					ipAddress: getClientAddress()
 				}
 			)
@@ -64,19 +64,19 @@ export const actions: Actions = {
 	},
 
 	toggleOrgTardiness: async ({ request, locals, getClientAddress }) => {
-		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 		const enabled = (await request.formData()).get('enabled') === 'true'
 		await setOrgTardiness(locals.user!.organizationId, enabled, {
 			organizationId: locals.user!.organizationId,
 			actorId: locals.user!.id,
-			actorRole: locals.user!.role,
+			actorRoles: locals.user!.roles,
 			ipAddress: getClientAddress()
 		})
 		return { success: true }
 	},
 
 	toggleTardiness: async ({ request, locals, getClientAddress }) => {
-		requireAnyMinRole(locals.user!.roles, 'HR_ADMIN')
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 		const fd = await request.formData()
 		const id = String(fd.get('id') ?? '')
 		const enabled = fd.get('enabled') === 'true'
@@ -85,7 +85,7 @@ export const actions: Actions = {
 			await setScheduleTardiness(locals.user!.organizationId, id, enabled, {
 				organizationId: locals.user!.organizationId,
 				actorId: locals.user!.id,
-				actorRole: locals.user!.role,
+				actorRoles: locals.user!.roles,
 				ipAddress: getClientAddress()
 			})
 		} catch (e: unknown) {

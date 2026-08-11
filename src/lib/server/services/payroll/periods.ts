@@ -304,10 +304,7 @@ export async function release(id: string, organizationId: string, ctx: AuditCont
 export async function voidPeriod(id: string, organizationId: string, ctx: AuditContext) {
 	// Voiding a finalized period is Super-Admin-only (#224) — enforced here, not just at the route,
 	// so the form action and the v1 API twin are covered by one check, as `voidRun` already is.
-	requireAnyCapability(
-		ctx.actorRoles?.length ? ctx.actorRoles : [ctx.actorRole],
-		'OVERRIDE_FINALIZED'
-	)
+	requireAnyCapability(ctx.actorRoles, 'OVERRIDE_FINALIZED')
 
 	const period = await requirePeriod(id, organizationId)
 	if (period.status === 'VOIDED') error(400, 'Period is already voided')

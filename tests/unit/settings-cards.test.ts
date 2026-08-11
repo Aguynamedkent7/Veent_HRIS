@@ -18,7 +18,7 @@ import { load } from '../../src/routes/(app)/settings/+page.server'
  */
 const run = (role: Role) =>
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	(load as any)({ locals: { user: { id: 'u1', organizationId: 'org1', role, roles: [role] } } })
+	(load as any)({ locals: { user: { id: 'u1', organizationId: 'org1', roles: [role] } } })
 
 describe('/settings index (#237)', () => {
 	// Longhand, not derived from CAPABILITIES — recomputing the table from the table proves nothing.

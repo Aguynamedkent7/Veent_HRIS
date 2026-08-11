@@ -57,7 +57,7 @@ const STRANGER = { id: 'stranger-emp', userId: 'user-stranger', branchId: null }
  */
 const event = (roles: Role[], body: unknown, id?: string) =>
 	({
-		locals: { user: { id: ACTOR_USER, organizationId: ORG, role: 'MANAGER' as Role, roles } },
+		locals: { user: { id: ACTOR_USER, organizationId: ORG, roles } },
 		params: { id },
 		request: { json: async () => body },
 		getClientAddress: () => '127.0.0.1'

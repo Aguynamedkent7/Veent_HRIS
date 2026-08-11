@@ -29,7 +29,6 @@ export const POST: RequestHandler = async ({ locals, params, request, url, getCl
 	const ctx = {
 		organizationId: org,
 		actorId: locals.user.id,
-		actorRole: locals.user.role,
 		actorRoles: locals.user.roles,
 		ipAddress: getClientAddress()
 	}

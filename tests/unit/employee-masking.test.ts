@@ -38,7 +38,7 @@ const RAW = {
 	gcashNumber: '09170000009999'
 }
 
-const ctx: AuditContext = { organizationId: 'org', actorId: 'actor-1', actorRole: 'HR_ADMIN' }
+const ctx: AuditContext = { organizationId: 'org', actorId: 'actor-1', actorRoles: ['HR_ADMIN'] }
 
 beforeEach(() => {
 	findFirst.mockReset().mockResolvedValue({ ...RAW })

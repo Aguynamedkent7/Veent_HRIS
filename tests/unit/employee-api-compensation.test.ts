@@ -46,7 +46,6 @@ const { createProposal } = await import('$lib/server/services/action-proposals')
 const HR_USER = {
 	id: 'u1',
 	organizationId: 'org1',
-	role: 'HR_ADMIN' as Role,
 	roles: ['HR_ADMIN'] as Role[]
 }
 

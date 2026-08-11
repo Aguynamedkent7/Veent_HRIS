@@ -68,7 +68,7 @@ const PAST = new Date('2025-01-01')
 const ctxOf = (over: Partial<AuditContext> = {}): AuditContext => ({
 	organizationId: 'org1',
 	actorId: HR,
-	actorRole: 'HR_ADMIN',
+	actorRoles: ['HR_ADMIN'],
 	ipAddress: 'test',
 	...over
 })
@@ -164,7 +164,7 @@ describe('a self-action is filed, not written', () => {
 			'emp-hr',
 			'org1',
 			{ basicMonthlySalary: 500000, effectiveDate: PAST },
-			ctxOf({ actorRole: 'CEO' })
+			ctxOf({ actorRoles: ['CEO'] })
 		)
 		expect(createProposal).toHaveBeenCalled()
 		expectNoWrite()
@@ -172,7 +172,7 @@ describe('a self-action is filed, not written', () => {
 })
 
 describe('a manager acting for someone else is filed, not written (#243)', () => {
-	const managerCtx = ctxOf({ actorId: MANAGER, actorRole: 'MANAGER' })
+	const managerCtx = ctxOf({ actorId: MANAGER, actorRoles: ['MANAGER'] })
 
 	it('recordCompensationChange for a report files a proposal', async () => {
 		const result = await recordCompensationChange(
@@ -210,7 +210,7 @@ describe('a manager acting for someone else is filed, not written (#243)', () =>
 			'emp-other',
 			'org1',
 			{ basicMonthlySalary: 45000, effectiveDate: PAST },
-			ctxOf({ actorId: MANAGER, actorRole: 'MANAGER', actorRoles: ['MANAGER', 'HR_ADMIN'] })
+			ctxOf({ actorId: MANAGER, actorRoles: ['MANAGER', 'HR_ADMIN'] })
 		)
 		expect(createProposal).not.toHaveBeenCalled()
 		expect(dbMock.employeeCompensation.create).toHaveBeenCalled()
@@ -259,7 +259,7 @@ describe('org-wide HR acting on someone else still writes directly', () => {
 				'emp-other',
 				'org1',
 				{ effectiveDate: TODAY, jobTitle: 'Lead' },
-				ctxOf({ actorRole })
+				ctxOf({ actorRoles: [actorRole] })
 			)
 		}
 		expect(createProposal).not.toHaveBeenCalled()
@@ -272,7 +272,7 @@ describe('validation runs before anything is filed', () => {
 	// that only fails when a second person has already spent their time on it. The message, not just
 	// the 400: the propose branch could produce its own 400s, and a status-only assertion would not
 	// tell the two apart.
-	const managerCtx = ctxOf({ actorId: MANAGER, actorRole: 'MANAGER' })
+	const managerCtx = ctxOf({ actorId: MANAGER, actorRoles: ['MANAGER'] })
 
 	it('rejects a no-op change without filing', async () => {
 		await expect(
@@ -384,7 +384,7 @@ describe('applying a confirmed proposal', () => {
 				payload: { basicMonthlySalary: 45000, effectiveDate: '2025-01-01T00:00:00.000Z' }
 			},
 			tx as never,
-			ctxOf({ actorId: MANAGER, actorRole: 'MANAGER' })
+			ctxOf({ actorId: MANAGER, actorRoles: ['MANAGER'] })
 		)
 		expect(createProposal).not.toHaveBeenCalled()
 		expect(tx.employeeCompensation.create).toHaveBeenCalled()
@@ -402,7 +402,7 @@ describe('applying a confirmed proposal', () => {
 				payload: { jobTitle: 'Lead', effectiveDate: new Date().toISOString() }
 			},
 			tx as never,
-			ctxOf({ actorId: MANAGER, actorRole: 'MANAGER' })
+			ctxOf({ actorId: MANAGER, actorRoles: ['MANAGER'] })
 		)
 		expect(createProposal).not.toHaveBeenCalled()
 		expect(tx.employee.update).toHaveBeenCalledWith({

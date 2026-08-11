@@ -1,5 +1,5 @@
 import { fail, isHttpError, redirect } from '@sveltejs/kit'
-import { canAny, requireAnyCapability, requireAnyMinRole } from '$lib/server/rbac'
+import { canAny, requireAnyCapability } from '$lib/server/rbac'
 import {
 	countTimesheets,
 	listTimesheets,
@@ -95,7 +95,7 @@ function ctxOf(event: RequestEvent) {
 	return {
 		organizationId: u.organizationId,
 		actorId: u.id,
-		actorRole: u.role,
+		actorRoles: u.roles,
 		ipAddress: event.getClientAddress()
 	}
 }
@@ -170,7 +170,7 @@ function toEntryInputs(rows: z.infer<typeof entriesSchema>) {
 export const actions: Actions = {
 	// HR only — non-destructive preview of a week's punch aggregation (no DB writes).
 	previewAggregate: async (event) => {
-		requireAnyMinRole(event.locals.user!.roles, 'HR_ADMIN')
+		requireAnyCapability(event.locals.user!.roles, 'MANAGE_HR')
 		const org = event.locals.user!.organizationId
 		const parsed = aggregateSchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Pick an employee and a week.' })
@@ -189,7 +189,7 @@ export const actions: Actions = {
 
 	// HR only — commit the week's punches into a DRAFT timesheet (idempotent for drafts).
 	aggregate: async (event) => {
-		requireAnyMinRole(event.locals.user!.roles, 'HR_ADMIN')
+		requireAnyCapability(event.locals.user!.roles, 'MANAGE_HR')
 		const org = event.locals.user!.organizationId
 		const parsed = aggregateSchema.safeParse(Object.fromEntries(await event.request.formData()))
 		if (!parsed.success) return fail(400, { error: 'Pick an employee and a week.' })
@@ -215,7 +215,7 @@ export const actions: Actions = {
 	// HR only — submit an aggregated draft on the employee's behalf. Approval itself
 	// happens exclusively in the review queue (/requests/timesheets).
 	submitDraft: async (event) => {
-		requireAnyMinRole(event.locals.user!.roles, 'HR_ADMIN')
+		requireAnyCapability(event.locals.user!.roles, 'MANAGE_HR')
 		const id = (await event.request.formData()).get('id')
 		if (typeof id !== 'string' || !id) return fail(400, { error: 'Missing timesheet id' })
 		try {
@@ -314,7 +314,7 @@ export const actions: Actions = {
 
 	// HR review edit: replace the timesheet's entries and recompute its total.
 	saveEntries: async (event) => {
-		requireAnyMinRole(event.locals.user!.roles, 'MANAGER')
+		requireAnyCapability(event.locals.user!.roles, 'VIEW_TEAM')
 		const data = await event.request.formData()
 		const id = data.get('id') as string
 		let parsed

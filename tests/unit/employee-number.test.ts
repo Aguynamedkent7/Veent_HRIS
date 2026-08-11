@@ -40,7 +40,7 @@ const ORG = 'org1'
 const ctx = {
 	organizationId: ORG,
 	actorId: 'user1',
-	actorRole: 'HR_ADMIN' as Role,
+	actorRoles: ['HR_ADMIN'] as Role[],
 	ipAddress: 'test'
 }
 const input = {

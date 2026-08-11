@@ -55,7 +55,7 @@ const TARGET_EMP = 'emp-ceo'
 const ctxOf = (over: Partial<AuditContext> = {}): AuditContext => ({
 	organizationId: 'org1',
 	actorId: 'user-someone',
-	actorRole: 'SUPER_ADMIN',
+	actorRoles: ['SUPER_ADMIN'],
 	...over
 })
 
@@ -104,7 +104,7 @@ describe('confirming — who is refused', () => {
 	it('refuses a MANAGER on an on-behalf proposal', async () => {
 		pendOnBehalf()
 		await expect(
-			confirmProposal('org1', 'p1', vi.fn(), ctxOf({ actorRole: 'MANAGER' }))
+			confirmProposal('org1', 'p1', vi.fn(), ctxOf({ actorRoles: ['MANAGER'] }))
 		).rejects.toMatchObject({ status: 403 })
 		expect(dbMock.actionProposal.updateMany).not.toHaveBeenCalled()
 	})
@@ -112,7 +112,7 @@ describe('confirming — who is refused', () => {
 	it('refuses an HR_ADMIN on a self-action — that needs APPROVE_FINANCE', async () => {
 		pendSelf()
 		await expect(
-			confirmProposal('org1', 'p1', vi.fn(), ctxOf({ actorRole: 'HR_ADMIN' }))
+			confirmProposal('org1', 'p1', vi.fn(), ctxOf({ actorRoles: ['HR_ADMIN'] }))
 		).rejects.toMatchObject({ status: 403 })
 		expect(dbMock.actionProposal.updateMany).not.toHaveBeenCalled()
 	})
@@ -121,7 +121,7 @@ describe('confirming — who is refused', () => {
 		pendOnBehalf()
 		const apply = vi.fn().mockResolvedValue(undefined)
 		await expect(
-			confirmProposal('org1', 'p1', apply, ctxOf({ actorRole: 'HR_ADMIN' }))
+			confirmProposal('org1', 'p1', apply, ctxOf({ actorRoles: ['HR_ADMIN'] }))
 		).resolves.toBeDefined()
 		expect(apply).toHaveBeenCalled()
 	})
@@ -132,7 +132,7 @@ describe('confirming — who is refused', () => {
 	it('refuses the initiator even when they hold the right capability', async () => {
 		pendSelf()
 		await expect(
-			confirmProposal('org1', 'p1', vi.fn(), ctxOf({ actorId: CEO_USER, actorRole: 'CEO' }))
+			confirmProposal('org1', 'p1', vi.fn(), ctxOf({ actorId: CEO_USER, actorRoles: ['CEO'] }))
 		).rejects.toMatchObject({
 			status: 403,
 			body: { message: 'You cannot confirm a change you proposed yourself.' }
@@ -160,7 +160,7 @@ describe('confirming — who is refused', () => {
 				'org1',
 				'p1',
 				vi.fn(),
-				ctxOf({ actorId: 'user-target-hr', actorRole: 'HR_ADMIN' })
+				ctxOf({ actorId: 'user-target-hr', actorRoles: ['HR_ADMIN'] })
 			)
 		).rejects.toMatchObject({
 			status: 403,
@@ -177,7 +177,7 @@ describe('confirming — who is refused', () => {
 				'org1',
 				'p1',
 				'no thanks',
-				ctxOf({ actorId: 'user-target-hr', actorRole: 'HR_ADMIN' })
+				ctxOf({ actorId: 'user-target-hr', actorRoles: ['HR_ADMIN'] })
 			)
 		).rejects.toMatchObject({ status: 403 })
 		expect(dbMock.actionProposal.updateMany).not.toHaveBeenCalled()
@@ -197,7 +197,7 @@ describe('confirming — who is refused', () => {
 				'org1',
 				'p1',
 				'changed my mind',
-				ctxOf({ actorId: CEO_USER, actorRole: 'CEO' })
+				ctxOf({ actorId: CEO_USER, actorRoles: ['CEO'] })
 			)
 		).rejects.toMatchObject({
 			status: 403,
@@ -209,7 +209,12 @@ describe('confirming — who is refused', () => {
 		pendSelf()
 		const apply = vi.fn().mockResolvedValue(undefined)
 		await expect(
-			confirmProposal('org1', 'p1', apply, ctxOf({ actorId: 'user-sa', actorRole: 'SUPER_ADMIN' }))
+			confirmProposal(
+				'org1',
+				'p1',
+				apply,
+				ctxOf({ actorId: 'user-sa', actorRoles: ['SUPER_ADMIN'] })
+			)
 		).resolves.toBeDefined()
 		expect(apply).toHaveBeenCalled()
 	})
@@ -257,7 +262,7 @@ describe('filing a proposal', () => {
 					domain: 'COMPENSATION',
 					payload: {}
 				},
-				ctxOf({ actorId: CEO_USER, actorRole: 'CEO' })
+				ctxOf({ actorId: CEO_USER, actorRoles: ['CEO'] })
 			)
 		).rejects.toMatchObject({ status: 409 })
 		// An unconfirmable row would read as success to the initiator and strand the change.
@@ -268,7 +273,7 @@ describe('filing a proposal', () => {
 		await createProposal(
 			'org1',
 			{ targetEmployeeId: TARGET_EMP, targetUserId: CEO_USER, domain: 'COMPENSATION', payload: {} },
-			ctxOf({ actorId: CEO_USER, actorRole: 'CEO' })
+			ctxOf({ actorId: CEO_USER, actorRoles: ['CEO'] })
 		)
 		expect(dbMock.user.findMany).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -295,7 +300,7 @@ describe('filing a proposal', () => {
 				domain: 'COMPENSATION',
 				payload: { basicMonthlySalary: 987654, effectiveDate: '2026-01-01' }
 			},
-			ctxOf({ actorId: CEO_USER, actorRole: 'CEO' })
+			ctxOf({ actorId: CEO_USER, actorRoles: ['CEO'] })
 		)
 		const entry = vi.mocked(writeAuditLog).mock.calls[0][1]
 		expect(entry.newValue).toMatchObject({ fields: ['basicMonthlySalary', 'effectiveDate'] })
@@ -307,32 +312,32 @@ describe('filing a proposal', () => {
 		await createProposal(
 			'org1',
 			{ targetEmployeeId: TARGET_EMP, targetUserId, domain: 'COMPENSATION', payload: {} },
-			ctxOf({ actorId: CEO_USER, actorRole: 'CEO' })
+			ctxOf({ actorId: CEO_USER, actorRoles: ['CEO'] })
 		)
 		return dbMock.user.findMany.mock.calls[0][0].where
 	}
 
 	it('looks for a finance confirmer on a self-action and an HR one otherwise', async () => {
-		// Read off the multi-role branch: `roles` is the set `assertMayDecide` judges against, so it
-		// is the one that has to carry the right capability's roles.
-		const rolesUsed = async (t: string) => (await whereUsed(t)).OR[0].roles.hasSome
+		// Read off `roles`: it is the set `assertMayDecide` judges against, so it is the one that
+		// has to carry the right capability's roles.
+		const rolesUsed = async (t: string) => (await whereUsed(t)).roles.hasSome
 		expect(await rolesUsed(CEO_USER)).not.toContain('HR_ADMIN') // self → APPROVE_FINANCE
 		expect(await rolesUsed('user-other')).toContain('HR_ADMIN') // on behalf → HR org-wide
 	})
 
 	/**
 	 * A [MANAGER, HR_ADMIN] user CAN confirm — `assertMayDecide` reads `ctx.actorRoles` (#133) — so
-	 * the eligibility query has to find them too. Matching on the primary `role` column alone would
-	 * miss them, and the `confirmers.length === 0` guard would then 409 a proposal as unconfirmable
+	 * the eligibility query has to find them too. Matching on a single primary role would miss
+	 * them, and the `confirmers.length === 0` guard would then 409 a proposal as unconfirmable
 	 * while a qualified confirmer was sitting right there.
+	 *
+	 * #282 collapsed the old two-branch OR (set, then the scalar `role` for an empty set) into one
+	 * `hasSome`: the scalar column is gone and `roles` is never empty.
 	 */
-	it('finds confirmers by their full role set, not just their primary role', async () => {
+	it('finds confirmers by their full role set', async () => {
 		const where = await whereUsed('user-other')
-		expect(where.OR).toEqual([
-			{ roles: { hasSome: expect.arrayContaining(['HR_ADMIN']) } },
-			// The primary column still answers for single-role users, whose `roles` defaults to [].
-			{ roles: { isEmpty: true }, role: { in: expect.arrayContaining(['HR_ADMIN']) } }
-		])
+		expect(where.roles).toEqual({ hasSome: expect.arrayContaining(['HR_ADMIN']) })
+		expect(where).not.toHaveProperty('OR')
 	})
 })
 
@@ -436,7 +441,7 @@ describe('the actionable queue', () => {
 					'org1',
 					row.id,
 					vi.fn().mockResolvedValue(undefined),
-					ctxOf({ actorId: actor.id, actorRole: actor.roles[0], actorRoles: [...actor.roles] })
+					ctxOf({ actorId: actor.id, actorRoles: [...actor.roles] })
 				)
 				if (visible.includes(row.id)) await expect(confirming).resolves.toBeDefined()
 				else await expect(confirming).rejects.toMatchObject({ status: 403 })
@@ -456,7 +461,7 @@ describe('rejecting', () => {
 	it('applies the same confirmer rule as confirming', async () => {
 		pendOnBehalf()
 		await expect(
-			rejectProposal('org1', 'p1', 'not budgeted', ctxOf({ actorRole: 'MANAGER' }))
+			rejectProposal('org1', 'p1', 'not budgeted', ctxOf({ actorRoles: ['MANAGER'] }))
 		).rejects.toMatchObject({ status: 403 })
 		expect(dbMock.actionProposal.updateMany).not.toHaveBeenCalled()
 	})

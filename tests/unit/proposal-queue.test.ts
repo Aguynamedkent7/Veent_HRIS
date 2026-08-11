@@ -80,11 +80,9 @@ const onBehalf = {
 	status: 'PENDING'
 }
 
-const event = (
-	user: { id: string; role: Role; roles?: Role[] },
-	body: Record<string, string> = {}
-) =>
+const event = (user: { id: string; roles: Role[] }, body: Record<string, string> = {}) =>
 	({
+		// `roles` is the only identity Lucia hands a route (`auth.ts`), so the fixture carries it.
 		locals: { user: { ...user, organizationId: 'org1' } },
 		url: new URL('http://localhost/requests/proposals'),
 		request: { formData: async () => new Map(Object.entries(body)) },
@@ -118,20 +116,20 @@ describe('who reaches the page', () => {
 	// Display gating only — the list and every action refuse a MANAGER regardless — but without it
 	// the largest role in the app lands on a permanently empty queue with no explanation.
 	it('redirects a MANAGER away', async () => {
-		await expect(load(event({ id: MANAGER, role: 'MANAGER' }))).rejects.toMatchObject({
+		await expect(load(event({ id: MANAGER, roles: ['MANAGER'] }))).rejects.toMatchObject({
 			status: 303,
 			location: '/requests'
 		})
 	})
 
 	it('lets an HR_ADMIN in', async () => {
-		await expect(load(event({ id: HR, role: 'HR_ADMIN' }))).resolves.toBeDefined()
+		await expect(load(event({ id: HR, roles: ['HR_ADMIN'] }))).resolves.toBeDefined()
 	})
 
 	// APPROVE_FINANCE alone is enough: a CEO's self-filed raise is confirmable by a SUPER_ADMIN who,
 	// in some tenant shapes, might not be reached by the HR capability.
 	it('lets an APPROVE_FINANCE holder in', async () => {
-		await expect(load(event({ id: 'user-sa', role: 'SUPER_ADMIN' }))).resolves.toBeDefined()
+		await expect(load(event({ id: 'user-sa', roles: ['SUPER_ADMIN'] }))).resolves.toBeDefined()
 	})
 })
 
@@ -144,7 +142,7 @@ describe('what the page hands to the client', () => {
 
 	// `PageServerLoad` types the return as `void | data` because of the redirect branch; these cases
 	// all take the non-redirect path.
-	const loadPage = async (user: { id: string; role: Role; roles?: Role[] }) => {
+	const loadPage = async (user: { id: string; roles: Role[] }) => {
 		const data = await load(event(user))
 		if (!data) throw new Error('load redirected unexpectedly')
 		return data
@@ -158,13 +156,13 @@ describe('what the page hands to the client', () => {
 	 * same leak.
 	 */
 	it('never puts the proposed salary in the load payload', async () => {
-		const data = await loadPage({ id: HR, role: 'HR_ADMIN' })
+		const data = await loadPage({ id: HR, roles: ['HR_ADMIN'] })
 		expect(data.proposals[0].hasAmount).toBe(true)
 		expect(JSON.stringify(data)).not.toContain('45000')
 	})
 
 	it('names the initiator and the shape of the row', async () => {
-		const data = await loadPage({ id: HR, role: 'HR_ADMIN' })
+		const data = await loadPage({ id: HR, roles: ['HR_ADMIN'] })
 		expect(data.proposals[0]).toMatchObject({
 			id: 'p1',
 			initiator: 'manager@veent.ph', // no employee record → email fallback
@@ -177,7 +175,7 @@ describe('what the page hands to the client', () => {
 		dbMock.user.findMany.mockResolvedValue([
 			{ id: MANAGER, email: 'manager@veent.ph', employee: { firstName: 'Ana', lastName: 'Reyes' } }
 		])
-		const data = await loadPage({ id: HR, role: 'HR_ADMIN' })
+		const data = await loadPage({ id: HR, roles: ['HR_ADMIN'] })
 		expect(data.proposals[0].initiator).toBe('Reyes, Ana')
 	})
 
@@ -191,7 +189,7 @@ describe('what the page hands to the client', () => {
 		dbMock.actionProposal.findMany.mockResolvedValue([
 			{ ...onBehalf, payload: { effectiveDate: 'not-a-date' }, createdAt: new Date(), target: crew }
 		])
-		const data = await loadPage({ id: HR, role: 'HR_ADMIN' })
+		const data = await loadPage({ id: HR, roles: ['HR_ADMIN'] })
 		expect(data.proposals).toHaveLength(1)
 		expect(data.proposals[0]).toMatchObject({ unreadable: true, hasAmount: false, changes: [] })
 	})
@@ -202,7 +200,7 @@ describe('?/confirm', () => {
 	// `assertMayDecide` answer 403 as well, and a route-level rank floor would answer differently.
 	it('refuses a MANAGER', async () => {
 		const res = await actions.confirm!(
-			event({ id: 'user-manager-2', role: 'MANAGER' }, { proposalId: 'p1' })
+			event({ id: 'user-manager-2', roles: ['MANAGER'] }, { proposalId: 'p1' })
 		)
 		expect(res).toMatchObject({
 			status: 403,
@@ -213,7 +211,7 @@ describe('?/confirm', () => {
 
 	it('refuses the person who filed it', async () => {
 		const res = await actions.confirm!(
-			event({ id: MANAGER, role: 'MANAGER' }, { proposalId: 'p1' })
+			event({ id: MANAGER, roles: ['MANAGER'] }, { proposalId: 'p1' })
 		)
 		expect(res).toMatchObject({
 			status: 403,
@@ -224,7 +222,7 @@ describe('?/confirm', () => {
 	// The target of a proposal someone else filed, who happens to hold the confirming capability.
 	it('refuses the person the change is about', async () => {
 		const res = await actions.confirm!(
-			event({ id: crew.userId, role: 'HR_ADMIN' }, { proposalId: 'p1' })
+			event({ id: crew.userId, roles: ['HR_ADMIN'] }, { proposalId: 'p1' })
 		)
 		expect(res).toMatchObject({
 			status: 403,
@@ -236,7 +234,7 @@ describe('?/confirm', () => {
 	// snapshot insert rather than "it resolved": confirming without applying would mark the proposal
 	// APPLIED and move no money, which reads as success to everyone involved.
 	it('applies the change through applyProposedChange', async () => {
-		const res = await actions.confirm!(event({ id: HR, role: 'HR_ADMIN' }, { proposalId: 'p1' }))
+		const res = await actions.confirm!(event({ id: HR, roles: ['HR_ADMIN'] }, { proposalId: 'p1' }))
 		expect(res).toEqual({ success: 'Change confirmed and applied.' })
 		expect(dbMock.employeeCompensation.create).toHaveBeenCalledWith({
 			data: expect.objectContaining({ employeeId: CREW_EMP, basicMonthlySalary: 45000 })
@@ -251,12 +249,12 @@ describe('?/confirm', () => {
 	 */
 	it('reads the full role set, not just the primary role', async () => {
 		const refused = await actions.confirm!(
-			event({ id: HR, role: 'MANAGER', roles: ['MANAGER'] }, { proposalId: 'p1' })
+			event({ id: HR, roles: ['MANAGER'] }, { proposalId: 'p1' })
 		)
 		expect(refused).toMatchObject({ status: 403 })
 
 		const allowed = await actions.confirm!(
-			event({ id: HR, role: 'MANAGER', roles: ['MANAGER', 'HR_ADMIN'] }, { proposalId: 'p1' })
+			event({ id: HR, roles: ['MANAGER', 'HR_ADMIN'] }, { proposalId: 'p1' })
 		)
 		expect(allowed).toEqual({ success: 'Change confirmed and applied.' })
 	})
@@ -269,7 +267,7 @@ describe('?/confirm', () => {
 	it('explains a stale payload rather than repeating the writer’s message', async () => {
 		// Someone already moved the salary to the proposed figure, so applying is now a no-op.
 		dbMock.employee.findFirst.mockResolvedValue({ ...crew, basicMonthlySalary: 45000 })
-		const res = await actions.confirm!(event({ id: HR, role: 'HR_ADMIN' }, { proposalId: 'p1' }))
+		const res = await actions.confirm!(event({ id: HR, roles: ['HR_ADMIN'] }, { proposalId: 'p1' }))
 		expect(res).toMatchObject({
 			status: 400,
 			data: {
@@ -281,7 +279,7 @@ describe('?/confirm', () => {
 	})
 
 	it('rejects a missing proposal id without touching the service', async () => {
-		const res = await actions.confirm!(event({ id: HR, role: 'HR_ADMIN' }))
+		const res = await actions.confirm!(event({ id: HR, roles: ['HR_ADMIN'] }))
 		expect(res).toMatchObject({ status: 400, data: { error: 'Missing proposal id.' } })
 		expect(dbMock.actionProposal.findFirst).not.toHaveBeenCalled()
 	})
@@ -293,7 +291,7 @@ describe('?/reject', () => {
 	// and that nothing was claimed on the way.
 	it('requires a reason, before any lookup', async () => {
 		const res = await actions.reject!(
-			event({ id: HR, role: 'HR_ADMIN' }, { proposalId: 'p1', note: '   ' })
+			event({ id: HR, roles: ['HR_ADMIN'] }, { proposalId: 'p1', note: '   ' })
 		)
 		expect(res).toMatchObject({
 			status: 400,
@@ -304,7 +302,10 @@ describe('?/reject', () => {
 
 	it('applies the same authority as confirming', async () => {
 		const res = await actions.reject!(
-			event({ id: 'user-manager-2', role: 'MANAGER' }, { proposalId: 'p1', note: 'not budgeted' })
+			event(
+				{ id: 'user-manager-2', roles: ['MANAGER'] },
+				{ proposalId: 'p1', note: 'not budgeted' }
+			)
 		)
 		expect(res).toMatchObject({
 			status: 403,
@@ -315,7 +316,10 @@ describe('?/reject', () => {
 
 	it('stores the reason on the row', async () => {
 		const res = await actions.reject!(
-			event({ id: HR, role: 'HR_ADMIN' }, { proposalId: 'p1', note: 'not budgeted this quarter' })
+			event(
+				{ id: HR, roles: ['HR_ADMIN'] },
+				{ proposalId: 'p1', note: 'not budgeted this quarter' }
+			)
 		)
 		expect(res).toEqual({ success: 'Proposal rejected and the initiator notified.' })
 		expect(dbMock.actionProposal.updateMany).toHaveBeenCalledWith({
@@ -342,7 +346,7 @@ describe('?/revealAmount', () => {
 			basicMonthlySalary: new Prisma.Decimal(30000)
 		})
 		const res = await actions.revealAmount!(
-			event({ id: HR, role: 'HR_ADMIN' }, { proposalId: 'p1' })
+			event({ id: HR, roles: ['HR_ADMIN'] }, { proposalId: 'p1' })
 		)
 		expect(res).toMatchObject({ revealedId: 'p1', amounts: { current: 30000, proposed: 45000 } })
 		expect(typeof (res as { amounts: { current: unknown } }).amounts.current).toBe('number')
@@ -362,7 +366,7 @@ describe('?/revealAmount', () => {
 	// distinguishes the two.
 	it('refuses a MANAGER without reading the record', async () => {
 		const res = await actions.revealAmount!(
-			event({ id: 'user-manager-2', role: 'MANAGER' }, { proposalId: 'p1' })
+			event({ id: 'user-manager-2', roles: ['MANAGER'] }, { proposalId: 'p1' })
 		)
 		expect(res).toMatchObject({
 			status: 403,
@@ -374,7 +378,7 @@ describe('?/revealAmount', () => {
 
 	it('refuses the person the change is about', async () => {
 		const res = await actions.revealAmount!(
-			event({ id: crew.userId, role: 'HR_ADMIN' }, { proposalId: 'p1' })
+			event({ id: crew.userId, roles: ['HR_ADMIN'] }, { proposalId: 'p1' })
 		)
 		expect(res).toMatchObject({
 			status: 403,

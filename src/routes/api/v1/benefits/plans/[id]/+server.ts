@@ -25,7 +25,7 @@ export const PATCH: RequestHandler = async ({ locals, request, params, getClient
 	const plan = await updateBenefitPlan(params.id, user.organizationId, parsed.data, {
 		organizationId: user.organizationId,
 		actorId: user.id,
-		actorRole: user.role,
+		actorRoles: user.roles,
 		ipAddress: getClientAddress()
 	})
 	return json({ plan })

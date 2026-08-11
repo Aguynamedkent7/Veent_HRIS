@@ -35,7 +35,12 @@ vi.mock('bcrypt', () => ({ default: { hash: vi.fn().mockResolvedValue('hashed') 
 
 const { getEmployee, recordCompensationChange } = await import('$lib/server/services/employees')
 
-const CTX = { organizationId: 'org1', actorId: 'u1', actorRole: 'HR_ADMIN' as Role, ipAddress: 't' }
+const CTX = {
+	organizationId: 'org1',
+	actorId: 'u1',
+	actorRoles: ['HR_ADMIN'] as Role[],
+	ipAddress: 't'
+}
 
 beforeEach(() => {
 	vi.clearAllMocks()

@@ -86,7 +86,7 @@ const EMP = {
 }
 
 const locals = (roles: Role[]) => ({
-	user: { id: ACTOR_USER, organizationId: ORG, role: 'MANAGER' as Role, roles }
+	user: { id: ACTOR_USER, organizationId: ORG, roles }
 })
 
 const patch = (roles: Role[]) =>

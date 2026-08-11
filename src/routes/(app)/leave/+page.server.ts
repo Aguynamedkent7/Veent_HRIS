@@ -74,10 +74,9 @@ function ctxOf(event: RequestEvent) {
 	return {
 		organizationId: u.organizationId,
 		actorId: u.id,
-		actorRole: u.role,
-		// #279: `deleteRequest` decides privilege via `rolesOf(ctx)`, which falls back to
-		// `[actorRole]` when this is absent — omitting it would judge a multi-role deleter on their
-		// primary role alone and refuse the deletion their secondary role permits (the #247 defect).
+		// #279: `deleteRequest` decides privilege from the FULL role set — judging a multi-role
+		// deleter on their primary role alone refuses a deletion their secondary role permits
+		// (the #247 defect).
 		actorRoles: u.roles,
 		ipAddress: event.getClientAddress()
 	}

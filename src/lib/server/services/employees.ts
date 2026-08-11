@@ -1,6 +1,6 @@
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
-import { canAny, hasAnyMinRole } from '$lib/server/rbac'
+import { canAny } from '$lib/server/rbac'
 import { error } from '@sveltejs/kit'
 import bcrypt from 'bcrypt'
 import { Prisma } from '@prisma/client'
@@ -205,7 +205,7 @@ export async function listEmployees(
 			endDate: true,
 			department: { select: { id: true, name: true } },
 			branch: { select: { id: true, name: true } },
-			user: { select: { email: true, role: true, isActive: true } }
+			user: { select: { email: true, roles: true, isActive: true } }
 		},
 		orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
 		...(pageArgs && { skip: pageArgs.skip, take: pageArgs.take })
@@ -221,7 +221,7 @@ export async function getEmployee(
 		where: { id, user: { organizationId } },
 		include: {
 			department: true,
-			user: { select: { email: true, role: true, isActive: true, lastLoginAt: true } },
+			user: { select: { email: true, roles: true, isActive: true, lastLoginAt: true } },
 			reportsTo: { select: { id: true, firstName: true, lastName: true } },
 			position: { include: { salaryGrade: true } },
 			emergencyContacts: { orderBy: { createdAt: 'asc' } }
@@ -275,11 +275,11 @@ export async function getEmployee(
 	// passes opts, so masking is inherited by default: nothing leaks by omission (#111).
 	if (!opts) return employee
 
-	// Compensation, government IDs, and disbursement details are HR-only: below the HR_ADMIN
-	// rank, and not the record's owner, they come back null. Note MANAGER is *not* below it —
-	// #133 made MANAGER on-branch HR and ranks it level with HR_ADMIN — so a manager falls
-	// through to the masked branch. Self always reaches masking too (own data, decision #2).
-	if (!opts.isSelf && opts.viewerRoles && !hasAnyMinRole(opts.viewerRoles, 'HR_ADMIN')) {
+	// Compensation, government IDs, and disbursement details are HR-only: without MANAGE_HR,
+	// and not the record's owner, they come back null. Note MANAGER *does* hold MANAGE_HR —
+	// #133 made MANAGER on-branch HR — so a manager does not fall into the masked branch.
+	// Self always reaches masking too (own data, decision #2).
+	if (!opts.isSelf && opts.viewerRoles && !canAny(opts.viewerRoles, 'MANAGE_HR')) {
 		return {
 			...employee,
 			basicMonthlySalary: null,
@@ -477,7 +477,6 @@ async function allocateAndCreate(
 						organizationId,
 						email: input.email,
 						passwordHash,
-						role: input.role,
 						roles: [input.role]
 					}
 				})
@@ -522,7 +521,7 @@ async function allocateAndCreate(
 						workScheduleId: input.workScheduleId || null,
 						positionId: input.positionId || null
 					},
-					include: { department: true, user: { select: { email: true, role: true } } }
+					include: { department: true, user: { select: { email: true, roles: true } } }
 				})
 
 				// Allocate this year's leave entitlement from the org's leave-type defaults (#137).
@@ -610,7 +609,7 @@ export async function updateEmployee(
 	const updated = await db.employee.update({
 		where: { id },
 		data: input,
-		include: { department: true, user: { select: { email: true, role: true } } }
+		include: { department: true, user: { select: { email: true, roles: true } } }
 	})
 
 	// Curated audit diff: before/after values for the employment-history fields
@@ -687,10 +686,10 @@ export interface ProposalWriteOpts {
  * Two shapes route here, and `createProposal` re-derives which from initiator vs target so the
  * confirmer requirement can't be understated:
  *   - the actor IS the target — self-dealing, needs `APPROVE_FINANCE` to confirm;
- *   - the actor lacks `ADMINISTER_HR_ORGWIDE` — i.e. a MANAGER, who clears the route's
- *     `requireMinRole('HR_ADMIN')` because `ROLE_HIERARCHY` ranks them level with HR_ADMIN (#243).
+ *   - the actor lacks `ADMINISTER_HR_ORGWIDE` — i.e. a MANAGER, who passes the route's own
+ *     `requireAnyCapability('MANAGE_HR')` gate, since MANAGE_HR holds MANAGER (#243).
  *
- * Capability-keyed, never a rank floor, for exactly that reason. And in the service rather than the
+ * Keyed on the narrower capability, for exactly that reason. And in the service rather than the
  * route, so the form action and its v1 API twin are covered by one check.
  */
 async function proposeIfRequired(
@@ -700,8 +699,8 @@ async function proposeIfRequired(
 	payload: unknown,
 	ctx: AuditContext
 ): Promise<PayWriteResult | null> {
-	const roles = ctx.actorRoles?.length ? ctx.actorRoles : [ctx.actorRole]
-	if (employee.userId !== ctx.actorId && canAny(roles, 'ADMINISTER_HR_ORGWIDE')) return null
+	if (employee.userId !== ctx.actorId && canAny(ctx.actorRoles, 'ADMINISTER_HR_ORGWIDE'))
+		return null
 
 	const proposal = await createProposal(
 		organizationId,

@@ -4,7 +4,7 @@ import { db } from './db'
 interface AuditContext {
 	organizationId: string
 	actorId: string
-	actorRole: Role
+	actorRoles: Role[]
 	ipAddress?: string
 	userAgent?: string
 }
@@ -28,7 +28,7 @@ export async function writeAuditLog(
 		data: {
 			organizationId: ctx.organizationId,
 			actorId: ctx.actorId,
-			actorRole: ctx.actorRole,
+			actorRoles: ctx.actorRoles,
 			action: payload.action,
 			entityType: payload.entityType,
 			entityId: payload.entityId,

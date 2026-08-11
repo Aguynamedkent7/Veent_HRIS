@@ -39,7 +39,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			skip: pagination.skip,
 			take: pagination.take,
 			// An explicit select, not `include`: `include` returns every scalar, and the rows are
-			// spread wholesale below, so `ipAddress`, `userAgent`, `actorId` and `actorRole` would
+			// spread wholesale below, so `ipAddress`, `userAgent` and `actorId` would
 			// ship to the client. The same bare-`include` shape was the dashboard leak this issue
 			// fixed (#242) — the type annotation on the map below hides it, it does not prevent it.
 			select: {
@@ -50,7 +50,10 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 				oldValue: true,
 				newValue: true,
 				createdAt: true,
-				actor: { select: { email: true, role: true } }
+				// The actor's role set AS RECORDED AT THE TIME (#282). The `actor` relation would
+				// show today's roles on a year-old entry.
+				actorRoles: true,
+				actor: { select: { email: true } }
 			}
 		}),
 		db.user.findMany({
@@ -71,7 +74,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			oldValue: unknown
 			newValue: unknown
 			createdAt: Date
-			actor: { email: string; role: string }
+			actorRoles: string[]
+			actor: { email: string }
 		}) => ({
 			...log,
 			oldValue: null,
@@ -134,7 +138,7 @@ export const actions: Actions = {
 			{
 				organizationId: user.organizationId,
 				actorId: user.id,
-				actorRole: user.role,
+				actorRoles: user.roles,
 				ipAddress: getClientAddress(),
 				userAgent: request.headers.get('user-agent') ?? undefined
 			},

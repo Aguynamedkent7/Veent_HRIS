@@ -51,7 +51,6 @@ export const POST: RequestHandler = async ({ locals, request }) => {
 	// statutory deductions and net by passing their id. `null` = unrestricted.
 	const visibleEmployeeIds = await listVisiblePayEmployeeIds({
 		id: locals.user.id,
-		role: locals.user.role,
 		roles: locals.user.roles,
 		organizationId: locals.user.organizationId
 	})

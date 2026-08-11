@@ -173,7 +173,7 @@ function parseRates(fd: FormData) {
 const ctxOf = (user: App.Locals['user'], getClientAddress: () => string) => ({
 	organizationId: user!.organizationId,
 	actorId: user!.id,
-	actorRole: user!.role,
+	actorRoles: user!.roles,
 	ipAddress: getClientAddress()
 })
 

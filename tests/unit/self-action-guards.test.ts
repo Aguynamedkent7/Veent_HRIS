@@ -57,7 +57,7 @@ const SELF = 'user-self'
 const CTX: AuditContext = {
 	organizationId: 'org1',
 	actorId: SELF,
-	actorRole: 'MANAGER',
+	actorRoles: ['MANAGER'],
 	ipAddress: 'test'
 }
 const EFF = new Date('2026-08-01')
@@ -198,7 +198,7 @@ describe('the same writers still work on somebody else', () => {
 	// converse property (the self-guard does not over-block someone who IS authorized), so it needs
 	// a role that genuinely is: HR_ADMIN holds VIEW_PAY_ORGWIDE. The MANAGER-scoped cases live in
 	// `loan-write-scoping.test.ts`.
-	const ORGWIDE: AuditContext = { ...CTX, actorRole: 'HR_ADMIN' }
+	const ORGWIDE: AuditContext = { ...CTX, actorRoles: ['HR_ADMIN'] }
 
 	it('lets an authorized actor act on another employee', async () => {
 		dbMock.deductionType.findFirst.mockResolvedValue({

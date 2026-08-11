@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { Role } from '@prisma/client'
-import { ROLE_HIERARCHY, CAPABILITIES } from '$lib/rbac'
+import { CAPABILITIES } from '$lib/rbac'
 
 /**
  * #228 — object-level scoping for employee records.
@@ -26,7 +26,11 @@ const { canTouchEmployee, assertCanTouchEmployee, listVisibleEmployeeIds } =
 	await import('$lib/server/services/employee-access')
 
 /** `roles` omitted leaves it undefined, so the fallback reproduces the single-role rule exactly. */
-const actor = (role: Role, roles?: Role[]) => ({ id: 'user1', role, roles, organizationId: 'org1' })
+const actor = (role: Role, roles?: Role[]) => ({
+	id: 'user1',
+	roles: roles ?? [role],
+	organizationId: 'org1'
+})
 /** The manager's own employee record. */
 const SELF = { id: 'mgr-emp' }
 
@@ -58,13 +62,15 @@ beforeEach(() => {
 })
 
 describe('the capability split this fix depends on (#228)', () => {
-	it('MANAGE_HR cannot express "real HR" — it holds MANAGER, who also clears the rank gate', () => {
-		const clearsManagerFloor = Object.entries(ROLE_HIERARCHY)
-			.filter(([, rank]) => rank >= ROLE_HIERARCHY.MANAGER)
-			.map(([role]) => role)
-			.sort()
-		// Identical sets ⇒ `requireMinRole('MANAGER')` + `!can(MANAGE_HR)` is unreachable.
-		expect([...CAPABILITIES.MANAGE_HR].sort()).toEqual(clearsManagerFloor)
+	// #282 deleted `ROLE_HIERARCHY`, which this used to derive the floor's role set from. The claim
+	// is the same one, stated directly: MANAGE_HR holds MANAGER, so it cannot express "real HR".
+	it('MANAGE_HR cannot express "real HR" — it holds MANAGER', () => {
+		expect([...CAPABILITIES.MANAGE_HR].sort()).toEqual([
+			'CEO',
+			'HR_ADMIN',
+			'MANAGER',
+			'SUPER_ADMIN'
+		])
 	})
 
 	it('ADMINISTER_HR_ORGWIDE is the one that actually excludes MANAGER', () => {

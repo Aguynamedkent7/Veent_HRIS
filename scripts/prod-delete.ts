@@ -107,7 +107,7 @@ async function resolveActor(organizationId: string, forbiddenUserId?: string) {
 	if (!actorEmail) die(`--actor=<email> is required with --execute.\n${USAGE}`)
 	const actor = await db.user.findUnique({
 		where: { email: actorEmail },
-		select: { id: true, role: true, organizationId: true, isActive: true }
+		select: { id: true, roles: true, organizationId: true, isActive: true }
 	})
 	if (!actor) die(`No user with email ${actorEmail}.`)
 	if (actor.id === forbiddenUserId)
@@ -303,7 +303,7 @@ async function deleteEmployee(employeeId: string) {
 				data: {
 					organizationId: employee.organizationId,
 					actorId: actor.id,
-					actorRole: actor.role,
+					actorRoles: actor.roles,
 					action: 'DELETE',
 					entityType: 'Employee',
 					entityId: employee.id,
@@ -420,7 +420,7 @@ async function deletePayrollRun(runId: string) {
 				data: {
 					organizationId: run.organizationId,
 					actorId: actor.id,
-					actorRole: actor.role,
+					actorRoles: actor.roles,
 					action: 'DELETE',
 					entityType: 'PayrollRun',
 					entityId: run.id,

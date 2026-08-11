@@ -66,11 +66,10 @@ const STRANGER = 'stranger-emp'
 /** Every active employee in the org, in the order the roster query returns them. */
 const ROSTER = [SELF, REPORT, STRANGER]
 
-/** The primary role is irrelevant to these guards — `roles` is what both layers read (#247). */
+/** There is no primary role — `roles` is the whole identity both layers read (#247, #282). */
 const user = (roles: Role[]) => ({
 	id: ACTOR_USER,
 	organizationId: ORG,
-	role: roles[0],
 	roles
 })
 

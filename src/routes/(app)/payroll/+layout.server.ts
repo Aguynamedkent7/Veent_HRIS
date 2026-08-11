@@ -11,7 +11,7 @@ import type { LayoutServerLoad } from './$types'
 // requirePayrollManage guards, so sign-off roles can't browse those.
 export const load: LayoutServerLoad = async ({ locals }) => {
 	const user = locals.user!
-	const roles = user.roles?.length ? user.roles : [user.role]
+	const roles = user.roles
 	const canManage = canAny(roles, 'MANAGE_PAYROLL')
 	// Payroll sign-off is finance: Verifier verifies, CEO / Super Admin approve (#174).
 	const canSignOff = canAny(roles, 'VERIFY_REQUESTS') || canAny(roles, 'APPROVE_FINANCE')

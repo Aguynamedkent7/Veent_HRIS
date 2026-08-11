@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
 import { createRequest, listRequests } from '$lib/server/services/requests'
 import { requestSchema } from '$lib/server/schemas/requests'
-import { hasAnyMinRole } from '$lib/server/rbac'
+import { canAny } from '$lib/server/rbac'
 import { listVisibleEmployeeIds } from '$lib/server/services/employee-access'
 import type { RequestHandler } from './$types'
 
@@ -11,7 +11,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	const user = locals.user
 
 	// Non-managers only ever see their own requests.
-	const isManager = hasAnyMinRole(user.roles, 'MANAGER')
+	const isManager = canAny(user.roles, 'VIEW_TEAM')
 	const myEmployee = await db.employee.findUnique({
 		where: { userId: user.id },
 		select: { id: true }
@@ -59,7 +59,6 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 	const created = await createRequest(myEmployee.id, user.organizationId, parsed.data, {
 		organizationId: user.organizationId,
 		actorId: user.id,
-		actorRole: user.role,
 		actorRoles: user.roles,
 		ipAddress: getClientAddress()
 	})

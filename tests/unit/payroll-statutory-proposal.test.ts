@@ -38,13 +38,13 @@ const { proposeStatutoryRates, confirmProposal, rejectProposal } =
 const HR: AuditContext = {
 	organizationId: 'org1',
 	actorId: 'hr1',
-	actorRole: 'HR_ADMIN',
+	actorRoles: ['HR_ADMIN'],
 	ipAddress: 't'
 }
 const CEO: AuditContext = {
 	organizationId: 'org1',
 	actorId: 'ceo1',
-	actorRole: 'CEO',
+	actorRoles: ['CEO'],
 	ipAddress: 't'
 }
 

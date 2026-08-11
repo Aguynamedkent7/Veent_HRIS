@@ -56,7 +56,7 @@ const SELF_EMP = 'self-emp'
 const OTHER_EMP = 'other-emp'
 
 const locals = (roles: Role[]) => ({
-	user: { id: ACTOR_USER, organizationId: ORG, role: 'EMPLOYEE' as Role, roles }
+	user: { id: ACTOR_USER, organizationId: ORG, roles }
 })
 
 const OT_BODY = { type: 'OVERTIME', date: '2026-03-10', hours: 3, reason: 'Month-end close' }

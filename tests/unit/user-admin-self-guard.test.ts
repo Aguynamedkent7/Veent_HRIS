@@ -43,7 +43,7 @@ const ACTOR = 'user-self'
 const CTX: AuditContext = {
 	organizationId: 'org1',
 	actorId: ACTOR,
-	actorRole: 'CEO',
+	actorRoles: ['CEO'],
 	ipAddress: 'test'
 }
 
@@ -53,12 +53,12 @@ beforeEach(() => {
 	// Someone else in the same org, and never the last super admin, so only the self-guard can fire.
 	txMock.user.findFirst.mockResolvedValue({
 		id: 'user-other',
-		role: 'HR_ADMIN',
+		roles: ['HR_ADMIN'],
 		isActive: true,
 		organizationId: 'org1'
 	})
 	txMock.user.count.mockResolvedValue(1)
-	txMock.user.update.mockResolvedValue({ id: 'user-other', role: 'MANAGER' })
+	txMock.user.update.mockResolvedValue({ id: 'user-other', roles: ['MANAGER'] })
 	txMock.userOrganization.findMany.mockResolvedValue([])
 })
 
@@ -68,7 +68,7 @@ describe('setUserRole', () => {
 	// solely at the route layer. Now checked here, on the full role set, above everything else.
 	it('refuses an actor who does not hold MANAGE_USER_ROLES', async () => {
 		await expect(
-			setUserRole('user-other', 'org1', 'MANAGER', { ...CTX, actorRole: 'SUPER_ADMIN' })
+			setUserRole('user-other', 'org1', 'MANAGER', { ...CTX, actorRoles: ['SUPER_ADMIN'] })
 		).rejects.toMatchObject({ status: 403 })
 		expect(dbMock.$transaction).not.toHaveBeenCalled()
 		expect(txMock.user.update).not.toHaveBeenCalled()
@@ -78,7 +78,7 @@ describe('setUserRole', () => {
 	// self-targeted call to distinguish "you may not" from anything about the target at all.
 	it('refuses an unauthorized actor without any lookup, even targeting themselves', async () => {
 		await expect(
-			setUserRole(ACTOR, 'org1', 'MANAGER', { ...CTX, actorRole: 'EMPLOYEE' })
+			setUserRole(ACTOR, 'org1', 'MANAGER', { ...CTX, actorRoles: ['EMPLOYEE'] })
 		).rejects.toMatchObject({ status: 403 })
 		expect(dbMock.$transaction).not.toHaveBeenCalled()
 		expect(txMock.user.findFirst).not.toHaveBeenCalled()
@@ -89,7 +89,6 @@ describe('setUserRole', () => {
 		await expect(
 			setUserRole('user-other', 'org1', 'MANAGER', {
 				...CTX,
-				actorRole: 'EMPLOYEE',
 				actorRoles: ['EMPLOYEE', 'CEO']
 			})
 		).resolves.toBeDefined()
@@ -111,21 +110,23 @@ describe('setUserRole', () => {
 		expect(dbMock.$transaction).not.toHaveBeenCalled()
 	})
 
-	// #255: the write must carry the role SET too. Every capability check resolves authority from
-	// `roles` and falls back to `[role]` only when it is empty — which it never is after the #133
-	// backfill — so a change that touched only `role` left the user on their old authority forever.
-	it('still changes somebody else’s role, and syncs the role set with it (#255)', async () => {
+	// #255/#282: `roles` is the ONLY thing the write carries. Every capability check resolves
+	// authority from the set, and the scalar `role` is gone — a payload still naming it would be
+	// writing to a column that no longer exists. The explicit not-toHaveProperty is the point of
+	// the test: toHaveBeenCalledWith already exact-matches, but the assertion states the claim.
+	it('changes somebody else’s role by writing only the role set (#255/#282)', async () => {
 		await expect(setUserRole('user-other', 'org1', 'MANAGER', CTX)).resolves.toBeDefined()
 		expect(txMock.user.update).toHaveBeenCalledWith({
 			where: { id: 'user-other' },
-			data: { role: 'MANAGER', roles: ['MANAGER'] }
+			data: { roles: ['MANAGER'] }
 		})
+		expect(txMock.user.update.mock.calls[0][0].data).not.toHaveProperty('role')
 	})
 
 	it('still blocks demoting the last active super admin', async () => {
 		txMock.user.findFirst.mockResolvedValue({
 			id: 'user-other',
-			role: 'SUPER_ADMIN',
+			roles: ['SUPER_ADMIN'],
 			isActive: true,
 			organizationId: 'org1'
 		})
@@ -142,11 +143,11 @@ describe('setUserRole', () => {
 	it.each(['CEO', 'VERIFIER', 'APPROVER'] as const)(
 		'promotes a user to %s (#248)',
 		async (role) => {
-			txMock.user.update.mockResolvedValue({ id: 'user-other', role })
+			txMock.user.update.mockResolvedValue({ id: 'user-other', roles: [role] })
 			await expect(setUserRole('user-other', 'org1', role, CTX)).resolves.toBeDefined()
 			expect(txMock.user.update).toHaveBeenCalledWith({
 				where: { id: 'user-other' },
-				data: { role, roles: [role] }
+				data: { roles: [role] }
 			})
 		}
 	)
@@ -154,7 +155,7 @@ describe('setUserRole', () => {
 	it('blocks demoting the last active CEO (#248)', async () => {
 		txMock.user.findFirst.mockResolvedValue({
 			id: 'user-other',
-			role: 'CEO',
+			roles: ['CEO'],
 			isActive: true,
 			organizationId: 'org1'
 		})
@@ -170,7 +171,7 @@ describe('setUserRole', () => {
 	it('demotes a CEO while another active CEO remains', async () => {
 		txMock.user.findFirst.mockResolvedValue({
 			id: 'user-other',
-			role: 'CEO',
+			roles: ['CEO'],
 			isActive: true,
 			organizationId: 'org1'
 		})
@@ -185,15 +186,18 @@ describe('setUserRole', () => {
 	it('counts holders who reach the org through a membership', async () => {
 		txMock.user.findFirst.mockResolvedValue({
 			id: 'user-other',
-			role: 'CEO',
+			roles: ['CEO'],
 			isActive: true,
 			organizationId: 'org1'
 		})
 		await setUserRole('user-other', 'org1', 'HR_ADMIN', CTX)
 
+		// #282: the count is per-role over the set, not equality on a primary role. `has`, never
+		// `hasSome` — with one element they agree, but `hasSome` counts the wrong users the moment
+		// the guard is asked about more than one lost role.
 		expect(txMock.user.count).toHaveBeenCalledWith({
 			where: {
-				role: 'CEO',
+				roles: { has: 'CEO' },
 				isActive: true,
 				id: { not: 'user-other' },
 				OR: [{ organizationId: 'org1' }, { memberships: { some: { organizationId: 'org1' } } }]
@@ -207,7 +211,7 @@ describe('setUserRole', () => {
 	it('blocks a demotion that would strand a different org the target only reaches via membership (#260)', async () => {
 		txMock.user.findFirst.mockResolvedValue({
 			id: 'user-other',
-			role: 'CEO',
+			roles: ['CEO'],
 			isActive: true,
 			organizationId: 'org1'
 		})
@@ -229,7 +233,7 @@ describe('setUserRole', () => {
 	it('does not block re-saving the last super admin’s existing role', async () => {
 		txMock.user.findFirst.mockResolvedValue({
 			id: 'user-other',
-			role: 'SUPER_ADMIN',
+			roles: ['SUPER_ADMIN'],
 			isActive: true,
 			organizationId: 'org1'
 		})
@@ -246,7 +250,7 @@ describe('setUserRole', () => {
 	it('wraps the read, holder count and write in one serializable transaction (#260)', async () => {
 		txMock.user.findFirst.mockResolvedValue({
 			id: 'user-other',
-			role: 'CEO',
+			roles: ['CEO'],
 			isActive: true,
 			organizationId: 'org1'
 		})
@@ -292,7 +296,7 @@ describe('setUserActive', () => {
 	it('still blocks deactivating the last active super admin', async () => {
 		txMock.user.findFirst.mockResolvedValue({
 			id: 'user-other',
-			role: 'SUPER_ADMIN',
+			roles: ['SUPER_ADMIN'],
 			isActive: true,
 			organizationId: 'org1'
 		})
@@ -310,7 +314,7 @@ describe('setUserActive', () => {
 	it('blocks deactivating the last active CEO (#248)', async () => {
 		txMock.user.findFirst.mockResolvedValue({
 			id: 'user-other',
-			role: 'CEO',
+			roles: ['CEO'],
 			isActive: true,
 			organizationId: 'org1'
 		})

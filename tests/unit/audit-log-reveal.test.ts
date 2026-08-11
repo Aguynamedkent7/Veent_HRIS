@@ -52,7 +52,8 @@ const ENTRY = {
 	oldValue: { basicMonthlySalary: OLD_SALARY, rateType: 'MONTHLY' },
 	newValue: { basicMonthlySalary: NEW_SALARY, rateType: 'MONTHLY', effectiveDate: '2026-01-01' },
 	createdAt: new Date('2026-01-01T00:00:00Z'),
-	actor: { email: 'hr@orga.test', role: 'HR_ADMIN' },
+	actorRoles: ['HR_ADMIN'],
+	actor: { email: 'hr@orga.test' },
 	// Present on the fixture on purpose: the loader spreads the row, so an unprojected query
 	// ships these to the client. They must not survive the load. See NEVER_SHIPPED below.
 	ipAddress: '203.0.113.7',
@@ -91,7 +92,7 @@ const BARE_ENTRY = {
 
 const loadEvent = (roles: Role[]) =>
 	({
-		locals: { user: { id: ACTOR, organizationId: ORG_A, role: roles[0], roles } },
+		locals: { user: { id: ACTOR, organizationId: ORG_A, roles } },
 		url: new URL('http://localhost/reports/audit-log')
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	}) as any
@@ -104,7 +105,7 @@ const revealEvent = (roles: Role[], id: string | null = 'log1') => {
 	const body = new FormData()
 	if (id !== null) body.set('id', id)
 	return {
-		locals: { user: { id: ACTOR, organizationId: ORG_A, role: roles[0], roles } },
+		locals: { user: { id: ACTOR, organizationId: ORG_A, roles } },
 		request: Object.assign(new Request('http://localhost/reports/audit-log?/reveal'), {
 			formData: async () => body
 		}),
@@ -213,7 +214,7 @@ describe('?/reveal — reaching a payload is itself audited (#242)', () => {
 		expect(ctx).toMatchObject({
 			organizationId: ORG_A,
 			actorId: ACTOR,
-			actorRole: 'SUPER_ADMIN',
+			actorRoles: ['SUPER_ADMIN'],
 			ipAddress: '203.0.113.7'
 		})
 		expect(payload).toMatchObject({

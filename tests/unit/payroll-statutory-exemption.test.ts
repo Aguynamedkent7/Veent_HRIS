@@ -154,7 +154,7 @@ const { setStatutoryExemption, setEmployerShareExternal } =
 const ctx = {
 	organizationId: 'org1',
 	actorId: 'user1',
-	actorRole: 'HR_ADMIN' as Role,
+	actorRoles: ['HR_ADMIN'] as Role[],
 	ipAddress: 'test'
 }
 

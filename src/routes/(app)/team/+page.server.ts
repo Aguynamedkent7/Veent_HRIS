@@ -1,4 +1,4 @@
-import { requireAnyMinRole, canAny } from '$lib/server/rbac'
+import { requireAnyCapability, canAny } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { isFoodServiceOrg } from '$lib/orgs'
 import { autoDeriveFromPunches } from '$lib/server/services/attendance'
@@ -7,7 +7,7 @@ import type { PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals, url, getClientAddress }) => {
 	const user = locals.user!
-	requireAnyMinRole(user.roles, 'MANAGER')
+	requireAnyCapability(user.roles, 'VIEW_TEAM')
 
 	const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
 	const isAdmin = canAny(user.roles, 'ADMINISTER_HR_RECORDS')
@@ -52,7 +52,7 @@ export const load: PageServerLoad = async ({ locals, url, getClientAddress }) =>
 		{
 			organizationId: user.organizationId,
 			actorId: user.id,
-			actorRole: user.role,
+			actorRoles: user.roles,
 			ipAddress: getClientAddress()
 		}
 	)

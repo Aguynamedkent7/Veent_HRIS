@@ -56,7 +56,6 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 		if (!canAny(user.roles, 'VIEW_PAYROLL_REPORTS')) error(403, 'Insufficient permissions')
 		visiblePayIds = await listVisiblePayEmployeeIds({
 			id: user.id,
-			role: user.role,
 			roles: user.roles,
 			organizationId: user.organizationId
 		})

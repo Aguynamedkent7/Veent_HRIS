@@ -173,7 +173,7 @@
 							<td class="px-4 py-3 whitespace-nowrap">
 								<span class="font-medium">{log.actor.email}</span>
 								<span class="ml-1 rounded bg-muted px-1 py-0.5 text-xs text-muted-foreground"
-									>{log.actor.role}</span
+									>{log.actorRoles.join(', ')}</span
 								>
 							</td>
 							<td class="px-4 py-3 whitespace-nowrap">

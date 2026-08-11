@@ -13,11 +13,6 @@ import { canAny } from '$lib/server/rbac'
 import { computeLeaveTotalDays, assertLeaveBalance, assertLeaveEligibility } from './leave'
 import type { AuditContext } from '../types'
 
-// The filer's live role set — approval-stage authority is multi-role aware (#133/#134).
-function rolesOf(ctx: AuditContext) {
-	return ctx.actorRoles?.length ? ctx.actorRoles : [ctx.actorRole]
-}
-
 // Create a request and its resolved approval chain in one transaction. The chain
 // comes from DEFAULT_ROUTING; the supervisor stage is only included when the
 // employee actually has a reportsTo. currentStage starts at 0 (first pending step).
@@ -56,7 +51,7 @@ export async function createRequest(
 	// Maker-checker chain (#134): when the filer is branch HR/Manager (MANAGE_HR) they
 	// are the maker, so MAKE completes at file-time and the chain opens at VERIFY. An
 	// employee filing their own request leaves MAKE for branch HR to act on first.
-	const filerIsMaker = canAny(rolesOf(ctx), 'MANAGE_HR')
+	const filerIsMaker = canAny(ctx.actorRoles, 'MANAGE_HR')
 	const { steps, currentStage } = buildApprovalChain({
 		attempt: 1,
 		makerUserId: filerIsMaker ? ctx.actorId : null,
@@ -222,7 +217,7 @@ export async function deleteRequest(id: string, organizationId: string, ctx: Aud
 	})
 	if (!req) error(404, 'Request not found')
 
-	const isPrivileged = canAny(rolesOf(ctx), 'ADMINISTER_HR_RECORDS')
+	const isPrivileged = canAny(ctx.actorRoles, 'ADMINISTER_HR_RECORDS')
 	if (!isPrivileged) {
 		const me = await db.employee.findUnique({
 			where: { userId: ctx.actorId },

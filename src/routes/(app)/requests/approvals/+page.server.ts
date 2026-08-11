@@ -10,7 +10,7 @@ import type { Actions, PageServerLoad } from './$types'
 // the actual per-stage authority (make/verify/approve) resolved in the service (#134).
 export const load: PageServerLoad = async ({ locals, url }) => {
 	const user = locals.user!
-	const roles = user.roles ?? [user.role]
+	const roles = user.roles
 	if (!canAny(roles, 'APPROVE_REQUESTS')) redirect(303, '/requests')
 
 	const myEmployee = await db.employee.findUnique({
@@ -92,7 +92,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 export const actions: Actions = {
 	decideRequest: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		const roles = user.roles ?? [user.role]
+		const roles = user.roles
 		if (!canAny(roles, 'APPROVE_REQUESTS')) return fail(403, { error: 'Insufficient permissions' })
 
 		const data = await request.formData()
@@ -120,7 +120,6 @@ export const actions: Actions = {
 				{
 					organizationId: user.organizationId,
 					actorId: user.id,
-					actorRole: user.role,
 					actorRoles: roles,
 					ipAddress: getClientAddress()
 				},
@@ -137,7 +136,7 @@ export const actions: Actions = {
 	// decide (e.g. no longer at their stage) throw and are counted as skipped, not aborting the batch.
 	rejectMany: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		const roles = user.roles ?? [user.role]
+		const roles = user.roles
 		if (!canAny(roles, 'APPROVE_REQUESTS')) return fail(403, { error: 'Insufficient permissions' })
 
 		const data = await request.formData()
@@ -156,7 +155,6 @@ export const actions: Actions = {
 		const ctx = {
 			organizationId: user.organizationId,
 			actorId: user.id,
-			actorRole: user.role,
 			actorRoles: roles,
 			ipAddress: getClientAddress()
 		}

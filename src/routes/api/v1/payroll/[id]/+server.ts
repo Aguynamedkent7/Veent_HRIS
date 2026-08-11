@@ -20,7 +20,6 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 	// whole organization's pay. Guarding only the page would leave this endpoint as the way around.
 	const visibleEmployeeIds = await listVisiblePayEmployeeIds({
 		id: locals.user.id,
-		role: locals.user.role,
 		roles: locals.user.roles,
 		organizationId: locals.user.organizationId
 	})
@@ -42,17 +41,15 @@ export const POST: RequestHandler = async ({ locals, params, url }) => {
 		// undecided, so the audit trail showed an approved run nobody had approved. Delegating
 		// means the stage capability, the separation-of-duties check and the step records come
 		// from one implementation shared with the UI action.
-		const roles = user.roles?.length ? user.roles : [user.role]
+		const roles = user.roles
 		if (!canAny(roles, 'APPROVE_REQUESTS')) return apiError(403, 'Insufficient permissions')
 
 		try {
 			const result = await decidePayrollRun(params.id, user.organizationId, true, undefined, {
 				organizationId: user.organizationId,
 				actorId: user.id,
-				actorRole: user.role,
-				// Load-bearing, unlike the fail-closed omissions #247 tracks: `decidePayrollRun`
-				// resolves stage authority from the full role set, so dropping it would deny a
-				// [MANAGER, APPROVER] user the stage they legitimately hold. Pass the same
+				// `decidePayrollRun` resolves stage authority from the full role set, so a
+				// [MANAGER, APPROVER] user gets the stage they legitimately hold. Pass the same
 				// normalized `roles` the gate above used, so the two cannot diverge.
 				actorRoles: roles
 			})
@@ -76,7 +73,6 @@ export const POST: RequestHandler = async ({ locals, params, url }) => {
 		const run = await voidRun(params.id, user.organizationId, {
 			organizationId: user.organizationId,
 			actorId: user.id,
-			actorRole: user.role,
 			actorRoles: user.roles
 		})
 		return json({ data: run })

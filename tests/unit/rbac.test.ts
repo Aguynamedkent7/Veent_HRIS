@@ -5,9 +5,6 @@ import {
 	HIRE_ROLES,
 	can,
 	canAny,
-	hasMinRole,
-	hasAnyMinRole,
-	ROLE_HIERARCHY,
 	type Capability
 } from '../../src/lib/rbac'
 // Value import, not type-only: the generated enum object is the drift tripwire below.
@@ -159,35 +156,6 @@ describe('capability table', () => {
 	})
 })
 
-describe('hasMinRole', () => {
-	it('ranks the HR ladder', () => {
-		expect(hasMinRole('SUPER_ADMIN', 'HR_ADMIN')).toBe(true)
-		expect(hasMinRole('HR_ADMIN', 'HR_ADMIN')).toBe(true)
-		// Manager was promoted to on-branch HR (#133) — it now clears the HR_ADMIN floor.
-		expect(hasMinRole('MANAGER', 'HR_ADMIN')).toBe(true)
-		expect(hasMinRole('EMPLOYEE', 'MANAGER')).toBe(false)
-	})
-
-	// CEO mirrors HR_ADMIN on the ladder: it clears HR_ADMIN floors but NOT the
-	// SUPER_ADMIN floor (e.g. payroll approval stays out of reach), so its extra
-	// authority comes only from the capability table.
-	it('ranks CEO level with HR_ADMIN, below SUPER_ADMIN', () => {
-		expect(ROLE_HIERARCHY.CEO).toBe(ROLE_HIERARCHY.HR_ADMIN)
-		expect(hasMinRole('CEO', 'HR_ADMIN')).toBe(true)
-		expect(hasMinRole('CEO', 'MANAGER')).toBe(true)
-		expect(hasMinRole('CEO', 'SUPER_ADMIN')).toBe(false)
-	})
-
-	// Off-ladder roles rank 0, so a minimum-role check must never let them through —
-	// this is why payroll access goes via capabilities instead.
-	it('does not let off-ladder roles clear a ladder floor', () => {
-		for (const role of ['FINANCE', 'PAYROLL_OFFICER', 'VERIFIER', 'APPROVER'] as Role[]) {
-			expect(ROLE_HIERARCHY[role]).toBe(0)
-			expect(hasMinRole(role, 'MANAGER')).toBe(false)
-		}
-	})
-})
-
 // Manager is on-branch HR for JoJo/Sweetleaf (#133): every capability HR_ADMIN holds,
 // but NOT the CEO/Super-Admin exclusives.
 describe('MANAGER promotion', () => {
@@ -223,13 +191,12 @@ describe('sign-off roles', () => {
 })
 
 // Multi-role (#133): capability checks match ANY role the user carries.
-describe('multi-role (canAny / hasAnyMinRole)', () => {
+describe('multi-role (canAny)', () => {
 	it('gives a [MANAGER, VERIFIER] user HR access AND verifier sign-off', () => {
 		const roles: Role[] = ['MANAGER', 'VERIFIER']
 		// HR-level access from the MANAGER half...
 		expect(canAny(roles, 'MANAGE_HR')).toBe(true)
 		expect(canAny(roles, 'VIEW_PAYROLL_REPORTS')).toBe(true)
-		expect(hasAnyMinRole(roles, 'HR_ADMIN')).toBe(true)
 		// ...verifier sign-off from the VERIFIER half.
 		expect(canAny(roles, 'VERIFY_REQUESTS')).toBe(true)
 		// but never a capability neither role holds.
@@ -239,7 +206,6 @@ describe('multi-role (canAny / hasAnyMinRole)', () => {
 
 	it('a lone VERIFIER gets no HR access', () => {
 		expect(canAny(['VERIFIER'], 'MANAGE_HR')).toBe(false)
-		expect(hasAnyMinRole(['VERIFIER'], 'MANAGER')).toBe(false)
 		expect(canAny(['VERIFIER'], 'VERIFY_REQUESTS')).toBe(true)
 	})
 
@@ -253,12 +219,6 @@ describe('multi-role (canAny / hasAnyMinRole)', () => {
 			for (const capability of capabilities) {
 				expect(canAny([role], capability), `canAny([${role}], ${capability})`).toBe(
 					can(role, capability)
-				)
-			}
-			// Every role is also a valid floor, so the floor domain is ALL_ROLES too.
-			for (const floor of ALL_ROLES) {
-				expect(hasAnyMinRole([role], floor), `hasAnyMinRole([${role}], ${floor})`).toBe(
-					hasMinRole(role, floor)
 				)
 			}
 		}

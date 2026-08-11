@@ -4,7 +4,7 @@ import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import { isValidStandardPeriod } from '$lib/utils/pay-periods'
 import { buildApprovalChain } from './requests/routing'
-import { canActOnStage, nextState, liveChain, rolesOf } from './approvals'
+import { canActOnStage, nextState, liveChain } from './approvals'
 import type { AuditContext } from './types'
 import type { Prisma } from '@prisma/client'
 
@@ -121,7 +121,7 @@ export async function assertCanModifyTimesheet(ctx: AuditContext, ts: { employee
 	})
 	const isOwner = actorEmployee?.id === ts.employeeId
 	if (isOwner) return { isOwner: true }
-	if (canAny(rolesOf(ctx), 'VIEW_TEAM')) return { isOwner: false }
+	if (canAny(ctx.actorRoles, 'VIEW_TEAM')) return { isOwner: false }
 	error(403, 'You can only modify your own timesheet')
 }
 
@@ -359,7 +359,7 @@ export async function reviewTimesheet(
 	}
 
 	const step = live.currentStep
-	if (!canActOnStage(step.stage, rolesOf(ctx), actorEmployee?.id ?? null, ts.employeeId)) {
+	if (!canActOnStage(step.stage, ctx.actorRoles, actorEmployee?.id ?? null, ts.employeeId)) {
 		error(403, 'You cannot act on this stage')
 	}
 	const decision = approved ? 'APPROVED' : 'RETURNED'

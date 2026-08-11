@@ -380,10 +380,9 @@ model User {
   organizationId String
   email          String    @unique
   passwordHash   String
-  // `role` is the primary label; `roles` is the full set for multi-role users (#133),
-  // e.g. [MANAGER, VERIFIER]. Capability checks match ANY role in the set. Backfilled
-  // to [role] for every existing user so single-role behaviour is unchanged.
-  role           Role      @default(EMPLOYEE)
+  // `roles` is the user's whole role set, e.g. [MANAGER, VERIFIER]. Capability checks
+  // match ANY role in it. There is no primary role — the scalar `role` was dropped in
+  // #282, and every guard resolves authority from the set alone.
   roles          Role[]    @default([])
   isActive       Boolean   @default(true)
   lastLoginAt    DateTime?
@@ -1358,7 +1357,10 @@ model AuditLog {
   id             String      @id @default(cuid())
   organizationId String
   actorId        String
-  actorRole      Role
+  // `actorRoles` records the actor's whole role set as held at the time of the action —
+  // unlike the `actor` relation, which always shows today's roles. It replaced the scalar
+  // `actorRole` in #282.
+  actorRoles     Role[]      @default([])
   action         AuditAction
   entityType     String
   entityId       String
@@ -1501,7 +1503,7 @@ model Goal {
 // ─── Org Structure (Positions) ────────────────────────────────────────────────
 // Lightweight job/role catalog backing org charts. Org hierarchy otherwise
 // reuses Department.parentDepartmentId and Employee.reportsToId; role management
-// edits User.role (audited) — no dedicated RBAC table.
+// edits User.roles (audited) — no dedicated RBAC table.
 
 model Position {
   id             String   @id @default(cuid())

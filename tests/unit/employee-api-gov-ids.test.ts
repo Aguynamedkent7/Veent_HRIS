@@ -44,7 +44,6 @@ const { PATCH } = await import('../../src/routes/api/v1/employees/[id]/+server')
 const HR_USER = {
 	id: 'u1',
 	organizationId: 'org1',
-	role: 'HR_ADMIN' as Role,
 	roles: ['HR_ADMIN'] as Role[]
 }
 

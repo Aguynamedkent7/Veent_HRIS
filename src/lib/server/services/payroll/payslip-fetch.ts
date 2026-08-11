@@ -17,7 +17,6 @@ import {
 
 export interface FetchPayslipContext {
 	userId: string
-	role: Role
 	roles: Role[]
 	organizationId: string
 }
@@ -32,12 +31,12 @@ export interface FetchPayslipContext {
  * Owner → org-wide payroll roles → a manager's own reporting line → denied.
  */
 export async function canReadPayslip(
-	user: { id: string; role: Role; roles?: Role[]; organizationId: string },
+	user: { id: string; roles: Role[]; organizationId: string },
 	target: { id: string; userId: string | null }
 ): Promise<boolean> {
 	if (target.userId === user.id) return true
 
-	const roles = user.roles?.length ? user.roles : [user.role]
+	const roles = user.roles
 	if (canAny(roles, 'VIEW_PAY_ORGWIDE')) return true
 
 	// Load-bearing, not redundant: without it any EMPLOYEE who happens to supervise someone would
@@ -109,7 +108,7 @@ export async function fetchPayslipDocument(
 	// comment claiming "MANAGER stays blocked from peers' compensation" — the opposite of what it
 	// did, since #133 put MANAGER in VIEW_PAYROLL_REPORTS.
 	const allowed = await canReadPayslip(
-		{ id: ctx.userId, role: ctx.role, roles: ctx.roles, organizationId: ctx.organizationId },
+		{ id: ctx.userId, roles: ctx.roles, organizationId: ctx.organizationId },
 		{ id: entry.employeeId, userId: entry.employee.userId }
 	)
 	if (!allowed) return { ok: false, status: 403, message: 'Access denied' }

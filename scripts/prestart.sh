@@ -13,5 +13,12 @@ set -e
 # start after the first.
 pnpm exec tsx scripts/migrate-employment-type-regular.ts
 
+# Collapse User.role into User.roles and backfill AuditLog.actorRoles before the push (#282).
+# The backfill has to lead: `db push` adds a column and drops one in a single pass, so it can
+# never copy the old column's data into the new one — and once the scalars are dropped the
+# history is gone. Deploy is fully automatic (deploy.yml), so there is no window to run this by
+# hand. Idempotent: a no-op on a fresh database and on every start after the first.
+pnpm exec tsx scripts/migrate-user-role-to-roles.ts
+
 # Swap for `prisma migrate deploy` once you adopt real Prisma migrations.
 pnpm exec prisma db push --skip-generate

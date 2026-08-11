@@ -27,7 +27,6 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	// balances by passing their id. `null` = unrestricted.
 	const visibleEmployeeIds = await listVisiblePayEmployeeIds({
 		id: locals.user.id,
-		role: locals.user.role,
 		roles: locals.user.roles,
 		organizationId: locals.user.organizationId
 	})
@@ -55,7 +54,6 @@ export const POST: RequestHandler = async ({ locals, request, getClientAddress }
 	const ctx = {
 		organizationId: locals.user.organizationId,
 		actorId: locals.user.id,
-		actorRole: locals.user.role,
 		actorRoles: locals.user.roles,
 		ipAddress: getClientAddress()
 	}

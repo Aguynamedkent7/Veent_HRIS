@@ -342,7 +342,7 @@ export async function scheduleInterview(
 				where: {
 					organizationId,
 					isActive: true,
-					OR: [{ role: 'HR_ADMIN' }, { roles: { has: 'HR_ADMIN' } }]
+					roles: { has: 'HR_ADMIN' }
 				},
 				select: { email: true }
 			})

@@ -82,8 +82,7 @@ async function assertMayDecide(
 
 	// 3. Holds the capability the proposal's shape demands.
 	const isSelfAction = target?.userId === pending.initiatorId
-	const roles = ctx.actorRoles?.length ? ctx.actorRoles : [ctx.actorRole]
-	if (!canAny(roles, confirmerCapabilityFor(isSelfAction))) {
+	if (!canAny(ctx.actorRoles, confirmerCapabilityFor(isSelfAction))) {
 		error(403, 'You are not authorized to confirm this proposal.')
 	}
 }
@@ -114,14 +113,10 @@ async function eligibleConfirmerIds(
 		where: {
 			organizationId,
 			isActive: true,
-			// Mirrors the multi-role fallback `assertMayDecide` applies (#133): the full `roles` set
-			// when it has anything in it, the primary `role` only when it is empty. Matching on `role`
-			// alone would miss a [MANAGER, HR_ADMIN] user — who CAN confirm — and so could 409 a
+			// The same `roles` set `assertMayDecide` reads (#133). Matching a single primary role
+			// would miss a [MANAGER, HR_ADMIN] user — who CAN confirm — and so could 409 a
 			// proposal as unconfirmable when a qualified confirmer exists.
-			OR: [
-				{ roles: { hasSome: [...roles] } },
-				{ roles: { isEmpty: true }, role: { in: [...roles] } }
-			],
+			roles: { hasSome: [...roles] },
 			id: { not: initiatorId }
 		},
 		select: { id: true }

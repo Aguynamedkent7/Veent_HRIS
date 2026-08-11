@@ -9,35 +9,6 @@ import type { Role } from '@prisma/client'
  * `require*` guards. Deciding here and enforcing there keeps one table authoritative.
  */
 
-// The hierarchy only ranks the HR ladder (Employee → Manager/HR → Super Admin).
-// FINANCE, PAYROLL_OFFICER, VERIFIER and APPROVER sit off the ladder — they hold no
-// HR/manager authority, so they rank at 0 here and gain their access via the
-// capability table below instead of via minimum-role checks.
-export const ROLE_HIERARCHY: Record<Role, number> = {
-	EMPLOYEE: 0,
-	FINANCE: 0,
-	PAYROLL_OFFICER: 0,
-	VERIFIER: 0,
-	APPROVER: 0,
-	// MANAGER is on-branch HR for JoJo/Sweetleaf (#133), so it ranks level with HR_ADMIN
-	// and clears every `requireMinRole('HR_ADMIN')` gate. CEO likewise mirrors HR_ADMIN.
-	// None of the three clear the SUPER_ADMIN floor (e.g. payroll approval); the extra
-	// authority CEO/HR_ADMIN hold over MANAGER lives in the capability table, not rank.
-	MANAGER: 2,
-	HR_ADMIN: 2,
-	CEO: 2,
-	SUPER_ADMIN: 3
-}
-
-export function hasMinRole(userRole: Role, minimumRole: Role): boolean {
-	return ROLE_HIERARCHY[userRole] >= ROLE_HIERARCHY[minimumRole]
-}
-
-/** Multi-role variant (#133): true if ANY of the user's roles clears the floor. */
-export function hasAnyMinRole(userRoles: Role[], minimumRole: Role): boolean {
-	return userRoles.some((r) => hasMinRole(r, minimumRole))
-}
-
 /**
  * Capability → the roles that hold it.
  *

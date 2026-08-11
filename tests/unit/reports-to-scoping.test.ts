@@ -50,7 +50,7 @@ const ORG = 'org1'
 const CTX = {
 	organizationId: ORG,
 	actorId: 'user1',
-	actorRole: 'HR_ADMIN' as Role,
+	actorRoles: ['HR_ADMIN'] as Role[],
 	ipAddress: 'test'
 }
 
@@ -82,7 +82,6 @@ const EMP = {
 const HR_USER = {
 	id: 'u1',
 	organizationId: ORG,
-	role: 'HR_ADMIN' as Role,
 	roles: ['HR_ADMIN'] as Role[]
 }
 

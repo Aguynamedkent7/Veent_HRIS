@@ -158,7 +158,7 @@ const { setStatutoryAllocation } = await import('$lib/server/services/payroll/em
 const ctx = {
 	organizationId: 'org1',
 	actorId: 'user1',
-	actorRole: 'HR_ADMIN' as Role,
+	actorRoles: ['HR_ADMIN'] as Role[],
 	ipAddress: 'test'
 }
 

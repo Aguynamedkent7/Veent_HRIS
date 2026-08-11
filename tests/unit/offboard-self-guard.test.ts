@@ -28,7 +28,7 @@ const { offboardEmployee } = await import('$lib/server/services/employees')
 const CTX: AuditContext = {
 	organizationId: 'org1',
 	actorId: 'user-self',
-	actorRole: 'HR_ADMIN',
+	actorRoles: ['HR_ADMIN'],
 	ipAddress: 'test'
 }
 const endDate = new Date('2026-08-01')

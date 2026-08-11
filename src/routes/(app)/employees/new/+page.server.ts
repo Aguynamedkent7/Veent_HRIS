@@ -150,7 +150,7 @@ export const actions: Actions = {
 				{
 					organizationId: user.organizationId,
 					actorId: user.id,
-					actorRole: user.role,
+					actorRoles: user.roles,
 					ipAddress: getClientAddress()
 				}
 			)

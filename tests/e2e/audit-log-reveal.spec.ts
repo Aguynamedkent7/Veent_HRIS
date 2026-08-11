@@ -28,7 +28,7 @@ test.beforeAll(async () => {
 	try {
 		const actor = await db.user.findFirstOrThrow({
 			where: { email: 'admin@veent.ph' },
-			select: { id: true, role: true, organizationId: true }
+			select: { id: true, roles: true, organizationId: true }
 		})
 		const employee = await db.employee.findFirstOrThrow({
 			where: { user: { email: 'employee@veent.ph' } },
@@ -38,7 +38,7 @@ test.beforeAll(async () => {
 			data: {
 				organizationId: actor.organizationId,
 				actorId: actor.id,
-				actorRole: actor.role,
+				actorRoles: actor.roles,
 				action: 'UPDATE',
 				entityType: 'Employee',
 				entityId: employee.id,

@@ -50,7 +50,6 @@ export const load: PageServerLoad = async ({ locals }) => {
 		// always agree. A payroll run pending sign-off now shows here (previously missing).
 		countPendingApprovals({
 			id: user.id,
-			role: user.role,
 			roles: user.roles,
 			organizationId: orgId
 		}),
@@ -104,7 +103,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	// Job postings awaiting this user's approval (#195) — the departments they're the
 	// approver for, plus HR-fallback postings. Needs the viewer's employee id.
-	const roles = user.roles?.length ? user.roles : [user.role]
+	const roles = user.roles
 	const myEmployee = await db.employee.findUnique({
 		where: { userId: user.id },
 		select: { id: true }
@@ -159,7 +158,7 @@ export const actions: Actions = {
 		await createAnnouncement(user.organizationId, parsed.data, {
 			organizationId: user.organizationId,
 			actorId: user.id,
-			actorRole: user.role,
+			actorRoles: user.roles,
 			ipAddress: getClientAddress()
 		})
 		return { posted: true }
@@ -168,7 +167,7 @@ export const actions: Actions = {
 	// Approve or send back a job posting from the approver's dashboard card (#195).
 	decidePosting: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		const roles = user.roles?.length ? user.roles : [user.role]
+		const roles = user.roles
 		const data = await request.formData()
 		const id = data.get('id') as string
 		const approve = data.get('action') === 'approve'
@@ -188,7 +187,7 @@ export const actions: Actions = {
 				{
 					organizationId: user.organizationId,
 					actorId: user.id,
-					actorRole: user.role,
+					actorRoles: user.roles,
 					ipAddress: getClientAddress()
 				}
 			)
@@ -215,7 +214,7 @@ export const actions: Actions = {
 				{
 					organizationId: user.organizationId,
 					actorId: user.id,
-					actorRole: user.role,
+					actorRoles: user.roles,
 					ipAddress: getClientAddress()
 				}
 			)

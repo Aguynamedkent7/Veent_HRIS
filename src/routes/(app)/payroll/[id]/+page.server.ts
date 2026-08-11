@@ -21,19 +21,14 @@ function ctxOf(locals: App.Locals, ip: string) {
 	return {
 		organizationId: user.organizationId,
 		actorId: user.id,
-		actorRole: user.role,
 		actorRoles: user.roles,
 		ipAddress: ip
 	}
 }
 
-function rolesOf(user: App.Locals['user']) {
-	return user!.roles?.length ? user!.roles : [user!.role]
-}
-
 export const load: PageServerLoad = async ({ locals, params }) => {
 	const user = locals.user!
-	const roles = rolesOf(user)
+	const roles = user.roles
 	// Payroll managers run/override; the sign-off roles (Verifier/Approver) need to see
 	// the run to check its numbers and act on their stage (#134). Everyone else is out.
 	const canManagePayroll = canAny(roles, 'MANAGE_PAYROLL')
@@ -45,7 +40,6 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	// here, the same leak the payslip doors were narrowed to close. `null` = unrestricted.
 	const visibleEmployeeIds = await listVisiblePayEmployeeIds({
 		id: user.id,
-		role: user.role,
 		roles,
 		organizationId: user.organizationId
 	})

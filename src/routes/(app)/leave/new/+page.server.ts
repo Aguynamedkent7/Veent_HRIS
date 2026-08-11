@@ -71,7 +71,6 @@ export const actions: Actions = {
 			await createRequest(employee.id, user.organizationId, parsed.data, {
 				organizationId: user.organizationId,
 				actorId: user.id,
-				actorRole: user.role,
 				actorRoles: user.roles,
 				ipAddress: getClientAddress()
 			})

@@ -1,11 +1,11 @@
 import { json } from '@sveltejs/kit'
-import { requireAnyMinRole } from '$lib/server/rbac'
+import { requireAnyCapability } from '$lib/server/rbac'
 import { reviewTimesheet } from '$lib/server/services/timesheets'
 import { apiError } from '$lib/server/api-error'
 import type { RequestHandler } from './$types'
 
 // PATCH: body = { action: 'approve' | 'reject', rejectionReason?: string }
-// requireAnyMinRole MANAGER
+// requireAnyCapability VIEW_TEAM
 // call reviewTimesheet
 // return json(result)
 export const PATCH: RequestHandler = async ({ params, request, locals, getClientAddress }) => {
@@ -14,7 +14,7 @@ export const PATCH: RequestHandler = async ({ params, request, locals, getClient
 	const user = locals.user
 
 	try {
-		requireAnyMinRole(user.roles, 'MANAGER')
+		requireAnyCapability(user.roles, 'VIEW_TEAM')
 	} catch {
 		return apiError(403, 'Insufficient permissions')
 	}
@@ -47,11 +47,8 @@ export const PATCH: RequestHandler = async ({ params, request, locals, getClient
 			{
 				organizationId: user.organizationId,
 				actorId: user.id,
-				actorRole: user.role,
-				// #247: `reviewTimesheet` resolves stage authority through `rolesOf`, so a
-				// [MANAGER, VERIFIER] user was denied the VERIFY stage they hold. The page twin
-				// (`(app)/requests/timesheets/+page.server.ts:66`) already passed this — guarding one
-				// door and leaving its twin open is what this issue keeps finding.
+				// #247: `reviewTimesheet` resolves stage authority from the full set, so a
+				// [MANAGER, VERIFIER] user gets the VERIFY stage they hold.
 				actorRoles: user.roles,
 				ipAddress: getClientAddress()
 			}

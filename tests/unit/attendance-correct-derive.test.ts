@@ -22,7 +22,7 @@ vi.mock('$lib/server/audit', () => ({ writeAuditLog: vi.fn().mockResolvedValue(u
 
 const { correctDay } = await import('$lib/server/services/attendance')
 
-const CTX: AuditContext = { organizationId: 'org1', actorId: 'u1', actorRole: 'HR_ADMIN' }
+const CTX: AuditContext = { organizationId: 'org1', actorId: 'u1', actorRoles: ['HR_ADMIN'] }
 
 // Midnight-UTC key of a PHT day (that's how AttendanceDay.date is stored).
 const DATE = new Date('2026-07-20')

@@ -14,7 +14,6 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 		listUnread(user.id),
 		countPendingApprovals({
 			id: user.id,
-			role: user.role,
 			roles: user.roles,
 			organizationId: user.organizationId
 		}),
@@ -39,7 +38,6 @@ export const load: LayoutServerLoad = async ({ locals }) => {
 		user: {
 			id: user.id,
 			email: user.email,
-			role: user.role,
 			roles: user.roles,
 			organizationId: user.organizationId
 		},

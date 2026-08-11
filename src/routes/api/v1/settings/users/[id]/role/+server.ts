@@ -26,9 +26,10 @@ export const PATCH: RequestHandler = async ({ locals, params, request, getClient
 	const updated = await setUserRole(params.id, user.organizationId, parsed.data.role, {
 		organizationId: user.organizationId,
 		actorId: user.id,
-		actorRole: user.role,
 		actorRoles: user.roles,
 		ipAddress: getClientAddress()
 	})
-	return json({ data: { id: updated.id, role: updated.role } })
+	// #282: the scalar `User.role` is gone, so the response carries the set. The request body
+	// stays single-valued — widening the picker is #283.
+	return json({ data: { id: updated.id, roles: updated.roles } })
 }

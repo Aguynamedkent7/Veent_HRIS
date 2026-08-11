@@ -117,7 +117,6 @@ export const actions: Actions = {
 		const ctx = {
 			organizationId: user.organizationId,
 			actorId: user.id,
-			actorRole: user.role,
 			actorRoles: user.roles,
 			ipAddress: getClientAddress()
 		}
@@ -162,7 +161,7 @@ export const actions: Actions = {
 			await cancelRequest(id, myEmployee.id, {
 				organizationId: user.organizationId,
 				actorId: user.id,
-				actorRole: user.role,
+				actorRoles: user.roles,
 				ipAddress: getClientAddress()
 			})
 		} catch (e: unknown) {
@@ -188,7 +187,7 @@ export const actions: Actions = {
 			await resubmitRequest(id, myEmployee.id, {
 				organizationId: user.organizationId,
 				actorId: user.id,
-				actorRole: user.role,
+				actorRoles: user.roles,
 				ipAddress: getClientAddress()
 			})
 		} catch (e: unknown) {
