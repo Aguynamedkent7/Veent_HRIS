@@ -50,7 +50,7 @@ const ORG = 'org-1'
 
 const revealEvent = (roles: Role[], employeeId: string) =>
 	({
-		locals: { user: { id: ACTOR, organizationId: ORG, role: roles[0], roles } },
+		locals: { user: { id: ACTOR, organizationId: ORG, roles } },
 		params: { id: employeeId },
 		getClientAddress: () => '::1'
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any

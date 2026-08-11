@@ -20,7 +20,7 @@ const { PATCH } = await import('../../src/routes/api/v1/leave/[id]/+server')
 
 const event = (roles: Role[], action: string) =>
 	({
-		locals: { user: { id: 'user-actor', organizationId: 'org1', role: roles[0], roles } },
+		locals: { user: { id: 'user-actor', organizationId: 'org1', roles } },
 		params: { id: 'req1' },
 		request: { json: async () => ({ action, note: 'x' }) },
 		getClientAddress: () => '127.0.0.1'

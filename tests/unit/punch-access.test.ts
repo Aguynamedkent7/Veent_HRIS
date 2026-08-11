@@ -40,7 +40,7 @@ const branchOf: Record<string, string | null> = { [CREW]: 'br1' }
 
 const event = (roles: Role[], employeeId: string) =>
 	({
-		locals: { user: { id: 'user-actor', organizationId: ORG, role: roles[0], roles } },
+		locals: { user: { id: 'user-actor', organizationId: ORG, roles } },
 		params: { id: employeeId },
 		url: { searchParams: new URLSearchParams() }
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any

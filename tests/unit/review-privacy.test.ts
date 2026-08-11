@@ -43,7 +43,7 @@ const REVIEWER = 'reviewer-emp'
 
 const event = (roles: Role[]) =>
 	({
-		locals: { user: { id: 'user-actor', organizationId: ORG, role: roles[0], roles } },
+		locals: { user: { id: 'user-actor', organizationId: ORG, roles } },
 		params: { id: 'review1' }
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	}) as any

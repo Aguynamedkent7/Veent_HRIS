@@ -92,7 +92,7 @@ const BARE_ENTRY = {
 
 const loadEvent = (roles: Role[]) =>
 	({
-		locals: { user: { id: ACTOR, organizationId: ORG_A, role: roles[0], roles } },
+		locals: { user: { id: ACTOR, organizationId: ORG_A, roles } },
 		url: new URL('http://localhost/reports/audit-log')
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	}) as any
@@ -105,7 +105,7 @@ const revealEvent = (roles: Role[], id: string | null = 'log1') => {
 	const body = new FormData()
 	if (id !== null) body.set('id', id)
 	return {
-		locals: { user: { id: ACTOR, organizationId: ORG_A, role: roles[0], roles } },
+		locals: { user: { id: ACTOR, organizationId: ORG_A, roles } },
 		request: Object.assign(new Request('http://localhost/reports/audit-log?/reveal'), {
 			formData: async () => body
 		}),

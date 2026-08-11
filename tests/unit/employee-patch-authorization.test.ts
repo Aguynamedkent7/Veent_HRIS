@@ -81,7 +81,7 @@ const EMP = {
 
 const patch = (body: unknown, roles: Role[] = ['HR_ADMIN'], actorUser = ACTOR_USER) =>
 	PATCH({
-		locals: { user: { id: actorUser, organizationId: ORG, role: roles[0], roles } },
+		locals: { user: { id: actorUser, organizationId: ORG, roles } },
 		params: { id: TARGET },
 		request: { json: async () => body }
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
