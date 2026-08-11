@@ -921,3 +921,48 @@ runtime with `Cannot read properties of undefined` after commit 9 — invisible 
   to the same `decide()` call and differ only by the capability gate. Pre-existing, unrelated to
   this issue, worth filing separately.
 - The role-assignment API stays single-valued (#283).
+
+---
+
+## Review record — CodeRabbit CLI, 2026-08-11
+
+Reviewed on PR #293 (`refactor/rbac-simplification-282` → `staging`) with
+`coderabbit review --agent --base staging`. 163 files is over the free-plan 150-file cap, so the
+review was split by directory: `src` 107 files / 0 findings, `tests` 45 / 2, `scripts` 8 / 1.
+**`prisma` (2 files) was never reviewed** — the free tier ran out first. That is the one scope with
+no third-party read, and it is also where this PR's only real bug lived (`seed-core.ts`, fixed in
+`2c2b9ab`). Worth a look by hand before any similar refactor.
+
+Nothing in the entire service and route layer drew a finding.
+
+### Applied — stale `role` in route-event fixtures (`b032012`)
+
+CodeRabbit flagged two (`review-privacy.test.ts:46`, `punch-access.test.ts:43`). Grepping the
+pattern found **eleven**: also `requests-read-scoping` (x2), `leave-override-scoping`,
+`employee-reveal-access`, `employee-patch-authorization`, `audit-log-reveal` (x2), and
+`payroll-read-scoping`. All removed.
+
+Its reasoning is the finding worth keeping: every one sits inside an `as any` cast, so a fixture
+supplying a field production no longer has can green-light a read that would 403 in prod, and the
+compiler cannot see it. Same blind spot as `proposal-queue.test.ts` breaking at runtime after
+commit 9, and the same class as the `seed-core.ts` bug. **Three separate manifestations of one gap
+in this PR alone.**
+
+Left alone: `role: 'EMPLOYEE'` in `employee-number.test.ts`, `reports-to-scoping.test.ts` and
+`admin.spec.ts` — that is `CreateEmployeeInput.role`, the single-valued hire form field, not the
+dropped column.
+
+### Declined — `scripts/seed-separation-demo.ts:37`
+
+Flagged as "the upsert's `update` branch clobbers `roles` on rerun". It did exactly that before
+this PR too (`update: { isActive: true, role: 'EMPLOYEE' }`), so the conversion is faithful and the
+behaviour is pre-existing. It is a demo seed for one dedicated account, `departing@veent.ph`, whose
+purpose is to be reset to a known state — the same line also forces `isActive: true`. Dropping
+`roles` from the `update` branch would make reruns less deterministic, not more.
+
+### Not proven by anything here
+
+**G13 — production migration against real audit-log volume.** The backfill was measured against
+1405 local rows. `prestart.sh` runs it automatically on deploy and it gates app startup. Batched at
+10k so it will not hold one long lock, but the first deploy after this merge will take as long as
+the production table needs.
