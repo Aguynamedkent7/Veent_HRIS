@@ -462,7 +462,7 @@ Final order: **schema → service → eviction → readers → UI → tests → 
      signed a deleted document — the same class of amnesia this whole issue closes. One key.
    - Update the function's doc comment: it soft-deletes, the row is kept forever, and the 409 on
      `verifiedAt` is unchanged and deliberate (SPEC Out-of-Scope 3).
-   - **Verify:** `pnpm check` (green), `pnpm test` (see §7 for the expected pre-existing breakage).
+   - **Verify:** `pnpm check` (green), `pnpm test` (see §Resume and Execution Handoff for the expected breakage).
 
 ### Section 3 — the ONE eviction helper (AC-3, AC-4; D-4, D-6, I-3, P-3)
 
@@ -598,8 +598,11 @@ Final order: **schema → service → eviction → readers → UI → tests → 
     this test stayed green. That is precisely the mutation class AC-2 exists to catch, landing on
     the reader that is watched least.
     Do **one** of the following, not neither:
-    - **(a) preferred** — use a local copy of step 20's `where`-honouring helper against `findMany` here (step 20's lives inline in a different test file; Test Infra note 1 forbids promoting it to a shared module until a third caller exists), so the
-      mutation flips this case exclude→include; or
+    - **(a) preferred** — a LOCAL copy of step 20's `where`-honouring helper against `findMany`
+      here. Step 20's lives inline in `approval-self-guard.test.ts`, a different file; duplication
+      at two callers is deliberate per Test Infra note 1, which promotes to a shared
+      `tests/unit/helpers/` module only at a third caller. The mutation flips this case
+      exclude→include; or
     - **(b)** capture the `findMany` args and assert
       `expect(args.include.documents).not.toHaveProperty('where')`, in the shape of
       `requests-documents.test.ts:71`.
@@ -705,10 +708,15 @@ pnpm db:push
 pnpm db:seed
 ```
 
-Then, through the UI as `employee@veent.ph`: file one OVERTIME request, and on
-`/requests/{id}` upload 4 documents, deleting 3 of them one at a time. That produces exactly the
-state both probes need — 3 tombstones, the FIFO cap fired once (so one tombstone has
-`storageKey = null` and 2 do not), and 1 live document.
+Then, as `employee@veent.ph`: file one OVERTIME request, and on `/requests/{id}` upload **5**
+documents, deleting **4** of them one at a time. That produces exactly the state both probes need —
+4 tombstones, the FIFO cap fired once (so one tombstone has `storageKey = null` and 3 do not), and
+1 live document.
+
+**Corrected at EXECUTE (was 4 uploads / 3 deletes).** `keepNewest = 3` keeps the newest three
+tombstones, so the cap first fires on the **4th** tombstone — three deletions evict nothing at all,
+and the probe would then run against a fixture with no evicted row, which is the one state it
+exists to cover. Verified live: deletions 1-3 evicted nothing, deletion 4 evicted the oldest.
 
 Confirm the fixture before probing:
 
@@ -717,7 +725,7 @@ docker exec veent-db-5434 psql -p 5434 -U veent -d veent_hris -c \
   'SELECT id, "fileName", "deletedAt" IS NOT NULL AS tombstoned, "storageKey" IS NULL AS evicted FROM request_documents ORDER BY "uploadedAt";'
 ```
 
-Expect 4 rows: 1 live+not-evicted, 1 tombstoned+evicted, 2 tombstoned+not-evicted.
+Expect 5 rows: 1 live+not-evicted, 1 tombstoned+evicted, 3 tombstoned+not-evicted.
 
 ### AC-7 probe — `sweep-orphan-uploads.ts`
 
@@ -740,6 +748,10 @@ Run against the **local dev database only**, never production.
 ```bash
 pnpm tsx scripts/prod-delete.ts employee <employeeId>          # dry run, no --execute
 ```
+
+The throwaway employee needs a `users` row so the fixture can be built over HTTP through
+`/api/v1/_dev/login-as`. `--execute` additionally requires `--confirm=<employeeNumber>
+--actor=<email>`, and neither script loads `.env.dev` itself — prefix both with `DATABASE_URL=...`.
 
 - **PASS (dry)**: prints a `request_documents: N` count that includes the tombstones, and does not
   throw.
