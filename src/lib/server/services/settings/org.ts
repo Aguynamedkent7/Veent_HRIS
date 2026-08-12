@@ -180,7 +180,7 @@ const IRREPLACEABLE_ROLES: Partial<Record<Role, string>> = {
 }
 
 // Call before any write that strips `target` of their role or deactivates them. Must run inside
-// the same transaction as that write (see setUserRole/setUserActive) — counting holders and then
+// the same transaction as that write (see setUserRoles/setUserActive) — counting holders and then
 // writing as two separate queries is a TOCTOU race between two concurrent admin requests.
 //
 // Holders are counted per organization the target is reachable from: their home org AND every org
@@ -238,10 +238,10 @@ async function assertNotLastOfRole(
 	}
 }
 
-export async function setUserRole(
+export async function setUserRoles(
 	userId: string,
 	organizationId: string,
-	newRole: Role,
+	newRoles: Role[],
 	ctx: AuditContext
 ) {
 	// GUARDRAIL: the caller must actually hold MANAGE_USER_ROLES. This writer had no capability
@@ -257,6 +257,16 @@ export async function setUserRole(
 	// it. Enforced here, both routes are covered once and any future caller is covered by default.
 	if (userId === ctx.actorId) error(403, 'You cannot change your own role.')
 
+	// GUARDRAIL (#283/D4): a role-less user can authenticate, holds no capability, and can never be
+	// repaired — assertNotLastOfRole can never be satisfied to give one back. The database default
+	// for this column is `[]` and there is no check constraint behind it (db push cannot express
+	// one), so this refusal and the request schemas are the whole enforcement.
+	//
+	// Dedupe is deliberate: the multi-select cannot post duplicates but the JSON API can, and a
+	// duplicated set would write a nonsense array and a misleading audit entry.
+	const roles = [...new Set(newRoles)]
+	if (roles.length === 0) error(400, 'A user must keep at least one role.')
+
 	// The target read, the last-holder count, and the write are wrapped in one serializable
 	// transaction so two concurrent admin requests can't both read "another holder exists" and
 	// both proceed — Serializable makes Prisma throw (P2034) on that conflict instead of letting
@@ -270,19 +280,17 @@ export async function setUserRole(
 			if (!existing) error(404, 'User not found')
 
 			// GUARDRAIL: don't strip the last active super admin — or, since #248, the last active
-			// CEO. Keyed on the role being LOST rather than the one being set, so re-saving a
-			// user's existing role is never blocked (the select is prefilled with it, so that Save
-			// is one click away) — which is exactly the case where the set already is `[newRole]`.
-			if (!existing.roles.includes(newRole) || existing.roles.length > 1) {
-				await assertNotLastOfRole(tx, existing, [newRole])
-			}
+			// CEO. Keyed on the roles LOST (see assertNotLastOfRole), so re-saving an unchanged set
+			// is never blocked and the caller needs no branch of its own: nothing lost means it
+			// returns before it queries anything.
+			await assertNotLastOfRole(tx, existing, roles)
 
 			// `roles` is the set every capability check reads (#282: the scalar `role` is gone).
-			// This screen sets one primary role, so the set is reset to match it rather than
-			// merged into; widening the picker to a set is #283.
+			// #283: this screen assigns the whole set, so the write replaces it wholesale — which
+			// is what the caller already means by sending a set.
 			const updated = await tx.user.update({
 				where: { id: userId },
-				data: { roles: [newRole] }
+				data: { roles }
 			})
 
 			return { existing, updated }
@@ -295,7 +303,11 @@ export async function setUserRole(
 		entityType: 'User',
 		entityId: userId,
 		oldValue: { roles: existing.roles },
-		newValue: { role: newRole }
+		// #283/Q4: both sides are now the `roles` set, so an entry can be read without knowing
+		// which side of the change it fell on. Historical entries keep the singular `role` key and
+		// are deliberately NOT backfilled — rewriting an audit trail to look consistent is worse
+		// than a trail that shows its own history.
+		newValue: { roles: updated.roles }
 	})
 
 	return updated
@@ -307,12 +319,12 @@ export async function setUserActive(
 	isActive: boolean,
 	ctx: AuditContext
 ) {
-	// GUARDRAIL: as with setUserRole — nobody flips their own account. Blocks both directions, as
+	// GUARDRAIL: as with setUserRoles — nobody flips their own account. Blocks both directions, as
 	// the route check it replaces did; self-reactivation is unreachable anyway, since an inactive
 	// user cannot hold a session to make the call.
 	if (userId === ctx.actorId) error(403, 'You cannot deactivate your own account.')
 
-	// See setUserRole: same atomicity reasoning — target read, holder count and write share one
+	// See setUserRoles: same atomicity reasoning — target read, holder count and write share one
 	// serializable transaction so the count can't go stale between two concurrent requests.
 	const { existing, updated } = await db.$transaction(
 		async (tx) => {

@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { ASSIGNABLE_ROLES } from '$lib/rbac'
 import { canAny, requireAnyCapability } from '$lib/server/rbac'
 import { failFromError } from '$lib/server/form-fail'
-import { listOrgUsers, setUserRole, setUserActive } from '$lib/server/services/settings/org'
+import { listOrgUsers, setUserRoles, setUserActive } from '$lib/server/services/settings/org'
 import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -53,7 +53,7 @@ export const actions: Actions = {
 		}
 
 		try {
-			await setUserRole(parsed.data.userId, user.organizationId, parsed.data.role, ctx)
+			await setUserRoles(parsed.data.userId, user.organizationId, [parsed.data.role], ctx)
 		} catch (err) {
 			// Surface the service's guardrails — last super admin / last CEO (409) and
 			// self-role-change (403) — as inline errors rather than error pages.

@@ -83,7 +83,7 @@ describe('authority is judged on the full role set (#279)', () => {
 				` * ROLE_HIERARCHY[opts.viewerRole] was the old masking gate`,
 				// Real near-misses in the tree today — none of these is an authority decision, and
 				// the patterns must leave all three alone.
-				`const updated = await setUserRole(params.id, user.organizationId, parsed.data.role, {`,
+				`const updated = await setUserRoles(params.id, user.organizationId, [parsed.data.role], {`,
 				`return step.stageKind === 'SUPERVISOR' ? 'Supervisor' : roleLabel(step.role ?? 'APPROVER')`,
 				`roles: [input.role]`
 			].filter(isOffender)

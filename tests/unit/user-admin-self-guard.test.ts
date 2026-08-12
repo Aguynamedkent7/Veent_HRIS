@@ -6,7 +6,7 @@ import type { AuditContext } from '$lib/server/services/types'
  * Separation of duties on a user's own role and account status.
  *
  * The rule already existed, but only as two copies in the routes — the roles form action and the v1
- * PATCH twin each tested `userId === user.id` and `setUserRole` / `setUserActive` did not. A third
+ * PATCH twin each tested `userId === user.id` and `setUserRoles` / `setUserActive` did not. A third
  * caller would have inherited neither copy. Moved into the writers; these pin it there so it cannot
  * drift back out, and cover the last-super-admin guardrail that sits beside it.
  *
@@ -37,7 +37,7 @@ const { dbMock, txMock } = vi.hoisted(() => {
 vi.mock('$lib/server/db', () => ({ db: dbMock }))
 vi.mock('$lib/server/audit', () => ({ writeAuditLog: vi.fn().mockResolvedValue(undefined) }))
 
-const { setUserRole, setUserActive } = await import('$lib/server/services/settings/org')
+const { setUserRoles, setUserActive } = await import('$lib/server/services/settings/org')
 
 const ACTOR = 'user-self'
 const CTX: AuditContext = {
@@ -62,13 +62,13 @@ beforeEach(() => {
 	txMock.userOrganization.findMany.mockResolvedValue([])
 })
 
-describe('setUserRole', () => {
+describe('setUserRoles', () => {
 	// #256: the writer had NO capability check — its only enforcement was the two routes, which
 	// makes MANAGE_USER_ROLES the one self-amplifying capability (it can grant itself) guarded
 	// solely at the route layer. Now checked here, on the full role set, above everything else.
 	it('refuses an actor who does not hold MANAGE_USER_ROLES', async () => {
 		await expect(
-			setUserRole('user-other', 'org1', 'MANAGER', { ...CTX, actorRoles: ['SUPER_ADMIN'] })
+			setUserRoles('user-other', 'org1', ['MANAGER'], { ...CTX, actorRoles: ['SUPER_ADMIN'] })
 		).rejects.toMatchObject({ status: 403 })
 		expect(dbMock.$transaction).not.toHaveBeenCalled()
 		expect(txMock.user.update).not.toHaveBeenCalled()
@@ -78,7 +78,7 @@ describe('setUserRole', () => {
 	// self-targeted call to distinguish "you may not" from anything about the target at all.
 	it('refuses an unauthorized actor without any lookup, even targeting themselves', async () => {
 		await expect(
-			setUserRole(ACTOR, 'org1', 'MANAGER', { ...CTX, actorRoles: ['EMPLOYEE'] })
+			setUserRoles(ACTOR, 'org1', ['MANAGER'], { ...CTX, actorRoles: ['EMPLOYEE'] })
 		).rejects.toMatchObject({ status: 403 })
 		expect(dbMock.$transaction).not.toHaveBeenCalled()
 		expect(txMock.user.findFirst).not.toHaveBeenCalled()
@@ -87,7 +87,7 @@ describe('setUserRole', () => {
 	// #256's fix: the authority is CEO, held as a secondary role.
 	it('admits an actor holding CEO through the role set (#256)', async () => {
 		await expect(
-			setUserRole('user-other', 'org1', 'MANAGER', {
+			setUserRoles('user-other', 'org1', ['MANAGER'], {
 				...CTX,
 				actorRoles: ['EMPLOYEE', 'CEO']
 			})
@@ -96,7 +96,7 @@ describe('setUserRole', () => {
 	})
 
 	it('refuses to change the actor’s own role', async () => {
-		await expect(setUserRole(ACTOR, 'org1', 'SUPER_ADMIN', CTX)).rejects.toMatchObject({
+		await expect(setUserRoles(ACTOR, 'org1', ['SUPER_ADMIN'], CTX)).rejects.toMatchObject({
 			status: 403,
 			body: { message: 'You cannot change your own role.' }
 		})
@@ -106,7 +106,7 @@ describe('setUserRole', () => {
 	// The self-check must not need a database round trip to refuse — it also means a self-call
 	// cannot be turned into an existence probe.
 	it('refuses before touching the database', async () => {
-		await setUserRole(ACTOR, 'org1', 'SUPER_ADMIN', CTX).catch(() => {})
+		await setUserRoles(ACTOR, 'org1', ['SUPER_ADMIN'], CTX).catch(() => {})
 		expect(dbMock.$transaction).not.toHaveBeenCalled()
 	})
 
@@ -115,12 +115,52 @@ describe('setUserRole', () => {
 	// writing to a column that no longer exists. The explicit not-toHaveProperty is the point of
 	// the test: toHaveBeenCalledWith already exact-matches, but the assertion states the claim.
 	it('changes somebody else’s role by writing only the role set (#255/#282)', async () => {
-		await expect(setUserRole('user-other', 'org1', 'MANAGER', CTX)).resolves.toBeDefined()
+		await expect(setUserRoles('user-other', 'org1', ['MANAGER'], CTX)).resolves.toBeDefined()
 		expect(txMock.user.update).toHaveBeenCalledWith({
 			where: { id: 'user-other' },
 			data: { roles: ['MANAGER'] }
 		})
 		expect(txMock.user.update.mock.calls[0][0].data).not.toHaveProperty('role')
+	})
+
+	// #283/AC-1: the whole point of the change. Before this, every writer produced a one-element
+	// array, so multi-role was dormant data — every capability check that reads the SET had nothing
+	// to read. Asserting the write args (not "it resolved") is what makes this bite: a service that
+	// silently kept `[roles[0]]` would still resolve.
+	it('assigns a multi-role set (#283/AC-1)', async () => {
+		txMock.user.update.mockResolvedValue({ id: 'user-other', roles: ['VERIFIER', 'APPROVER'] })
+
+		await expect(
+			setUserRoles('user-other', 'org1', ['VERIFIER', 'APPROVER'], CTX)
+		).resolves.toBeDefined()
+		expect(txMock.user.update).toHaveBeenCalledWith({
+			where: { id: 'user-other' },
+			data: { roles: ['VERIFIER', 'APPROVER'] }
+		})
+	})
+
+	// The multi-select cannot post duplicates; the JSON API can. A duplicated set would write a
+	// nonsense array and a misleading audit entry.
+	it('dedupes a repeated role before writing (#283)', async () => {
+		await setUserRoles('user-other', 'org1', ['MANAGER', 'MANAGER'], CTX)
+		expect(txMock.user.update).toHaveBeenCalledWith({
+			where: { id: 'user-other' },
+			data: { roles: ['MANAGER'] }
+		})
+	})
+
+	// #283/D4/AC-4a: a role-less user can still authenticate, holds no capability, and can never be
+	// repaired — assertNotLastOfRole can never be satisfied to hand one back. There is no database
+	// check constraint behind this (db push cannot express one), so this refusal is the enforcement.
+	// Asserting $transaction was never called is the real claim: refusing after the write would be
+	// no refusal at all.
+	it('refuses an empty role set (#283/AC-4a)', async () => {
+		await expect(setUserRoles('user-other', 'org1', [], CTX)).rejects.toMatchObject({
+			status: 400,
+			body: { message: 'A user must keep at least one role.' }
+		})
+		expect(dbMock.$transaction).not.toHaveBeenCalled()
+		expect(txMock.user.update).not.toHaveBeenCalled()
 	})
 
 	it('still blocks demoting the last active super admin', async () => {
@@ -132,7 +172,7 @@ describe('setUserRole', () => {
 		})
 		txMock.user.count.mockResolvedValue(0)
 
-		await expect(setUserRole('user-other', 'org1', 'HR_ADMIN', CTX)).rejects.toMatchObject({
+		await expect(setUserRoles('user-other', 'org1', ['HR_ADMIN'], CTX)).rejects.toMatchObject({
 			status: 409
 		})
 		expect(txMock.user.update).not.toHaveBeenCalled()
@@ -144,7 +184,7 @@ describe('setUserRole', () => {
 		'promotes a user to %s (#248)',
 		async (role) => {
 			txMock.user.update.mockResolvedValue({ id: 'user-other', roles: [role] })
-			await expect(setUserRole('user-other', 'org1', role, CTX)).resolves.toBeDefined()
+			await expect(setUserRoles('user-other', 'org1', [role], CTX)).resolves.toBeDefined()
 			expect(txMock.user.update).toHaveBeenCalledWith({
 				where: { id: 'user-other' },
 				data: { roles: [role] }
@@ -161,7 +201,7 @@ describe('setUserRole', () => {
 		})
 		txMock.user.count.mockResolvedValue(0)
 
-		await expect(setUserRole('user-other', 'org1', 'HR_ADMIN', CTX)).rejects.toMatchObject({
+		await expect(setUserRoles('user-other', 'org1', ['HR_ADMIN'], CTX)).rejects.toMatchObject({
 			status: 409,
 			body: { message: 'Cannot remove the last active CEO from the organization.' }
 		})
@@ -177,7 +217,7 @@ describe('setUserRole', () => {
 		})
 		txMock.user.count.mockResolvedValue(1)
 
-		await expect(setUserRole('user-other', 'org1', 'HR_ADMIN', CTX)).resolves.toBeDefined()
+		await expect(setUserRoles('user-other', 'org1', ['HR_ADMIN'], CTX)).resolves.toBeDefined()
 	})
 
 	// The seeded CEO belongs to all three tenants via userOrganization while User.organizationId
@@ -190,7 +230,7 @@ describe('setUserRole', () => {
 			isActive: true,
 			organizationId: 'org1'
 		})
-		await setUserRole('user-other', 'org1', 'HR_ADMIN', CTX)
+		await setUserRoles('user-other', 'org1', ['HR_ADMIN'], CTX)
 
 		// #282: the count is per-role over the set, not equality on a primary role. `has`, never
 		// `hasSome` — with one element they agree, but `hasSome` counts the wrong users the moment
@@ -222,14 +262,37 @@ describe('setUserRole', () => {
 				where.OR[0].organizationId === 'org1' ? 1 : 0
 		)
 
-		await expect(setUserRole('user-other', 'org1', 'HR_ADMIN', CTX)).rejects.toMatchObject({
+		await expect(setUserRoles('user-other', 'org1', ['HR_ADMIN'], CTX)).rejects.toMatchObject({
 			status: 409
 		})
 		expect(txMock.user.update).not.toHaveBeenCalled()
 	})
 
-	// The guard keys on the role being LOST, so re-saving a user's current role — one click, since
-	// the select is prefilled — is never mistaken for a demotion.
+	// #283/AC-6: a set can lose MORE THAN ONE irreplaceable role at once — impossible before, when
+	// the target always held exactly one. Every lost role must be checked, not just the first: here
+	// SUPER_ADMIN is safely replaceable and CEO is not, so a guard that stopped after the first
+	// iteration would let the org's last CEO go while reporting nothing.
+	it('checks every irreplaceable role a set loses, not just the first (#283/AC-6)', async () => {
+		txMock.user.findFirst.mockResolvedValue({
+			id: 'user-other',
+			roles: ['SUPER_ADMIN', 'CEO'],
+			isActive: true,
+			organizationId: 'org1'
+		})
+		txMock.user.count.mockImplementation(
+			async ({ where }: { where: { roles: { has: string } } }) =>
+				where.roles.has === 'SUPER_ADMIN' ? 1 : 0
+		)
+
+		await expect(setUserRoles('user-other', 'org1', ['HR_ADMIN'], CTX)).rejects.toMatchObject({
+			status: 409,
+			body: { message: 'Cannot remove the last active CEO from the organization.' }
+		})
+		expect(txMock.user.update).not.toHaveBeenCalled()
+	})
+
+	// The guard keys on the roles LOST, so re-saving a user's current set — one click, since the
+	// picker is prefilled — is never mistaken for a demotion.
 	it('does not block re-saving the last super admin’s existing role', async () => {
 		txMock.user.findFirst.mockResolvedValue({
 			id: 'user-other',
@@ -239,7 +302,7 @@ describe('setUserRole', () => {
 		})
 		txMock.user.count.mockResolvedValue(0)
 
-		await expect(setUserRole('user-other', 'org1', 'SUPER_ADMIN', CTX)).resolves.toBeDefined()
+		await expect(setUserRoles('user-other', 'org1', ['SUPER_ADMIN'], CTX)).resolves.toBeDefined()
 		expect(txMock.user.count).not.toHaveBeenCalled()
 	})
 
@@ -255,7 +318,7 @@ describe('setUserRole', () => {
 			organizationId: 'org1'
 		})
 
-		await setUserRole('user-other', 'org1', 'HR_ADMIN', CTX)
+		await setUserRoles('user-other', 'org1', ['HR_ADMIN'], CTX)
 
 		expect(dbMock.$transaction).toHaveBeenCalledWith(expect.any(Function), {
 			isolationLevel: Prisma.TransactionIsolationLevel.Serializable
@@ -273,7 +336,7 @@ describe('setUserActive', () => {
 			body: { message: 'You cannot deactivate your own account.' }
 		})
 		expect(txMock.user.update).not.toHaveBeenCalled()
-		// As with setUserRole: refused before any round trip, so it is no existence probe either.
+		// As with setUserRoles: refused before any round trip, so it is no existence probe either.
 		expect(dbMock.$transaction).not.toHaveBeenCalled()
 	})
 
