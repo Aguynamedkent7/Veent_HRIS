@@ -2,7 +2,7 @@ import { fail, isHttpError, redirect } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
 import { canAny } from '$lib/server/rbac'
 import { reviewTimesheet } from '$lib/server/services/timesheets'
-import { canActOnStage, liveChain } from '$lib/server/services/approvals'
+import { canActOnStage, decidedActorIds, liveChain } from '$lib/server/services/approvals'
 import type { Role } from '@prisma/client'
 import type { Actions, PageServerLoad, RequestEvent } from './$types'
 
@@ -47,7 +47,10 @@ export const load: PageServerLoad = async ({ locals }) => {
 			const live = liveChain(ts.approvalSteps)
 			// Legacy step-less timesheets keep the old manager-ladder direct review.
 			if (!live || !live.currentStep) return canAny(roles, 'VIEW_TEAM')
-			return canActOnStage(live.currentStep.stage, roles, myEmployee?.id ?? null, ts.employeeId)
+			return canActOnStage(live.currentStep.stage, roles, myEmployee?.id ?? null, ts.employeeId, {
+				actorId: user.id,
+				decidedActorIds: decidedActorIds(ts.approvalSteps, live.attempt)
+			})
 		})
 		.map(({ approvalSteps, ...ts }) => ({
 			...ts,

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { AuditContext } from '$lib/server/services/types'
+import type { ApprovalStage, Role } from '@prisma/client'
 
 /**
  * Separation of duties in the approval chain — the two enforcement points that had no test.
@@ -30,7 +31,8 @@ vi.mock('$lib/server/services/notifications', () => ({
 	notify: vi.fn().mockResolvedValue(undefined)
 }))
 
-const { decide, decidePayrollRun } = await import('$lib/server/services/approvals')
+const { decide, decidePayrollRun, canActOnStage, decidedActorIds } =
+	await import('$lib/server/services/approvals')
 
 const OWNER_EMP = 'emp-owner'
 const MAKER_USER = 'user-maker'
@@ -94,6 +96,75 @@ describe('decide — nobody decides their own request (#75)', () => {
 			decide('req1', 'APPROVED', undefined, ctxOf(), 'emp-someone-else')
 		).resolves.toBeDefined()
 		expect(dbMock.$transaction).toHaveBeenCalled()
+	})
+})
+
+// ─── #283/F1 — one actor may not decide two stages of the same attempt ──────────────────────
+//
+// Multi-role is what makes this reachable: a [VERIFIER, APPROVER] user holds both stages'
+// capabilities, so before commit 1 of #283 there was no way to produce the state and after it
+// there is. These are pure-function cases; the wiring that feeds `sod` is covered by the service
+// cases below and by approval-queues.test.ts.
+describe('canActOnStage — the same-attempt bar (#283/F1)', () => {
+	const TWO_HAT: Role[] = ['VERIFIER', 'APPROVER']
+	const barred = (ids: string[]) => ({ actorId: 'user-two-hat', decidedActorIds: ids })
+
+	// AC-9
+	it('bars an actor from a second stage of the same attempt', () => {
+		expect(canActOnStage('APPROVE', TWO_HAT, 'emp-a', 'emp-owner', barred(['user-two-hat']))).toBe(
+			false
+		)
+	})
+
+	// AC-11 — every stage pairing, not just the VERIFY→APPROVE one people picture.
+	it('covers MAKE+VERIFY, VERIFY+APPROVE and all three', () => {
+		const all: Role[] = ['HR_ADMIN', 'VERIFIER', 'APPROVER']
+		for (const stage of ['MAKE', 'VERIFY', 'APPROVE'] as ApprovalStage[]) {
+			expect(canActOnStage(stage, all, 'emp-a', 'emp-owner', barred(['user-two-hat']))).toBe(false)
+		}
+	})
+
+	// AC-10 — the negative control. A bar that excluded everyone would pass AC-9 too.
+	it('does not fire for an actor who decided nothing on this attempt', () => {
+		expect(
+			canActOnStage('APPROVE', TWO_HAT, 'emp-a', 'emp-owner', barred(['user-somebody-else']))
+		).toBe(true)
+	})
+
+	it('is disabled by a null actorId, so surfaces with no actor are unaffected', () => {
+		expect(
+			canActOnStage('APPROVE', TWO_HAT, 'emp-a', 'emp-owner', {
+				actorId: null,
+				decidedActorIds: ['user-two-hat']
+			})
+		).toBe(true)
+	})
+})
+
+// AC-12 — the auto-completed MAKE step. buildApprovalChain writes it already-decided in the
+// filer's name when the filer holds MANAGE_HR, so it carries both a decision and an actorId. If
+// decidedActorIds skipped it, an HR admin could file a request AND verify it — the single most
+// likely real-world instance of this hole, and the one a stage-scoped implementation would miss.
+describe('decidedActorIds (#283)', () => {
+	const steps = [
+		{ attempt: 1, decision: 'APPROVED' as const, actorId: 'user-hr' },
+		{ attempt: 1, decision: null, actorId: null },
+		{ attempt: 2, decision: 'APPROVED' as const, actorId: 'user-old' }
+	]
+
+	it('counts the auto-completed MAKE step as a decision by its actor', () => {
+		expect(decidedActorIds(steps, 1)).toEqual(['user-hr'])
+	})
+
+	// Q1: the bar is attempt-scoped. An earlier attempt's decider is not carried forward.
+	it('ignores decisions from a superseded attempt', () => {
+		expect(decidedActorIds(steps, 1)).not.toContain('user-old')
+		expect(decidedActorIds(steps, 2)).toEqual(['user-old'])
+	})
+
+	it('ignores undecided steps and steps with no actor', () => {
+		expect(decidedActorIds([{ attempt: 1, decision: null, actorId: 'user-x' }], 1)).toEqual([])
+		expect(decidedActorIds([{ attempt: 1, decision: 'APPROVED', actorId: null }], 1)).toEqual([])
 	})
 })
 
@@ -174,5 +245,40 @@ describe('decidePayrollRun — the preparer cannot sign off their own run (#174)
 				data: expect.objectContaining({ status: 'APPROVED', approvedById: 'user-ceo' })
 			})
 		)
+	})
+
+	// AC-27 / #283-F5 — the gap multi-role opens on the highest-value surface in the app. The
+	// VERIFY step of this fixture was signed by 'user-verifier'; a [VERIFIER, CEO] user is exactly
+	// that person wearing the approver hat afterwards. Before #283 this was allowed: the old guard
+	// compared against the MAKE actor only, so verify-then-approve by one person was invisible to it.
+	it('refuses a [VERIFIER, CEO] user approving the run they verified (#283/AC-27)', async () => {
+		await expect(
+			decidePayrollRun(
+				'run1',
+				'org1',
+				true,
+				undefined,
+				ctxOf({ actorId: 'user-verifier', actorRoles: ['VERIFIER', 'CEO'] })
+			)
+		).rejects.toMatchObject({ status: 403, body: { message: 'You cannot act on this stage' } })
+		expect(dbMock.payrollRun.update).not.toHaveBeenCalled()
+		expect(dbMock.$transaction).not.toHaveBeenCalled()
+	})
+
+	// The generic bar now subsumes the maker rule, so the maker block survives ONLY for its message
+	// and only because it sits above the generic check. Move it back below and the maker is told
+	// "you cannot act on this stage" instead of why — this pins the order, not just the refusal.
+	it('still tells the preparer specifically that they prepared it (#283/F5)', async () => {
+		await expect(
+			decidePayrollRun(
+				'run1',
+				'org1',
+				true,
+				undefined,
+				ctxOf({ actorId: MAKER_USER, actorRoles: ['VERIFIER', 'CEO'] })
+			)
+		).rejects.toMatchObject({
+			body: { message: 'You cannot sign off a payroll run you prepared' }
+		})
 	})
 })
