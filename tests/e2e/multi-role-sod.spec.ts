@@ -166,7 +166,10 @@ test('AC-29: a barred verifier sees a disabled sign-off control with a reason', 
 
 	// The detail page they navigated to must not silently drop the control (D12).
 	await page.goto(`/payroll/${runId}`, { waitUntil: 'domcontentloaded' })
-	const blocked = page.locator('button[aria-disabled="true"]')
+	// Scoped to the blocked-control card, not the whole page: a page-wide aria-disabled locator
+	// silently starts matching some other disabled control the day one is added.
+	const blockedCard = page.locator('div:has(> p#act-blocked)')
+	const blocked = blockedCard.locator('button[aria-disabled="true"]')
 	await expect(blocked).toHaveText('Approve')
 	// The actionable branch must NOT also be rendered.
 	await expect(page.getByText('This run is awaiting your')).toHaveCount(0)
@@ -184,7 +187,9 @@ test('AC-29: a barred verifier sees a disabled sign-off control with a reason', 
 	// ...and the description it points at resolves to the F5 reason, verbatim.
 	const describedBy = await blocked.getAttribute('aria-describedby')
 	expect(describedBy).toBeTruthy()
-	await expect(page.locator(`#${describedBy}`)).toHaveText(
+	// Attribute selector, not `#${id}`: an id needing CSS escaping would break the selector rather
+	// than fail the assertion, which reads as a locator bug instead of a missing description.
+	await expect(page.locator(`[id="${describedBy}"]`)).toHaveText(
 		'You already recorded a decision on this run — another finance approver must sign it off.'
 	)
 	await ctx.close()

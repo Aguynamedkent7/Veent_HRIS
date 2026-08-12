@@ -29,7 +29,13 @@ async function mapApprover(page: Page, approverLabel: string) {
 	// '' selects the "— HR (fallback) —" option, which clears the mapping.
 	await select.selectOption(approverLabel === '' ? { value: '' } : { label: approverLabel })
 	await row.getByRole('button', { name: 'Save' }).click()
-	await expect(row.locator('select[name="approverId"]')).toBeVisible()
+	// Assert the SAVED selection, not that the control is still on screen: the select is visible
+	// whether or not the save landed, so toBeVisible() passed even when the mapping never changed.
+	// Matched on the option's own text, since the option VALUES are employee ids this spec never
+	// learns. `selectOption({ label })` above already requires this exact string.
+	await expect(row.locator('select[name="approverId"] option:checked')).toHaveText(
+		approverLabel === '' ? /HR \(fallback\)/ : approverLabel
+	)
 }
 
 /** Create a draft posting in DEPT and submit it for approval. */
@@ -96,21 +102,27 @@ test('(a) a mapped department is decidable only by its designated approver', asy
 test('(b) the designated approver cannot decide a posting they submitted themselves', async ({
 	browser
 }) => {
-	// Give the approver an HR hat so she can create postings at all — the two-role state this
-	// whole PR exists to make possible.
 	const ceoCtx = await browser.newContext()
 	const ceo = await ceoCtx.newPage()
 	await login(ceo, USERS.ceo)
+
+	// Give the approver an HR hat so she can create postings at all — the two-role state this
+	// whole PR exists to make possible.
 	await ceo.goto('/settings/roles', { waitUntil: 'domcontentloaded' })
 	// NB: 'approver@veent.ph' is a substring of 'verifier.approver@veent.ph', so a plain hasText
 	// row filter matches two rows. Anchor on the exact cell text instead.
 	const apRow = ceo
 		.locator('tr')
 		.filter({ has: ceo.getByText(USERS.approver.email, { exact: true }) })
-	// The picker is a dialog now (#283) — the row itself only displays roles.
-	await apRow.getByRole('button', { name: 'Edit roles' }).click()
+	// The picker is a dialog now (#283) — the row itself only displays roles. It is opened by a
+	// client-side handler, so a click landing before this route has hydrated is accepted by the
+	// browser and silently does nothing; retry the open until it takes rather than asserting on
+	// the first one. (Not a masked app bug: the control works, it just isn't wired up yet.)
 	const dialog = ceo.getByRole('dialog', { name: 'Edit roles' })
-	await expect(dialog).toBeVisible()
+	await expect(async () => {
+		await apRow.getByRole('button', { name: 'Edit roles' }).click()
+		await expect(dialog).toBeVisible({ timeout: 1000 })
+	}).toPass({ timeout: 15000 })
 	// Click the LABEL, not the visually-hidden input it wraps: clicking the input directly makes
 	// the label re-dispatch the activation and the option toggles twice. A real user clicks the
 	// row. Selected by the value it posts — `hasText` is a case-insensitive substring match and
@@ -121,6 +133,16 @@ test('(b) the designated approver cannot decide a posting they submitted themsel
 	// The dialog closes only on a saved change; a refusal keeps it open with the reason inline.
 	await expect(dialog).toHaveCount(0)
 	await expect(apRow.getByText('HR Admin', { exact: true })).toBeVisible()
+
+	// Map the department HERE rather than inheriting (a)'s mapping: the file is serial, but a
+	// dependency on a previous test's side effect means this one cannot be run alone — which is
+	// exactly how it failed in isolation.
+	//
+	// AFTER the role edit, not before. mapApprover's save leaves an invalidation in flight, and
+	// navigating to /settings/roles on top of it lands the 'Edit roles' click on unhydrated HTML —
+	// the click is silently lost and the dialog never opens. Nothing follows this call on `ceo`
+	// except a dashboard read, so there is nothing left to race.
+	await mapApprover(ceo, 'Approver, Apple · Sign-off Approver')
 
 	// She submits a posting for the department she approves.
 	const apCtx = await browser.newContext()
