@@ -713,6 +713,29 @@ export async function seedE2E(db: PrismaClient) {
 		number: 'EMP-902'
 	})
 
+	// #283: the one two-hat account in the whole seed — every other row stays single-role.
+	// The separation-of-duties E2E needs a user who holds BOTH sign-off roles, and creating
+	// one through the UI as a precondition would make the SoD spec depend on the role-picker
+	// spec passing first. E2E-only on purpose: this is a deliberately over-privileged account.
+	const twoHatHash = await bcrypt.hash('TwoHat@1234', 12)
+	const twoHatUser = await db.user.upsert({
+		where: { email: 'verifier.approver@veent.ph' },
+		update: { roles: ['VERIFIER', 'APPROVER'] },
+		create: {
+			organizationId: org.id,
+			email: 'verifier.approver@veent.ph',
+			passwordHash: twoHatHash,
+			roles: ['VERIFIER', 'APPROVER']
+		}
+	})
+	await ensureEmployeeProfile(db, twoHatUser, {
+		firstName: 'Tina',
+		lastName: 'Twohat',
+		jobTitle: 'Sign-off Verifier & Approver',
+		departmentId: dept.id,
+		number: 'EMP-903'
+	})
+
 	// --- Manager (direct supervisor; approves the employee's timesheets in the E2E suite) ---
 	const managerHash = await bcrypt.hash('Manager@1234', 12)
 	const managerUser = await db.user.upsert({
