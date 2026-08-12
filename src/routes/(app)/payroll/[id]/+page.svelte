@@ -419,13 +419,18 @@
 			     could never reach the explanation — exactly the people who need it most. type="button"
 			     (not submit) is what makes the control a real no-op. The reason is always-visible
 			     adjacent text bound with aria-describedby, not a tooltip, because hover-only fails the
-			     same users for the same reason. -->
+			     same users for the same reason.
+
+			     focus-visible:opacity-100 + ring-2 because the dimming defeats its own focus ring:
+			     btn-row's default ring is 1px, and at opacity-50 that is invisible in practice — so
+			     a sighted keyboard user tabs onto the control and sees nothing happen, which reads
+			     exactly like being skipped. Reachable but invisible is not reachable. -->
 			<div class="rounded-lg border bg-card p-4">
 				<button
 					type="button"
 					aria-disabled="true"
 					aria-describedby="act-blocked"
-					class="btn-row cursor-not-allowed opacity-50"
+					class="btn-row cursor-not-allowed opacity-50 focus-visible:opacity-100 focus-visible:ring-2"
 				>
 					{actVerb}
 				</button>

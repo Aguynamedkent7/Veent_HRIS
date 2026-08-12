@@ -19,7 +19,18 @@
 	const setActiveGuards: Record<string, ReturnType<typeof createSubmitGuard>> = {}
 	const setActiveGuard = (id: string) => (setActiveGuards[id] ??= createSubmitGuard())
 	const setRoleGuards: Record<string, ReturnType<typeof createSubmitGuard>> = {}
-	const setRoleGuard = (id: string) => (setRoleGuards[id] ??= createSubmitGuard())
+	// #283: on a REJECTED save, reset the form. A <select multiple>'s `selected` attribute is only
+	// its DEFAULT state — once the user has clicked, the live selection is a DOM property that
+	// re-rendering the attribute does not touch. So after "you must keep at least one role" the
+	// picker keeps showing the user's empty selection, and a browser refresh restores form state
+	// too, which makes it look as though the save wiped their roles. It didn't; only the display
+	// lied. formElement.reset() restores every control to its `selected` attribute — the server's
+	// truth — which is exactly the right meaning of "that save did not happen".
+	const setRoleGuard = (id: string) =>
+		(setRoleGuards[id] ??= createSubmitGuard(() => async ({ update, result, formElement }) => {
+			await update()
+			if (result.type === 'failure') formElement.reset()
+		}))
 </script>
 
 <svelte:head>
