@@ -4,7 +4,7 @@ import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import { isValidStandardPeriod } from '$lib/utils/pay-periods'
 import { buildApprovalChain } from './requests/routing'
-import { canActOnStage, decidedActorIds, nextState, liveChain } from './approvals'
+import { canActOnStage, nextState, liveChain, timesheetSoD } from './approvals'
 import type { AuditContext } from './types'
 import type { Prisma } from '@prisma/client'
 
@@ -360,12 +360,13 @@ export async function reviewTimesheet(
 
 	const step = live.currentStep
 	if (
-		!canActOnStage(step.stage, ctx.actorRoles, actorEmployee?.id ?? null, ts.employeeId, {
-			actorId: ctx.actorId,
-			decidedActorIds: decidedActorIds(ts.approvalSteps, live.attempt),
-			// Timesheets carry no RequestDocument rows, so [] is accurate, not a disabled guard.
-			verifiedDocActorIds: []
-		})
+		!canActOnStage(
+			step.stage,
+			ctx.actorRoles,
+			actorEmployee?.id ?? null,
+			ts.employeeId,
+			timesheetSoD(ctx.actorId, ts.approvalSteps, live.attempt)
+		)
 	) {
 		error(403, 'You cannot act on this stage')
 	}

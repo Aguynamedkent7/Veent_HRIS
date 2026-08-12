@@ -77,6 +77,21 @@ export interface StageSoD {
 	verifiedDocActorIds: string[]
 }
 
+/** The StageSoD for a timesheet. Timesheets carry no RequestDocument rows, so
+ *  `verifiedDocActorIds` is [] — an accurate answer, not a disabled guard. Extracted because the
+ *  same literal was built at all THREE timesheet call sites — the page queue filter, the decide
+ *  writer in timesheets.ts, and countActionableTimesheets below — and hand-built copies of one
+ *  guard's inputs are how a guard silently stops matching itself. The third site is the reason
+ *  this helper exists: a first pass wired only two, and the mutation that should have failed
+ *  stayed green because the covered site was the one left behind. */
+export function timesheetSoD(
+	actorId: string | null,
+	steps: { attempt: number; decision: ApprovalDecision | null; actorId: string | null }[],
+	attempt: number
+): StageSoD {
+	return { actorId, decidedActorIds: decidedActorIds(steps, attempt), verifiedDocActorIds: [] }
+}
+
 // Can this actor decide the given stage? Separation of duties comes first: nobody acts
 // on their own submission. Otherwise the actor must hold the stage's capability with any
 // of their roles — a checker may not also be the maker of the same request, which the
@@ -479,13 +494,13 @@ export async function countActionableTimesheets(
 		const live = liveChain(ts.approvalSteps)
 		// Legacy step-less timesheets remain manager-ladder actionable.
 		if (!live || !live.currentStep) return canAny(roles, 'VIEW_TEAM')
-		return canActOnStage(live.currentStep.stage, roles, actorEmployeeId, ts.employeeId, {
-			actorId: actorUserId,
-			decidedActorIds: decidedActorIds(ts.approvalSteps, live.attempt),
-			// Timesheets have no RequestDocument rows, so [] is an accurate answer here, not a
-			// disabled guard.
-			verifiedDocActorIds: []
-		})
+		return canActOnStage(
+			live.currentStep.stage,
+			roles,
+			actorEmployeeId,
+			ts.employeeId,
+			timesheetSoD(actorUserId, ts.approvalSteps, live.attempt)
+		)
 	}).length
 }
 
