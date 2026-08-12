@@ -19,22 +19,28 @@ test('the picker prefills every held role, and the read-only span lists the same
 	// read-only one) — the same cost the payroll chain spec pays.
 	test.slow()
 
-	// --- Editable branch: the CEO holds MANAGE_USER_ROLES, so the row is a multi-select.
+	// --- Editable branch: the CEO holds MANAGE_USER_ROLES, so the row renders the role pills.
 	const ceoCtx = await browser.newContext()
 	const ceoPage = await ceoCtx.newPage()
 	await login(ceoPage, USERS.ceo)
 	await ceoPage.goto('/settings/roles', { waitUntil: 'domcontentloaded' })
 
-	const picker = ceoPage.getByLabel(`Roles for ${TWO_HAT}`)
+	const twoHatEditable = ceoPage.locator('tr', { hasText: TWO_HAT })
+	const picker = twoHatEditable.locator('fieldset')
 	await expect(picker).toBeVisible()
-	// Both, not one: a picker that collapsed the set would still render one selection.
-	// Option order is ASSIGNABLE_ROLES order — VERIFIER precedes APPROVER.
-	await expect(picker).toHaveValues(['VERIFIER', 'APPROVER'])
+	// Both, not one: a picker that collapsed the set would still render one checked box. Reading
+	// the inputs rather than the pill styling — the checkbox IS what gets posted.
+	await expect(picker.locator('input[name="roles"]:checked')).toHaveCount(2)
+	await expect(picker.locator('input[name="roles"][value="VERIFIER"]')).toBeChecked()
+	await expect(picker.locator('input[name="roles"][value="APPROVER"]')).toBeChecked()
+	// The summary states the count, so a user reading the row does not have to count pills.
+	await expect(picker.locator('p')).toHaveText('2 roles')
 
 	// The CEO's own row is the read-only branch in this session (no self-role-change), so
 	// the comma-joined form is rendered here too.
 	const ownRow = ceoPage.locator('tr', { hasText: USERS.ceo.email })
 	await expect(ownRow.locator('span').last()).toHaveText('CEO')
+	await expect(ownRow.locator('fieldset')).toHaveCount(0)
 	await ceoCtx.close()
 
 	// --- Read-only branch for the SAME user: the Super Admin manages account status but not
@@ -44,8 +50,11 @@ test('the picker prefills every held role, and the read-only span lists the same
 	await login(adminPage, USERS.admin)
 	await adminPage.goto('/settings/roles', { waitUntil: 'domcontentloaded' })
 
-	await expect(adminPage.getByLabel(`Roles for ${TWO_HAT}`)).toHaveCount(0)
 	const twoHatRow = adminPage.locator('tr', { hasText: TWO_HAT })
-	await expect(twoHatRow.locator('span').last()).toHaveText('VERIFIER, APPROVER')
+	await expect(twoHatRow.locator('fieldset')).toHaveCount(0)
+	// Same two roles, same labels as the editable branch — a row must not appear to hold
+	// different roles depending on who is looking at it.
+	await expect(twoHatRow.locator('span').nth(-2)).toHaveText('Verifier')
+	await expect(twoHatRow.locator('span').last()).toHaveText('Approver')
 	await adminCtx.close()
 })

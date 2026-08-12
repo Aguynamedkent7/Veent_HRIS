@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
-	import { ASSIGNABLE_ROLES } from '$lib/rbac'
+	import { ASSIGNABLE_ROLES, ROLE_LABELS } from '$lib/rbac'
+	import Check from 'lucide-svelte/icons/check'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
@@ -19,18 +20,53 @@
 	const setActiveGuards: Record<string, ReturnType<typeof createSubmitGuard>> = {}
 	const setActiveGuard = (id: string) => (setActiveGuards[id] ??= createSubmitGuard())
 	const setRoleGuards: Record<string, ReturnType<typeof createSubmitGuard>> = {}
-	// #283: on a REJECTED save, reset the form. A <select multiple>'s `selected` attribute is only
-	// its DEFAULT state — once the user has clicked, the live selection is a DOM property that
-	// re-rendering the attribute does not touch. So after "you must keep at least one role" the
-	// picker keeps showing the user's empty selection, and a browser refresh restores form state
-	// too, which makes it look as though the save wiped their roles. It didn't; only the display
-	// lied. formElement.reset() restores every control to its `selected` attribute — the server's
-	// truth — which is exactly the right meaning of "that save did not happen".
+	// #283: on a REJECTED save, reset the form back to the server's truth. A checkbox's `checked`
+	// attribute is only its DEFAULT state — once the user has clicked, the live value is a DOM
+	// property that re-rendering the attribute does not touch. So after "you must keep at least one
+	// role" the pills would keep showing the user's empty selection, which reads as though the save
+	// wiped their roles. It didn't; only the display lied. formElement.reset() restores every
+	// control to its `checked` attribute, which is exactly what "that save did not happen" means.
 	const setRoleGuard = (id: string) =>
 		(setRoleGuards[id] ??= createSubmitGuard(() => async ({ update, result, formElement }) => {
 			await update()
+			// Either way the row goes back to following the server: on success `data` already holds
+			// the saved set, and on failure nothing was written, so the reset control state is right.
 			if (result.type === 'failure') formElement.reset()
+			delete draft[id]
 		}))
+
+	// #283: the picker's live selection, per user row.
+	//
+	// The control this replaces was a native <select multiple>, and the reason it had to go is one
+	// gesture: a PLAIN click on a multi-select REPLACES the whole selection. On a user holding
+	// [VERIFIER, APPROVER], clicking "CEO" silently dropped both — the likeliest gesture was the
+	// destructive one, no warning, and the service cannot catch it because one role is a legal set.
+	// Ctrl-click is the only safe interaction and nothing on screen taught it.
+	//
+	// Checkboxes have no modifier-key mode, so every click means exactly what it looks like. They
+	// are still plain platform controls posting a repeated `roles` key — the server contract and
+	// the AC-3 prefill are unchanged, and no picker library arrives.
+	//
+	// `draft` mirrors the checkboxes only to drive the summary line and the Save button's enabled
+	// state; the inputs remain the source of truth for what is posted, so a failed save resetting
+	// the form is still authoritative.
+	//
+	// It holds an entry ONLY for rows the user has touched — seeding it from data.users would
+	// snapshot the initial load, and any row that arrived afterwards would read as having no roles
+	// at all. Clearing a row's entry is how "follow the server again" is expressed.
+	let draft = $state<Record<string, string[]>>({})
+	type Row = { id: string; roles: string[] }
+	const rolesOf = (u: Row) => draft[u.id] ?? u.roles
+	const toggle = (u: Row, role: string) => {
+		const now = rolesOf(u)
+		draft[u.id] = now.includes(role) ? now.filter((r) => r !== role) : [...now, role]
+	}
+	// Order-independent set equality — the same comparison the server makes.
+	const isDirty = (u: Row) => {
+		const now = rolesOf(u)
+		return now.length !== u.roles.length || now.some((r) => !u.roles.includes(r))
+	}
+	const label = (r: string) => ROLE_LABELS[r as keyof typeof ROLE_LABELS] ?? r
 </script>
 
 <svelte:head>
@@ -110,39 +146,66 @@
 									method="POST"
 									action="?/setRole"
 									use:enhance={setRole.enhance}
-									class="flex items-center gap-2"
+									class="flex w-[17rem] items-start gap-3 sm:w-[26rem]"
 								>
 									<input type="hidden" name="userId" value={u.id} />
-									<!-- #283: the picker assigns the whole set. No $state and no bind:value — the
-									     selection lives in the DOM, posts natively as a repeated `roles` key, and
-									     use:enhance forwards the same FormData. A bound value would be a second
-									     source of truth for something the platform already tracks, and Svelte 5
-									     warns when a bound <select>'s options also carry `selected`. Prefilling
-									     via the native `selected` attribute is the whole of AC-3. -->
-									<select
-										name="roles"
-										multiple
-										size={4}
-										aria-label="Roles for {u.email}"
-										class="flex h-auto w-40 rounded-md border border-input bg-background px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-									>
-										{#each ASSIGNABLE_ROLES as r (r)}
-											<option value={r} selected={u.roles.includes(r)}>{r.replace('_', ' ')}</option
-											>
-										{/each}
-									</select>
+									<fieldset class="min-w-0 flex-1">
+										<legend class="sr-only">Roles for {u.email}</legend>
+										<div class="flex flex-wrap gap-1.5">
+											{#each ASSIGNABLE_ROLES as r (r)}
+												{@const on = rolesOf(u).includes(r)}
+												<label
+													class="inline-flex min-h-11 cursor-pointer select-none items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors sm:min-h-0 {on
+														? 'border-primary/40 bg-primary/10 text-primary'
+														: 'border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground'} focus-within:outline-none focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1 focus-within:ring-offset-background"
+												>
+													<input
+														type="checkbox"
+														name="roles"
+														value={r}
+														checked={u.roles.includes(r)}
+														onchange={() => toggle(u, r)}
+														class="sr-only"
+													/>
+													{#if on}
+														<Check class="h-3 w-3 shrink-0" aria-hidden="true" />
+													{/if}
+													{label(r)}
+												</label>
+											{/each}
+										</div>
+										<p
+											class="mt-1.5 text-xs {rolesOf(u).length === 0
+												? 'text-destructive'
+												: 'text-muted-foreground'}"
+										>
+											{#if rolesOf(u).length === 0}
+												Pick at least one role.
+											{:else}
+												{rolesOf(u).length}
+												{rolesOf(u).length === 1 ? 'role' : 'roles'}{isDirty(u) ? ' · unsaved' : ''}
+											{/if}
+										</p>
+									</fieldset>
 									<button
 										type="submit"
-										disabled={setRole.busy}
-										class="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+										disabled={setRole.busy || !isDirty(u) || rolesOf(u).length === 0}
+										class="shrink-0 self-start rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
 									>
 										{setRole.busy ? 'Saving…' : 'Save'}
 									</button>
 								</form>
 							{:else}
-								<span class="text-sm text-muted-foreground"
-									>{u.roles.map((r) => r.replace('_', ' ')).join(', ')}</span
-								>
+								<!-- Read-only mirror. Same shape as the editable branch so a row does not appear
+								     to hold different roles depending on who is looking at it. -->
+								<div class="flex w-[17rem] flex-wrap gap-1.5 sm:w-[26rem]">
+									{#each u.roles as r (r)}
+										<span
+											class="inline-flex items-center rounded-full border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground"
+											>{label(r)}</span
+										>
+									{/each}
+								</div>
 							{/if}
 						</td>
 					</tr>

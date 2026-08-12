@@ -169,4 +169,24 @@ export const ASSIGNABLE_ROLES = [
  * FINANCE) and sign-off (VERIFIER, APPROVER) stay off it: those are granted after hire, in
  * Settings → Roles, which only the CEO can reach.
  */
+/**
+ * Display names for roles. `capitalize` on a lower-cased enum gets "Hr Admin" and "Ceo" wrong, and
+ * every surface that shows a role needs the same answer, so the mapping lives here rather than
+ * being re-derived per component.
+ *
+ * NOTE: `(app)/+layout.svelte:299` and `(app)/requests/approvals/+page.svelte:79` each still carry
+ * their own copy, predating this one. Fold them in next time either is touched.
+ */
+export const ROLE_LABELS: Record<Role, string> = {
+	EMPLOYEE: 'Employee',
+	MANAGER: 'Manager',
+	HR_ADMIN: 'HR Admin',
+	SUPER_ADMIN: 'Super Admin',
+	PAYROLL_OFFICER: 'Payroll Officer',
+	FINANCE: 'Finance',
+	CEO: 'CEO',
+	VERIFIER: 'Verifier',
+	APPROVER: 'Approver'
+}
+
 export const HIRE_ROLES = ['EMPLOYEE', 'MANAGER', 'HR_ADMIN'] as const satisfies readonly Role[]

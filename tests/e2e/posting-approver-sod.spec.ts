@@ -102,12 +102,17 @@ test('(b) the designated approver cannot decide a posting they submitted themsel
 	const ceo = await ceoCtx.newPage()
 	await login(ceo, USERS.ceo)
 	await ceo.goto('/settings/roles', { waitUntil: 'domcontentloaded' })
-	// NB: 'approver@veent.ph' is a substring of 'verifier.approver@veent.ph', so a hasText row
-	// filter matches two rows. The aria-label is exact.
-	const apRoles = ceo.getByLabel(`Roles for ${USERS.approver.email}`, { exact: true })
-	await apRoles.selectOption(['APPROVER', 'HR_ADMIN'])
-	await apRoles.locator('xpath=ancestor::form').getByRole('button', { name: 'Save' }).click()
-	await expect(apRoles).toHaveValues(['HR_ADMIN', 'APPROVER'])
+	// NB: 'approver@veent.ph' is a substring of 'verifier.approver@veent.ph', so a plain hasText
+	// row filter matches two rows. Anchor on the exact cell text instead.
+	const apRow = ceo
+		.locator('tr')
+		.filter({ has: ceo.getByText(USERS.approver.email, { exact: true }) })
+	// Click the LABEL, not the visually-hidden input it wraps: clicking the input directly makes
+	// the label re-dispatch the activation and the pill toggles twice. A real user clicks the pill.
+	await apRow.locator('label').filter({ hasText: 'HR Admin' }).click()
+	await expect(apRow.locator('input[name="roles"]:checked')).toHaveCount(2)
+	await apRow.getByRole('button', { name: 'Save' }).click()
+	await expect(apRow.locator('input[name="roles"]:checked')).toHaveCount(2)
 
 	// She submits a posting for the department she approves.
 	const apCtx = await browser.newContext()
@@ -151,8 +156,26 @@ test.afterAll(async ({ browser }) => {
 	await login(page, USERS.ceo)
 	await mapApprover(page, '')
 	await page.goto('/settings/roles', { waitUntil: 'domcontentloaded' })
-	const roles = page.getByLabel(`Roles for ${USERS.approver.email}`, { exact: true })
-	await roles.selectOption(['APPROVER'])
-	await roles.locator('xpath=ancestor::form').getByRole('button', { name: 'Save' }).click()
+	// Restore the role set through the v1 endpoint rather than the UI. Driving cleanup through
+	// the picker means racing hydration and enhance round-trips for something that is not under
+	// test, and it failed that way twice — reporting an afterAll fault against a test body that
+	// had passed. The API is deterministic, shares this context's session cookie, and is the same
+	// writer the form action calls. The user id comes off the row's own hidden input.
+	const apRow = page
+		.locator('tr')
+		.filter({ has: page.getByText(USERS.approver.email, { exact: true }) })
+	// .first(): the row carries TWO hidden userId inputs, one for ?/setActive and one for
+	// ?/setRole. Same value, so either serves — but strict mode rejects the ambiguity.
+	const userId = await apRow.locator('input[name="userId"]').first().inputValue()
+	const res = await page.request.patch(`/api/v1/settings/users/${userId}/roles`, {
+		data: { roles: ['APPROVER'] }
+	})
+	expect(res.ok(), `role restore failed: ${res.status()} ${await res.text()}`).toBe(true)
+
+	// KNOWN RESIDUE: the two postings this spec files are NOT removed. Nothing in the app deletes
+	// a job posting — no form action, no v1 route — so there is no honest way to clean them from a
+	// UI-driven spec. They are uniquely named (E2E-F4-*, timestamped), so they never collide with
+	// a later run; they simply accumulate in the dev database. Clear them by hand when it matters:
+	//   delete from job_postings where title like 'E2E-F4%';
 	await ctx.close()
 })
