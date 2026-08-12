@@ -92,7 +92,7 @@
 							<!-- #248: gate on the rule the service actually enforces (no self-role-change),
 							     not on the target being a CEO. The old CEO block was UI-only — the v1 PATCH
 							     twin never had it — and it made CEO a role that could be granted but never
-							     revoked. A CEO row is now editable; setUserRole refuses to remove the last
+							     revoked. A CEO row is now editable; setUserRoles refuses to remove the last
 							     active one (409). -->
 							{#if canManageRoles && u.id !== data.user.id}
 								<form
@@ -102,17 +102,22 @@
 									class="flex items-center gap-2"
 								>
 									<input type="hidden" name="userId" value={u.id} />
-									<!-- A single-valued <select> prefilled from a set has to pick one. `roles[0]` is
-									     valid ONLY while this picker sets exactly one role, so the set is always
-									     length 1 (setUserRole resets it). Revisit at #283, which makes the
-									     picker multi-valued. -->
+									<!-- #283: the picker assigns the whole set. No $state and no bind:value — the
+									     selection lives in the DOM, posts natively as a repeated `roles` key, and
+									     use:enhance forwards the same FormData. A bound value would be a second
+									     source of truth for something the platform already tracks, and Svelte 5
+									     warns when a bound <select>'s options also carry `selected`. Prefilling
+									     via the native `selected` attribute is the whole of AC-3. -->
 									<select
-										name="role"
-										value={u.roles[0]}
-										class="flex h-9 w-40 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+										name="roles"
+										multiple
+										size={4}
+										aria-label="Roles for {u.email}"
+										class="flex h-auto w-40 rounded-md border border-input bg-background px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 									>
 										{#each ASSIGNABLE_ROLES as r (r)}
-											<option value={r}>{r.replace('_', ' ')}</option>
+											<option value={r} selected={u.roles.includes(r)}>{r.replace('_', ' ')}</option
+											>
 										{/each}
 									</select>
 									<button
