@@ -218,6 +218,11 @@ async function assertNotLastOfRole(
 		...memberships.map((m) => m.organizationId)
 	])
 
+	// #283: collect EVERY stranded role before refusing. Multi-role makes one user the sole holder
+	// of both SUPER_ADMIN and CEO, and throwing on the first one walks them into a second refusal
+	// after they've already fixed the one they were told about. Name them all in one 409.
+	// `break` on the first stranding org so a role stranded in two orgs is still named once.
+	const stranded: string[] = []
 	for (const role of lost) {
 		for (const organizationId of affectedOrgIds) {
 			const otherActiveHolders = await tx.user.count({
@@ -229,12 +234,13 @@ async function assertNotLastOfRole(
 				}
 			})
 			if (otherActiveHolders === 0) {
-				error(
-					409,
-					`Cannot remove the last active ${IRREPLACEABLE_ROLES[role]} from the organization.`
-				)
+				stranded.push(IRREPLACEABLE_ROLES[role] as string)
+				break
 			}
 		}
+	}
+	if (stranded.length > 0) {
+		error(409, `Cannot remove the last active ${stranded.join(' and ')} from the organization.`)
 	}
 }
 

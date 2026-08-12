@@ -291,6 +291,25 @@ describe('setUserRoles', () => {
 		expect(txMock.user.update).not.toHaveBeenCalled()
 	})
 
+	// #283: the sole holder of BOTH irreplaceable roles. Refusing on the first stranded role only
+	// would tell them about the CEO, let them fix it, then refuse a second time for the super
+	// admin — so both must be named in one message.
+	it('names every stranded role in a single refusal', async () => {
+		txMock.user.findFirst.mockResolvedValue({
+			id: 'user-other',
+			roles: ['SUPER_ADMIN', 'CEO'],
+			isActive: true,
+			organizationId: 'org1'
+		})
+		txMock.user.count.mockResolvedValue(0)
+
+		await expect(setUserRoles('user-other', 'org1', ['HR_ADMIN'], CTX)).rejects.toMatchObject({
+			status: 409,
+			body: { message: 'Cannot remove the last active super admin and CEO from the organization.' }
+		})
+		expect(txMock.user.update).not.toHaveBeenCalled()
+	})
+
 	// The guard keys on the roles LOST, so re-saving a user's current set — one click, since the
 	// picker is prefilled — is never mistaken for a demotion.
 	it('does not block re-saving the last super admin’s existing role', async () => {
