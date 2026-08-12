@@ -17,29 +17,34 @@ spec: process/general-plans/active/multi-role-activation-283_11-08-26/multi-role
 
 ## Overview
 
-> ## ⛔ READ BEFORE EXECUTE — status as of 11-08-26
+> ## ⛔ READ BEFORE EXECUTE — status as of 12-08-26
 >
-> **Gate: CONDITIONAL (VALIDATE pass 2, 0 FAILs).** All five pass-1 blockers were re-verified and
-> HOLD. EXECUTE is authorised, but **four plan-text corrections must be absorbed first** — they are
-> listed at the end of `## Validate Contract — Pass 2`. Two of them cause a red gate if missed:
+> **Gate: CONDITIONAL (VALIDATE pass 2, 0 FAILs). P1–P6 are now ALL APPLIED to the plan text below.**
+> All five pass-1 blockers were re-verified and HOLD. **EXECUTE is authorised.** What was corrected,
+> so a reader of the older tables below is not misled:
 >
-> 1. **§11 non-goal item 9 is SUPERSEDED — `documents.ts` IS edited in commit 5.** Honouring the
->    original item reproduces the B-5 bypass *with AC-19 green*. This is the single most likely way
->    this build goes wrong. Item 9 is struck through in place; read it.
-> 2. **Commit 4's payroll snippet passes `verifiedDocActorIds: []` into a `StageSoD` that does not
->    gain that field until commit 5** → `pnpm check` is red at commit 4. Either move the field to
->    commit 4 or drop it from that snippet.
-> 3. **`approval-self-guard.test.ts`'s `pendingRequest` fixture needs `documents: []`** →
->    `pnpm test` is red at commit 5 without it (pass-1 C-4, still unabsorbed).
-> 4. The test-harness pointer for `approval-queues.test.ts` is wrong: `approvals.test.ts` has **no**
->    `vi.mock('$lib/server/db')` — it is a pure-function suite. Copy the mocking pattern from a
->    suite that actually mocks the db.
+> 1. **P1 — §11 non-goal item 9 is SUPERSEDED: `documents.ts` IS edited in commit 5.** Honouring the
+>    original item reproduces the B-5 bypass *with AC-19 green*. This is still the single most likely
+>    way this build goes wrong. Item 9 is struck through in place; item 16 is new. Read both.
+> 2. **P2 — commit 5's F3 predicate comment no longer claims the artefact is immutable.** The 409
+>    holds only *while the sign-off stands*; the un-verify → owner-delete → re-upload path is an
+>    accepted KNOWN GAP, named in the comment and in §11 item 16.
+> 3. **P3 — commit 4's payroll snippet builds a 2-field `StageSoD`.** `verifiedDocActorIds` arrives
+>    with the interface in **commit 5** (its call-site table now names the payroll page explicitly).
+>    Passing it at commit 4 is `TS2353` and `pnpm check` goes red there.
+> 4. **P4 — commit 5 opens by giving `approval-self-guard.test.ts`'s `pendingRequest` fixture a
+>    `documents: []` key**, or `pnpm test` is red. The db-mock harness to copy is
+>    `approval-self-guard.test.ts:18-31` (or `proposal-queue.test.ts:41-43`) — **never**
+>    `approvals.test.ts`, which is a pure-function suite with no `vi.mock`. AC-22, AC-27's service
+>    half and the F5-message row moved to `approval-self-guard.test.ts` accordingly.
+> 5. **P5 — the payroll `actBlockedReason` has two branches** (maker vs earlier decider), mirroring
+>    the two service messages. A single string tells the maker something false.
 >
-> Also stale below: any line saying "EXECUTE is not authorised while BLOCKED" (pass 1's gate), and
-> D12's payroll reason string, which is wrong for the payroll *maker* — the F5 bar now catches them
-> too, and telling them they "recorded the verify decision" would be false.
+> Also stale below: any line saying "EXECUTE is not authorised while BLOCKED" (pass 1's gate).
+> P6 housekeeping (N-P1..N-P6: stale commit numbers, R-F's `"User"` SQL, Touchpoints counts) is
+> **not** applied — all six are cosmetic and none changes what gets built.
 >
-> **No code has been written.** Branch `feat/multi-role-activation-283`, commit `8def86f`, docs only.
+> **No code has been written yet.** Branch `feat/multi-role-activation-283`. Start at commit 1.
 
 **TL;DR** — **Nine** commits on one branch, one PR. Commits 1–3 turn the role picker into a set
 (service → form → API); commits 4–7 close **all five** same-actor separation-of-duties holes
@@ -194,7 +199,8 @@ disagree:
 | F1 | reason line on `requests/[id]` | "You already decided an earlier stage of this attempt — another verifier or approver must act." | `decide()` 403 "You cannot act on this stage" |
 | F3 | reason line on `requests/[id]` | "You signed off a supporting document on this request — another approver must decide it." | same 403 |
 | F4 | queue exclusion + the 403 itself | "You submitted this posting — ask HR to reassign this department's posting approver in Settings → Posting approvers." | **must be byte-identical to D9's required 403 wording** |
-| F5 | disabled control on `payroll/[id]` | "You recorded the verify decision on this run — another finance approver must sign it off." | `decidePayrollRun` 403 |
+| F5 (maker) | disabled control on `payroll/[id]` | "You prepared this payroll run — another finance approver must sign it off." | `decidePayrollRun` 403 **"You cannot sign off a payroll run you prepared"** (`approvals.ts:445`) |
+| F5 (earlier decider) | disabled control on `payroll/[id]` | "You already recorded a decision on this run — another finance approver must sign it off." | `decidePayrollRun` 403 "You cannot act on this stage" (the generic `canActOnPayrollStage` bar) |
 
 **Accessibility — specified, not hand-waved.** A native `disabled` button fires no pointer or focus
 events and leaves the tab order, so a hover-only tooltip on it is invisible to exactly the keyboard
@@ -227,6 +233,27 @@ Three deliberate choices:
 3. `data.actBlockedReason` is a **string or null computed in the `load`**, next to `canAct` and from
    the same SoD inputs — so there is exactly one place that decides both, and the UI cannot drift
    from the service.
+
+**C-P5/P5 — the payroll reason has TWO branches, not one.** `canActOnPayrollStage` bars everyone in
+`decidedActorIds`, and per RC-10 that set **includes the MAKE actor**. So the maker also lands on
+`canAct: false`, and a single string would tell them they "recorded the verify decision", which is
+false. The service deliberately keeps two messages here (commit 4 edit 2 hoists the maker block
+above the generic call precisely to preserve its specific one); the page mirrors that split:
+
+```ts
+const makeStep = run.approvalSteps.find((s) => s.attempt === live.attempt && s.stage === 'MAKE')
+const actBlockedReason = canAct
+	? null
+	: makeStep?.actorId === user.id
+		? 'You prepared this payroll run — another finance approver must sign it off.'
+		: decidedActorIds(run.approvalSteps, live.attempt).includes(user.id)
+			? 'You already recorded a decision on this run — another finance approver must sign it off.'
+			: null
+```
+
+Note this **re-derives** `makeStep` for the *message* only — the `&& makeActorId !== user.id`
+authorisation clause at `:65` is still deleted (B-2/RC-10: subsumed by the generic bar). Message and
+gate are separate concerns; do not resurrect the clause.
 
 **Commit impact: none.** D12 rides commit 4 (payroll surface, F1/F5) and commit 7 (F4's 403 wording,
 already required by D9). The `requests/[id]` reason line rides commit 5 with F3. **The commit count
@@ -902,8 +929,7 @@ compile error until it answers the question. That is deliberate (DECISION-4 reas
    	live?.currentStep &&
    		canActOnPayrollStage(live.currentStep.stage, roles, {
    			actorId: user.id,
-   			decidedActorIds: decidedActorIds(run.approvalSteps, live.attempt),
-   			verifiedDocActorIds: []
+   			decidedActorIds: decidedActorIds(run.approvalSteps, live.attempt)
    		})
    )
    ```
@@ -942,6 +968,14 @@ The F3 guard, per D7, DECISION-6, **D11 (B-5)** and **D12's explanation half**.
 `src/routes/(app)/requests/[id]/+page.server.ts` + `+page.svelte` (**D12 reason line**),
 `tests/unit/approval-self-guard.test.ts`, `tests/unit/approval-queues.test.ts` (new, from commit 4),
 `tests/unit/approvals.test.ts` (fixture shape only — the new field is required),
+
+**REQUIRED first step of this commit (C-P6/P4) — otherwise `pnpm test` is red.** Give
+`approval-self-guard.test.ts`'s `pendingRequest` fixture (`:54-65`) a **`documents: []`** key. Once
+`decide()` gains the `documents` include, `req.documents.map(...)` throws
+`TypeError: Cannot read properties of undefined` and all three `decide` cases go red. Commit 4 is
+safe without it (`s.actorId` is `undefined`, `undefined != null` is false, so `decidedActorIds`
+returns `[]`); commit 5 is not.
+
 new `tests/unit/requests-documents.test.ts` (AC-28's D11 half — first test file for
 `documents.ts`).
 
@@ -1015,10 +1049,16 @@ export interface StageSoD {
 // not reintroduce a level/seniority/hierarchy concept here in any form.
 //
 // Scoped per REQUEST, not per attempt — unlike the bar above. RequestDocument carries no attempt
-// column, and a RETURN cannot change the signed artefact: deleteRequestDocument refuses with 409
-// to remove a VERIFIED document, so on attempt 2 it is byte-for-byte the file this actor signed.
-// Q1's "materially changed document" argument justifies attempt-scoping stage decisions; it does
-// not transfer to a row a RETURN provably cannot touch.
+// column, and a RETURN does not by itself change the signed artefact: while the sign-off STANDS,
+// deleteRequestDocument refuses with 409 (documents.ts:192, which keys on verifiedAt), so the row
+// this actor signed survives into attempt 2. Q1's "materially changed document" argument justifies
+// attempt-scoping stage decisions; it does not transfer to a row a RETURN does not touch.
+//
+// Known gap, NOT an invariant (plan §11 item 16): once the sign-off is cleared, verifiedAt is null,
+// the 409 stops firing, and the request OWNER can delete the row — taking verifiedById with it —
+// then re-upload. Two-party (only the owner may delete, and the owner cannot decide their own
+// request), same collusion class as the ponytail ceiling in documents.ts, closed by the same
+// RequestDocumentVerification history table.
 //
 // Covers EVERY stage, not just a nominated evidence-consuming one: no stage in the chain is
 // designated as the document reader (the queue surfaces documents to all of them), so a
@@ -1053,7 +1093,7 @@ export function usedDocVerifierCarveOut(sod: StageSoD, actorRoles: Role[]): bool
 | `decide()` | add `documents: { select: { verifiedById: true } }` to the existing `findFirst` include (RC-7), then `req.documents.map((d) => d.verifiedById).filter((v): v is string => v != null)` |
 | `listPendingRequestsForApprover` `:215` | the `documents` include already exists as `{ select: { id: true, verifiedAt: true } }` — add `verifiedById: true` to it (**do not remove `verifiedAt`**: the approvals page consumes it at `requests/approvals/+page.svelte:163-164`). Same map per row. |
 | `countActionableTimesheets`, `timesheets.ts:362`, `requests/timesheets/+page.server.ts:50` | `[]` — timesheets have no `RequestDocument` rows |
-| `canActOnPayrollStage` (both callers) | `[]` — same reason |
+| `canActOnPayrollStage` — **all three** callers: `decidePayrollRun`, `countActionablePayrollRuns`, and `routes/(app)/payroll/[id]/+page.server.ts` | `[]` — same reason. **This is where the field arrives at the payroll page** (C-P4/P3): commit 4 deliberately builds a 2-field `StageSoD` there, because a 3rd field before the interface has it is a `TS2353` excess-property error and `pnpm check` goes red *at commit 4*. |
 
 **Audit wiring in `decide()`** — the existing `writeAuditLog` for the `Request` UPDATE gains:
 
@@ -1246,7 +1286,8 @@ and is corrected in the same hunk.
 
 **New test file `tests/unit/recruitment-posting-sod.test.ts`** — the *service-level* cases
 (`decideJobPosting`, `listPostingsAwaitingApprover`) that need a mocked `db`; read
-`tests/unit/approvals.test.ts` first for the `vi.mock('$lib/server/db')` shape. The pure
+`tests/unit/approval-self-guard.test.ts:18-31` first for the `vi.mock('$lib/server/db')` shape —
+`approvals.test.ts` is a PURE-FUNCTION suite with no `vi.mock` at all and cannot be the model. The pure
 `canApprovePosting` cases stay in `posting-approval.test.ts` where they already live — do not
 duplicate them. Cases per AC-23..AC-26 in §8b.
 
@@ -1440,13 +1481,13 @@ that always returns 200 proves only that nothing threw. **Assert the arguments, 
 | **AC-19** | `approval-self-guard.test.ts › canActOnStage › bars the verifier of a request document from deciding that request` | FA | 5 | delete the `verifiedDocActorIds.includes` line |
 | **AC-20** | `approval-self-guard.test.ts › canActOnStage › lets an ADMINISTER_SYSTEM holder decide a request whose document they verified` | FA | 5 | delete `&& !canAny(actorRoles,'ADMINISTER_SYSTEM')` (bar becomes absolute — this case turns red) |
 | **AC-21** | **`approval-queues.test.ts`** `› listPendingRequestsForApprover › excludes a request whose document the viewer verified` | FA | 5 | drop `verifiedById: true` from `listPendingRequestsForApprover`'s `documents` select (the silent-failure mode — the array goes empty and the bar quietly stops existing) |
-| **AC-22** | `approvals.test.ts › decide › records selfVerifiedEvidence when the carve-out is used` — assert the **audit payload**, and assert it is **absent** on an ordinary decision | FA | 5 | make `usedDocVerifierCarveOut` return `false` unconditionally |
+| **AC-22** | `approval-self-guard.test.ts › decide › records selfVerifiedEvidence when the carve-out is used` — assert the **audit payload**, and assert it is **absent** on an ordinary decision | FA | 5 | make `usedDocVerifierCarveOut` return `false` unconditionally |
 | **AC-23** | `recruitment-posting-sod.test.ts › canApprovePosting › a mapped department is decidable only by its designated approver` — asserts an `HR_ADMIN` who is not the approver is refused | FA | 7 | restore `return canAny(actorRoles,'MANAGE_HR')` |
 | **AC-24** | `recruitment-posting-sod.test.ts › canApprovePosting › an unmapped department still falls back to any MANAGE_HR holder` | FA | 7 | change the surviving return to `false` |
 | **AC-25** | `recruitment-posting-sod.test.ts › decideJobPosting › refuses the submitter and names the remap route` — asserts 403, asserts `db.jobPosting.update` was **not** called, and asserts the message contains `Settings → Posting approvers` | FA | 7 | delete the `submittedById === ctx.actorId` block |
 | **AC-26** | `recruitment-posting-sod.test.ts › listPostingsAwaitingApprover › omits postings the viewer submitted` | FA | 7 | drop the `p.submittedById !== actorUserId` filter |
-| **AC-27** | `approvals.test.ts › decidePayrollRun › a VERIFIER+CEO cannot approve a run they verified` (assert the refusal **and** that `payrollRun.update` was not called) + **`approval-queues.test.ts` `› countActionablePayrollRuns › excludes a run the viewer verified`** (needs the B-4 export) | FA | 4 | pass `{ actorId: null, decidedActorIds: [] }` from `canActOnPayrollStage` |
-| — (F5 msg) | `approvals.test.ts › decidePayrollRun › the maker still gets the specific "you prepared" message` | FA | 4 | move the maker block back below the `canActOnPayrollStage` call (the generic message wins → red) |
+| **AC-27** | `approval-self-guard.test.ts › decidePayrollRun › a VERIFIER+CEO cannot approve a run they verified` (assert the refusal **and** that `payrollRun.update` was not called) + **`approval-queues.test.ts` `› countActionablePayrollRuns › excludes a run the viewer verified`** (needs the B-4 export) | FA | 4 | pass `{ actorId: null, decidedActorIds: [] }` from `canActOnPayrollStage` |
+| — (F5 msg) | `approval-self-guard.test.ts › decidePayrollRun › the maker still gets the specific "you prepared" message` | FA | 4 | move the maker block back below the `canActOnPayrollStage` call (the generic message wins → red) |
 | DEC-2 | **`approval-queues.test.ts`** `› countActionableTimesheets › excludes a timesheet the viewer already decided` (needs the B-4 export) | FA | 4 | drop `actorId: true` from the timesheet select (the silent-failure mode) |
 | **AC-28** | `approval-self-guard.test.ts › canActOnStage › the bar survives un-verifying the document` + `requests-documents.test.ts › setRequestDocumentVerified › clearing keeps verifiedById` | FA | 5 | restore `verifiedById: null` in the clear branch |
 | **AC-29** | `e2e/multi-role-sod.spec.ts › a barred verifier sees a disabled sign-off control with a reason` (asserts `aria-disabled`, tab-reachability, resolved `aria-describedby` text) + the AC-27 service case | FA (E2E) + FA (unit) | 4 | restore the permissive sentinel in `payroll/[id]/+page.server.ts` — E2E goes red, service test stays green |
@@ -1461,8 +1502,12 @@ the file the plan pointed at (`proposal-queue.test.ts`) tests the #224 action-pr
 never touches the approvals service. The plan's central architectural argument was unproven by
 construction. This file is what makes it true.
 
-Read `tests/unit/approvals.test.ts` first and reuse its `vi.mock('$lib/server/db')` shape — do not
-invent a second mocking harness. Requires the B-4 exports (commit 4).
+Reuse the existing `vi.mock('$lib/server/db')` harness from **`tests/unit/approval-self-guard.test.ts:18-31`**
+(or `proposal-queue.test.ts:41-43`) — do not invent a second mocking harness, and do **not** copy
+`approvals.test.ts`, which is a pure-function suite with no `vi.mock` (C-P3). Note the harness needs
+widening for `countPendingApprovals`: it queries `employee.findUnique`, `request.findMany`,
+`timesheet.findMany`, `payrollRun.findMany` **and** whatever `listActionableProposals` reaches for.
+Requires the B-4 exports (commit 4).
 
 | Case | Proves | Assert |
 |---|---|---|
