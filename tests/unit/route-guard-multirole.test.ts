@@ -10,9 +10,15 @@ import { join } from 'node:path'
  * singular `.role` means a user with a secondary role is shown a nav entry, 403'd at the guard, and
  * never reaches the service that would have admitted them.
  *
- * Nothing else stops a future site from reintroducing that split — it compiles, and it is
- * unreachable until multi-role assignment ships, so no behavioural test would catch it either.
- * Hence a static scan.
+ * Nothing else stops a future site from reintroducing that split — it compiles, and a behavioural
+ * test only catches it if someone thinks to give a fixture user two roles. Hence a static scan.
+ *
+ * #283 removed this scan's original escape clause. The header used to say the split was
+ * "unreachable until multi-role assignment ships"; multi-role assignment HAS now shipped
+ * (Settings → Roles and its v1 twin both write a set), so every site this scan guards is live
+ * rather than latent, and a regression here is a production authority bug rather than a dormant
+ * one. Whether the scan still earns its keep now that the state is reachable is a question for a
+ * later review — SPEC R3 — not a licence to weaken it. Its patterns and assertions are unchanged.
  *
  * #279 rekeyed this on the **accessor** rather than a list of callee names. The old pattern
  * enumerated five `require*` helpers by hand, which meant it could only ever cover names someone
