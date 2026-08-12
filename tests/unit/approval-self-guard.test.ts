@@ -33,6 +33,13 @@ vi.mock('$lib/server/audit', () => ({ writeAuditLog: writeAuditLogMock }))
 vi.mock('$lib/server/services/notifications', () => ({
 	notify: vi.fn().mockResolvedValue(undefined)
 }))
+// #299/AC-10: the terminal byte eviction is a CALL decide() makes, so the only way to gate it is to
+// own the module it calls into. The alias specifier resolves to the same module approvals.ts imports
+// relatively as './requests/documents' — the notifications mock directly above already proves that
+// works in this file. The factory replaces the WHOLE module: if approvals.ts ever imports a second
+// export from it, extend this factory in the same commit or the suite dies on an undefined export.
+const { evictMock } = vi.hoisted(() => ({ evictMock: vi.fn() }))
+vi.mock('$lib/server/services/requests/documents', () => ({ evictTombstonedBytes: evictMock }))
 
 const { decide, decidePayrollRun, canActOnStage, decidedActorIds, usedDocVerifierCarveOut } =
 	await import('$lib/server/services/approvals')
@@ -49,6 +56,8 @@ const ctxOf = (over: Partial<AuditContext> = {}): AuditContext => ({
 
 beforeEach(() => {
 	vi.clearAllMocks()
+	// decide() calls `.catch()` on the result, so the mock must return a promise, not undefined.
+	evictMock.mockResolvedValue(undefined)
 	dbMock.$transaction.mockImplementation(async (arg: unknown) =>
 		typeof arg === 'function' ? (arg as (tx: unknown) => unknown)(dbMock) : arg
 	)
@@ -140,6 +149,199 @@ describe('decide — nobody decides their own request (#75)', () => {
 			)
 			expect(requestAudit()?.newValue).not.toHaveProperty('selfVerifiedEvidence')
 		})
+	})
+})
+
+// ─── #299 — the F3 bar survives soft-delete ─────────────────────────────────────────────────
+//
+// #283 made `verifiedById` survive an un-verify. It did not make it survive a DELETE: the requester
+// could remove the now-unverified document and upload a replacement, the row went with it, and the
+// signer decided their own evidence. #299 keeps the row forever as a tombstone (`deletedAt`), so
+// decide()'s documents read must stay UNFILTERED at approvals.ts — that read is the bar.
+//
+// These cases go on the db-mocked `decide` harness above, NOT on the pure-predicate
+// `canActOnStage` suite below. That predicate takes `verifiedDocActorIds` and never sees a
+// document, so it cannot tell a tombstone from a live row — a case written there would be
+// byte-identical to AC-19 and would prove nothing, exactly as its own comment says of AC-28.
+
+const SIGNER = 'user-signer'
+
+type MockDoc = { verifiedById: string | null; deletedAt: Date | null; storageKey?: string | null }
+
+/**
+ * Emulates Prisma's `where` on the nested `documents` include.
+ *
+ * The flat `mockResolvedValue` used everywhere else in this file hands back the whole fixture
+ * whatever the query asked for, which makes AC-2 VACUOUS: add `where: { deletedAt: null }` to
+ * decide()'s documents include and the bar silently stops seeing tombstoned signers while every
+ * assertion here still passes. `approval-queues.test.ts`'s `project` helper cannot cover this
+ * either — it honours the include's `select` KEYS and is blind to a `where`.
+ *
+ * Same vacuous-mock trap this repo has already shipped twice (dashboard-org-scoping.test.ts,
+ * audit-log-reveal.test.ts / #242): reach for a helper like this whenever a test's whole point is
+ * what a query DOES or does not return.
+ */
+const applyDocsWhere = <T extends { documents: MockDoc[] }>(
+	row: T,
+	args: { include?: { documents?: { where?: Record<string, unknown> } } }
+): T => {
+	const where = args?.include?.documents?.where
+	if (!where) return row
+	return {
+		...row,
+		documents: row.documents.filter((d) =>
+			Object.entries(where).every(([k, v]) => (d as Record<string, unknown>)[k] === v)
+		)
+	}
+}
+
+describe('decide — the F3 bar survives soft-delete (#299)', () => {
+	// A PENDING request on its single MAKE stage, owned by someone other than the actor, so the
+	// only thing that can refuse the decision is the document bar.
+	const requestWith = (documents: MockDoc[]) => ({
+		id: 'req1',
+		employeeId: OWNER_EMP,
+		type: 'LEAVE',
+		payload: null,
+		status: 'PENDING',
+		currentStage: 0,
+		steps: [{ id: 's1', attempt: 1, stageIndex: 0, stage: 'MAKE', decision: null }],
+		documents,
+		employee: { reportsToId: null, userId: 'user-owner' }
+	})
+
+	const seed = (documents: MockDoc[]) => {
+		const row = requestWith(documents)
+		dbMock.request.findFirst.mockImplementation(async (args: never) => applyDocsWhere(row, args))
+	}
+
+	const decideAsSigner = () =>
+		decide('req1', 'APPROVED', undefined, ctxOf({ actorId: SIGNER }), 'emp-someone-else')
+
+	// The helper's own gate. Without this, a broken `applyDocsWhere` (one that quietly ignored the
+	// `where` it was handed) would make every case below pass for the wrong reason — which is the
+	// precise failure this helper exists to prevent, landing on the helper itself.
+	it('the mock honours a documents `where`, so these cases are not vacuous', async () => {
+		const row = requestWith([{ verifiedById: SIGNER, deletedAt: new Date() }])
+		expect(
+			applyDocsWhere(row, { include: { documents: { where: { deletedAt: null } } } }).documents
+		).toEqual([])
+		expect(applyDocsWhere(row, { include: { documents: {} } }).documents).toHaveLength(1)
+	})
+
+	// AC-2 — the contract, stated as plainly as a test can state it: adding
+	// `where: { deletedAt: null }` to decide()'s documents include at approvals.ts flips this case
+	// from refuse to allow. That mutation leaves every other test in this repo green, so this
+	// assertion is the only thing standing between #299 and a silent regression.
+	it('refuses the signer when the only verified document is a tombstone', async () => {
+		seed([{ verifiedById: SIGNER, deletedAt: new Date() }])
+
+		await expect(decideAsSigner()).rejects.toMatchObject({
+			status: 403,
+			body: { message: 'You cannot act on this stage' }
+		})
+		expect(dbMock.$transaction).not.toHaveBeenCalled()
+	})
+
+	// AC-1 — the full laundering sequence, as a fixture: the signer cleared their own sign-off
+	// (verifiedAt null, verifiedById kept — #283/D11), the requester removed that document and
+	// uploaded a clean replacement. Before #299 the tombstone row did not exist and this decision
+	// went through.
+	it('refuses after un-verify → delete → re-upload', async () => {
+		seed([
+			{ verifiedById: SIGNER, deletedAt: new Date() },
+			{ verifiedById: null, deletedAt: null }
+		])
+
+		await expect(decideAsSigner()).rejects.toMatchObject({
+			status: 403,
+			body: { message: 'You cannot act on this stage' }
+		})
+	})
+
+	// AC-4 — the FIFO cap has since evicted that tombstone's bytes (storageKey null). Eviction
+	// touches one column and never the row, so the bar reads exactly what it read before.
+	it('refuses even after the signed file’s bytes were evicted', async () => {
+		seed([
+			{ verifiedById: SIGNER, deletedAt: new Date(), storageKey: null },
+			{ verifiedById: null, deletedAt: null, storageKey: 'k' }
+		])
+
+		await expect(decideAsSigner()).rejects.toMatchObject({
+			status: 403,
+			body: { message: 'You cannot act on this stage' }
+		})
+	})
+
+	// The negative control. A bar that refused everyone would pass all three cases above.
+	it('lets an approver who signed nothing decide the request', async () => {
+		seed([{ verifiedById: 'user-somebody-else', deletedAt: new Date() }])
+
+		await expect(
+			decide('req1', 'APPROVED', undefined, ctxOf({ actorId: SIGNER }), 'emp-someone-else')
+		).resolves.toBeDefined()
+	})
+})
+
+// ─── #299/AC-10 — every terminal path actually CALLS the eviction ───────────────────────────
+//
+// The FIFO-eviction suite in requests-documents.test.ts tests the helper in isolation: nothing
+// there asserts that any caller ever INVOKES it. Delete the call outright, or pass 3 where 0
+// belongs, and that suite stays green while closed requests keep their tombstoned files forever.
+// This repo's own recurring failure shape — one correct helper, one site left behind (timesheetSoD,
+// #283) — landing here on the trigger. So: assert the ARGUMENTS, not merely the call.
+describe('decide — terminal statuses evict every tombstoned byte (#299/AC-10)', () => {
+	const requestWith = (steps: { id: string; stageIndex: number }[]) => ({
+		id: 'req1',
+		employeeId: OWNER_EMP,
+		type: 'LEAVE',
+		payload: null,
+		status: 'PENDING',
+		currentStage: 0,
+		steps: steps.map((s) => ({ ...s, attempt: 1, stage: 'MAKE', decision: null })),
+		documents: [],
+		employee: { reportsToId: null, userId: 'user-owner' }
+	})
+
+	const ONE_STAGE = [{ id: 's1', stageIndex: 0 }]
+	// A two-stage chain, so approving stage 0 advances the request instead of closing it.
+	const TWO_STAGE = [
+		{ id: 's1', stageIndex: 0 },
+		{ id: 's2', stageIndex: 1 }
+	]
+
+	const seed = (steps: { id: string; stageIndex: number }[]) =>
+		dbMock.request.findFirst.mockResolvedValue(requestWith(steps))
+
+	it('APPROVED evicts with keepNewest 0 — the request is closed, the cap stops applying', async () => {
+		seed(ONE_STAGE)
+
+		await decide('req1', 'APPROVED', undefined, ctxOf(), 'emp-someone-else')
+
+		expect(evictMock).toHaveBeenCalledTimes(1)
+		expect(evictMock).toHaveBeenCalledWith('req1', 0)
+	})
+
+	// A REJECTED decision needs a reason or decide() 400s before the transaction, and the trigger
+	// would never be reached — the assertion would pass vacuously on a missing note instead of on
+	// the eviction.
+	it('REJECTED evicts with keepNewest 0 too', async () => {
+		seed(ONE_STAGE)
+
+		await decide('req1', 'REJECTED', 'not approved', ctxOf(), 'emp-someone-else')
+
+		expect(evictMock).toHaveBeenCalledTimes(1)
+		expect(evictMock).toHaveBeenCalledWith('req1', 0)
+	})
+
+	// The negative control, and the one that pins keepNewest: an advance to the next stage is NOT
+	// terminal, the request is still open, and its tombstoned files stay within the FIFO cap.
+	it('does not evict when the decision only advances the chain', async () => {
+		seed(TWO_STAGE)
+
+		await decide('req1', 'APPROVED', undefined, ctxOf(), 'emp-someone-else')
+
+		expect(evictMock).not.toHaveBeenCalled()
 	})
 })
 
