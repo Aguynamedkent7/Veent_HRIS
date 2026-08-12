@@ -11,6 +11,7 @@ import {
 import { buildApprovalChain } from './routing'
 import { canAny } from '$lib/server/rbac'
 import { computeLeaveTotalDays, assertLeaveBalance, assertLeaveEligibility } from './leave'
+import { evictTombstonedBytes } from './documents'
 import type { AuditContext } from '../types'
 
 // Create a request and its resolved approval chain in one transaction. The chain
@@ -131,8 +132,21 @@ export async function listRequests(
 	})
 }
 
+// #299: `documents` and `documentHistory` are DELIBERATELY DIFFERENT ARRAYS, derived from one
+// unfiltered query.
+//
+//   documents        = the DOWNLOAD list. Tombstones EXCLUDED — there is nothing to download and
+//                      nothing to act on, so the detail page's live list and its Remove/Verify
+//                      controls read this one.
+//   documentHistory  = the AUDIT view. Tombstones INCLUDED — it is what the "Removed documents"
+//                      panel renders, and it is what actBlockedReason (+page.server.ts) reads so
+//                      the page agrees with decide()'s F3 bar instead of contradicting the queue.
+//
+// Collapsing them into one array breaks AC-5 in one direction and the #283/F3 audit trail in the
+// other, depending on which filter survives. This is the one derived-array site in #299 and it is
+// the easiest place in the codebase to reintroduce the bug by "tidying up".
 export async function getRequest(id: string, organizationId: string) {
-	return db.request.findFirst({
+	const req = await db.request.findFirst({
 		where: { id, employee: { user: { organizationId } } },
 		include: {
 			employee: { select: { id: true, firstName: true, lastName: true } },
@@ -146,6 +160,12 @@ export async function getRequest(id: string, organizationId: string) {
 			}
 		}
 	})
+	if (!req) return null
+	return {
+		...req,
+		documents: req.documents.filter((d) => d.deletedAt === null),
+		documentHistory: req.documents
+	}
 }
 
 // Employee re-submits a RETURNED request. Append-only (#134): the prior attempt's steps
@@ -191,6 +211,15 @@ export async function cancelRequest(id: string, employeeId: string, ctx: AuditCo
 		error(400, 'Only pending or returned requests can be cancelled')
 	}
 	const updated = await db.request.update({ where: { id }, data: { status: 'CANCELLED' } })
+	// #299/D-6a: CANCELLED is terminal — there is no path back out of it (resubmitRequest requires
+	// RETURNED, decide() requires PENDING) — so the tombstoned bytes go, all of them (keepNewest 0).
+	// There is deliberately NO transaction here and none should be added: the #101 atomicity
+	// argument that puts decide()'s eviction after a $transaction is decide()-specific (a step flip,
+	// a status flip and a leave-balance deduction that must commit together). This is one update;
+	// wrapping it would be speculative structure. The bare update above IS the commit.
+	await evictTombstonedBytes(id, 0).catch((e) =>
+		console.error('[storage] failed to evict tombstoned bytes for', id, e)
+	)
 	await writeAuditLog(ctx, {
 		action: 'UPDATE',
 		entityType: 'Request',
@@ -231,7 +260,13 @@ export async function deleteRequest(id: string, organizationId: string, ctx: Aud
 	// Row cascade removed the document rows; sweep their bytes off disk too. Each unlink
 	// is best-effort — the request is already gone, so one failed cleanup must not stop
 	// the rest of the sweep or skip the audit entry.
+	//
+	// #299: the select above stays UNFILTERED — a tombstoned document's file must be swept here too,
+	// or deleting the request orphans it permanently. The skip below is the already-evicted case
+	// (storageKey nulled by evictTombstonedBytes), not a defensive nicety: that row genuinely no
+	// longer claims a file.
 	for (const d of req.documents) {
+		if (!d.storageKey) continue
 		await deleteStoredFile(d.storageKey).catch((e) =>
 			console.error('[storage] failed to remove', d.storageKey, e)
 		)

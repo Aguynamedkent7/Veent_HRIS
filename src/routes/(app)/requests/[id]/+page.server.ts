@@ -86,7 +86,12 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		? null
 		: req.steps.some((s) => s.attempt === attempt && s.decision != null && s.actorId === user.id)
 			? 'You already decided an earlier stage of this attempt — another verifier or approver must act.'
-			: req.documents.some((d) => d.verifiedById === user.id) &&
+			: // #299/C-5: documentHistory, NOT documents. This line is the F3 mirror and must give the
+				// same answer as decide()'s bar, which reads tombstoned signers too. On the live list it
+				// would go quiet the moment the requester removed the document — the approvals queue
+				// would keep barring this actor (correctly) while the page they came to for "why can't
+				// I act on this?" told them nothing was wrong.
+				req.documentHistory.some((d) => d.verifiedById === user.id) &&
 				  !canAny(user.roles, 'ADMINISTER_SYSTEM')
 				? 'You signed off a supporting document on this request — another approver must decide it.'
 				: null

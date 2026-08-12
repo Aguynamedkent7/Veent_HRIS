@@ -5,6 +5,7 @@ import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import type { ApprovalDecision, ApprovalStage, Role } from '@prisma/client'
 import { applyApprovedRequest, type AppliedEffect } from './requests/apply'
+import { evictTombstonedBytes } from './requests/documents'
 import { buildApprovalChain } from './requests/routing'
 import { notify } from './notifications'
 import type { AuditContext } from './types'
@@ -211,6 +212,13 @@ export async function decide(
 			employee: { select: { reportsToId: true, userId: true } },
 			// #283/F3: verifiedById, NOT verifiedAt. The two mean different things since D11, and
 			// keying this on verifiedAt would reopen the un-verify bypass exactly.
+			//
+			// #299: this include is DELIBERATELY UNFILTERED — no `where: { deletedAt: null }`, ever.
+			// A tombstoned document's signer is exactly what this bar must still see; filtering here
+			// restores the un-verify -> delete -> re-upload bypass #299 exists to close, and it does
+			// so with every test in the repo still green. The gate that turns red is AC-2 in
+			// tests/unit/approval-self-guard.test.ts ("the F3 bar survives soft-delete"), which mocks
+			// findFirst through a `where`-honouring helper precisely so this mutation cannot hide.
 			documents: { select: { verifiedById: true } }
 		}
 	})
@@ -271,6 +279,20 @@ export async function decide(
 		}
 		return null
 	})
+
+	// #299/D-6 + P-4: the request is now closed, so the FIFO cap stops applying and every tombstoned
+	// file goes (keepNewest = 0). Live documents keep their bytes — an auditor must still be able to
+	// open what was actually approved.
+	//
+	// Outside the transaction, and best-effort, on purpose. A filesystem unlink is not
+	// rollback-able: run it inside the $transaction above and a disk error rolls back an approval
+	// that already moved a leave balance (#101), while the bytes are gone either way. Bytes are a
+	// cleanup concern; the decision already succeeded.
+	if (transition.status === 'APPROVED' || transition.status === 'REJECTED') {
+		await evictTombstonedBytes(req.id, 0).catch((e) =>
+			console.error('[storage] failed to evict tombstoned bytes for', req.id, e)
+		)
+	}
 
 	await writeAuditLog(ctx, {
 		action: 'UPDATE',
@@ -340,25 +362,39 @@ export async function listPendingRequestsForApprover(
 			// verifiedAt stays — requests/approvals/+page.svelte renders it. verifiedById is added for
 			// the #283/F3 bar; dropping it empties verifiedDocActorIds and the bar quietly stops
 			// existing with every test still green.
-			documents: { select: { id: true, verifiedAt: true, verifiedById: true } }
+			//
+			// #299: `deletedAt` is selected ONLY so the row can be SPLIT below. This array itself
+			// stays UNFILTERED — it feeds verifiedDocActorIds, which is the queue's mirror of the F3
+			// bar and must still see a tombstoned signer. Adding `where: { deletedAt: null }` here is
+			// the same bypass as at decide()'s include, on the reader that is watched least.
+			documents: { select: { id: true, verifiedAt: true, verifiedById: true, deletedAt: true } }
 		},
 		orderBy: { createdAt: 'asc' }
 	})
 
-	return pending.filter((r) => {
-		const attempt = Math.max(...r.steps.map((s) => s.attempt))
-		const step = r.steps.find((s) => s.attempt === attempt && s.stageIndex === r.currentStage)
-		return (
-			step != null &&
-			canActOnStage(step.stage, actorRoles, actorEmployeeId, r.employeeId, {
-				actorId: actorUserId,
-				decidedActorIds: decidedActorIds(r.steps, attempt),
-				verifiedDocActorIds: r.documents
-					.map((d) => d.verifiedById)
-					.filter((v): v is string => v != null)
-			})
-		)
-	})
+	// #299/P-5 + I-5: `documents` serves two consumers with OPPOSITE needs. verifiedDocActorIds
+	// below must INCLUDE tombstones (it is the bar); the approvals page's "N documents" chip and
+	// unverified badge must EXCLUDE them (they show what an approver can actually open). Split ONCE
+	// here, on the server, so the template never learns tombstones exist — pushing a `.filter()`
+	// into Svelte would put a safety-critical distinction in the layer least likely to be reviewed.
+	// The two inputs are physically different arrays, so a future edit cannot collapse them by
+	// accident.
+	return pending
+		.filter((r) => {
+			const attempt = Math.max(...r.steps.map((s) => s.attempt))
+			const step = r.steps.find((s) => s.attempt === attempt && s.stageIndex === r.currentStage)
+			return (
+				step != null &&
+				canActOnStage(step.stage, actorRoles, actorEmployeeId, r.employeeId, {
+					actorId: actorUserId,
+					decidedActorIds: decidedActorIds(r.steps, attempt),
+					verifiedDocActorIds: r.documents
+						.map((d) => d.verifiedById)
+						.filter((v): v is string => v != null)
+				})
+			)
+		})
+		.map((r) => ({ ...r, liveDocuments: r.documents.filter((d) => d.deletedAt === null) }))
 }
 
 // Roles that can reach the approvals surface (includes the sign-off roles now).
