@@ -362,7 +362,9 @@ export async function reviewTimesheet(
 	if (
 		!canActOnStage(step.stage, ctx.actorRoles, actorEmployee?.id ?? null, ts.employeeId, {
 			actorId: ctx.actorId,
-			decidedActorIds: decidedActorIds(ts.approvalSteps, live.attempt)
+			decidedActorIds: decidedActorIds(ts.approvalSteps, live.attempt),
+			// Timesheets carry no RequestDocument rows, so [] is accurate, not a disabled guard.
+			verifiedDocActorIds: []
 		})
 	) {
 		error(403, 'You cannot act on this stage')

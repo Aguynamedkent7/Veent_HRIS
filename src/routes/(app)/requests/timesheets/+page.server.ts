@@ -49,7 +49,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 			if (!live || !live.currentStep) return canAny(roles, 'VIEW_TEAM')
 			return canActOnStage(live.currentStep.stage, roles, myEmployee?.id ?? null, ts.employeeId, {
 				actorId: user.id,
-				decidedActorIds: decidedActorIds(ts.approvalSteps, live.attempt)
+				decidedActorIds: decidedActorIds(ts.approvalSteps, live.attempt),
+				// Timesheets carry no RequestDocument rows, so [] is accurate, not a disabled guard.
+				verifiedDocActorIds: []
 			})
 		})
 		.map(({ approvalSteps, ...ts }) => ({

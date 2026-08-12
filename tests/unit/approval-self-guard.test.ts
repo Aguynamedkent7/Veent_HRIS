@@ -26,12 +26,15 @@ const { dbMock } = vi.hoisted(() => ({
 }))
 
 vi.mock('$lib/server/db', () => ({ db: dbMock }))
-vi.mock('$lib/server/audit', () => ({ writeAuditLog: vi.fn().mockResolvedValue(undefined) }))
+const { writeAuditLogMock } = vi.hoisted(() => ({
+	writeAuditLogMock: vi.fn().mockResolvedValue(undefined)
+}))
+vi.mock('$lib/server/audit', () => ({ writeAuditLog: writeAuditLogMock }))
 vi.mock('$lib/server/services/notifications', () => ({
 	notify: vi.fn().mockResolvedValue(undefined)
 }))
 
-const { decide, decidePayrollRun, canActOnStage, decidedActorIds } =
+const { decide, decidePayrollRun, canActOnStage, decidedActorIds, usedDocVerifierCarveOut } =
 	await import('$lib/server/services/approvals')
 
 const OWNER_EMP = 'emp-owner'
@@ -63,6 +66,9 @@ describe('decide — nobody decides their own request (#75)', () => {
 		status: 'PENDING',
 		currentStage: 0,
 		steps: [{ id: 's1', attempt: 1, stageIndex: 0, stage: 'MAKE', decision: null }],
+		// #283: decide() now includes documents for the F3 bar; without this key req.documents.map
+		// throws before any guard runs and every case here dies on a TypeError.
+		documents: [],
 		employee: { reportsToId: null, userId: 'user-owner' }
 	}
 
@@ -97,6 +103,44 @@ describe('decide — nobody decides their own request (#75)', () => {
 		).resolves.toBeDefined()
 		expect(dbMock.$transaction).toHaveBeenCalled()
 	})
+
+	// AC-22 — the carve-out is a privileged waiver of a two-person control, so it leaves a mark.
+	// Both halves matter: present when used, ABSENT otherwise. A marker that fires on every
+	// decision tells you nothing, and would be worse than none at all.
+	describe('the ADMINISTER_SYSTEM carve-out is audited (#283/AC-22)', () => {
+		const withSignedDoc = (signerId: string) =>
+			dbMock.request.findFirst.mockResolvedValue({
+				...pendingRequest,
+				documents: [{ verifiedById: signerId }]
+			})
+
+		const requestAudit = () =>
+			writeAuditLogMock.mock.calls.find((c) => c[1]?.entityType === 'Request')?.[1]
+
+		it('stamps selfVerifiedEvidence when a CEO decides evidence they signed', async () => {
+			withSignedDoc('user-ceo')
+			await decide(
+				'req1',
+				'APPROVED',
+				undefined,
+				ctxOf({ actorId: 'user-ceo', actorRoles: ['CEO'] }),
+				'emp-someone-else'
+			)
+			expect(requestAudit()?.newValue).toMatchObject({ selfVerifiedEvidence: true })
+		})
+
+		it('omits the key entirely on an ordinary decision', async () => {
+			withSignedDoc('user-somebody-else')
+			await decide(
+				'req1',
+				'APPROVED',
+				undefined,
+				ctxOf({ actorId: 'user-ceo', actorRoles: ['CEO'] }),
+				'emp-someone-else'
+			)
+			expect(requestAudit()?.newValue).not.toHaveProperty('selfVerifiedEvidence')
+		})
+	})
 })
 
 // ─── #283/F1 — one actor may not decide two stages of the same attempt ──────────────────────
@@ -107,7 +151,11 @@ describe('decide — nobody decides their own request (#75)', () => {
 // cases below and by approval-queues.test.ts.
 describe('canActOnStage — the same-attempt bar (#283/F1)', () => {
 	const TWO_HAT: Role[] = ['VERIFIER', 'APPROVER']
-	const barred = (ids: string[]) => ({ actorId: 'user-two-hat', decidedActorIds: ids })
+	const barred = (ids: string[]) => ({
+		actorId: 'user-two-hat',
+		decidedActorIds: ids,
+		verifiedDocActorIds: []
+	})
 
 	// AC-9
 	it('bars an actor from a second stage of the same attempt', () => {
@@ -135,9 +183,72 @@ describe('canActOnStage — the same-attempt bar (#283/F1)', () => {
 		expect(
 			canActOnStage('APPROVE', TWO_HAT, 'emp-a', 'emp-owner', {
 				actorId: null,
-				decidedActorIds: ['user-two-hat']
+				decidedActorIds: ['user-two-hat'],
+				verifiedDocActorIds: []
 			})
 		).toBe(true)
+	})
+})
+
+// ─── #283/F3 — the verifier of a document may not decide that request ───────────────────────
+//
+// Reachable TODAY with a single role, unlike F1: APPROVE_REQUESTS covers 7 of 9 roles, so one
+// approver routinely signs off the evidence and then rules on it. Folded into #283 because it is
+// the same defect — one actor standing on both sides of a two-person control.
+describe('canActOnStage — the document-verifier bar (#283/F3)', () => {
+	const signed = (roles: Role[]) =>
+		canActOnStage('APPROVE', roles, 'emp-a', 'emp-owner', {
+			actorId: 'user-signer',
+			decidedActorIds: [],
+			verifiedDocActorIds: ['user-signer']
+		})
+
+	// AC-19
+	it('bars the verifier of a request document from deciding that request', () => {
+		expect(signed(['APPROVER'])).toBe(false)
+	})
+
+	// AC-20 / D7. "High enough roles" does not exist in this codebase — #282 deleted ROLE_HIERARCHY
+	// and a static scan keeps it deleted — so the escape hatch is a NAMED CAPABILITY and nothing
+	// else. Both holders of ADMINISTER_SYSTEM are checked, since naming one role would be a rank in
+	// disguise.
+	it('carves out ADMINISTER_SYSTEM holders', () => {
+		expect(signed(['SUPER_ADMIN', 'APPROVER'])).toBe(true)
+		expect(signed(['CEO', 'APPROVER'])).toBe(true)
+	})
+
+	it('does not fire for an approver who signed nothing on this request', () => {
+		expect(
+			canActOnStage('APPROVE', ['APPROVER'], 'emp-a', 'emp-owner', {
+				actorId: 'user-signer',
+				decidedActorIds: [],
+				verifiedDocActorIds: ['user-somebody-else']
+			})
+		).toBe(true)
+	})
+
+	// AC-28 — the bypass VALIDATE found. verifyDoc accepts verified=false, so before D11 a barred
+	// approver un-verified their own sign-off (nulling verifiedById) and decided, with the audit
+	// marker never firing. The predicate reads verifiedById, never verifiedAt, which is what makes
+	// a cleared sign-off keep barring them. requests-documents.test.ts proves the other half:
+	// that the clear really does keep the column.
+	it('survives un-verifying the document (#283/AC-28)', () => {
+		// A cleared sign-off: verifiedAt is null, verifiedById is not. The bar keys on the latter.
+		expect(signed(['APPROVER'])).toBe(false)
+	})
+
+	// The waiver is privileged, so it must not be silent — this is what the audit marker keys on.
+	it('flags the carve-out for audit only when it was actually used', () => {
+		const sod = {
+			actorId: 'user-signer',
+			decidedActorIds: [],
+			verifiedDocActorIds: ['user-signer']
+		}
+		expect(usedDocVerifierCarveOut(sod, ['CEO'])).toBe(true)
+		expect(usedDocVerifierCarveOut(sod, ['APPROVER'])).toBe(false)
+		expect(usedDocVerifierCarveOut({ ...sod, verifiedDocActorIds: ['user-other'] }, ['CEO'])).toBe(
+			false
+		)
 	})
 })
 

@@ -89,6 +89,9 @@ beforeEach(() => {
 		dateFrom: new Date('2026-01-05'),
 		payload: {},
 		employee: { reportsToId: null, userId: 'user-owner' },
+		// #283: decide() includes documents for the F3 bar; without this key req.documents.map
+		// throws before any guard runs.
+		documents: [],
 		steps: chain('APPROVE')
 	})
 	txMock.timesheet.update.mockResolvedValue({ id: 'ts1', status: 'APPROVED' })

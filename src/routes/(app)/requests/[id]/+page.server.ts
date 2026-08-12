@@ -73,7 +73,25 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 			)
 	}
 
-	return { request: req, isOwner, canReview, leaveTypeName, leaveBalances }
+	// #283/D12: this page is where an approver comes to ask "why can't I act on this?" — the
+	// approvals QUEUE deliberately omits barred items (AC-15/AC-21/US-8), so without this the
+	// answer is nowhere. There is no decide control on this page to disable (the actions here are
+	// uploadDocs / deleteDoc / verifyDoc only), so D12's "explain why" half lands as a read-only
+	// line. Same inputs as the service guard, so the two cannot drift.
+	//
+	// Both comparisons are User ids on both sides: steps.actorId and documents.verifiedById are
+	// User ids, as is user.id. Compare either against an Employee id and this silently never fires.
+	const attempt = Math.max(1, ...req.steps.map((s) => s.attempt))
+	const actBlockedReason = !canReview
+		? null
+		: req.steps.some((s) => s.attempt === attempt && s.decision != null && s.actorId === user.id)
+			? 'You already decided an earlier stage of this attempt — another verifier or approver must act.'
+			: req.documents.some((d) => d.verifiedById === user.id) &&
+				  !canAny(user.roles, 'ADMINISTER_SYSTEM')
+				? 'You signed off a supporting document on this request — another approver must decide it.'
+				: null
+
+	return { request: req, isOwner, canReview, leaveTypeName, leaveBalances, actBlockedReason }
 }
 
 function ctxOf(locals: App.Locals, ip: string) {

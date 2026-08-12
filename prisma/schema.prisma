@@ -856,6 +856,10 @@ model ApprovalStep {
 // as EmployeeDocument, T162) and are served only through an authenticated download
 // route. `verifiedById`/`verifiedAt` record an approver signing off on the document
 // as part of the review flow (issue #51).
+//
+// #283/D11: the two columns do NOT mean the same thing. `verifiedAt` means currently verified;
+// `verifiedById` is the durable record of who last signed off and SURVIVES clearing, because the
+// F3 separation-of-duties bar keys on it. Nulling both on an un-verify reopens a one-click bypass.
 model RequestDocument {
   id           String    @id @default(cuid())
   requestId    String

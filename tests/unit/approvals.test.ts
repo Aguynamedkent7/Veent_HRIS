@@ -15,7 +15,7 @@ import type { ApprovalDecision, ApprovalStage, Role } from '@prisma/client'
 // #283 made `sod` a required 5th parameter. These cases are about STAGE AUTHORITY, so they pass
 // the no-bar value — an actor who has decided nothing. The bar itself is covered in
 // approval-self-guard.test.ts, where the service wiring that feeds it can be exercised too.
-const NO_BAR = { actorId: null, decidedActorIds: [] }
+const NO_BAR = { actorId: null, decidedActorIds: [], verifiedDocActorIds: [] }
 
 describe('canActOnStage', () => {
 	it('MAKE requires an HR-level maker', () => {

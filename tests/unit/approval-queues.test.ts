@@ -47,19 +47,32 @@ const {
  * version of this file. Same trap as dashboard-org-scoping.test.ts and audit-log-reveal.test.ts
  * (#242) — reach for this helper whenever a test asserts what a query DOES or does not return.
  */
-const projectSteps = <T extends { approvalSteps: Record<string, unknown>[] }>(
+const project = <T extends Record<string, unknown>>(
 	rows: T[],
-	args: { select?: { approvalSteps?: { select?: Record<string, true> } } }
-) => {
-	const fields = args?.select?.approvalSteps?.select
+	args: Record<string, { select?: Record<string, true> } | undefined> | undefined,
+	relation: string
+): T[] => {
+	const fields = args?.[relation]?.select
 	if (!fields) return rows
+	const keys = Object.keys(fields)
 	return rows.map((r) => ({
 		...r,
-		approvalSteps: r.approvalSteps.map((s) =>
-			Object.fromEntries(Object.keys(fields).map((k) => [k, s[k]]))
+		[relation]: (r[relation] as Record<string, unknown>[]).map((child) =>
+			Object.fromEntries(keys.map((k) => [k, child[k]]))
 		)
-	}))
+	})) as T[]
 }
+
+// `select` for the counters, `include` for the request queue — the helper is told which.
+const projectSteps = <T extends Record<string, unknown>>(
+	rows: T[],
+	args: { select?: Record<string, { select?: Record<string, true> } | undefined> }
+) => project(rows, args?.select, 'approvalSteps')
+
+const projectDocs = <T extends Record<string, unknown>>(
+	rows: T[],
+	args: { include?: Record<string, { select?: Record<string, true> } | undefined> }
+) => project(rows, args?.include, 'documents')
 
 const VIEWER = 'user-viewer'
 const TWO_HAT: Role[] = ['VERIFIER', 'APPROVER']
@@ -87,10 +100,8 @@ beforeEach(() => {
 
 describe('listPendingRequestsForApprover (#283/AC-15)', () => {
 	it('excludes a request the viewer already decided a stage of', async () => {
-		dbMock.request.findMany.mockResolvedValue([
-			requestAt('own', VIEWER),
-			requestAt('other', 'user-someone-else')
-		])
+		const seeded = [requestAt('own', VIEWER), requestAt('other', 'user-someone-else')]
+		dbMock.request.findMany.mockImplementation(async (args: never) => projectDocs(seeded, args))
 
 		const rows = await listPendingRequestsForApprover('org1', TWO_HAT, 'emp-viewer', VIEWER)
 
@@ -99,8 +110,36 @@ describe('listPendingRequestsForApprover (#283/AC-15)', () => {
 		expect(rows.map((r) => r.id)).toEqual(['other'])
 	})
 
+	// AC-21 — the queue mirror of F3. The silent-failure mode named in the header is live here:
+	// drop `verifiedById` from the documents select and verifiedDocActorIds goes empty for every
+	// row, the bar quietly stops existing, and the pure-function tests stay green.
+	it('excludes a request whose document the viewer verified (#283/AC-21)', async () => {
+		const withDoc = {
+			...requestAt('signed', 'user-else'),
+			documents: [{ id: 'd1', verifiedAt: new Date(), verifiedById: VIEWER }]
+		}
+		const seeded = [withDoc, requestAt('clean', 'user-else')]
+		dbMock.request.findMany.mockImplementation(async (args: never) => projectDocs(seeded, args))
+
+		const rows = await listPendingRequestsForApprover('org1', TWO_HAT, 'emp-viewer', VIEWER)
+		expect(rows.map((r) => r.id)).toEqual(['clean'])
+	})
+
+	// The bar reads verifiedById, so a CLEARED sign-off (verifiedAt null, verifiedById kept — D11)
+	// still excludes the row. This is the queue half of the un-verify bypass AC-28 closes.
+	it('keeps excluding it after the sign-off is cleared (#283/AC-28)', async () => {
+		const cleared = {
+			...requestAt('signed', 'user-else'),
+			documents: [{ id: 'd1', verifiedAt: null, verifiedById: VIEWER }]
+		}
+		dbMock.request.findMany.mockImplementation(async (args: never) => projectDocs([cleared], args))
+
+		expect(await listPendingRequestsForApprover('org1', TWO_HAT, 'emp-viewer', VIEWER)).toEqual([])
+	})
+
 	it('still returns the same request for a different approver', async () => {
-		dbMock.request.findMany.mockResolvedValue([requestAt('own', VIEWER)])
+		const seeded = [requestAt('own', VIEWER)]
+		dbMock.request.findMany.mockImplementation(async (args: never) => projectDocs(seeded, args))
 
 		const rows = await listPendingRequestsForApprover('org1', TWO_HAT, 'emp-x', 'user-other')
 		expect(rows.map((r) => r.id)).toEqual(['own'])
@@ -117,8 +156,8 @@ describe('countActionableTimesheets (#283/DEC-2)', () => {
 	})
 
 	it('excludes a timesheet the viewer already decided', async () => {
-		const rows = [timesheetAt(VIEWER), timesheetAt('user-else')]
-		dbMock.timesheet.findMany.mockImplementation(async (args: never) => projectSteps(rows, args))
+		const seeded = [timesheetAt(VIEWER), timesheetAt('user-else')]
+		dbMock.timesheet.findMany.mockImplementation(async (args: never) => projectSteps(seeded, args))
 
 		expect(await countActionableTimesheets('org1', TWO_HAT, 'emp-viewer', VIEWER)).toBe(1)
 	})
@@ -141,8 +180,8 @@ describe('countActionablePayrollRuns (#283/AC-27 count half)', () => {
 	})
 
 	it('excludes a run the viewer verified', async () => {
-		const rows = [runAt(VIEWER), runAt('user-else')]
-		dbMock.payrollRun.findMany.mockImplementation(async (args: never) => projectSteps(rows, args))
+		const seeded = [runAt(VIEWER), runAt('user-else')]
+		dbMock.payrollRun.findMany.mockImplementation(async (args: never) => projectSteps(seeded, args))
 
 		expect(await countActionablePayrollRuns('org1', ['VERIFIER', 'CEO'], VIEWER)).toBe(1)
 	})
@@ -150,8 +189,8 @@ describe('countActionablePayrollRuns (#283/AC-27 count half)', () => {
 	// The clause `&& makeActorId !== userId` was deleted as subsumed. This proves the subsumption
 	// rather than assuming it: the maker must still be excluded, now via decidedActorIds.
 	it('still excludes the run the viewer prepared, with no maker clause left', async () => {
-		const rows = [runAt('user-else', VIEWER)]
-		dbMock.payrollRun.findMany.mockImplementation(async (args: never) => projectSteps(rows, args))
+		const seeded = [runAt('user-else', VIEWER)]
+		dbMock.payrollRun.findMany.mockImplementation(async (args: never) => projectSteps(seeded, args))
 
 		expect(await countActionablePayrollRuns('org1', ['VERIFIER', 'CEO'], VIEWER)).toBe(0)
 	})
@@ -161,10 +200,8 @@ describe('countPendingApprovals — the sidebar badge (#283/US-8)', () => {
 	// US-8: "my to-do count tells the truth." The badge must agree with the queue, or the user is
 	// sent looking for work that is not there.
 	it('counts only the requests the queue would show', async () => {
-		dbMock.request.findMany.mockResolvedValue([
-			requestAt('own', VIEWER),
-			requestAt('other', 'user-else')
-		])
+		const seeded = [requestAt('own', VIEWER), requestAt('other', 'user-else')]
+		dbMock.request.findMany.mockImplementation(async (args: never) => projectDocs(seeded, args))
 
 		const counts = await countPendingApprovals({
 			id: VIEWER,

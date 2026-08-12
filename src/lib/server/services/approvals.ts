@@ -70,6 +70,11 @@ export interface StageSoD {
 	actorId: string | null
 	/** Output of decidedActorIds() for the LIVE attempt. */
 	decidedActorIds: string[]
+	/** RequestDocument.verifiedById for every document on THIS request — INCLUDING documents whose
+	 *  verifiedAt has since been cleared (#283/D11: clearing keeps verifiedById precisely so this
+	 *  bar cannot be un-verified away). Empty for timesheets and payroll runs — neither has
+	 *  RequestDocument rows, so the empty array is an accurate answer, not a disabled guard. */
+	verifiedDocActorIds: string[]
 }
 
 // Can this actor decide the given stage? Separation of duties comes first: nobody acts
@@ -96,7 +101,49 @@ export function canActOnStage(
 	// their own bar. The worst case across attempts is that A verified a superseded version and
 	// approves a version someone else verified: still two humans on the live attempt.
 	if (sod.actorId != null && sod.decidedActorIds.includes(sod.actorId)) return false
+	// #283/F3/D7: whoever signed off a supporting document may not also decide the request — they
+	// would be weighing their own evidence. A holder of ADMINISTER_SYSTEM (SUPER_ADMIN, CEO) is
+	// carved out by explicit decision: they are the escape hatch for a small org whose only
+	// available verifier is also its only available approver. The waiver is audited, not silent —
+	// see usedDocVerifierCarveOut.
+	//
+	// This is a CAPABILITY, never a rank. #282 deleted ROLE_HIERARCHY and
+	// tests/unit/rbac-no-rank-helpers.test.ts is a static scan that keeps rank floors deleted. Do
+	// not reintroduce a level/seniority/hierarchy concept here in any form.
+	//
+	// Scoped per REQUEST, not per attempt — unlike the bar above. RequestDocument carries no
+	// attempt column, and a RETURN does not by itself change the signed artefact: while the
+	// sign-off STANDS, deleteRequestDocument refuses with 409, so the row this actor signed
+	// survives into attempt 2. Q1's "materially changed document" argument justifies
+	// attempt-scoping stage decisions; it does not transfer to a row a RETURN does not touch.
+	//
+	// Known gap, NOT an invariant: once the sign-off is cleared, verifiedAt is null, that 409 stops
+	// firing, and the request OWNER can delete the row — taking verifiedById with it — then
+	// re-upload. Two-party (only the owner may delete, and the owner cannot decide their own
+	// request), same collusion class as the ponytail ceiling in documents.ts, and closed by the
+	// same RequestDocumentVerification history table.
+	//
+	// Covers EVERY stage, not just a nominated evidence-consuming one: no stage in the chain is
+	// designated as the document reader (the queue surfaces documents to all of them), so a
+	// stage-scoped bar would have to invent that designation.
+	if (
+		sod.actorId != null &&
+		sod.verifiedDocActorIds.includes(sod.actorId) &&
+		!canAny(actorRoles, 'ADMINISTER_SYSTEM')
+	) {
+		return false
+	}
 	return canAny(actorRoles, stageCapability[stage])
+}
+
+/** True when the F3 bar WOULD have fired but D7's ADMINISTER_SYSTEM carve-out waived it. The
+ *  waiver is a privileged path; it must not be silent. Stamped onto the decision's audit entry. */
+export function usedDocVerifierCarveOut(sod: StageSoD, actorRoles: Role[]): boolean {
+	return (
+		sod.actorId != null &&
+		sod.verifiedDocActorIds.includes(sod.actorId) &&
+		canAny(actorRoles, 'ADMINISTER_SYSTEM')
+	)
 }
 
 // Payroll variant: the final APPROVE routes to the finance approvers (CEO / Super Admin,
@@ -146,7 +193,10 @@ export async function decide(
 		where: { id: requestId, employee: { user: { organizationId: ctx.organizationId } } },
 		include: {
 			steps: { orderBy: [{ attempt: 'asc' }, { stageIndex: 'asc' }] },
-			employee: { select: { reportsToId: true, userId: true } }
+			employee: { select: { reportsToId: true, userId: true } },
+			// #283/F3: verifiedById, NOT verifiedAt. The two mean different things since D11, and
+			// keying this on verifiedAt would reopen the un-verify bypass exactly.
+			documents: { select: { verifiedById: true } }
 		}
 	})
 	if (!req) error(404, 'Request not found')
@@ -164,12 +214,14 @@ export async function decide(
 	const step = liveSteps.find((s) => s.stageIndex === req.currentStage)
 	if (!step) error(500, 'Approval chain is inconsistent')
 
-	if (
-		!canActOnStage(step.stage, ctx.actorRoles, actorEmployeeId, req.employeeId, {
-			actorId: ctx.actorId,
-			decidedActorIds: decidedActorIds(req.steps, attempt)
-		})
-	) {
+	const sod: StageSoD = {
+		actorId: ctx.actorId,
+		decidedActorIds: decidedActorIds(req.steps, attempt),
+		verifiedDocActorIds: req.documents
+			.map((d) => d.verifiedById)
+			.filter((v): v is string => v != null)
+	}
+	if (!canActOnStage(step.stage, ctx.actorRoles, actorEmployeeId, req.employeeId, sod)) {
 		error(403, 'You cannot act on this stage')
 	}
 	// A returned reason is required so the maker knows what to fix.
@@ -209,7 +261,17 @@ export async function decide(
 		action: 'UPDATE',
 		entityType: 'Request',
 		entityId: req.id,
-		newValue: { attempt, stage: step.stage, decision, status: transition.status }
+		newValue: {
+			attempt,
+			stage: step.stage,
+			decision,
+			status: transition.status,
+			// #283/D7: the ADMINISTER_SYSTEM carve-out let this actor decide a request whose evidence
+			// they signed off themselves. It is a privileged waiver of a two-person control, so it
+			// leaves a mark; the key is absent on every ordinary decision rather than set to false,
+			// so a search for it returns only real uses.
+			...(usedDocVerifierCarveOut(sod, ctx.actorRoles) && { selfVerifiedEvidence: true })
+		}
 	})
 
 	// Audit the applied effect after commit — mirrors the request-decision log above and
@@ -260,7 +322,10 @@ export async function listPendingRequestsForApprover(
 		include: {
 			steps: { orderBy: [{ attempt: 'asc' }, { stageIndex: 'asc' }] },
 			employee: { select: { id: true, firstName: true, lastName: true, reportsToId: true } },
-			documents: { select: { id: true, verifiedAt: true } }
+			// verifiedAt stays — requests/approvals/+page.svelte renders it. verifiedById is added for
+			// the #283/F3 bar; dropping it empties verifiedDocActorIds and the bar quietly stops
+			// existing with every test still green.
+			documents: { select: { id: true, verifiedAt: true, verifiedById: true } }
 		},
 		orderBy: { createdAt: 'asc' }
 	})
@@ -272,7 +337,10 @@ export async function listPendingRequestsForApprover(
 			step != null &&
 			canActOnStage(step.stage, actorRoles, actorEmployeeId, r.employeeId, {
 				actorId: actorUserId,
-				decidedActorIds: decidedActorIds(r.steps, attempt)
+				decidedActorIds: decidedActorIds(r.steps, attempt),
+				verifiedDocActorIds: r.documents
+					.map((d) => d.verifiedById)
+					.filter((v): v is string => v != null)
 			})
 		)
 	})
@@ -377,7 +445,8 @@ export async function countActionablePayrollRuns(
 		// maker. Keeping both would be two copies of one rule, and the copies drift.
 		return canActOnPayrollStage(live.currentStep.stage, roles, {
 			actorId: userId,
-			decidedActorIds: decidedActorIds(r.approvalSteps, live.attempt)
+			decidedActorIds: decidedActorIds(r.approvalSteps, live.attempt),
+			verifiedDocActorIds: []
 		})
 	}).length
 }
@@ -412,7 +481,10 @@ export async function countActionableTimesheets(
 		if (!live || !live.currentStep) return canAny(roles, 'VIEW_TEAM')
 		return canActOnStage(live.currentStep.stage, roles, actorEmployeeId, ts.employeeId, {
 			actorId: actorUserId,
-			decidedActorIds: decidedActorIds(ts.approvalSteps, live.attempt)
+			decidedActorIds: decidedActorIds(ts.approvalSteps, live.attempt),
+			// Timesheets have no RequestDocument rows, so [] is an accurate answer here, not a
+			// disabled guard.
+			verifiedDocActorIds: []
 		})
 	}).length
 }
@@ -521,7 +593,8 @@ export async function decidePayrollRun(
 	if (
 		!canActOnPayrollStage(step.stage, roles, {
 			actorId: ctx.actorId,
-			decidedActorIds: decidedActorIds(run.approvalSteps, live.attempt)
+			decidedActorIds: decidedActorIds(run.approvalSteps, live.attempt),
+			verifiedDocActorIds: []
 		})
 	) {
 		error(403, 'You cannot act on this stage')

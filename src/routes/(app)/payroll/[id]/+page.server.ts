@@ -66,7 +66,8 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		live?.currentStep &&
 		canActOnPayrollStage(live.currentStep.stage, roles, {
 			actorId: user.id,
-			decidedActorIds: decidedActorIds(run.approvalSteps, live.attempt)
+			decidedActorIds: decidedActorIds(run.approvalSteps, live.attempt),
+			verifiedDocActorIds: []
 		})
 	)
 
