@@ -293,7 +293,7 @@
 	>
 		<div
 			bind:this={panelEl}
-			class="flex max-h-[90vh] w-full max-w-lg flex-col rounded-xl border bg-card shadow-2xl focus:outline-none"
+			class="flex max-h-[90vh] w-full max-w-lg flex-col rounded-xl border bg-card shadow-2xl focus:outline-none sm:max-w-2xl lg:max-w-4xl"
 			onclick={(e) => e.stopPropagation()}
 			onkeydown={onKeydown}
 			role="dialog"
@@ -325,7 +325,7 @@
 							>
 								{group.label}
 							</legend>
-							<div class="space-y-2">
+							<div class="grid gap-2 sm:grid-cols-2">
 								{#each group.roles as r (r)}
 									{@const on = chosen.includes(r)}
 									<label
