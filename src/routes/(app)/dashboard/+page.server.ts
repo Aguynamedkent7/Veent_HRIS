@@ -108,7 +108,12 @@ export const load: PageServerLoad = async ({ locals }) => {
 		where: { userId: user.id },
 		select: { id: true }
 	})
-	const postingsToApprove = await listPostingsAwaitingApprover(orgId, myEmployee?.id ?? null, roles)
+	const postingsToApprove = await listPostingsAwaitingApprover(
+		orgId,
+		myEmployee?.id ?? null,
+		roles,
+		user.id
+	)
 
 	// Recent activity — payslip releases, request outcomes, etc. (#169) persisted after the
 	// toast is gone.
