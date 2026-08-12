@@ -3,6 +3,8 @@ import {
 	ASSIGNABLE_ROLES,
 	CAPABILITIES,
 	HIRE_ROLES,
+	ROLE_DESCRIPTIONS,
+	ROLE_GROUPS,
 	can,
 	canAny,
 	type Capability
@@ -278,5 +280,22 @@ describe('role assignment lists (#248)', () => {
 	// Sanity: every role the hire form can mint holds strictly less than the CEO exclusives.
 	it('lets no hire-form role change other users’ roles', () => {
 		for (const r of HIRE_ROLES) expect(can(r, 'MANAGE_USER_ROLES')).toBe(false)
+	})
+})
+
+// #283: the picker renders ROLE_GROUPS, not ASSIGNABLE_ROLES. A role missing from the groups is
+// therefore a role the CEO cannot grant — assignable by the server, invisible in the only UI that
+// assigns it — and nothing else in the app would notice.
+describe('role picker copy (#283)', () => {
+	it('groups every assignable role exactly once', () => {
+		const grouped = ROLE_GROUPS.flatMap((g) => [...g.roles])
+		expect([...grouped].sort()).toEqual([...ASSIGNABLE_ROLES].sort())
+		expect(new Set(grouped).size).toBe(grouped.length)
+	})
+
+	it('describes every assignable role', () => {
+		for (const r of ASSIGNABLE_ROLES) {
+			expect(ROLE_DESCRIPTIONS[r], `no description for ${r}`).toBeTruthy()
+		}
 	})
 })

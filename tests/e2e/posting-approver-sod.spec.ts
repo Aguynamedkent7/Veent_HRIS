@@ -107,12 +107,20 @@ test('(b) the designated approver cannot decide a posting they submitted themsel
 	const apRow = ceo
 		.locator('tr')
 		.filter({ has: ceo.getByText(USERS.approver.email, { exact: true }) })
+	// The picker is a dialog now (#283) — the row itself only displays roles.
+	await apRow.getByRole('button', { name: 'Edit roles' }).click()
+	const dialog = ceo.getByRole('dialog', { name: 'Edit roles' })
+	await expect(dialog).toBeVisible()
 	// Click the LABEL, not the visually-hidden input it wraps: clicking the input directly makes
-	// the label re-dispatch the activation and the pill toggles twice. A real user clicks the pill.
-	await apRow.locator('label').filter({ hasText: 'HR Admin' }).click()
-	await expect(apRow.locator('input[name="roles"]:checked')).toHaveCount(2)
-	await apRow.getByRole('button', { name: 'Save' }).click()
-	await expect(apRow.locator('input[name="roles"]:checked')).toHaveCount(2)
+	// the label re-dispatch the activation and the option toggles twice. A real user clicks the
+	// row. Selected by the value it posts — `hasText` is a case-insensitive substring match and
+	// several role descriptions mention HR.
+	await dialog.locator('label:has(input[value="HR_ADMIN"])').click()
+	await expect(dialog.locator('input[name="roles"]:checked')).toHaveCount(2)
+	await dialog.getByRole('button', { name: 'Save roles' }).click()
+	// The dialog closes only on a saved change; a refusal keeps it open with the reason inline.
+	await expect(dialog).toHaveCount(0)
+	await expect(apRow.getByText('HR Admin', { exact: true })).toBeVisible()
 
 	// She submits a posting for the department she approves.
 	const apCtx = await browser.newContext()
@@ -164,8 +172,9 @@ test.afterAll(async ({ browser }) => {
 	const apRow = page
 		.locator('tr')
 		.filter({ has: page.getByText(USERS.approver.email, { exact: true }) })
-	// .first(): the row carries TWO hidden userId inputs, one for ?/setActive and one for
-	// ?/setRole. Same value, so either serves — but strict mode rejects the ambiguity.
+	// .first(): the row's hidden userId belongs to its ?/setActive form — since #283 the role
+	// form lives in the dialog, so there is one here rather than two, but keep the disambiguation
+	// in case a second row-level form returns.
 	const userId = await apRow.locator('input[name="userId"]').first().inputValue()
 	const res = await page.request.patch(`/api/v1/settings/users/${userId}/roles`, {
 		data: { roles: ['APPROVER'] }
