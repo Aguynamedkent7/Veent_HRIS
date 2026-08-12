@@ -27,19 +27,19 @@ import type { Role } from '@prisma/client'
  * "refused" test still passed.
  */
 
-const { dbMock } = vi.hoisted(() => ({
+const { dbMock, notifyMock } = vi.hoisted(() => ({
 	dbMock: {
 		jobPosting: { findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
-		postingApprover: { findUnique: vi.fn(), findMany: vi.fn() }
-	}
+		postingApprover: { findUnique: vi.fn(), findMany: vi.fn() },
+		employee: { findUnique: vi.fn() }
+	},
+	notifyMock: vi.fn().mockResolvedValue(undefined)
 }))
 vi.mock('$lib/server/db', () => ({ db: dbMock }))
 vi.mock('$lib/server/audit', () => ({ writeAuditLog: vi.fn().mockResolvedValue(undefined) }))
-vi.mock('$lib/server/services/notifications', () => ({
-	notify: vi.fn().mockResolvedValue(undefined)
-}))
+vi.mock('$lib/server/services/notifications', () => ({ notify: notifyMock }))
 
-const { decideJobPosting, listPostingsAwaitingApprover } =
+const { decideJobPosting, listPostingsAwaitingApprover, submitJobPostingForApproval } =
 	await import('$lib/server/services/recruitment')
 
 /**
@@ -87,6 +87,8 @@ beforeEach(() => {
 	vi.clearAllMocks()
 	dbMock.jobPosting.findFirst.mockImplementation(async (args) => project(postingRow(), args))
 	dbMock.jobPosting.update.mockResolvedValue({ id: 'jp1', status: 'OPEN' })
+	// APPROVER_EMP is an EMPLOYEE id; the notification needs the USER behind it.
+	dbMock.employee.findUnique.mockResolvedValue({ userId: 'user-approver' })
 	// Only MAPPED_DEPT has a row; anything else resolves to null (the HR fallback).
 	dbMock.postingApprover.findUnique.mockImplementation(async (args) =>
 		args.where.organizationId_departmentId.departmentId === MAPPED_DEPT
@@ -173,6 +175,43 @@ describe('decideJobPosting — the submitter may not decide (#283/D9)', () => {
 		expect(dbMock.jobPosting.update).not.toHaveBeenCalled()
 	})
 
+	// The negative control for the message above. On an UNMAPPED department HR is the fallback, so
+	// the posting is NOT stuck behind a remap — any OTHER MANAGE_HR holder can decide it. Sending
+	// this submitter to Settings → Posting approvers would point them at a mapping that does not
+	// exist, so the two branches must say different things.
+	it('tells an unmapped department’s HR submitter that another HR admin decides it', async () => {
+		dbMock.jobPosting.findFirst.mockImplementation(async (args) =>
+			project(postingRow({ departmentId: UNMAPPED_DEPT, submittedById: 'user-hr' }), args)
+		)
+		const err = await decideJobPosting(
+			'jp1',
+			'org1',
+			{ approve: true },
+			{ employeeId: 'emp-hr', roles: HR },
+			ctxOf('user-hr', HR)
+		).catch((e) => e)
+
+		expect(err).toMatchObject({ status: 403 })
+		expect(err.body.message).not.toContain('Settings → Posting approvers')
+		expect(err.body.message).toContain('Another HR admin must decide it')
+		expect(dbMock.jobPosting.update).not.toHaveBeenCalled()
+
+		// ...and a DIFFERENT MANAGE_HR holder really can, which is what makes that advice true.
+		await decideJobPosting(
+			'jp1',
+			'org1',
+			{ approve: true },
+			{ employeeId: 'emp-hr2', roles: HR },
+			ctxOf('user-hr2', HR)
+		)
+		expect(dbMock.jobPosting.update).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { id: 'jp1' },
+				data: expect.objectContaining({ status: 'OPEN', approvedById: 'user-hr2' })
+			})
+		)
+	})
+
 	it('does not bar an approver who merely shares an id shape with the submitter', async () => {
 		// APPROVER_EMP is an EMPLOYEE id and submittedById is a USER id; if the guard ever compared
 		// across the two families it would either never fire or fire on the wrong person.
@@ -189,6 +228,36 @@ describe('decideJobPosting — the submitter may not decide (#283/D9)', () => {
 		expect(dbMock.jobPosting.update).toHaveBeenCalledWith(
 			expect.objectContaining({ data: expect.objectContaining({ status: 'OPEN' }) })
 		)
+	})
+})
+
+describe('submitJobPostingForApproval — who gets told (#283/D9)', () => {
+	const draft = {
+		id: 'jp1',
+		organizationId: 'org1',
+		title: 'Senior Developer',
+		status: 'DRAFT' as const,
+		departmentId: MAPPED_DEPT,
+		submittedById: null
+	}
+
+	it('notifies the designated approver when someone else submitted', async () => {
+		dbMock.jobPosting.findFirst.mockImplementation(async (args) => project(draft, args))
+		await submitJobPostingForApproval('jp1', 'org1', ctxOf('user-hr', HR))
+		expect(notifyMock).toHaveBeenCalledWith(
+			'user-approver',
+			expect.stringContaining('awaiting your approval'),
+			'/dashboard',
+			'RECRUITMENT'
+		)
+	})
+
+	// The submitter is barred from deciding it (D9), so notifying them would invite a 403 and
+	// nothing else. Their own submit confirmation is the only truthful signal here.
+	it('does not notify the designated approver about their own submission', async () => {
+		dbMock.jobPosting.findFirst.mockImplementation(async (args) => project(draft, args))
+		await submitJobPostingForApproval('jp1', 'org1', ctxOf('user-approver', EMP))
+		expect(notifyMock).not.toHaveBeenCalled()
 	})
 })
 

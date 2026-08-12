@@ -96,7 +96,9 @@ export async function submitJobPostingForApproval(
 			where: { id: approverEmployeeId },
 			select: { userId: true }
 		})
-		if (approver) {
+		// Not when the resolved approver IS the submitter (D9): they are barred from deciding it, so
+		// the notification would only invite a 403. The 403's own message carries the way out.
+		if (approver && approver.userId !== ctx.actorId) {
 			await notify(
 				approver.userId,
 				`A job posting “${jp.title}” is awaiting your approval.`,
@@ -151,9 +153,15 @@ export async function decideJobPosting(
 	// 403 and no next action. (submittedById and ctx.actorId are both USER ids; approverEmployeeId
 	// and actor.employeeId are EMPLOYEE ids — the two families are never compared.)
 	if (jp.submittedById && jp.submittedById === ctx.actorId) {
+		// The next action depends on which branch of canApprovePosting let this actor through. Only
+		// a MAPPED department is stuck behind a remap; an UNMAPPED one falls back to HR, so any
+		// OTHER MANAGE_HR holder can simply decide it — telling them to remap would send them to
+		// change a mapping that does not exist.
 		error(
 			403,
-			'You submitted this posting, so you cannot decide it. Ask HR to reassign this department’s posting approver in Settings → Posting approvers.'
+			approverEmployeeId
+				? 'You submitted this posting, so you cannot decide it. Ask HR to reassign this department’s posting approver in Settings → Posting approvers.'
+				: 'You submitted this posting, so you cannot decide it. Another HR admin must decide it.'
 		)
 	}
 	if (!decision.approve && !decision.note?.trim()) {
