@@ -9,9 +9,10 @@ import type { StatutoryRateInput } from '$lib/server/services/payroll/statutory-
  *  - confirm applies the proposal's payload to the live config and marks it APPLIED.
  *  - reject marks the proposal REJECTED and leaves the live config untouched (the change is discarded).
  *  - confirm/reject of a non-pending proposal is rejected.
+ *  - #283/F2: the proposer cannot CONFIRM their own proposal; self-REJECT stays allowed (Q2).
  */
 
-const { dbMock } = vi.hoisted(() => {
+const { dbMock, writeAuditLogMock } = vi.hoisted(() => {
 	const db = {
 		statutoryRateProposal: {
 			create: vi.fn(),
@@ -26,11 +27,11 @@ const { dbMock } = vi.hoisted(() => {
 	}
 	// confirmProposal runs inside a $transaction; the callback gets the same mock as the tx client.
 	db.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb(db))
-	return { dbMock: db }
+	return { dbMock: db, writeAuditLogMock: vi.fn().mockResolvedValue(undefined) }
 })
 
 vi.mock('$lib/server/db', () => ({ db: dbMock }))
-vi.mock('$lib/server/audit', () => ({ writeAuditLog: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('$lib/server/audit', () => ({ writeAuditLog: writeAuditLogMock }))
 
 const { proposeStatutoryRates, confirmProposal, rejectProposal } =
 	await import('$lib/server/services/payroll/statutory-rates')
@@ -45,6 +46,13 @@ const CEO: AuditContext = {
 	organizationId: 'org1',
 	actorId: 'ceo1',
 	actorRoles: ['CEO'],
+	ipAddress: 't'
+}
+// #283: multi-role is live, so one person can hold both gates. This is the actor F2 exists for.
+const HR_AND_CEO: AuditContext = {
+	organizationId: 'org1',
+	actorId: 'hr1',
+	actorRoles: ['HR_ADMIN', 'CEO'],
 	ipAddress: 't'
 }
 
@@ -81,7 +89,7 @@ describe('propose', () => {
 	})
 })
 
-describe('confirm', () => {
+describe('confirmProposal', () => {
 	it('atomically claims the proposal, applies the payload, and marks it APPLIED', async () => {
 		// The status-guarded claim succeeds (one row moved PENDING → APPLIED).
 		dbMock.statutoryRateProposal.updateMany.mockResolvedValue({ count: 1 })
@@ -118,9 +126,61 @@ describe('confirm', () => {
 		await expect(confirmProposal('org1', 'missing', CEO)).rejects.toThrow()
 		expect(dbMock.statutoryRateConfig.upsert).not.toHaveBeenCalled()
 	})
+
+	/**
+	 * AC-13 (#283/F2). Asserts the message, not just a 403: the surrounding route already 403s for a
+	 * missing capability, so a status-only assertion would still pass with the guard deleted whenever
+	 * the actor lacks the confirm capability. HR_AND_CEO holds it, so only the self-bar can refuse.
+	 */
+	it('refuses the proposer', async () => {
+		dbMock.statutoryRateProposal.updateMany.mockResolvedValue({ count: 1 })
+		dbMock.statutoryRateProposal.findUniqueOrThrow.mockResolvedValue({
+			id: 'prop1',
+			organizationId: 'org1',
+			proposedById: 'hr1',
+			status: 'APPLIED',
+			payload: PAYLOAD
+		})
+
+		await expect(confirmProposal('org1', 'prop1', HR_AND_CEO)).rejects.toMatchObject({
+			status: 403,
+			body: { message: 'You cannot confirm a rate change you proposed yourself.' }
+		})
+	})
+
+	/**
+	 * AC-14. The guard sits AFTER the status-guarded claim (the claim is the race guard), so the
+	 * refusal must throw before any rate config is written — the transaction then rolls the claim
+	 * back to PENDING. Move the guard below updateStatutoryRateConfig and both assertions go red.
+	 */
+	it('rolls back cleanly when the proposer is refused', async () => {
+		dbMock.statutoryRateProposal.updateMany.mockResolvedValue({ count: 1 })
+		dbMock.statutoryRateProposal.findUniqueOrThrow.mockResolvedValue({
+			id: 'prop1',
+			organizationId: 'org1',
+			proposedById: 'hr1',
+			status: 'APPLIED',
+			payload: PAYLOAD
+		})
+		dbMock.statutoryRateConfig.findUnique.mockResolvedValue(null)
+		dbMock.statutoryRateConfig.upsert.mockResolvedValue({ id: 'cfg1' })
+
+		await expect(confirmProposal('org1', 'prop1', HR_AND_CEO)).rejects.toMatchObject({
+			status: 403
+		})
+
+		// updateStatutoryRateConfig never ran: no live rate write …
+		expect(dbMock.statutoryRateConfig.upsert).not.toHaveBeenCalled()
+		// … and no APPLIED trail claiming the rates changed.
+		expect(writeAuditLogMock).not.toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ entityType: 'StatutoryRateConfig' }),
+			expect.anything()
+		)
+	})
 })
 
-describe('reject', () => {
+describe('rejectProposal', () => {
 	it('marks the proposal REJECTED and discards it (live config untouched)', async () => {
 		dbMock.statutoryRateProposal.findFirst.mockResolvedValue({
 			id: 'prop1',
@@ -136,6 +196,30 @@ describe('reject', () => {
 			expect.objectContaining({
 				where: { id: 'prop1' },
 				data: expect.objectContaining({ status: 'REJECTED', decidedById: 'ceo1' })
+			})
+		)
+		expect(dbMock.statutoryRateConfig.upsert).not.toHaveBeenCalled()
+	})
+
+	/**
+	 * Q2: the bar is CONFIRM-only. A self-reject is the proposer withdrawing their own mistake — it
+	 * applies nothing and leaves the tax tables untouched, so there is no two-person rule to collapse.
+	 */
+	it('allows the proposer to withdraw their own proposal', async () => {
+		dbMock.statutoryRateProposal.findFirst.mockResolvedValue({
+			id: 'prop1',
+			organizationId: 'org1',
+			proposedById: 'hr1',
+			status: 'PENDING'
+		})
+		dbMock.statutoryRateProposal.update.mockResolvedValue({ id: 'prop1', status: 'REJECTED' })
+
+		await rejectProposal('org1', 'prop1', HR)
+
+		expect(dbMock.statutoryRateProposal.update).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { id: 'prop1' },
+				data: expect.objectContaining({ status: 'REJECTED', decidedById: 'hr1' })
 			})
 		)
 		expect(dbMock.statutoryRateConfig.upsert).not.toHaveBeenCalled()

@@ -366,6 +366,21 @@ export async function confirmProposal(
 
 		const proposal = await tx.statutoryRateProposal.findUniqueOrThrow({ where: { id: proposalId } })
 
+		// GUARDRAIL (#283/F2): the proposer may not confirm their own proposal. The two gates are
+		// disjoint TODAY only by accident of single-role assignment (propose is HR-Admin-only, confirm is
+		// CEO/Super-Admin-only), so one [HR_ADMIN, CEO] user collapses #220's two-person rule entirely.
+		// Mirrors assertMayDecide in services/action-proposals.ts, which already implements exactly this
+		// check — the two propose→confirm implementations disagreed until now.
+		//
+		// CONFIRM only (Q2). Self-REJECT stays allowed and reads as withdrawing a mistake: it applies
+		// nothing, writes no rate config, and leaves the tax tables untouched.
+		//
+		// Placed after the claim on purpose: the claim is the race guard, and throwing here rolls it
+		// back to PENDING.
+		if (proposal.proposedById === ctx.actorId) {
+			error(403, 'You cannot confirm a rate change you proposed yourself.')
+		}
+
 		// Re-validate at apply time — the payload was validated on propose, but the apply is the real
 		// trust boundary (a stale/tampered row must not reach the tax math). A parse failure throws and
 		// the transaction rolls the claim back to PENDING.
