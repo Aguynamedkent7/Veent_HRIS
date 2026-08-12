@@ -68,7 +68,7 @@ protection to keep working when people hold several roles, **so that** a multi-r
 cannot lock the organisation out of its own administration.
 
 ### US-5 — Same guarantees on the API
-**As an** integrator using `PATCH /api/v1/settings/users/:id/role`, **I want** the API to
+**As an** integrator using `PATCH /api/v1/settings/users/:id/roles`, **I want** the API to
 accept a set and enforce exactly the same rules as the UI, **so that** the two surfaces can
 never drift apart.
 
