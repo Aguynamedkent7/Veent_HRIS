@@ -227,15 +227,14 @@ describe('canActOnStage — the document-verifier bar (#283/F3)', () => {
 		).toBe(true)
 	})
 
-	// AC-28 — the bypass VALIDATE found. verifyDoc accepts verified=false, so before D11 a barred
-	// approver un-verified their own sign-off (nulling verifiedById) and decided, with the audit
-	// marker never firing. The predicate reads verifiedById, never verifiedAt, which is what makes
-	// a cleared sign-off keep barring them. requests-documents.test.ts proves the other half:
-	// that the clear really does keep the column.
-	it('survives un-verifying the document (#283/AC-28)', () => {
-		// A cleared sign-off: verifiedAt is null, verifiedById is not. The bar keys on the latter.
-		expect(signed(['APPROVER'])).toBe(false)
-	})
+	// AC-28 (the un-verify bypass) is NOT tested here, deliberately. This predicate takes
+	// verifiedDocActorIds, not documents — it never sees verifiedAt — so a case written at this
+	// level cannot distinguish a standing sign-off from a cleared one, and would be byte-identical
+	// to AC-19 above. The two halves that actually prove it live where the columns do:
+	//   - approval-queues.test.ts 'keeps excluding it after the sign-off is cleared (#283/AC-28)'
+	//     — the queue still bars the actor when verifiedAt is null but verifiedById is kept.
+	//   - requests-documents.test.ts 'setRequestDocumentVerified (#283/D11)' — clearing really
+	//     does keep verifiedById.
 
 	// The waiver is privileged, so it must not be silent — this is what the audit marker keys on.
 	it('flags the carve-out for audit only when it was actually used', () => {
