@@ -331,16 +331,13 @@
 									</p>
 								{/if}
 							</div>
-							<div class="shrink-0 text-xs">
-								{#if doc.storageKey}
-									<a
-										href="/api/v1/requests/{req.id}/documents/{doc.id}"
-										class="font-medium text-primary hover:underline"
-										download>Download</a
-									>
-								{:else}
-									<span class="text-muted-foreground">File removed</span>
-								{/if}
+							<!-- No download CONTROL here, by AC-5: this panel is an audit record, not a file
+							     list. That is a UI choice and deliberately NOT a route rule — the v1 download
+							     URL still serves a tombstone while its bytes survive (D-3), because the bytes
+							     and the row are separate facts. Once the FIFO cap evicts them, say so plainly
+							     rather than leaving a blank. -->
+							<div class="shrink-0 text-xs text-muted-foreground">
+								{#if !doc.storageKey}File removed{/if}
 							</div>
 						</li>
 					{/each}
