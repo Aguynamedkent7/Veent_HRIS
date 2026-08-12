@@ -21,7 +21,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const actionable = await listPendingRequestsForApprover(
 		user.organizationId,
 		roles,
-		myEmployee?.id ?? null
+		myEmployee?.id ?? null,
+		user.id
 	)
 
 	// #64: "at my stage" is decided in JS (canActOnStage), so this page paginates

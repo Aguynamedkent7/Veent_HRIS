@@ -311,6 +311,17 @@
 		<h2 class="text-lg font-semibold">Approval chain</h2>
 		<p class="text-xs text-muted-foreground">Requester → HR → Verifier → Approver</p>
 
+		<!-- #283/D12: an approver barred by separation of duties finds this request missing from
+		     their queue by design (AC-15/AC-21/US-8). This page is where they come to ask why, and
+		     it has no decide control to disable, so the explanation stands on its own. -->
+		{#if data.actBlockedReason}
+			<p
+				class="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400"
+			>
+				{data.actBlockedReason}
+			</p>
+		{/if}
+
 		<!-- Origin: the employee's own submission, so "HR pending" doesn't read as if
 		     nothing has happened yet. -->
 		<ol class="space-y-2">

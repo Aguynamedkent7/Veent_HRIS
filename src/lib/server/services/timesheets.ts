@@ -4,7 +4,7 @@ import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import { isValidStandardPeriod } from '$lib/utils/pay-periods'
 import { buildApprovalChain } from './requests/routing'
-import { canActOnStage, nextState, liveChain } from './approvals'
+import { canActOnStage, nextState, liveChain, timesheetSoD } from './approvals'
 import type { AuditContext } from './types'
 import type { Prisma } from '@prisma/client'
 
@@ -359,7 +359,15 @@ export async function reviewTimesheet(
 	}
 
 	const step = live.currentStep
-	if (!canActOnStage(step.stage, ctx.actorRoles, actorEmployee?.id ?? null, ts.employeeId)) {
+	if (
+		!canActOnStage(
+			step.stage,
+			ctx.actorRoles,
+			actorEmployee?.id ?? null,
+			ts.employeeId,
+			timesheetSoD(ctx.actorId, ts.approvalSteps, live.attempt)
+		)
+	) {
 		error(403, 'You cannot act on this stage')
 	}
 	const decision = approved ? 'APPROVED' : 'RETURNED'

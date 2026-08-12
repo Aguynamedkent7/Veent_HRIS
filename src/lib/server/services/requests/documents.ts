@@ -13,7 +13,13 @@ import type { AuditContext } from '../types'
 
 // Supporting documents attached to a Request (issue #51). Bytes share the T162
 // store (UPLOAD_DIR) with EmployeeDocument; rows carry a verification sign-off
-// (verifiedById/verifiedAt) set by an approver during review.
+// set by an approver during review.
+//
+// #283/D11: the two sign-off columns mean DIFFERENT things. `verifiedAt` means "currently
+// verified" and is what every consumer keys on. `verifiedById` is the durable record of who LAST
+// signed off, and it survives a clear — because the #283/F3 bar (a document's verifier may not
+// also decide that request) reads it, and a field that a barred actor can null in one click is
+// not a bar at all.
 
 export const MAX_REQUEST_DOCS = 5
 
@@ -159,7 +165,20 @@ export async function setRequestDocumentVerified(
 		where: { id: doc.id },
 		data: verified
 			? { verifiedById: ctx.actorId, verifiedAt: new Date() }
-			: { verifiedById: null, verifiedAt: null }
+			: // #283/D11: clearing the sign-off clears verifiedAt ONLY. Nulling verifiedById too would
+				// let a barred approver un-verify their own sign-off and then decide the request, which
+				// is the whole F3 bypass — no ADMINISTER_SYSTEM needed, and the selfVerifiedEvidence
+				// audit marker never fires. Every other consumer keys on verifiedAt (approvals.ts's
+				// queue filter, the delete lock below, requests/[id] and requests/approvals), so
+				// "currently verified" still means verifiedAt != null and the ordinary un-verify
+				// correction path is unchanged.
+				//
+				// ponytail: known ceiling — if a DIFFERENT actor later verifies this same document,
+				// verifiedById is overwritten and the earlier signer's bar is forgotten. Two people
+				// must collude, so it is accepted for now; the upgrade path is a
+				// RequestDocumentVerification history table (one row per sign-off), at which point the
+				// F3 bar reads the whole history instead of a scalar.
+				{ verifiedAt: null }
 	})
 	await writeAuditLog(ctx, {
 		action: 'UPDATE',

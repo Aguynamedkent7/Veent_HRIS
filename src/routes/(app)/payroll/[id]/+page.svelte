@@ -409,6 +409,35 @@
 					</form>
 				{/if}
 			</div>
+		{:else if data.actBlockedReason}
+			<!-- #283/D12: a barred approver navigated HERE, to this one run, so a control that simply
+			     vanishes reads as a bug and teaches nothing. The button stays visible, is announced
+			     as disabled, and carries the reason.
+
+			     type="button" + aria-disabled rather than the native `disabled` attribute: a disabled
+			     button leaves the tab order and fires no events, so a keyboard or screen-reader user
+			     could never reach the explanation — exactly the people who need it most. type="button"
+			     (not submit) is what makes the control a real no-op. The reason is always-visible
+			     adjacent text bound with aria-describedby, not a tooltip, because hover-only fails the
+			     same users for the same reason.
+
+			     focus-visible:opacity-100 + ring-2 because the dimming defeats its own focus ring:
+			     btn-row's default ring is 1px, and at opacity-50 that is invisible in practice — so
+			     a sighted keyboard user tabs onto the control and sees nothing happen, which reads
+			     exactly like being skipped. Reachable but invisible is not reachable. -->
+			<div class="rounded-lg border bg-card p-4">
+				<button
+					type="button"
+					aria-disabled="true"
+					aria-describedby="act-blocked"
+					class="btn-row cursor-not-allowed opacity-50 focus-visible:opacity-100 focus-visible:ring-2"
+				>
+					{actVerb}
+				</button>
+				<p id="act-blocked" class="mt-2 text-xs text-muted-foreground">
+					{data.actBlockedReason}
+				</p>
+			</div>
 		{:else if run.status === 'COMPUTED' && haltedLatest}
 			<p class="text-sm text-orange-600 dark:text-orange-500">
 				Returned to the maker — recompute this run to refile it for review.

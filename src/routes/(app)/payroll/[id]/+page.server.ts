@@ -12,7 +12,8 @@ import { isPayslipVisible } from '$lib/server/services/payroll/runs'
 import {
 	livePayrollStage,
 	decidePayrollRun,
-	canActOnPayrollStage
+	canActOnPayrollStage,
+	decidedActorIds
 } from '$lib/server/services/approvals'
 import type { Actions, PageServerLoad } from './$types'
 
@@ -53,17 +54,38 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	const canManage = canManagePayroll && run.organizationId === user.organizationId
 
 	// Whether the current user can act on the run's live maker-checker stage: only when
-	// the run is COMPUTED, a stage is open, they hold that stage's capability, and they
-	// aren't the maker of the live attempt (separation of duties).
+	// the run is COMPUTED, a stage is open, they hold that stage's capability, and they took no
+	// earlier decision on the live attempt (separation of duties).
+	//
+	// #283/B-2: this passes the REAL sod, never a permissive stub. This boolean decides whether the
+	// sign-off control renders as actionable, so a stub here ships a page that offers an action the
+	// service then 403s. The standalone `makeActorId !== user.id` clause that stood here is gone —
+	// the MAKE step is decided and carries an actorId, so decidedActorIds already contains the maker.
 	const live = run.status === 'COMPUTED' ? livePayrollStage(run.approvalSteps) : null
-	const makeActorId = live
-		? run.approvalSteps.find((s) => s.attempt === live.attempt && s.stage === 'MAKE')?.actorId
-		: null
 	const canAct = Boolean(
 		live?.currentStep &&
-		canActOnPayrollStage(live.currentStep.stage, roles) &&
-		makeActorId !== user.id
+		canActOnPayrollStage(live.currentStep.stage, roles, {
+			actorId: user.id,
+			decidedActorIds: decidedActorIds(run.approvalSteps, live.attempt),
+			verifiedDocActorIds: []
+		})
 	)
+
+	// #283/D12: a barred approver must be told WHY, not shown a vanished control — this is a detail
+	// page they navigated to on purpose, so silence reads as a bug. Two branches, because the guard
+	// above fires on two different people and the service keeps a distinct message for each: telling
+	// the preparer they "recorded a decision" would be false.
+	const makeStep = live
+		? run.approvalSteps.find((s) => s.attempt === live.attempt && s.stage === 'MAKE')
+		: null
+	const actBlockedReason =
+		canAct || !live?.currentStep
+			? null
+			: makeStep?.actorId === user.id
+				? 'You prepared this payroll run — another finance approver must sign it off.'
+				: decidedActorIds(run.approvalSteps, live.attempt).includes(user.id)
+					? 'You already recorded a decision on this run — another finance approver must sign it off.'
+					: null
 
 	// Tells the page its table is a slice, not the run — the totals above it were recomputed to
 	// match, so without this the view is honest but indistinguishable from the full run.
@@ -71,6 +93,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		run,
 		liveStage: live?.currentStep?.stage ?? null,
 		canAct,
+		actBlockedReason,
 		canManage,
 		scopedToTeam: visibleEmployeeIds != null,
 		// #278: every payslip door 403s until the run is filed, so the table must not offer a link

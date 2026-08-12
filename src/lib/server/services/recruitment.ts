@@ -96,7 +96,9 @@ export async function submitJobPostingForApproval(
 			where: { id: approverEmployeeId },
 			select: { userId: true }
 		})
-		if (approver) {
+		// Not when the resolved approver IS the submitter (D9): they are barred from deciding it, so
+		// the notification would only invite a 403. The 403's own message carries the way out.
+		if (approver && approver.userId !== ctx.actorId) {
 			await notify(
 				approver.userId,
 				`A job posting “${jp.title}” is awaiting your approval.`,
@@ -109,17 +111,20 @@ export async function submitJobPostingForApproval(
 	return updated
 }
 
-// Whether `actor` may decide the posting: the department's designated approver, or any HR
-// admin (the fallback, and an override for HR-mapped or unmapped departments).
+// Whether `actor` may decide the posting: the department's designated approver, or — only when
+// no approver is mapped — any HR admin.
 export function canApprovePosting(
 	resolvedApproverEmployeeId: string | null,
 	actorEmployeeId: string | null,
 	actorRoles: Role[]
 ): boolean {
 	if (resolvedApproverEmployeeId && actorEmployeeId === resolvedApproverEmployeeId) return true
-	// No approver mapped, or an HR override.
-	if (!resolvedApproverEmployeeId && canAny(actorRoles, 'MANAGE_HR')) return true
-	return canAny(actorRoles, 'MANAGE_HR')
+	// #283/D8: HR is the FALLBACK, not an override. `return canAny(actorRoles, 'MANAGE_HR')` used
+	// to sit below this line and answered the same question unconditionally, which made this branch
+	// unreachable and the department mapping decorative. A mapped department is now decidable only
+	// by its designated approver; only an UNMAPPED one falls back to HR — which is what this
+	// function's comment and posting-approvers.ts:6-11 always claimed.
+	return !resolvedApproverEmployeeId && canAny(actorRoles, 'MANAGE_HR')
 }
 
 // Approve (→ OPEN) or reject (→ back to DRAFT with a reason) a pending posting. `actor`
@@ -138,6 +143,26 @@ export async function decideJobPosting(
 	const approverEmployeeId = await resolvePostingApproverId(organizationId, jp.departmentId)
 	if (!canApprovePosting(approverEmployeeId, actor.employeeId, actor.roles)) {
 		error(403, 'You are not the approver for this posting')
+	}
+	// #283/F4: submitJobPostingForApproval records submittedById and nothing has ever read it back
+	// at decision time. One person could submit and approve the same posting.
+	//
+	// D9: there is deliberately NO HR-steps-in fallback. If a department's designated approver
+	// submits a posting for their own department, that posting is undecidable until HR remaps or
+	// unmaps the department — so the message must NAME that route, or the user is stranded with a
+	// 403 and no next action. (submittedById and ctx.actorId are both USER ids; approverEmployeeId
+	// and actor.employeeId are EMPLOYEE ids — the two families are never compared.)
+	if (jp.submittedById && jp.submittedById === ctx.actorId) {
+		// The next action depends on which branch of canApprovePosting let this actor through. Only
+		// a MAPPED department is stuck behind a remap; an UNMAPPED one falls back to HR, so any
+		// OTHER MANAGE_HR holder can simply decide it — telling them to remap would send them to
+		// change a mapping that does not exist.
+		error(
+			403,
+			approverEmployeeId
+				? 'You submitted this posting, so you cannot decide it. Ask HR to reassign this department’s posting approver in Settings → Posting approvers.'
+				: 'You submitted this posting, so you cannot decide it. Another HR admin must decide it.'
+		)
 	}
 	if (!decision.approve && !decision.note?.trim()) {
 		error(400, 'A reason is required to send a posting back to draft')
@@ -173,11 +198,14 @@ export async function decideJobPosting(
 }
 
 // Pending postings this user may act on — the departments they're the approver for, plus
-// (for HR) any posting whose department has no approver mapped. Feeds the dashboard card.
+// (for HR) any posting whose department has no approver mapped, minus anything they submitted
+// themselves. Feeds the dashboard card. `actorUserId` is a USER id (it is matched against
+// submittedById); `actorEmployeeId` is an EMPLOYEE id.
 export async function listPostingsAwaitingApprover(
 	organizationId: string,
 	actorEmployeeId: string | null,
-	actorRoles: Role[]
+	actorRoles: Role[],
+	actorUserId: string
 ) {
 	const pending = await db.jobPosting.findMany({
 		where: { organizationId, status: 'PENDING_APPROVAL' },
@@ -191,12 +219,18 @@ export async function listPostingsAwaitingApprover(
 		select: { departmentId: true, approverId: true }
 	})
 	const approverByDept = new Map(mappings.map((m) => [m.departmentId, m.approverId]))
-	const isHr = canAny(actorRoles, 'MANAGE_HR')
 
 	return pending
 		.filter((p) => {
 			const approver = approverByDept.get(p.departmentId) ?? null
-			return canApprovePosting(approver, actorEmployeeId, actorRoles) && (approver != null || isHr)
+			// The trailing `&& (approver != null || isHr)` that used to live here existed only
+			// because canApprovePosting said yes to every HR admin. With the mapping bound it can
+			// never change the result — see plan DECISION-8 for the branch-by-branch proof.
+			// The submitter filter mirrors the service guard so the card never offers a posting
+			// the action would refuse (same discipline as AC-15 for requests).
+			return (
+				canApprovePosting(approver, actorEmployeeId, actorRoles) && p.submittedById !== actorUserId
+			)
 		})
 		.map((p) => ({
 			id: p.id,

@@ -169,4 +169,72 @@ export const ASSIGNABLE_ROLES = [
  * FINANCE) and sign-off (VERIFIER, APPROVER) stay off it: those are granted after hire, in
  * Settings → Roles, which only the CEO can reach.
  */
+/**
+ * Display names for roles. `capitalize` on a lower-cased enum gets "Hr Admin" and "Ceo" wrong, and
+ * every surface that shows a role needs the same answer, so the mapping lives here rather than
+ * being re-derived per component.
+ *
+ * NOTE: `(app)/+layout.svelte:299` and `(app)/requests/approvals/+page.svelte:79` each still carry
+ * their own copy, predating this one. Fold them in next time either is touched.
+ */
+export const ROLE_LABELS: Record<Role, string> = {
+	EMPLOYEE: 'Employee',
+	MANAGER: 'Manager',
+	HR_ADMIN: 'HR Admin',
+	SUPER_ADMIN: 'Super Admin',
+	PAYROLL_OFFICER: 'Payroll Officer',
+	FINANCE: 'Finance',
+	CEO: 'CEO',
+	VERIFIER: 'Verifier',
+	APPROVER: 'Approver'
+}
+
 export const HIRE_ROLES = ['EMPLOYEE', 'MANAGER', 'HR_ADMIN'] as const satisfies readonly Role[]
+
+/**
+ * One line per role, for the role picker (#283).
+ *
+ * These describe what the CAPABILITIES table above ACTUALLY grants — not an aspirational job
+ * description. Each line was read off that table: "the only role that can void a finalised
+ * payroll run" is OVERRIDE_FINALIZED, "the only role that can assign roles" is
+ * MANAGE_USER_ROLES, and MANAGER's "cannot reach a stranger's record or pay" is the
+ * ADMINISTER_HR_ORGWIDE / VIEW_PAY_ORGWIDE exclusion.
+ *
+ * So when a role's membership in CAPABILITIES changes, revisit its line here in the SAME
+ * change. Otherwise the picker keeps teaching a rule the server no longer enforces, which is
+ * worse than saying nothing — the CEO picks a role on the strength of this copy.
+ */
+export const ROLE_DESCRIPTIONS: Record<Role, string> = {
+	EMPLOYEE:
+		'Self-service only — own profile, requests, timesheets and payslips. Holds no authority over anyone else.',
+	MANAGER:
+		"Their own team and branch: approves timesheets and requests, runs payroll, sees the team. Cannot reach a stranger's record or pay.",
+	HR_ADMIN:
+		"HR back office, org-wide: any employee's 201 file and pay, approvals, payroll operations, and proposing statutory rate changes for the CEO to confirm.",
+	SUPER_ADMIN:
+		'System administration and payroll config. The only role that can void a finalised payroll run or reopen a locked attendance day. Cannot assign roles.',
+	PAYROLL_OFFICER:
+		"Runs payroll and reads any employee's pay. Reaches the approvals queue but signs off nothing itself.",
+	FINANCE: "Read-only on money — payroll reports and any employee's payslip. Changes nothing.",
+	CEO: 'Full authority, and the only role that can assign roles. Signs off finance and confirms statutory rate changes. Cannot void a finalised payroll run.',
+	VERIFIER:
+		'Verifier stage sign-off — the middle of the maker → verifier → approver chain. No other authority.',
+	APPROVER:
+		'Approver stage sign-off — the final gate of the request chain. Signs off HR requests, never money.'
+}
+
+/**
+ * How the picker groups the roles — by what a role is FOR, so choosing a set reads as five
+ * short decisions instead of one list of nine.
+ *
+ * Lives next to ROLE_DESCRIPTIONS because the two are one editorial unit: a role added to
+ * ASSIGNABLE_ROLES needs a line AND a home, and a role with neither is one the picker never
+ * offers. `rbac.test.ts` pins that this covers ASSIGNABLE_ROLES exactly, once each.
+ */
+export const ROLE_GROUPS = [
+	{ label: 'Baseline', roles: ['EMPLOYEE'] },
+	{ label: 'HR & operations', roles: ['MANAGER', 'HR_ADMIN'] },
+	{ label: 'Finance', roles: ['PAYROLL_OFFICER', 'FINANCE'] },
+	{ label: 'Sign-off', roles: ['VERIFIER', 'APPROVER'] },
+	{ label: 'Administration', roles: ['SUPER_ADMIN', 'CEO'] }
+] as const satisfies readonly { label: string; roles: readonly Role[] }[]

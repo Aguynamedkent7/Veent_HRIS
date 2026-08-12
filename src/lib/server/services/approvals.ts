@@ -51,6 +51,47 @@ export function liveChain<T extends ChainStep>(steps: T[]) {
 	}
 }
 
+/** Actor ids that already recorded a decision on the given attempt. The auto-completed MAKE step
+ *  (routing.ts buildApprovalChain, written already-decided in the filer's name when the filer holds
+ *  MANAGE_HR) carries a decision AND an actorId, so it is included here with no special case — that
+ *  is what makes the filer-is-maker path a decision by that actor. */
+export function decidedActorIds(
+	steps: { attempt: number; decision: ApprovalDecision | null; actorId: string | null }[],
+	attempt: number
+): string[] {
+	return steps
+		.filter((s) => s.attempt === attempt && s.decision != null && s.actorId != null)
+		.map((s) => s.actorId as string)
+}
+
+export interface StageSoD {
+	/** The deciding user's id (User.id, NOT employeeId — the two are different families and
+	 *  comparing across them makes the bar silently never fire). Null disables the same-actor bar. */
+	actorId: string | null
+	/** Output of decidedActorIds() for the LIVE attempt. */
+	decidedActorIds: string[]
+	/** RequestDocument.verifiedById for every document on THIS request — INCLUDING documents whose
+	 *  verifiedAt has since been cleared (#283/D11: clearing keeps verifiedById precisely so this
+	 *  bar cannot be un-verified away). Empty for timesheets and payroll runs — neither has
+	 *  RequestDocument rows, so the empty array is an accurate answer, not a disabled guard. */
+	verifiedDocActorIds: string[]
+}
+
+/** The StageSoD for a timesheet. Timesheets carry no RequestDocument rows, so
+ *  `verifiedDocActorIds` is [] — an accurate answer, not a disabled guard. Extracted because the
+ *  same literal was built at all THREE timesheet call sites — the page queue filter, the decide
+ *  writer in timesheets.ts, and countActionableTimesheets below — and hand-built copies of one
+ *  guard's inputs are how a guard silently stops matching itself. The third site is the reason
+ *  this helper exists: a first pass wired only two, and the mutation that should have failed
+ *  stayed green because the covered site was the one left behind. */
+export function timesheetSoD(
+	actorId: string | null,
+	steps: { attempt: number; decision: ApprovalDecision | null; actorId: string | null }[],
+	attempt: number
+): StageSoD {
+	return { actorId, decidedActorIds: decidedActorIds(steps, attempt), verifiedDocActorIds: [] }
+}
+
 // Can this actor decide the given stage? Separation of duties comes first: nobody acts
 // on their own submission. Otherwise the actor must hold the stage's capability with any
 // of their roles — a checker may not also be the maker of the same request, which the
@@ -60,17 +101,80 @@ export function canActOnStage(
 	actorRoles: Role[],
 	actorEmployeeId: string | null,
 	ownerEmployeeId: string | null,
+	sod: StageSoD,
 	stageCapability: Record<ApprovalStage, keyof typeof CAPABILITIES> = STAGE_CAPABILITY
 ): boolean {
 	if (actorEmployeeId != null && actorEmployeeId === ownerEmployeeId) return false
+	// #283: one person may not decide two stages of the same LIVE attempt. Multi-role makes this
+	// reachable — a [VERIFIER, APPROVER] user holds both stages' capabilities — and without it,
+	// granting two hats silently collapses a two-person review into one.
+	//
+	// Attempt-scoped, not request-scoped (Q1): a RETURN begins a new attempt against a materially
+	// changed document. That does not open an escape route, and this is the argument that carries
+	// it: an actor barred from a stage cannot RETURN the request either — the bar is on DECIDING
+	// that stage at all, in either direction — so nobody can manufacture a fresh attempt to escape
+	// their own bar. The worst case across attempts is that A verified a superseded version and
+	// approves a version someone else verified: still two humans on the live attempt.
+	if (sod.actorId != null && sod.decidedActorIds.includes(sod.actorId)) return false
+	// #283/F3/D7: whoever signed off a supporting document may not also decide the request — they
+	// would be weighing their own evidence. A holder of ADMINISTER_SYSTEM (SUPER_ADMIN, CEO) is
+	// carved out by explicit decision: they are the escape hatch for a small org whose only
+	// available verifier is also its only available approver. The waiver is audited, not silent —
+	// see usedDocVerifierCarveOut.
+	//
+	// This is a CAPABILITY, never a rank. #282 deleted ROLE_HIERARCHY and
+	// tests/unit/rbac-no-rank-helpers.test.ts is a static scan that keeps rank floors deleted. Do
+	// not reintroduce a level/seniority/hierarchy concept here in any form.
+	//
+	// Scoped per REQUEST, not per attempt — unlike the bar above. RequestDocument carries no
+	// attempt column, and a RETURN does not by itself change the signed artefact: while the
+	// sign-off STANDS, deleteRequestDocument refuses with 409, so the row this actor signed
+	// survives into attempt 2. Q1's "materially changed document" argument justifies
+	// attempt-scoping stage decisions; it does not transfer to a row a RETURN does not touch.
+	//
+	// Known gap, NOT an invariant: once the sign-off is cleared, verifiedAt is null, that 409 stops
+	// firing, and the request OWNER can delete the row — taking verifiedById with it — then
+	// re-upload. Two-party (only the owner may delete, and the owner cannot decide their own
+	// request), same collusion class as the ponytail ceiling in documents.ts, and closed by the
+	// same RequestDocumentVerification history table.
+	//
+	// Covers EVERY stage, not just a nominated evidence-consuming one: no stage in the chain is
+	// designated as the document reader (the queue surfaces documents to all of them), so a
+	// stage-scoped bar would have to invent that designation.
+	if (
+		sod.actorId != null &&
+		sod.verifiedDocActorIds.includes(sod.actorId) &&
+		!canAny(actorRoles, 'ADMINISTER_SYSTEM')
+	) {
+		return false
+	}
 	return canAny(actorRoles, stageCapability[stage])
 }
 
+/** True when the F3 bar WOULD have fired but D7's ADMINISTER_SYSTEM carve-out waived it. The
+ *  waiver is a privileged path; it must not be silent. Stamped onto the decision's audit entry. */
+export function usedDocVerifierCarveOut(sod: StageSoD, actorRoles: Role[]): boolean {
+	return (
+		sod.actorId != null &&
+		sod.verifiedDocActorIds.includes(sod.actorId) &&
+		canAny(actorRoles, 'ADMINISTER_SYSTEM')
+	)
+}
+
 // Payroll variant: the final APPROVE routes to the finance approvers (CEO / Super Admin,
-// #174). A run has no employee owner, so the separation-of-duties owner args are null and
-// the maker-vs-signer guard is applied by the caller against the MAKE step's actorId.
-export function canActOnPayrollStage(stage: ApprovalStage, actorRoles: Role[]): boolean {
-	return canActOnStage(stage, actorRoles, null, null, PAYROLL_STAGE_CAPABILITY)
+// #174). A run has no employee owner, so the separation-of-duties owner args are null.
+//
+// #283/F5: `sod` is forwarded rather than stubbed. A [VERIFIER, CEO] user holds both payroll
+// stages, so without it one person verifies and approves the same run — the same collapse as F1,
+// on the surface where it costs the most. This also SUBSUMES the maker-vs-signer rule the callers
+// applied by hand: the MAKE step is decided and carries an actorId, so the maker is already in
+// decidedActorIds.
+export function canActOnPayrollStage(
+	stage: ApprovalStage,
+	actorRoles: Role[],
+	sod: StageSoD
+): boolean {
+	return canActOnStage(stage, actorRoles, null, null, sod, PAYROLL_STAGE_CAPABILITY)
 }
 
 // Pure transition: given the current stage / chain length / decision, what are the
@@ -104,7 +208,10 @@ export async function decide(
 		where: { id: requestId, employee: { user: { organizationId: ctx.organizationId } } },
 		include: {
 			steps: { orderBy: [{ attempt: 'asc' }, { stageIndex: 'asc' }] },
-			employee: { select: { reportsToId: true, userId: true } }
+			employee: { select: { reportsToId: true, userId: true } },
+			// #283/F3: verifiedById, NOT verifiedAt. The two mean different things since D11, and
+			// keying this on verifiedAt would reopen the un-verify bypass exactly.
+			documents: { select: { verifiedById: true } }
 		}
 	})
 	if (!req) error(404, 'Request not found')
@@ -122,7 +229,14 @@ export async function decide(
 	const step = liveSteps.find((s) => s.stageIndex === req.currentStage)
 	if (!step) error(500, 'Approval chain is inconsistent')
 
-	if (!canActOnStage(step.stage, ctx.actorRoles, actorEmployeeId, req.employeeId)) {
+	const sod: StageSoD = {
+		actorId: ctx.actorId,
+		decidedActorIds: decidedActorIds(req.steps, attempt),
+		verifiedDocActorIds: req.documents
+			.map((d) => d.verifiedById)
+			.filter((v): v is string => v != null)
+	}
+	if (!canActOnStage(step.stage, ctx.actorRoles, actorEmployeeId, req.employeeId, sod)) {
 		error(403, 'You cannot act on this stage')
 	}
 	// A returned reason is required so the maker knows what to fix.
@@ -162,7 +276,17 @@ export async function decide(
 		action: 'UPDATE',
 		entityType: 'Request',
 		entityId: req.id,
-		newValue: { attempt, stage: step.stage, decision, status: transition.status }
+		newValue: {
+			attempt,
+			stage: step.stage,
+			decision,
+			status: transition.status,
+			// #283/D7: the ADMINISTER_SYSTEM carve-out let this actor decide a request whose evidence
+			// they signed off themselves. It is a privileged waiver of a two-person control, so it
+			// leaves a mark; the key is absent on every ordinary decision rather than set to false,
+			// so a search for it returns only real uses.
+			...(usedDocVerifierCarveOut(sod, ctx.actorRoles) && { selfVerifiedEvidence: true })
+		}
 	})
 
 	// Audit the applied effect after commit — mirrors the request-decision log above and
@@ -205,14 +329,18 @@ export async function decide(
 export async function listPendingRequestsForApprover(
 	organizationId: string,
 	actorRoles: Role[],
-	actorEmployeeId: string | null
+	actorEmployeeId: string | null,
+	actorUserId: string
 ) {
 	const pending = await db.request.findMany({
 		where: { status: 'PENDING', employee: { user: { organizationId } } },
 		include: {
 			steps: { orderBy: [{ attempt: 'asc' }, { stageIndex: 'asc' }] },
 			employee: { select: { id: true, firstName: true, lastName: true, reportsToId: true } },
-			documents: { select: { id: true, verifiedAt: true } }
+			// verifiedAt stays — requests/approvals/+page.svelte renders it. verifiedById is added for
+			// the #283/F3 bar; dropping it empties verifiedDocActorIds and the bar quietly stops
+			// existing with every test still green.
+			documents: { select: { id: true, verifiedAt: true, verifiedById: true } }
 		},
 		orderBy: { createdAt: 'asc' }
 	})
@@ -220,7 +348,16 @@ export async function listPendingRequestsForApprover(
 	return pending.filter((r) => {
 		const attempt = Math.max(...r.steps.map((s) => s.attempt))
 		const step = r.steps.find((s) => s.attempt === attempt && s.stageIndex === r.currentStage)
-		return step != null && canActOnStage(step.stage, actorRoles, actorEmployeeId, r.employeeId)
+		return (
+			step != null &&
+			canActOnStage(step.stage, actorRoles, actorEmployeeId, r.employeeId, {
+				actorId: actorUserId,
+				decidedActorIds: decidedActorIds(r.steps, attempt),
+				verifiedDocActorIds: r.documents
+					.map((d) => d.verifiedById)
+					.filter((v): v is string => v != null)
+			})
+		)
 	})
 }
 
@@ -264,9 +401,9 @@ export async function countPendingApprovals(user: {
 		canAny(roles, 'APPROVE_SIGNOFF')
 
 	const [requests, timesheetCount, payrollRunCount, proposals] = await Promise.all([
-		listPendingRequestsForApprover(user.organizationId, roles, myEmployee?.id ?? null),
+		listPendingRequestsForApprover(user.organizationId, roles, myEmployee?.id ?? null, user.id),
 		canReviewTimesheets
-			? countActionableTimesheets(user.organizationId, roles, myEmployee?.id ?? null)
+			? countActionableTimesheets(user.organizationId, roles, myEmployee?.id ?? null, user.id)
 			: Promise.resolve(0),
 		countActionablePayrollRuns(user.organizationId, roles, user.id),
 		// Same "run the filtered list, take .length" shape as requests. Notifications are one-shot
@@ -285,8 +422,13 @@ export async function countPendingApprovals(user: {
 }
 
 // COMPUTED payroll runs whose live maker-checker stage this user can sign off (#134).
-// Only the sign-off roles act on runs; the maker of the live attempt is excluded (SoD).
-async function countActionablePayrollRuns(
+// Only the sign-off roles act on runs; anyone who already decided the live attempt — the maker
+// included — is excluded (SoD, #283/F5).
+//
+// Exported since #283: this counter now carries a separation-of-duties guard, and a guard that
+// cannot be tested directly is a guard nobody can trust. Not a public API surface — the export
+// exists for tests/unit/approval-queues.test.ts.
+export async function countActionablePayrollRuns(
 	organizationId: string,
 	roles: Role[],
 	userId: string
@@ -313,18 +455,25 @@ async function countActionablePayrollRuns(
 	return runs.filter((r) => {
 		const live = livePayrollStage(r.approvalSteps)
 		if (!live?.currentStep) return false
-		const makeActorId = r.approvalSteps.find(
-			(s) => s.attempt === live.attempt && s.stage === 'MAKE'
-		)?.actorId
-		return canActOnPayrollStage(live.currentStep.stage, roles) && makeActorId !== userId
+		// The explicit `makeActorId !== userId` clause that stood here is GONE, not forgotten: the
+		// MAKE step is decided and carries an actorId, so decidedActorIds already contains the
+		// maker. Keeping both would be two copies of one rule, and the copies drift.
+		return canActOnPayrollStage(live.currentStep.stage, roles, {
+			actorId: userId,
+			decidedActorIds: decidedActorIds(r.approvalSteps, live.attempt),
+			verifiedDocActorIds: []
+		})
 	}).length
 }
 
 // SUBMITTED timesheets whose live maker-checker stage this user can act on (#134).
-async function countActionableTimesheets(
+//
+// Exported since #283, for the same reason as countActionablePayrollRuns above.
+export async function countActionableTimesheets(
 	organizationId: string,
 	roles: Role[],
-	actorEmployeeId: string | null
+	actorEmployeeId: string | null,
+	actorUserId: string
 ): Promise<number> {
 	const submitted = await db.timesheet.findMany({
 		where: {
@@ -334,14 +483,24 @@ async function countActionableTimesheets(
 		},
 		select: {
 			employeeId: true,
-			approvalSteps: { select: { attempt: true, stageIndex: true, stage: true, decision: true } }
+			// `actorId` is what the #283 bar reads. Omit it and decidedActorIds returns [] for every
+			// row — the guard stops existing, silently, with every test still green.
+			approvalSteps: {
+				select: { attempt: true, stageIndex: true, stage: true, decision: true, actorId: true }
+			}
 		}
 	})
 	return submitted.filter((ts) => {
 		const live = liveChain(ts.approvalSteps)
 		// Legacy step-less timesheets remain manager-ladder actionable.
 		if (!live || !live.currentStep) return canAny(roles, 'VIEW_TEAM')
-		return canActOnStage(live.currentStep.stage, roles, actorEmployeeId, ts.employeeId)
+		return canActOnStage(
+			live.currentStep.stage,
+			roles,
+			actorEmployeeId,
+			ts.employeeId,
+			timesheetSoD(actorUserId, ts.approvalSteps, live.attempt)
+		)
 	}).length
 }
 
@@ -433,16 +592,27 @@ export async function decidePayrollRun(
 
 	const step = live.currentStep
 	const roles = ctx.actorRoles
-	// Stage authority is a capability (VERIFY → Verifier, APPROVE → finance approver:
-	// CEO / Super Admin, #174). No employee owner exists for a run, so the owner-based
-	// guard args are null.
-	if (!canActOnPayrollStage(step.stage, roles)) {
-		error(403, 'You cannot act on this stage')
-	}
-	// Separation of duties: the maker of this attempt may not sign it off.
+	// Separation of duties: the maker of this attempt may not sign it off. #283/F5 SUBSUMES this —
+	// the maker is in decidedActorIds — so the block is kept purely FOR ITS MESSAGE, and must stay
+	// ABOVE the generic check or the generic one fires first and swallows it. Telling a preparer
+	// "you cannot act on this stage" when the real reason is "you prepared it" is the kind of
+	// refusal people file a support ticket about.
 	const makeStep = run.approvalSteps.find((s) => s.attempt === live.attempt && s.stage === 'MAKE')
 	if (makeStep?.actorId && makeStep.actorId === ctx.actorId) {
 		error(403, 'You cannot sign off a payroll run you prepared')
+	}
+	// Stage authority is a capability (VERIFY → Verifier, APPROVE → finance approver:
+	// CEO / Super Admin, #174). No employee owner exists for a run, so the owner-based
+	// guard args are null. #283/F5: the sod arm additionally bars anyone who decided an earlier
+	// stage of this attempt — a [VERIFIER, CEO] user verifying then approving their own run.
+	if (
+		!canActOnPayrollStage(step.stage, roles, {
+			actorId: ctx.actorId,
+			decidedActorIds: decidedActorIds(run.approvalSteps, live.attempt),
+			verifiedDocActorIds: []
+		})
+	) {
+		error(403, 'You cannot act on this stage')
 	}
 
 	const decision: ApprovalDecision = approved ? 'APPROVED' : 'RETURNED'

@@ -10,6 +10,9 @@ export const USERS = {
 	// Maker-checker sign-off accounts (#134).
 	verifier: { email: 'verifier@veent.ph', password: 'Verifier@1234' },
 	approver: { email: 'approver@veent.ph', password: 'Approver@1234' },
+	// The one two-hat account in the seed (#283): VERIFIER + APPROVER, for the
+	// separation-of-duties specs. Seeded by seedE2E; see prisma/seed-core.ts.
+	twoHat: { email: 'verifier.approver@veent.ph', password: 'TwoHat@1234' },
 	// Cross-org CEO (#131/#132): member of Veent + JoJo Potato + Sweetleaf.
 	ceo: { email: 'ceo@veent.ph', password: 'Ceo@1234' },
 	// Food-service tenant HR (#140) — Branches is gated to those orgs, so its spec logs in
