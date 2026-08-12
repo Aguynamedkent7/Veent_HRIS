@@ -89,7 +89,14 @@ export async function saveRequestDocuments(
 
 	const req = await db.request.findFirst({
 		where: { id: requestId, employeeId, employee: { user: { organizationId } } },
-		select: { id: true, status: true, _count: { select: { documents: true } } }
+		// #299/D-5: the cap means 5 LIVE documents. Tombstones are kept forever, so counting them
+		// would lock a requester out of their own request after two swaps — the cap would ratchet
+		// down instead of holding. Filtered `_count` is supported by the installed Prisma 5.22.
+		select: {
+			id: true,
+			status: true,
+			_count: { select: { documents: { where: { deletedAt: null } } } }
+		}
 	})
 	if (!req) error(404, 'Request not found')
 	if (req.status !== 'PENDING' && req.status !== 'RETURNED') {
@@ -143,6 +150,12 @@ export async function saveRequestDocuments(
 
 // Returns the row incl. storageKey (plus the owning request) so the download route
 // can stream the file and check access.
+//
+// #299/I-4: deliberately TOMBSTONE-BLIND — no `deletedAt` filter here. Each of the three callers
+// branches on `deletedAt` itself because they need three different answers: the delete path 404s
+// (D-2), the verify path 409s (D-1/P-6), and the download route serves a tombstone while its bytes
+// survive and 404s only once `storageKey` is null (D-3). A filter here would pick one of those
+// three for everyone.
 export async function getRequestDocument(docId: string, organizationId: string) {
 	const doc = await db.requestDocument.findFirst({
 		where: { id: docId, request: { employee: { user: { organizationId } } } },
@@ -161,6 +174,12 @@ export async function setRequestDocumentVerified(
 	ctx: AuditContext
 ) {
 	const doc = await getRequestDocument(docId, organizationId)
+	// #299/D-1 + P-6: a tombstone can be neither verified nor un-verified. 409, not 404, and the
+	// difference is not pedantry — under D-3 the reviewer is looking at this exact row RIGHT NOW in
+	// the detail page's "Removed documents" panel, with its filename and its signer. Telling them
+	// "not found" for a row on their screen produces a bug report. 409 is the code this file
+	// already uses for "you can see it, you may not do this to it" (the delete lock below).
+	if (doc.deletedAt) error(409, 'Removed documents cannot be verified')
 	const updated = await db.requestDocument.update({
 		where: { id: doc.id },
 		data: verified
@@ -189,9 +208,54 @@ export async function setRequestDocumentVerified(
 	return updated
 }
 
+// #299/I-3 — the ONE place bytes are ever evicted. Two modes, one helper, because the ordering
+// below must be enforced in exactly one place: `keepNewest = 3` is the FIFO cap fired on every
+// removal, `keepNewest = 0` is the terminal-status sweep (D-6) fired once a request reaches
+// APPROVED, REJECTED or CANCELLED and the cap stops applying.
+//
+// The FIFO key is `deletedAt`, NEVER `uploadedAt` (I-1). Creation order and deletion order diverge
+// the moment documents are swapped out of upload order — a doc uploaded first but removed last is
+// the NEWEST tombstone, and sorting by `uploadedAt` would evict it first. That is a real bug, not a
+// stylistic choice.
+//
+// Unlink precedes the null, always (P-3). Null first and the pointer is gone while the file
+// remains: a permanent orphan that `sweep-orphan-uploads.ts` can never reclaim, because a file with
+// no row is swept while a file with a NULLED row is invisible to both sides. For the same reason an
+// unlink failure `continue`s without nulling — the key stays, the sweep correctly ignores the file,
+// and the next eviction cycle retries.
+//
+// This function touches ONE column. `deletedAt`, `verifiedById`, `verifiedAt`, `fileName` and
+// `uploadedAt` are never written here, and no row is ever deleted — that is the whole point of
+// #299.
+export async function evictTombstonedBytes(requestId: string, keepNewest: number) {
+	const tombstoned = await db.requestDocument.findMany({
+		where: { requestId, deletedAt: { not: null }, storageKey: { not: null } },
+		orderBy: { deletedAt: 'asc' },
+		select: { id: true, storageKey: true }
+	})
+	const evict = keepNewest > 0 ? tombstoned.slice(0, -keepNewest) : tombstoned
+
+	for (const row of evict) {
+		if (!row.storageKey) continue
+		try {
+			await deleteStoredFile(row.storageKey)
+		} catch (e) {
+			console.error('[storage] failed to evict', row.storageKey, e)
+			continue
+		}
+		await db.requestDocument.update({ where: { id: row.id }, data: { storageKey: null } })
+	}
+}
+
 // Owner removes a document from their own still-editable request. Verified docs are
 // locked — an approver already signed off on that exact file, so it can't be swapped
 // out from under them.
+//
+// #299: this SOFT-deletes. The row is kept forever — `verifiedById` is what the #283/F3 bar reads,
+// and a hard delete erased it, so un-verify -> delete -> re-upload laundered a signer's signature
+// away and let them decide their own evidence. Only the bytes may go, and only through
+// `evictTombstonedBytes` above. The 409 on `verifiedAt` is unchanged and deliberate: it blocks
+// removing a CURRENTLY verified document, which is a different rule from this one.
 export async function deleteRequestDocument(
 	docId: string,
 	employeeId: string,
@@ -209,18 +273,29 @@ export async function deleteRequestDocument(
 		error(400, 'Documents can only be removed while a request is pending or returned')
 	}
 	if (doc.verifiedAt) error(409, 'Verified documents cannot be removed')
+	// #299/D-2: already a tombstone — gone from the requester's active set, so 404 is honest here
+	// (unlike the verify path, which shows the row). It also closes the FIFO-gaming path: repeated
+	// deletes of one id cannot force extra eviction cycles.
+	if (doc.deletedAt) error(404, 'Document not found')
 
-	await db.requestDocument.delete({ where: { id: doc.id } })
-	// The row is gone, so a storage-cleanup failure must not surface as an error or
-	// skip the DELETE audit entry — the bytes just become an orphan to sweep later.
-	await deleteStoredFile(doc.storageKey).catch((e) =>
-		console.error('[storage] failed to remove', doc.storageKey, e)
+	await db.requestDocument.update({ where: { id: doc.id }, data: { deletedAt: new Date() } })
+	// Bytes are a cleanup concern and the user's removal already succeeded, so a storage failure
+	// must not surface as an error or skip the DELETE audit entry — same reasoning as the inline
+	// unlink this replaced.
+	await evictTombstonedBytes(doc.requestId, 3).catch((e) =>
+		console.error('[storage] failed to evict tombstoned bytes for', doc.requestId, e)
 	)
 	await writeAuditLog(ctx, {
 		action: 'DELETE',
 		entityType: 'RequestDocument',
 		entityId: doc.id,
-		oldValue: { requestId: doc.requestId, fileName: doc.fileName }
+		// #299: `verifiedById` joins the entry. Today's audit cannot reconstruct who signed a
+		// removed document — the same amnesia this issue exists to close, one layer up.
+		oldValue: {
+			requestId: doc.requestId,
+			fileName: doc.fileName,
+			verifiedById: doc.verifiedById
+		}
 	})
 	return { deleted: true }
 }
