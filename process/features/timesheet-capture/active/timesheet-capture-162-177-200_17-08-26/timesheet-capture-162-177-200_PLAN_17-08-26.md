@@ -2689,6 +2689,146 @@ Accepted by: user (VALIDATE invocation, 17-08-26: "Present the validate-menu, th
 | Read-side formula-injection rejection | **CONFIRMED it works; REFUTED that it is a "mirror"** | `reports.ts:622` is `/^[=+\-@\t\r]/`; the plan's copy is `/^[=+\-@]/`. Because `sanitizeCell` strips leading tabs then `.trim()`s (which removes `\t`, `\r`, `\n` and ` `), payloads like `\r=cmd` and `\t=HYPERLINK(...)` are still caught. No legitimate value in the six columns starts with `=`, `+`, `-` or `@`, so false positives are near-zero. Honest assessment: the defence is close to theatre — parsed cells become timestamps and employee-number lookups, never re-exported strings. Keep it as cheap garbage rejection; do not credit it as a load-bearing control. See P2. |
 | Row-count and upload-size caps are enforced before any parsing work | **REFUTED** | §2.4 does `await file.text()` before `importBacklog` runs, so §2.3e step 1's `file.size` check happens after the whole body is decoded into memory. §2.3e step 3 checks `MAX_IMPORT_ROWS` after `parseBacklogCsv` has parsed the entire string. Both caps exist and both precede any DB read (the plan's literal claim), but neither bounds the work it exists to bound. See E4. |
 
+### Amendment 1 Validation — targeted re-validation
+
+Status: CONDITIONAL
+Date: 17-08-26
+date: 2026-08-17
+generated-by: outer-pvl
+supersedes: — (append-only; the 17-08-26 outer-pvl contract above is PRESERVED VERBATIM, E1–E9 and
+P1–P8 unchanged. This block adds a scoped verdict on §1.11 only.)
+
+**Scope:** `### Amendment 1` / §1.11 and its suffixed checklist steps (1a, 3a, 3b, 5a, 6a, 7a, 8a,
+8b, 9a, 10a, 12a, 14a, 15a). Nothing else in the plan was re-validated.
+
+**Net gate for the amendment: CONDITIONAL.** 0 FAILs, 10 CONCERNs. The amendment is mechanically
+feasible, its two headline structural claims (zero new queries; `derive.ts` stays pure) are
+CONFIRMED against live source, and its safety argument (D2 display-only) survives. What does not
+survive is the mutation table: 3 of its 12 rows cannot turn any test red, and 1 more is only
+half-covered — the same defect class the contract above recorded as REFUTED ("Every guard names a
+mutation that turns a test red").
+
+#### Item-by-item verdicts (ranked by severity)
+
+| # | Claim under test | Verdict | Evidence |
+|---|---|---|---|
+| A-1 | Mutation row 1 (NULL falls back to the default) turns A9/A12 red | **REFUTED, twice** | A9–A13 live in `attendance-am-pm-split.test.ts`, which imports `deriveAttendanceDay` directly and never executes `index.ts` — mutating `index.ts` cannot make a pure spec red. Worse, the mutation itself is a no-op: Prisma returns `null` for a NULL Int, and `null * 60_000` is **0**, not `NaN`; derive.ts's own `> 0` guard already rejects 0 and falls back to the default. §1.11.7 explicitly forbids a mocked `deriveRange` spec, so this guard has **zero** automated coverage by construction. |
+| A-2 | Mutation row 8 (delete `/^\d+$/`) turns A16 red on `'12.5'` and `'1e3'` | **REFUTED** | With the regex deleted: `'12.5'` → `Number.isInteger(12.5)` false → `fail(400)`; `'1e3'` → 1000 → out of bounds → `fail(400)`; `'abc'` → NaN → `fail(400)`; `'-30'` → `fail(400)`. **A16 stays green.** The regex's only *distinctive* rejections are `'1e2'`, `'0x1E'`, `'+45'` — every one of which otherwise coerces to a correct in-range integer. `isValidAmPmMinGap`'s `Number.isInteger`, not the regex, is what stands between a decimal and the database. §1.11.5's "the `/^\d+$/` test is doing real work" is overstated. |
+| A-3 | A16 asserts `fail(400)` "with the bounds message" for all six inputs | **REFUTED — over-specified against correct code** | Against the §1.11.5 parse, `'12.5'`, `'1e3'` and `'abc'` return `'Enter a whole number of minutes.'`, NOT the bounds message. A16 as tabled goes red against a correct implementation. |
+| A-4 | A12 proves the finite/positive fallback | **PARTIAL** | `NaN` and `Infinity` produce all-null through the comparison **even with the guard deleted** (`gap >= NaN` is false; `gap >= Infinity` is false). Only the `-1` and `0` cases are load-bearing, and both are caught by the `> 0` clause alone. **`Number.isFinite` is untested by any spec.** |
+| A-5 | §1.11.8 twin door: `correctDay` reads the threshold too | **CONFIRMED structurally, VACUOUS behaviourally** | `correctDay` builds `punches` from at most one `timeIn` + one `timeOut` (`index.ts:460-462`), so `workSegs.length <= 1` and `openWork === null` — `splitAmPmBlocks` returns all-null **for every threshold value**. The `amPmMinGapMs` wiring in `correctDay` can never change any output. Harmless and defensible for symmetry (a future multi-pair correction form would need it), but it is unprovable and no test or manual step covers it. Say so rather than counting it as a covered twin. |
+| A-6 | A15 / A17 are implementable as tabled | **CONCERN — internally inconsistent** | A15 asserts "`setOrgAmPmMinGap` called with `null`" (a spy on the service) while A17 asserts "`organization.update` receives `{ where: { id: … }, data: … }`" (the real service running). Both hold only if the service module is **not** mocked. §1.11.7 says the file mocks `$lib/server/db` and `$lib/server/audit` — which is correct — but never states that `attendance/schedules` must stay real. If EXECUTE mocks it, mutation row 10 (delete the in-service bounds check) also goes uncaught. |
+| A-7 | Mutation row 10 turns "A14's service case" red | **REFUTED — no such spec** | A14 as tabled is the pure `isValidAmPmMinGap` table only; it has no service case. |
+| A-8 | Bounds 5–240 are defensible, and a value INSIDE the range cannot do real damage | **PLAUSIBLE — PLAN's concession is correct and the damage ceiling holds** | At floor 5, a 6-minute re-punch gap becomes the longest gap and manufactures a fake AM/PM boundary — PLAN concedes this at R10 and the concession is accurate. **D2 survives, confirmed structurally, not by assertion:** `splitAmPmBlocks` is a post-pass inserted after `result.timeOut = lastOut` and assigns only the four AM/PM fields; it cannot touch `workedHours` or any hour bucket. Combined with the contract's complete reader enumeration above, worst case is still a wrong label, never a wrong peso. M1b step 7's `worked_hours` byte-identical assertion is the mechanical proof and is correctly placed. **Strengthening PLAN missed:** the longest-gap rule means the threshold can only turn a split ON or OFF — it can never *move* an existing boundary, except in the step-4 dangling-IN case. That materially bounds R10 and should be recorded. **New surface PLAN missed:** §1.6 puts AM/PM into the CSV export, which leaves the app; a fake split can therefore reach a payroll processor's desk even though it can never reach `payroll/calculator.ts`. |
+| A-9 | Ceiling 240 stops an operator turning the feature "silently off" | **REFUTED as stated** | It stops 600, not 240. A tenant whose genuine split-shift break is 3 hours, set to 240, gets no split, no error and no UI signal — exactly the failure the ceiling is argued to prevent, just at a smaller number. Accepted risk, but the argument as written claims more than it delivers. |
+| A-10 | The §1.11.7 mock-discipline rationale | **CONCERN — misapplied** | The `organization.findUnique` where/select `mockImplementation` is the right pattern, but the `setAmPmMinGap` action never calls `findUnique` — only `load` does, and no spec covers `load`. A19 is honestly proved by its `organization.update` `where.id` assertion, not by the findUnique mock. Keep the rule; fix the reason. |
+
+#### Claims CONFIRMED against live source (no action needed)
+
+| Claim | Verdict | Evidence |
+|---|---|---|
+| Zero new queries; both call sites already fetch the org row | **CONFIRMED** | `index.ts:171-174` (`deriveRange`, hoisted above the employee loop) and `index.ts:436-439` (`correctDay`) are both pre-existing `db.organization.findUnique` calls with `select: { trackTardiness: true }`. `correctDay`'s sits INSIDE `if (editingTimes)` (`:427`) and so does its `deriveAttendanceDay` call (`:464`) — the new local is in scope with no restructuring. Widening either `select` adds no round trip. Plan's cited `:173`/`:438` are the `select` lines of those same calls. |
+| `derive.ts` stays pure | **CONFIRMED** | The threshold arrives as `DeriveInput.amPmMinGapMs` and as `splitAmPmBlocks`'s third parameter; no module constant is closed over except the fallback default. `derive.ts` imports nothing and touches no DB today (`AttendanceDayResult`, `:65-83`), and the amendment adds no import. Callable with no DB and no org context, exactly like `enforceTardiness`. |
+| Capability gate matches its neighbour | **CONFIRMED** | `setOrgTardiness` (`schedules.ts:70-84`) carries **no** in-service capability check. Every entry point on the page does: `load` `:13`, `create` `:31`, `toggleOrgTardiness` `:67`, `toggleTardiness` `:79` — all `requireAnyCapability(locals.user!.roles, 'MANAGE_HR')`. The new setter matches. (Plan cites `create` at `:30`; actual `:31`. Cosmetic.) The new setter's extra in-service `isValidAmPmMinGap` check is *validation*, not capability, and is correct. |
+| The twin door is needed, not redundant | **CONFIRMED** | `/settings/schedules` `load` is `MANAGE_HR` only — there is **no** food-service gate anywhere on that route. `requireFoodServiceOrg` (`rbac.ts:19-20` → `error(404)`) on the new action is therefore genuinely load-bearing: a direct POST from a Veent HR account without it would write the column. The plan correctly places it OUTSIDE the try/catch, so the 404 propagates instead of becoming a `fail()`. |
+| Input validation rejects the hostile set | **CONFIRMED** (see A-2 for the regex's real weight) | Empty → `null` before the regex (intended clear-to-default). `'abc'`/`'-30'`/`'12.5'`/`'1e3'`/`'+45'`/`' 4 5'` → rejected. `'  45  '` → trimmed to 45. JS `$` does not match before a trailing newline (no `m` flag), and `\d` without `u` is ASCII-only, so no Unicode-digit or newline bypass. `'99999999999999999999'` → in-range check rejects. Bounds sit far inside a PG `Int`. |
+| `NaN`/negative cannot reach `splitAmPmBlocks`, and the derive.ts fallback is a genuine second layer | **CONFIRMED, three layers deep** | Layer 1 = the action parse; layer 2 = `isValidAmPmMinGap` inside `setOrgAmPmMinGap` (the only writer); layer 3 = the finite/positive fallback at the `splitAmPmBlocks` call site. `index.ts`'s `!= null` mapping cannot manufacture a `NaN` from a Prisma Int. Note layer 3 checks finite-and-positive only, **not** the 5–240 bounds — a value planted by raw SQL (as §1.11.10 step 4 itself does) is not re-bounded. Correct as defence in depth; do not credit it as bounds enforcement. |
+| Prisma: nullable, additive, no default, no index, no enum change, `generate` mandated | **CONFIRMED** | `trackTardiness Boolean @default(true)` verified at `schema.prisma:297`; the new column lands after it. `Organization` gains one `Int?` — no `@@index`, no `@default`. No `ALTER TYPE` anywhere in the amendment, so the plan's standing "no `scripts/migrate-*.ts`" claim holds. §Prisma Contract's four-command sequence (`./start.sh` → `pnpm db:push` → `pnpm prisma generate` → `pnpm check`) is mandatory and checklist step 1a routes through step 2's push/generate. |
+| P8's populated-table concern does not apply here | **CONFIRMED — genuinely does not apply** | `select count(*) from organizations` returns **3** live. But P8 is about (a) `prisma db push` building a **unique index** on populated `time_logs` without `CONCURRENTLY`, and (b) adapter-node `BODY_SIZE_LIMIT`. A nullable `ADD COLUMN` with no default is catalog-only on PG 11+: metadata write, brief `ACCESS EXCLUSIVE` lock, zero table rewrite on 3 rows. §1.11.9's assessment is right. |
+| E1–E9 and P1–P8 all survive | **CONFIRMED** | Spot-checked the three specific claims: **(a) E7** — `AttendanceDayResult` (`derive.ts:65-83`) gains only the four AM/PM keys from §1.2b; `amPmMinGapMs` lands on `DeriveInput` (`:47-63`), an *input* type. E7's "deep-equal after deleting the four AM/PM keys from both" is unaffected. **CONFIRMED.** (b) **P1 and R11 are the same defect reached two ways** — both leave a stored `AttendanceDay` carrying an AM/PM split computed under superseded inputs. Folding them into one resolution is correct. **CONFIRMED.** (c) Checklist suffixing verified: items 11, 12, 13 and 15 are untouched, so E2→11, E7→12, E1→13, E5→15 still resolve. |
+| R11's stale-value path is acknowledged and the recovery is reachable | **CONFIRMED, with one residual PLAN understates and one it overstates** | `deriveRange` skips `if (existing?.isLocked) continue` (`index.ts:249`) and `if (existing?.manuallyEdited) continue` (`:251`) — R11's citations are exact. Recovery IS reachable for a normal HR user: two **Refresh** buttons (`attendance/+page.svelte:358`, `:411`) hit a `MANAGE_HR` action that calls `deriveRange` (`+page.server.ts:166-172`). **Overstated:** a `manuallyEdited` day is recoverable — `resetDay` (`+page.server.ts:201-206`) clears the flag and re-derives. **Understated:** a **locked** day is the true dead end — `resetDayToDerived` refuses it with 409 (per the contract's own verified claim above), so a locked day keeps its old-threshold split permanently with no UI path back. R11 should name locking specifically. |
+
+#### Amendment execute-agent instructions (binding, additive to E1–E9)
+
+| # | Instruction | Trigger |
+|---|---|---|
+| A-E1 | Replace §1.11.7 mutation row 1. The stated mutation is a no-op (`null * 60_000` is `0`, and derive.ts's `> 0` guard already absorbs it) and targets `index.ts`, which no pure spec executes. Use instead: **in `index.ts`, delete the `amPmMinGapMs` key from the `deriveAttendanceDay({ … })` argument object in `deriveRange`** — and accept that **no automated test turns red**. Record it as a named residual proved only by manual step M1b step 7. Do not claim A9/A12 cover it. | Step 15a |
+| A-E2 | Replace §1.11.7 mutation row 8. `/^\d+$/` has no reachable harmful bypass — every input it uniquely rejects (`'1e2'`, `'0x1E'`, `'+45'`) coerces to a correct in-range integer, and every harmful input is caught by `isValidAmPmMinGap`. Either **(a)** keep the regex, delete the mutation row, and change §1.11.5's justification to "cosmetic strictness; `Number.isInteger` in `isValidAmPmMinGap` is the actual gate", or **(b)** drop the regex entirely and rely on `isValidAmPmMinGap` plus a distinct message. Do not ship a mutation row that cannot go red. | Steps 9a, 15a |
+| A-E3 | Correct A16. Split it into two assertions: `'12.5'`, `'1e3'`, `'abc'` → `fail(400)` with **`'Enter a whole number of minutes.'`**; `'4'`, `'241'`, `'-30'` → `fail(400)` with the **bounds** message. As tabled, A16 asserts the bounds message for all six and goes red against correct code. In both groups also assert `organization.update` was never called. | Step 14a |
+| A-E4 | Strengthen A12. `NaN` and `Infinity` pass through the comparison to all-null with the guard deleted, so they cannot fail. Add a case that **can**: `amPmMinGapMs: -1` and `amPmMinGapMs: 0` against a punch set with a **10-minute** gap — with the guard the answer is no-split (default 30), without it a negative or zero threshold splits. State in a comment that `Number.isFinite` is unprovable through this surface and is retained as belt-and-braces. | Step 12a |
+| A-E5 | In `tests/unit/attendance-ampm-gap-setting.test.ts`, mock **only** `$lib/server/db` and `$lib/server/audit`. Import the real `attendance/schedules` module so A15/A17 and mutation row 10 are all satisfiable through `organization.update` call assertions. Write this constraint as a comment at the top of the file. Rewrite A15's assertion as `organization.update` called with `data: { amPmMinGapMinutes: null }` rather than "`setOrgAmPmMinGap` called with `null`". | Step 14a |
+| A-E6 | Add a mutation row for the service-layer bounds check that actually resolves: **delete `isValidAmPmMinGap` from `setOrgAmPmMinGap` and call the service directly with `241`** → a new spec A21 asserting the service throws 400 and `organization.update` is never reached. §1.11.7 row 10 currently points at "A14's service case", which A14 does not contain. | Steps 14a, 15a |
+| A-E7 | Add the missing `load` coverage or name it a residual. Nothing in A9–A20 exercises the widened `settings/schedules` `load` (`showAmPmGap`, `amPmMinGapMinutes`, `amPmMinGapDefault`). Cheapest honest option: one spec asserting `load` returns `showAmPmGap: false` for `org_veent` and `true` for `org_jojo`, using the where/select-keyed `findUnique` mock §1.11.7 already specifies — that is the one place that mock pattern is actually needed. If skipped, record it under Open Gaps as display-only. | Step 14a |
+
+#### Amendment plan corrections (additive to P1–P8)
+
+| # | Correction | Where |
+|---|---|---|
+| A-P1 | State that `correctDay`'s `amPmMinGapMs` wiring **can never change an output**. The correction form expresses one pair (`index.ts:460-462`), so `workSegs.length <= 1`, `openWork === null`, and `splitAmPmBlocks` returns all-null for every threshold. Keep the wiring for symmetry, but stop counting it as a *covered* twin door — it is unprovable. | §1.11.8, row 2 |
+| A-P2 | Record the bound R10 misses: because the split lands on the **longest** gap regardless of threshold, changing the threshold can only turn a boundary ON or OFF — it can never move an existing one. The single exception is the step-4 dangling-IN case, where lowering the threshold can flip a step-4 split to a step-3 split. This materially shrinks R10 and is the strongest safety argument the amendment has. | §Risks, R10 |
+| A-P3 | Record the new surface R10 misses: §1.6 puts AM/PM into the **CSV export**, which leaves the application. A fake split cannot reach `payroll/calculator.ts` (D2 holds) but it can reach a payroll processor's spreadsheet. D2 bounds the *system*, not the *paper*. | §Risks, R10 |
+| A-P4 | Soften §1.11.5's ceiling argument. 240 stops an operator setting 600; it does **not** stop the "silently off" mode — a tenant whose real split-shift break is 3 hours, set to 240, gets no split, no error and no UI signal. State this as an accepted residual instead of claiming the ceiling eliminates it. | §1.11.5, "Ceiling 240" |
+| A-P5 | R11: name **locking** as the real dead end. A `manuallyEdited` day IS recoverable via `resetDay` (`attendance/+page.server.ts:201-206`); a **locked** day is not, because `resetDayToDerived` refuses it with 409. R11 currently treats both the same. Also correct §1.11.5's justification per A-E2 and §1.11.7's mock-discipline rationale per finding A-10 (the where/select `findUnique` mock protects `load`, not A19; A19 is proved by its `organization.update` `where.id` assertion). | §Risks R11; §1.11.5; §1.11.7 |
+
+#### Amendment test gates
+
+| criterion id | behavior | strategy | proving test | gap-resolution |
+|---|---|---|---|---|
+| 6 (Amendment) | The same punches split differently under two thresholds | Fully-Automated | `pnpm test` — `attendance-am-pm-split` A10 + A11 | A |
+| 6 (Amendment) | NULL falls back to the built-in 30-minute default | Fully-Automated | `pnpm test` — `attendance-am-pm-split` A9 | A |
+| 6 (Amendment) | A non-positive threshold cannot reach the comparison | Fully-Automated | `pnpm test` — `attendance-am-pm-split` A12, **corrected per A-E4** | B |
+| 6 (Amendment) | The threshold is per-call state, not module state | Fully-Automated | `pnpm test` — `attendance-am-pm-split` A13 | A |
+| 6 (Amendment) | Bounds 5–240 are enforced at the action and at the service | Fully-Automated | `pnpm test` — `attendance-ampm-gap-setting` A14, A16 (**corrected per A-E3**), A21 (**new per A-E6**) | B |
+| 6 (Amendment) | Empty clears to NULL, a valid value writes | Fully-Automated | `pnpm test` — `attendance-ampm-gap-setting` A15 (**rewritten per A-E5**), A17 | B |
+| 6 (Amendment) | Food-service twin door on the action, not just the render | Fully-Automated | `pnpm test` — `attendance-ampm-gap-setting` A18 | A |
+| 6 (Amendment) | One tenant cannot move another tenant's threshold | Fully-Automated | `pnpm test` — `attendance-ampm-gap-setting` A19 | A |
+| 6 (Amendment) | The write is audited | Fully-Automated | `pnpm test` — `attendance-ampm-gap-setting` A20 | A |
+| 6 (Amendment) | `showAmPmGap` is false for a non-food-service org | Fully-Automated | `pnpm test` — new `load` spec **per A-E7** | B |
+| 6 (Amendment) | Changing the setting changes a real derive, and `worked_hours` does not move | Agent-Probe | Manual step M1b, steps 6–7 | A |
+| 6 (Amendment) | `deriveRange`/`correctDay` actually read and pass the column | Known residual | — no automated spec; §1.11.7 forbids a mocked `deriveRange` test. `deriveRange` is proved only by M1b; `correctDay`'s wiring is unprovable (see A-P1) | D |
+| 6 (Amendment) | `Number.isFinite` in the derive.ts fallback | Known residual | — unreachable through this surface; `NaN`/`Infinity` are absorbed by the comparison regardless | D |
+| 6 (Amendment) | The operator's chosen number is right for their tenant | Known residual | — the amendment moves the choice to the operator without proving it (R10 residual, already on record) | D |
+
+Failing stub (A10/A11, the amendment's core behavior):
+```
+test("should split the same punches at 15 minutes and not at 30", () => {
+  throw new Error("NOT IMPLEMENTED — TDD stub: same punch set, two thresholds, two answers")
+})
+```
+
+Failing stub (A16, corrected):
+```
+test("should reject a non-integer with the whole-number message and out-of-bounds with the bounds message", () => {
+  throw new Error("NOT IMPLEMENTED — TDD stub: two distinct 400 messages, update never called")
+})
+```
+
+Failing stub (A18, the twin door):
+```
+test("should 404 a direct POST from a non-food-service org and never call the setter", () => {
+  throw new Error("NOT IMPLEMENTED — TDD stub: requireFoodServiceOrg on the action, not the render")
+})
+```
+
+#### Dimension findings — Amendment 1 only
+
+- Infra fit: **PASS** — every path and line reference in §1.11 resolves. `index.ts:171-174` / `:436-439`, `schedules.ts:70-84`, `settings/schedules/+page.server.ts:12-21` / `:29-97`, `schema.prisma:297`, `rbac.ts:19-20`, `orgs.ts:20-24`, `index.ts:249` / `:251` all verified verbatim. `organizations` has 3 rows; the nullable `ADD COLUMN` is catalog-only. Four CI gates unchanged.
+- Test coverage: **CONCERN** — 3 of 12 mutation rows cannot turn any test red (rows 1, 8, 10), 1 is half-covered (row 4 / `Number.isFinite`), A16 is over-specified against correct code, A15/A17 are mutually inconsistent on mocking, and the widened `load` has no spec. See A-E1 through A-E7.
+- Breaking changes: **PASS** — the column is nullable and additive with no default; NULL preserves pre-amendment behaviour for all three tenants; `DeriveInput.amPmMinGapMs` is optional so every existing `deriveAttendanceDay` caller and every existing derive spec compiles and behaves unchanged; `splitAmPmBlocks` is module-private so its third parameter is not a public contract change. No enum renamed.
+- Security surface: **PASS with one note** — `MANAGE_HR` matches every neighbour on the route; `requireFoodServiceOrg` is genuinely load-bearing (the route has no other org gate) and is correctly placed outside the try/catch; `organizationId` comes from `locals.user`, never the form; validation is three layers deep. Note: layer 3 (`derive.ts`) enforces finite-and-positive only, **not** the 5–240 bounds, so a value planted by raw SQL is not re-bounded — correct as defence in depth, not as enforcement.
+- §1.11 feasibility: **CONCERN** — mechanically feasible with zero restructuring; both org `select`s widen in place and `correctDay`'s new local lands inside the same `if (editingTimes)` block as its `deriveAttendanceDay` call. Highest-risk edit: **step 6a**, the `minGapMs` fallback at the `splitAmPmBlocks` call site — it is the last line of defence, it is placed correctly, and A12 as tabled only half-proves it (see A-E4).
+
+#### Open gaps — Amendment 1
+
+- `deriveRange`'s read of `amPmMinGapMinutes`: known-gap — no automated spec by the plan's own deliberate choice; proved only by Agent-Probe M1b.
+- `correctDay`'s threshold wiring: known-gap — structurally unprovable, since the correction form can only produce one segment (see A-P1).
+- `Number.isFinite` in the derive.ts fallback: known-gap — unreachable through the public surface.
+- A locked `AttendanceDay` never picks up a new threshold: known-gap — `deriveRange` skips it (`index.ts:249`) and `resetDayToDerived` refuses it with 409. No UI path exists. Accepted; the operator must unlock first.
+- Whether the operator's chosen threshold is right for their tenant: known-gap, already on record from R10.
+
+#### What this Amendment 1 coverage does NOT prove
+
+- `attendance-am-pm-split` A9–A13 prove the **rule** on synthetic arrays. They do **not** prove that any org's stored `amPmMinGapMinutes` ever reaches `deriveAttendanceDay` — nothing automated crosses `index.ts`.
+- `attendance-ampm-gap-setting` A14–A20 prove the **writer and its gates** via the `actions` export. They do **not** prove SvelteKit routes the POST to `setAmPmMinGap`, that Postgres accepts the `Int?` write, or that the settings card renders at all.
+- M1b proves one operator saw one threshold change move one day's split on seeded `localhost` data. It does not prove the behaviour on any real tenant's punch history.
+- No gate proves the 5-minute floor is high enough for any real tenant's re-punch noise, nor that 240 is above any real tenant's longest genuine break. Both bounds are argued, not measured.
+- No gate detects the "silently off" mode: a threshold no real gap reaches produces no split, no error and no UI signal (see A-P4).
+- Nothing prevents a raw-SQL write of an out-of-bounds value; layer 3 only rejects non-finite and non-positive.
+
+Gate: **CONDITIONAL** (10 concerns, 0 FAILs) — the amendment may proceed to EXECUTE with A-E1 through A-E7 and A-P1 through A-P5 recorded as binding, alongside the unchanged E1–E9 and P1–P8 above.
+Accepted by: pending user acceptance at this VALIDATE invocation (17-08-26, targeted Amendment 1 re-validation). Accepted concerns, by name: A-1 mutation row 1 doubly broken; A-2 `/^\d+$/` mutation cannot go red; A-3 A16 over-specified; A-4 `Number.isFinite` untested; A-5 `correctDay` wiring behaviourally vacuous; A-6 A15/A17 mocking inconsistency; A-7 mutation row 10 references a non-existent spec; A-8 in-range wrong split (conceded, damage ceiling holds); A-9 ceiling does not stop "silently off"; A-10 mock-discipline rationale misapplied.
+
+
 ## Autonomous Goal Block
 
 ```
