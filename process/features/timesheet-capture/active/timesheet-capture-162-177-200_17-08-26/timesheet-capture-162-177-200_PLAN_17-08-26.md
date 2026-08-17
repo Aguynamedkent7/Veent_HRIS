@@ -1850,11 +1850,13 @@ is the enforcement.
 | `/punch` page own history | **Yes — the employee's own** | `listPunches(me.id, …)` where `me` came from `locals.user.id`. This is the explicit self-visibility Decision 5 requires. |
 | Attendance page + attendance CSV export | **No** | They read `AttendanceDay`, which has no location column. Deliberate — a CSV that leaves the building is the wrong place for coordinates. |
 | Audit log | **No** | Only `hasLocation: boolean` (§3.2 step 5). #242 recorded the audit log bypassing a masking rule on this repo; do not repeat it. |
+| `/profile` own punch history (`profile/+page.server.ts:44`) | **No** | **Added in EXECUTE per E9 — the plan omitted this caller.** It is self-scoped the same way `/punch` is (`findFirst` on `userId` + `organizationId`, `:29-31`), so it can only ever read the caller's own punches. Its `.map()` at `:48-56` projects exactly six fields — `id`, `type`, `label`, `source`, `dayKey`, `at` — so `latitude`/`longitude`/`locationAccuracyM` never reach the client. **This is a projection, not a gate:** if a future change makes `/profile` return raw `TimeLog` rows, this row becomes a live location leak with nothing to stop it. |
 | Timesheets / payroll / payslip / dashboard / reports | **No** | None of them read `TimeLog` columns beyond `punchType`/`timestamp`/`timesheetId` |
 
-`listPunches` (`timelog.ts:111-126`) has exactly two callers — the punches API and (new) the
-punch page — both listed above. Confirm with `grep -rn "listPunches" src/` before Phase 3 gate;
-if a third caller has appeared, it must be gated before merge.
+`listPunches` has **three** callers after Phase 3 — the punches API, `/profile`, and (new) the
+punch page — all three listed above. **Corrected in EXECUTE per E9:** the plan said two and the
+§3.9 gate counted raw grep lines, which never had the claimed value. See §3.9 for the working
+gate. If a FOURTH caller appears, it must be gated (or proved projection-safe) before merge.
 
 ## 3.6 Phase 3 tests
 
@@ -1935,7 +1937,13 @@ Risk class: **schema change + new public surface + sensitive personal data**. Fi
 pnpm db:push && pnpm prisma generate
 pnpm format:check && pnpm lint && pnpm check && pnpm test
 pnpm test:e2e                    # hybrid: needs ./start.sh + pnpm db:seed:e2e
-grep -rn "listPunches" src/      # must return exactly 2 call sites
+
+# Corrected in EXECUTE per E9. The original gate — `grep -rn "listPunches" src/` "must return
+# exactly 2 call sites" — could never pass: raw grep counts LINES, and the definition plus each
+# caller's import line are lines too (5 before Phase 3, 7 after). Count CALL sites instead, and
+# expect 3: the punches API, /profile, and the new punch page. See the §3.5 table.
+test "$(grep -rn 'listPunches(' src/ | grep -vc 'export async function listPunches')" = 3
+
 git diff --stat src/routes/api/v1/timesheets/log/+server.ts   # must be empty
 ```
 

@@ -1422,6 +1422,21 @@ model TimeLog {
   // null-keyed rows do not collide — the same property @@unique([discordMessageId, employeeId])
   // already relies on.
   dedupKey         String?
+  // #177 — captured from navigator.geolocation at the moment of a WEB punch, and only there.
+  // Null for every DISCORD and MANUAL punch by construction: `recordPunch` writes these four
+  // only when its caller passes a `location`, and the Discord route and the backlog importer
+  // never do. Sensitive personal data — readable only through
+  // GET /api/v1/timesheets/:employeeId/punches (gated by `canTouchEmployee`: owner, their
+  // manager, branch manager, org HR) and the employee's own /punch page. Never in the audit
+  // log (#242), never in the attendance CSV export. Retention follows the TimeLog row itself —
+  // no separate purge window.
+  //
+  // Float (double precision), never Decimal: these are not money and are never summed, so the
+  // Decimal transport hook in src/hooks.ts stays out of the picture entirely.
+  latitude           Float?
+  longitude          Float?
+  locationAccuracyM  Float?
+  locationCapturedAt DateTime?
   note             String?
   timesheetId      String?
   createdAt        DateTime    @default(now())
