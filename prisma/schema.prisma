@@ -1414,6 +1414,14 @@ model TimeLog {
   source           PunchSource @default(DISCORD)
   timestamp        DateTime    @db.Timestamptz(3)
   discordMessageId String?
+  // #200 — deterministic idempotency key for punches that have no Discord message to key on.
+  // `backlog:<employeeNumber>:<YYYY-MM-DD>:<slot>` for a CSV backlog import row. Null for every
+  // Discord punch, which keeps using discordMessageId. Same two-layer defence as #99: an
+  // app-level bulk pre-check for a clean message, plus the unique constraint below to close the
+  // concurrent race. Postgres treats NULL as distinct in a unique index, so the existing
+  // null-keyed rows do not collide — the same property @@unique([discordMessageId, employeeId])
+  // already relies on.
+  dedupKey         String?
   note             String?
   timesheetId      String?
   createdAt        DateTime    @default(now())
@@ -1422,6 +1430,7 @@ model TimeLog {
   timesheet Timesheet? @relation(fields: [timesheetId], references: [id])
 
   @@unique([discordMessageId, employeeId])
+  @@unique([dedupKey, employeeId])
   @@index([employeeId, timestamp])
   @@index([timesheetId])
   @@map("time_logs")

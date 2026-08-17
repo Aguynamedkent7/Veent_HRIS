@@ -1,7 +1,7 @@
-import { fail } from '@sveltejs/kit'
+import { error, fail } from '@sveltejs/kit'
 import { z } from 'zod'
 import { db } from '$lib/server/db'
-import { canAny, requireAnyCapability } from '$lib/server/rbac'
+import { canAny, requireAnyCapability, requireFoodServiceOrg } from '$lib/server/rbac'
 import {
 	countAttendanceDays,
 	listAttendanceDays,
@@ -14,6 +14,7 @@ import {
 	resetDayToDerived,
 	createTimesheetFromAttendance
 } from '$lib/server/services/attendance'
+import { importBacklogCsv, MAX_IMPORT_BYTES } from '$lib/server/services/attendance/import'
 import { paginate } from '$lib/server/pagination'
 import { isFoodServiceOrg } from '$lib/orgs'
 import { manilaDayKey } from '$lib/utils/dates'
@@ -133,7 +134,9 @@ function ctxOf(event: RequestEvent) {
 
 function toFail(e: unknown) {
 	const err = e as { status?: number; body?: { message?: string } }
-	if (err?.status && [400, 404, 409].includes(err.status))
+	// #200 added 413/415: the backlog import's size and type refusals must reach the operator as a
+	// form message, not as a 500.
+	if (err?.status && [400, 404, 409, 413, 415].includes(err.status))
 		return fail(err.status, { error: err.body?.message ?? 'Action failed' })
 	throw e
 }
@@ -296,6 +299,32 @@ export const actions: Actions = {
 				{ from: parsed.data.date, to: parsed.data.date },
 				ctxOf(event)
 			)
+		} catch (e) {
+			return toFail(e)
+		}
+	},
+
+	// #200 — CSV backlog upload. Same actor boundary as every other attendance write on this page
+	// (MANAGE_HR), plus the food-service gate: for a non-food-service tenant the feature genuinely
+	// does not exist. The `{#if}` around the upload form is cosmetic; this is the enforcement.
+	importBacklog: async (event) => {
+		requireAnyCapability(event.locals.user!.roles, 'MANAGE_HR')
+		requireFoodServiceOrg(event.locals.user!.organizationId)
+		const file = (await event.request.formData()).get('backlog')
+		if (!(file instanceof File) || file.size === 0)
+			return fail(400, { error: 'Choose a CSV file to upload.' })
+		try {
+			// Both caps are checked BEFORE the body is read: an oversize upload must cost a size
+			// comparison, not a 2 MB+ decode into memory. The service repeats them as a second layer
+			// for any future caller that does not come through this action.
+			if (file.size > MAX_IMPORT_BYTES) error(413, 'Backlog file exceeds the 2 MB limit')
+			if (!file.name.toLowerCase().endsWith('.csv')) error(415, 'Only .csv files are accepted')
+			const imported = await importBacklogCsv(
+				event.locals.user!.organizationId,
+				{ name: file.name, size: file.size, text: await file.text() },
+				ctxOf(event)
+			)
+			return { imported }
 		} catch (e) {
 			return toFail(e)
 		}

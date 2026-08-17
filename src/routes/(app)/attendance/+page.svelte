@@ -34,6 +34,8 @@
 	const deriveTeam = createSubmitGuard()
 	const lockTeam = createSubmitGuard()
 	const unlockTeam = createSubmitGuard()
+	// #200: the backlog import writes punches for a whole file — a double-submit would re-run it.
+	const importBacklog = createSubmitGuard()
 
 	// Per-row forms live inside {#each}, so they need a guard per row — a shared one would grey out
 	// every row's button at once. Created lazily and cached by record id.
@@ -444,6 +446,64 @@
 				class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
 				>{@render icon(IC.download)}Export CSV</a
 			>
+		</div>
+	{/if}
+
+	<!-- #200: CSV backlog import. Food-service tenants only; the action re-checks both gates. -->
+	{#if data.canManage && data.showAmPm}
+		<div class="space-y-3 rounded-lg border bg-card p-4">
+			<div>
+				<p class="text-sm font-medium">Import backlog CSV</p>
+				<p class="text-xs text-muted-foreground">
+					Columns: employeeNumber, date (YYYY-MM-DD), amIn, amOut, pmIn, pmOut (HH:MM, Manila time).
+					Re-uploading the same file changes nothing. Locked and hand-corrected days are refused.
+				</p>
+			</div>
+			<form
+				method="POST"
+				action="?/importBacklog"
+				enctype="multipart/form-data"
+				use:enhance={importBacklog.enhance}
+				class="flex flex-wrap items-center gap-2"
+			>
+				<label for="backlog" class="sr-only">Backlog CSV file</label>
+				<input
+					id="backlog"
+					name="backlog"
+					type="file"
+					accept=".csv,text/csv"
+					required
+					class="text-sm file:mr-3 file:rounded-md file:border file:bg-background file:px-3 file:py-1.5 file:text-sm file:font-medium"
+				/>
+				<button
+					disabled={importBacklog.busy}
+					class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+					>{importBacklog.busy ? 'Importing…' : 'Import backlog CSV'}</button
+				>
+			</form>
+			{#if form?.imported}
+				{@const res = form.imported}
+				<div class="rounded-md border bg-background px-3 py-2 text-sm">
+					<p>
+						Applied {res.applied}
+						{res.applied === 1 ? 'row' : 'rows'} ({res.punchesWritten} punches), skipped {res.skippedDuplicate}
+						duplicates, rejected {res.rejected.length}
+						{res.rejected.length === 1 ? 'row' : 'rows'}.
+					</p>
+					{#if res.rejected.length > 0}
+						<details class="mt-1">
+							<summary class="cursor-pointer text-xs text-muted-foreground"
+								>Why rows were rejected</summary
+							>
+							<ul class="mt-1 space-y-0.5 text-xs text-muted-foreground">
+								{#each res.rejected as r (r.line)}
+									<li>Line {r.line} ({r.employeeNumber || '—'}, {r.date || '—'}): {r.reason}</li>
+								{/each}
+							</ul>
+						</details>
+					{/if}
+				</div>
+			{/if}
 		</div>
 	{/if}
 
