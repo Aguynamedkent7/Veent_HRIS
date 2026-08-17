@@ -1,5 +1,9 @@
 import { error } from '@sveltejs/kit'
-import { parse } from 'papaparse'
+// Default import, not `{ parse }`. papaparse is CommonJS, and Vite's SSR transform refuses a named
+// import from one — the dev server 500s on the whole /attendance route. Vitest's interop is more
+// forgiving, so the unit suite stayed green while the page was dead; only loading the page catches
+// this.
+import Papa from 'papaparse'
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { deriveRange } from './index'
@@ -124,7 +128,7 @@ export function parseBacklogCsv(text: string): {
 	// `preview` bounds the PARSE itself (verified: with `header: true` it counts data rows), so the
 	// row cap costs nothing on an oversized file instead of being checked after the work is done.
 	// +1 so we can tell "exactly at the cap" from "over it".
-	const parsed = parse<Record<string, string>>(text, {
+	const parsed = Papa.parse<Record<string, string>>(text, {
 		header: true,
 		skipEmptyLines: true,
 		preview: MAX_IMPORT_ROWS + 1,
