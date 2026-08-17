@@ -244,6 +244,10 @@ Add near `MEAL_BREAK_OWED_AFTER_MS` (`derive.ts:19-21`):
 const MIN_AM_PM_GAP_MS = 30 * 60_000
 ```
 
+> **Amended by Amendment 1 (§1.11).** This constant is now the DEFAULT, not the rule. The
+> threshold arrives as an argument; the constant applies only when no per-organization value is
+> configured. Read §1.11 before implementing §1.2c or §1.2d.
+
 Add the pure post-pass, placed directly above `deriveAttendanceDay`:
 
 ```ts
@@ -339,6 +343,9 @@ Current (`index.ts:258-291`):
 	// #162 — AM/PM display split is food-service only (Decision 4 / isFoodServiceOrg).
 	const splitAmPm = isFoodServiceOrg(organizationId)
 ```
+
+> **Amended by Amendment 1 (§1.11).** A second hoisted value, `amPmMinGapMs`, is read from the
+> org row this function ALREADY fetches at `index.ts:171-174`. No new query.
 
 then `splitAmPm` joins the `deriveAttendanceDay({ … })` argument object.
 
@@ -591,6 +598,584 @@ Schema: the four columns are nullable with no default and no reader outside §1.
 may be **left in place** after a code revert with zero effect. If they must go:
 `ALTER TABLE attendance_days DROP COLUMN am_time_in, DROP COLUMN am_time_out, DROP COLUMN pm_time_in, DROP COLUMN pm_time_out;`
 then revert the schema file and `pnpm prisma generate`. No data loss: nothing else writes them.
+
+## 1.11 Amendment 1 — per-organization AM/PM gap threshold
+
+**Added 17-08-26, AFTER the VALIDATE pass below, by direct user instruction.** Scope is Phase 1
+only. Phases 2 and 3 are untouched.
+
+### 1.11.0 What this reverses, and what it does not
+
+SPEC Decision 4 said "reuse `isFoodServiceOrg()` as-is; no new `Organization` column." That
+decision is **half superseded by direct user instruction dated 2026-08-17**:
+
+| Concern | Before | After this amendment |
+|---|---|---|
+| Which orgs get the AM/PM split at all (**gating**) | `isFoodServiceOrg()` allowlist | **Unchanged** — still `isFoodServiceOrg()` |
+| Where the boundary falls (**threshold**) | Hardcoded `MIN_AM_PM_GAP_MS = 30 min` | **New nullable `Organization` column**, NULL = use the built-in default |
+
+The gate and the tuning knob are now two different mechanisms, deliberately. Adding a column
+here does **not** re-open the `Organization.usesBranches` upgrade that `orgs.ts:16-18`
+anticipates for gating — that seam stays closed. SPEC §Out Of Scope's line "A new `Organization`
+column/flag for food-service gating is out of scope (Decision 4)" remains true as written,
+because this column does no gating.
+
+### 1.11.1 `prisma/schema.prisma` — `Organization`
+
+Current (`schema.prisma:296-298`, verified):
+
+```prisma
+  // Master switch for schedule-based tardiness (#190). Off → no employee is ever marked LATE,
+  // company-wide; ANDs with each WorkSchedule.trackTardiness. Default keeps current behavior.
+  trackTardiness       Boolean  @default(true)
+```
+
+**Change:** add one nullable Int immediately after it, in the same voice.
+
+```prisma
+  trackTardiness       Boolean  @default(true)
+  // Smallest gap between two work blocks that counts as the AM/PM boundary, in minutes (#162).
+  // NULL → use the built-in default (DEFAULT_AM_PM_MIN_GAP_MINUTES in attendance/derive.ts).
+  // Only read when the org is food-service (isFoodServiceOrg) — it is a tuning knob, never a
+  // gate. Bounded 5–240 at every writer; a value outside that range cannot be stored.
+  amPmMinGapMinutes    Int?
+```
+
+Additive, nullable, no default, no index, **no enum change** — so the plan's standing claim holds
+and still no `scripts/migrate-*.ts` is required. Run the §Prisma Contract command sequence.
+
+### 1.11.2 `derive.ts` — the constant becomes the default, the threshold becomes an argument
+
+Three edits, all inside the amended §1.2:
+
+**(a)** Rename and re-comment the constant. It is now a fallback, not a rule:
+
+```ts
+// #162 — DEFAULT smallest gap between two work blocks that counts as the AM/PM boundary.
+// Overridable per organization via `Organization.amPmMinGapMinutes`; this value applies when
+// that column is NULL. 30 minutes is the shortest real between-shift break at the food-service
+// tenants. Below the threshold two adjacent segments are treated as one block interrupted by a
+// quick re-punch (a phone double-tap, a corrected mis-punch), not a morning and an evening shift.
+export const DEFAULT_AM_PM_MIN_GAP_MINUTES = 30
+const DEFAULT_AM_PM_MIN_GAP_MS = DEFAULT_AM_PM_MIN_GAP_MINUTES * 60_000
+```
+
+`DEFAULT_AM_PM_MIN_GAP_MINUTES` is **exported** so the settings page can show the operator the
+number that applies when the field is blank, without hardcoding `30` a second time.
+
+**(b)** Add one optional field to `DeriveInput`, next to `splitAmPm`, in the `enforceTardiness`
+voice (`derive.ts:56-61`):
+
+```ts
+	/**
+	 * Per-organization AM/PM boundary threshold in milliseconds (#162). Undefined → the built-in
+	 * DEFAULT_AM_PM_MIN_GAP_MS. The caller passes `Organization.amPmMinGapMinutes * 60_000`.
+	 * A non-finite or non-positive value is treated as undefined: a bad number must fall back to
+	 * a known-good default, never silently move every boundary in the tenant.
+	 */
+	amPmMinGapMs?: number
+```
+
+**(c)** `splitAmPmBlocks` takes the threshold as a **parameter**; it no longer closes over a
+module constant. New signature:
+
+```ts
+function splitAmPmBlocks(
+	segs: Array<[number, number]>,
+	openWork: number | null,
+	minGapMs: number
+): { amIn: Date | null; amOut: Date | null; pmIn: Date | null; pmOut: Date | null }
+```
+
+Steps 3 and 4 of the §1.2c algorithm compare against `minGapMs` instead of `MIN_AM_PM_GAP_MS`.
+Nothing else in the algorithm changes — the longest-gap rule, the earliest-tie rule, the
+dangling-IN rule and the all-null fallback are all unchanged.
+
+The call site in §1.2d becomes:
+
+```ts
+	if (input.splitAmPm) {
+		// Defence in depth. Validation at the writer (§1.11.5) is the real gate, but a NaN or a
+		// negative arriving here would silently re-split every day in the tenant, and the
+		// resulting numbers look plausible. Fall back rather than propagate.
+		const minGapMs =
+			typeof input.amPmMinGapMs === 'number' &&
+			Number.isFinite(input.amPmMinGapMs) &&
+			input.amPmMinGapMs > 0
+				? input.amPmMinGapMs
+				: DEFAULT_AM_PM_MIN_GAP_MS
+		const { amIn, amOut, pmIn, pmOut } = splitAmPmBlocks(workSegs, openWork, minGapMs)
+		result.amTimeIn = amIn
+		result.amTimeOut = amOut
+		result.pmTimeIn = pmIn
+		result.pmTimeOut = pmOut
+	}
+```
+
+`derive.ts` still imports nothing, touches no DB, and knows nothing about organizations —
+exactly the property §1.2 exists to preserve.
+
+### 1.11.3 `attendance/index.ts` — two existing `select`s widened, zero new queries
+
+**Both** call sites already fetch the org row for `trackTardiness`. Verified live:
+
+`deriveRange`, current (`index.ts:170-175`):
+
+```ts
+	// Org master tardiness switch (#190). ANDs with the employee's effective schedule flag below.
+	const org = await db.organization.findUnique({
+		where: { id: organizationId },
+		select: { trackTardiness: true }
+	})
+	const orgTracksTardiness = org?.trackTardiness ?? true
+```
+
+`correctDay`, current (`index.ts:436-442`):
+
+```ts
+			const org = await db.organization.findUnique({
+				where: { id: organizationId },
+				select: { trackTardiness: true }
+			})
+			const enforceTardiness =
+				(org?.trackTardiness ?? true) &&
+				(assigned ? assigned.trackTardiness : (defaultSchedule?.trackTardiness ?? true))
+```
+
+**Change, identical in both places:** add one key to the existing `select` and derive one more
+local, in the exact shape of the `orgTracksTardiness` line beside it:
+
+```ts
+		select: { trackTardiness: true, amPmMinGapMinutes: true }
+```
+
+```ts
+	// #162/Amendment 1: NULL → derive.ts's built-in default. Never a new query — this rides the
+	// org row the tardiness switch already fetches.
+	const amPmMinGapMs =
+		org?.amPmMinGapMinutes != null ? org.amPmMinGapMinutes * 60_000 : undefined
+```
+
+`!= null` (loose) is deliberate and load-bearing: it catches both `null` and `undefined` while
+letting a legitimate `0` through to the pure function's own guard, which then rejects it. `??`
+would behave the same here but `!= null` states the intent at the read site.
+
+Then `amPmMinGapMs` joins the `deriveAttendanceDay({ … })` argument object in `deriveRange`
+(beside `splitAmPm`, §1.3b) and in `correctDay` (§1.3c).
+
+In `deriveRange` the local is hoisted once per run, next to `orgTracksTardiness` at `:175` —
+inside the employee loop it would be recomputed per employee for no reason.
+
+### 1.11.4 `attendance/schedules.ts` — the writer
+
+Add immediately after `setOrgTardiness` (`schedules.ts:76-85`), copying its shape exactly.
+
+**Capability gate — stated after reading, not assumed:** `setOrgTardiness` carries **no**
+capability check inside the service. The gate lives at the form action:
+`settings/schedules/+page.server.ts:67` calls
+`requireAnyCapability(locals.user!.roles, 'MANAGE_HR')`, and so do `load` (`:13`), `create`
+(`:30`) and `toggleTardiness` (`:79`). Every entry point on that page is `MANAGE_HR`. The new
+setter matches: **no in-service capability check, `MANAGE_HR` at the action.** It does not
+invent a new capability, per SPEC §Out Of Scope.
+
+```ts
+/**
+ * Set (or clear, with null) the org's AM/PM boundary threshold in minutes (#162/Amendment 1).
+ * Null restores the built-in default. Bounds are enforced here as well as at the action, because
+ * this is the only writer and a bad value silently re-splits every day in the tenant.
+ */
+export async function setOrgAmPmMinGap(
+	organizationId: string,
+	minutes: number | null,
+	ctx: AuditContext
+) {
+	if (minutes !== null && !isValidAmPmMinGap(minutes))
+		error(400, `The AM/PM gap must be a whole number of minutes between ${AM_PM_MIN_GAP_FLOOR} and ${AM_PM_MIN_GAP_CEILING}.`)
+
+	await db.organization.update({
+		where: { id: organizationId },
+		data: { amPmMinGapMinutes: minutes }
+	})
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'Organization',
+		entityId: organizationId,
+		newValue: { amPmMinGapMinutes: minutes }
+	})
+}
+```
+
+`organizationId` is always the session's own org (the action passes
+`locals.user!.organizationId`), so `db.organization.update({ where: { id: organizationId } })`
+is org-scoped by construction — the same argument that makes `setOrgTardiness` safe. The setter
+must **never** accept an organization id from a form.
+
+### 1.11.5 Validation — a trust boundary, not a formality
+
+The value arrives from a form as a string. A `NaN`, a negative, a `0`, or `12.5` reaching
+`splitAmPmBlocks` would silently change where **every** day in that tenant splits, and the
+result looks plausible. There is no downstream check. So validation is the gate.
+
+Put the shared rule in `derive.ts` next to the default, so the pure module owns the whole
+concept and the action, the service and the tests all import one definition:
+
+```ts
+// Bounds for a per-organization AM/PM threshold (#162/Amendment 1).
+export const AM_PM_MIN_GAP_FLOOR = 5
+export const AM_PM_MIN_GAP_CEILING = 240
+
+export function isValidAmPmMinGap(minutes: number): boolean {
+	return (
+		Number.isInteger(minutes) &&
+		minutes >= AM_PM_MIN_GAP_FLOOR &&
+		minutes <= AM_PM_MIN_GAP_CEILING
+	)
+}
+```
+
+**Why 5 and 240:**
+
+- **Floor 5.** Below five minutes the threshold stops doing its job. A re-punch after a
+  mis-punch, or a phone double-tap that lands two seconds apart, produces a sub-minute gap; a
+  threshold of 1 would make that the "longest gap" on a quiet day and split a single morning
+  block into a fake AM and a fake PM. Five minutes is the smallest value at which the constant
+  still separates a real break from an input error. Zero and negatives are excluded by the same
+  bound, which is what stops the silent-re-split failure.
+- **Ceiling 240 (4 hours).** A gap longer than four hours inside one working day is not a
+  between-shift break; it is two different days, or a forgotten clock-out — cases the existing
+  `groupPunchesByDay` (`index.ts:70-84`) and `MAX_SHIFT_HOURS` (`timelog.ts:155`) already
+  handle. Allowing 600 would mean an operator could set a threshold no real gap ever reaches,
+  turning the AM/PM feature silently off with no error and no UI signal. Four hours is
+  comfortably above the longest genuine split-shift break at these tenants and comfortably below
+  "this can never fire."
+- Both bounds sit far inside a Postgres `Int`, so no overflow path exists.
+
+**What an empty submission means: it clears the value back to NULL (the built-in default).**
+Chosen over rejecting an empty field because the column is nullable and NULL is a *meaningful*
+value here, not a missing one — "use the built-in default" is a state the operator must be able
+to return to. If empty were rejected, the only way back to the default would be to type the
+default's number, which means knowing it; the operator would be guessing, and a guess that is
+off by one silently becomes a permanent override. The form therefore ships with the field
+labelled "Leave blank to use the default (30 minutes)", rendered from the exported
+`DEFAULT_AM_PM_MIN_GAP_MINUTES` rather than a literal.
+
+**Action-level parse (`settings/schedules/+page.server.ts`)** — matches the manual-parse-plus-
+`fail(400)` style of the file's existing actions rather than introducing zod into it:
+
+```ts
+	setAmPmMinGap: async ({ request, locals, getClientAddress }) => {
+		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
+		// Twin-door rule: the control is only RENDERED for food-service orgs, but a rendering
+		// condition is not a gate — a direct POST bypasses it. 404, same as every other
+		// food-service-only surface.
+		requireFoodServiceOrg(locals.user!.organizationId)
+
+		const raw = String((await request.formData()).get('minutes') ?? '').trim()
+		// Empty clears back to NULL = the built-in default. See §1.11.5.
+		let minutes: number | null = null
+		if (raw !== '') {
+			// Number('') is 0 and Number('12abc') is NaN — parse strictly, do not trust coercion.
+			if (!/^\d+$/.test(raw)) return fail(400, { error: 'Enter a whole number of minutes.' })
+			minutes = Number(raw)
+			if (!isValidAmPmMinGap(minutes))
+				return fail(400, {
+					error: `The AM/PM gap must be between ${AM_PM_MIN_GAP_FLOOR} and ${AM_PM_MIN_GAP_CEILING} minutes.`
+				})
+		}
+		try {
+			await setOrgAmPmMinGap(locals.user!.organizationId, minutes, { /* ctx, as its siblings */ })
+		} catch (e: unknown) {
+			const err = e as { status?: number; body?: { message?: string } }
+			if (err?.status) return fail(err.status, { error: err.body?.message ?? 'Update failed' })
+			throw e
+		}
+		return { success: true }
+	}
+```
+
+The `/^\d+$/` test is doing real work: it rejects `-30`, `12.5`, `1e3`, `abc`, ` `, and `Infinity`
+before `Number()` is ever consulted. Relying on `Number(raw)` alone would accept `12.5` and
+`1e3`, and `isValidAmPmMinGap`'s `Number.isInteger` would then be the only thing standing
+between a decimal and the database.
+
+### 1.11.6 UI — `/settings/schedules`
+
+`load` currently (`settings/schedules/+page.server.ts:14-20`, verified):
+
+```ts
+	const [schedules, org] = await Promise.all([
+		listSchedules(organizationId),
+		db.organization.findUnique({ where: { id: organizationId }, select: { trackTardiness: true } })
+	])
+	// #190: the org master switch greys out the per-schedule toggles when it's off.
+	return { schedules, orgTracksTardiness: org?.trackTardiness ?? true }
+```
+
+**Change:** widen the existing `select` (again, no new query) and return two more values:
+
+```ts
+		db.organization.findUnique({
+			where: { id: organizationId },
+			select: { trackTardiness: true, amPmMinGapMinutes: true }
+		})
+```
+
+```ts
+	return {
+		schedules,
+		orgTracksTardiness: org?.trackTardiness ?? true,
+		// #162/Amendment 1 — the control renders only for food-service tenants. Cosmetic; the
+		// action's requireFoodServiceOrg is the enforcement.
+		showAmPmGap: isFoodServiceOrg(organizationId),
+		amPmMinGapMinutes: org?.amPmMinGapMinutes ?? null,
+		amPmMinGapDefault: DEFAULT_AM_PM_MIN_GAP_MINUTES
+	}
+```
+
+`+page.svelte` — a new card **immediately below** the existing org-wide tardiness card
+(`settings/schedules/+page.svelte:52-70`), matching its markup exactly: the same
+`flex items-center justify-between gap-4 rounded-lg border p-4` wrapper, the same
+`text-sm font-medium` title over `text-xs text-muted-foreground` explanation, the same
+`<form method="POST" action="?/…" use:enhance>`. It takes a number input and a Save button
+instead of a toggle, since the value is not boolean:
+
+```svelte
+{#if data.showAmPmGap}
+	<!-- #162/Amendment 1: per-tenant AM/PM boundary. Food-service tenants only. -->
+	<div class="flex items-center justify-between gap-4 rounded-lg border p-4">
+		<div>
+			<p class="text-sm font-medium">AM/PM split threshold</p>
+			<p class="text-xs text-muted-foreground">
+				The shortest break that separates a morning block from an evening block. Leave blank to
+				use the default ({data.amPmMinGapDefault} minutes). Between 5 and 240.
+			</p>
+		</div>
+		<form method="POST" action="?/setAmPmMinGap" use:enhance class="flex items-center gap-2">
+			<input
+				name="minutes"
+				type="number"
+				min="5"
+				max="240"
+				step="1"
+				placeholder={String(data.amPmMinGapDefault)}
+				value={data.amPmMinGapMinutes ?? ''}
+				class="w-20 rounded-md border bg-background px-2 py-1 text-sm"
+			/>
+			<button type="submit" class="rounded-full px-3 py-1 text-xs font-medium bg-muted">Save</button>
+		</form>
+	</div>
+{/if}
+```
+
+The `min`/`max`/`step` attributes are a convenience, **not** the validation — §1.11.5 is. State
+that in a comment so nobody later deletes the server check because "the input already limits it."
+
+### 1.11.7 Amendment tests
+
+Add to `tests/unit/attendance-am-pm-split.test.ts` (pure, no mocks):
+
+| # | Spec | Asserts |
+|---|---|---|
+| A9 | Two blocks with a 20-minute gap, `amPmMinGapMs: undefined` | all four AM/PM `null` — NULL falls back to the 30-minute default |
+| A10 | Same punches, `amPmMinGapMs: 15 * 60_000` | **splits**: `amTimeOut` at the first block's end, `pmTimeIn` at the second's start |
+| A11 | Same punches, `amPmMinGapMs: 30 * 60_000` | does **not** split — all four `null`. A10+A11 together are the whole point of the amendment: the same punches, two thresholds, two different answers |
+| A12 | `amPmMinGapMs` of `NaN`, `-1`, `0`, `Infinity` | each falls back to the default and produces A9's answer — a bad number never reaches the comparison |
+| A13 | Org scoping at the pure layer: same punch array, called twice with `15 min` and `30 min` | the two results differ, and neither call mutates the other's input — proves the threshold is per-call state, not module state |
+
+New file `tests/unit/attendance-ampm-gap-setting.test.ts` — mocks `$lib/server/db` and
+`$lib/server/audit`, tests `setOrgAmPmMinGap` and the `setAmPmMinGap` **action export**:
+
+| # | Spec | Asserts |
+|---|---|---|
+| A14 | `isValidAmPmMinGap` unit table: `4, 5, 240, 241, 0, -5, 12.5, NaN, Infinity` | `false, true, true, false, false, false, false, false, false` |
+| A15 | Action with `minutes: ''` | `setOrgAmPmMinGap` called with `null`; no `fail` — empty clears to the default |
+| A16 | Action with `minutes: '4'`, `'241'`, `'-30'`, `'12.5'`, `'1e3'`, `'abc'` | each returns `fail(400)` with the bounds message and `organization.update` is **never** called |
+| A17 | Action with `minutes: '45'` | `setOrgAmPmMinGap` called with `45`; `organization.update` receives `{ where: { id: <session org> }, data: { amPmMinGapMinutes: 45 } }` |
+| A18 | Action for a user in `org_veent` | throws 404; `setOrgAmPmMinGap` never called (the twin-door gate) |
+| A19 | Action with a form carrying `organizationId: 'org_sweetleaf'` while the session is `org_jojo` | the form field is ignored; the `update` `where.id` is `org_jojo` — one tenant cannot move another tenant's threshold |
+| A20 | Audit | one `writeAuditLog`, `entityType: 'Organization'`, `newValue: { amPmMinGapMinutes: 45 }` |
+
+**Mock discipline (mandatory).** The org-row mock must be a `mockImplementation` keyed on the
+`where`/`select` shape, never a flat `mockResolvedValue`:
+
+```ts
+dbMock.organization.findUnique.mockImplementation(({ where, select }) =>
+	Promise.resolve(
+		where.id === 'org_jojo'
+			? { ...(select.trackTardiness && { trackTardiness: true }),
+			    ...(select.amPmMinGapMinutes && { amPmMinGapMinutes: 15 }) }
+			: null
+	)
+)
+```
+
+A flat mock returns JoJo's threshold for a Sweetleaf query, which makes A19 pass even after the
+org scoping is deleted — precisely the class of defect VALIDATE found five times (contract
+finding F8). Reference `tests/unit/punch-access.test.ts:57-65` in a comment in the new file.
+
+Also extend `tests/unit/attendance-autoderive.test.ts`-style coverage of `deriveRange` only if
+that file already mocks the org `findUnique`; if it does not, do **not** add a mocked
+`deriveRange` test — A9–A13 prove the rule and A14–A20 prove the plumbing, and a third mocked
+layer would prove neither.
+
+#### Mutation checks — Amendment 1
+
+Each must be applied by hand, confirmed RED, and reverted.
+
+| Guard | Mutation that must turn it RED | Test that must go red |
+|---|---|---|
+| NULL falls back to the default | In `index.ts`, replace `org?.amPmMinGapMinutes != null ? … : undefined` with `org?.amPmMinGapMinutes! * 60_000` (so NULL yields `NaN`) | A9 (via A12's fallback assertion) |
+| The threshold is actually used | In `splitAmPmBlocks`, ignore the `minGapMs` parameter and compare against `DEFAULT_AM_PM_MIN_GAP_MS` | A10 |
+| The threshold is not used *too* eagerly | Compare against `minGapMs / 2` | A11 |
+| Non-finite fallback in `derive.ts` | Delete the `Number.isFinite` / `> 0` guard and pass `input.amPmMinGapMs` straight through | A12 |
+| Per-call, not module, state | Cache the first `minGapMs` in a module-level `let` and reuse it | A13 |
+| Bounds floor | Change `AM_PM_MIN_GAP_FLOOR` to `0` | A14, A16 |
+| Bounds ceiling | Change `AM_PM_MIN_GAP_CEILING` to `100000` | A14, A16 |
+| Integer-only parse | Delete the `/^\d+$/` test and rely on `Number(raw)` | A16 (`'12.5'` and `'1e3'` cases) |
+| Empty means default | Make the empty branch `return fail(400, …)` instead of `minutes = null` | A15 |
+| Service-layer bounds (second layer) | Delete the `isValidAmPmMinGap` check inside `setOrgAmPmMinGap` and call the service directly with `241` | A14's service case |
+| Food-service twin door | Delete `requireFoodServiceOrg` from the **action** (leave the `{#if data.showAmPmGap}` render condition intact) | A18 |
+| Org scoping | Read `organizationId` from the form instead of `locals.user!.organizationId` | A19 |
+
+### 1.11.8 Twin doors — Amendment 1
+
+| Guard | Its twin | Covered? |
+|---|---|---|
+| Food-service gate on the threshold control | The **render condition** (`{#if data.showAmPmGap}`) vs the **action** (`requireFoodServiceOrg`) | **Both.** The render condition is cosmetic; A18 pins the action. This is the same rule §2.6 applies to the import action — a load-only or render-only gate is bypassed by a direct POST. |
+| Threshold is read by `deriveRange` | **`correctDay`** — the other `deriveAttendanceDay` caller | **Both, §1.11.3.** A threshold wired into only one of them would make a hand-corrected day split differently from a derived one. |
+| Bounds validation at the action | **The service** (`setOrgAmPmMinGap`) | **Both, §1.11.4/§1.11.5.** The service is the only writer, so its check is what protects any future caller (a script, a seed, a second UI). |
+| Bounds validation at the server | The `min`/`max`/`step` **HTML attributes** | Attributes are convenience only, explicitly commented as such. The server check is the gate. |
+| Every writer of `Organization.amPmMinGapMinutes` | — | **Exactly one:** `setOrgAmPmMinGap`. Confirmed by construction — the column is new, so no pre-existing writer can exist. `prisma/seed.ts` and `scripts/seed-*.ts` do not set it; they will leave NULL, which is the correct default. |
+
+### 1.11.9 Blast-radius delta (beyond the §1.8 Phase 1 list)
+
+| Surface | New in this amendment? | Why |
+|---|---|---|
+| `prisma/schema.prisma` `Organization` | **YES** | 1 nullable `Int`. `organizations` is a **populated** table (3 tenants) — but this is a catalog-only `ADD COLUMN` with no default and no index, so it takes a brief lock and rewrites nothing. It does **not** worsen contract finding P8, which is about the unique **index** on `time_logs` in Phase 2. |
+| `derive.ts` | Widened | Was already in scope; now also exports `DEFAULT_AM_PM_MIN_GAP_MINUTES`, `AM_PM_MIN_GAP_FLOOR`, `AM_PM_MIN_GAP_CEILING`, `isValidAmPmMinGap` |
+| `attendance/index.ts` | Widened | Two existing `select`s + two locals. **Zero new queries** — verified at `:171-174` and `:436-439`. |
+| `attendance/schedules.ts` | **YES — new file in the blast radius** | 1 new exported setter |
+| `settings/schedules/+page.server.ts` | **YES — new file in the blast radius** | `load` select + 3 returned values + 1 action |
+| `settings/schedules/+page.svelte` | **YES — new file in the blast radius** | 1 new card |
+| `tests/unit/attendance-am-pm-split.test.ts` | Widened | A9–A13 |
+| `tests/unit/attendance-ampm-gap-setting.test.ts` | **YES — new** | A14–A20 |
+| Attendance page / CSV export / payroll / reports / dashboard | **No** | The threshold changes *where* the split lands, never *whether* AM/PM reaches payroll. The display-only property (D2) is untouched. |
+| Phase 2, Phase 3 | **No** | Explicitly out of this amendment's scope |
+
+**Delta: +3 source files, +1 test file, +1 nullable column.** Phase 1 goes from 6 modified
+source files to **9**, and from 3 new test files to **4**.
+
+### 1.11.10 Amendment rollback
+
+Independent of the rest of Phase 1, and cheaper:
+
+1. Code: revert the amendment commit. `derive.ts` falls back to the module constant; the two
+   `select`s narrow; the setter, action and card disappear.
+2. Data: **nothing to migrate.** Every row is NULL unless an operator typed a value, and NULL
+   already means "use the default" — so a code-only revert restores the pre-amendment behaviour
+   for every tenant regardless of column contents.
+3. Schema (optional, and safe to skip): `ALTER TABLE organizations DROP COLUMN am_pm_min_gap_minutes;`
+   then revert the schema file and `pnpm prisma generate`.
+4. To disable **just** the feature without a code change: `UPDATE organizations SET am_pm_min_gap_minutes = NULL;` — every org returns to the 30-minute default immediately, no deploy.
+
+### 1.11.11 Manual test — M1b (run straight after M1)
+
+M1 already planted four punches for `JJ-0001` on 2026-08-10 at PHT 08:00 / 11:00 / 13:00 / 17:00.
+That day's gap is 2 hours, far above any threshold in range, so it cannot demonstrate the knob.
+Plant a **second** marker day whose gap straddles the bounds:
+
+```bash
+EMP=$(docker exec -i veent-db-5434 psql -U veent -d veent_hris -p 5434 -tAc \
+  "select id from employees where employee_number='JJ-0001'")
+docker exec -i veent-db-5434 psql -U veent -d veent_hris -p 5434 -c \
+"insert into time_logs (id,employee_id,punch_type,source,timestamp,created_at) values
+ ('mtest-gap-1','$EMP','IN','MANUAL','2026-08-18 00:00:00+00',now()),
+ ('mtest-gap-2','$EMP','OUT','MANUAL','2026-08-18 03:00:00+00',now()),
+ ('mtest-gap-3','$EMP','IN','MANUAL','2026-08-18 03:20:00+00',now()),
+ ('mtest-gap-4','$EMP','OUT','MANUAL','2026-08-18 09:00:00+00',now());"
+```
+
+UTC times = PHT 08:00, 11:00, **11:20**, 17:00 — a **20-minute** gap, deliberately between the
+5-minute floor and the 30-minute default.
+
+1. As JoJo HR, open `/attendance`, select `JJ-0001`, cover 2026-08-18, click **Refresh**.
+2. **Assert positively:** the 2026-08-18 row shows **In 08:00** and **Out 17:00**, and all four
+   AM/PM cells render the empty-time placeholder — the 20-minute gap is below the 30-minute
+   default, so there is deliberately no split. Confirm on disk:
+
+```bash
+docker exec -i veent-db-5434 psql -U veent -d veent_hris -p 5434 -c \
+"select time_in, time_out, am_time_in, pm_time_in from attendance_days
+ where employee_id='$EMP' and date='2026-08-18';"
+```
+
+Expect `time_in` and `time_out` non-null, `am_time_in` and `pm_time_in` **NULL**.
+
+3. Open `/settings/schedules`. **Assert positively:** a card titled **"AM/PM split threshold"**
+   is present, its number input is **empty**, and its placeholder reads **30**.
+4. Type **15** into that input and click its **Save** button.
+5. **Assert positively:** the page reloads and the input now shows **15** (not the placeholder).
+   Confirm the write and the audit row:
+
+```bash
+docker exec -i veent-db-5434 psql -U veent -d veent_hris -p 5434 -c \
+"select am_pm_min_gap_minutes from organizations where id='org_jojo';"
+docker exec -i veent-db-5434 psql -U veent -d veent_hris -p 5434 -c \
+"select action, entity_type, new_value from audit_logs
+ where entity_type='Organization' and entity_id='org_jojo'
+ order by created_at desc limit 1;"
+```
+
+Expect `15`, and an `UPDATE` / `Organization` row whose `new_value` is
+`{"amPmMinGapMinutes": 15}`.
+
+6. Back on `/attendance`, click **Refresh** for the same range.
+7. **Assert positively — this is the whole amendment:** the **same** 2026-08-18 row now shows
+   **AM In 08:00, AM Out 11:00, PM In 11:20, PM Out 17:00**, while **In** still reads 08:00 and
+   **Out** still reads 17:00. The split moved because the setting moved, and nothing else did.
+
+```bash
+docker exec -i veent-db-5434 psql -U veent -d veent_hris -p 5434 -c \
+"select am_time_in, am_time_out, pm_time_in, pm_time_out, worked_hours from attendance_days
+ where employee_id='$EMP' and date='2026-08-18';"
+```
+
+Expect four non-null timestamps — and `worked_hours` **identical to the value recorded at step
+2**. If worked hours moved, D2 (display-only) has been broken: stop and escalate.
+
+8. **Bounds, positively asserted.** Type **4** into the field and click **Save**.
+   **Assert positively:** an error message appears reading
+   *"The AM/PM gap must be between 5 and 240 minutes."* and the stored value is still 15:
+
+```bash
+docker exec -i veent-db-5434 psql -U veent -d veent_hris -p 5434 -c \
+"select am_pm_min_gap_minutes from organizations where id='org_jojo';"
+```
+
+Expect **15**, unchanged. Repeat with **241** and **-5**; same assertion each time.
+
+9. **Empty clears to the default.** Clear the field and click **Save**.
+   **Assert positively:** the input shows the **30** placeholder again, the DB column is
+   **NULL**, and a Refresh returns the 2026-08-18 row to no-split (all four AM/PM NULL) —
+   the step-2 state exactly.
+10. **Cross-tenant negative control.** As **Sweetleaf** HR, open `/settings/schedules`.
+    **Assert positively:** the "AM/PM split threshold" card is present with an **empty** input
+    and a **30** placeholder — JoJo's setting did not follow. Then as **Veent** HR, open the same
+    page and **assert positively** that the page renders its Work Schedules heading and the
+    org-wide tardiness card, and that the string "AM/PM split threshold" is **absent**. Confirm
+    the door is really shut, not just hidden:
+
+```bash
+curl -s -b /tmp/jar2.txt -o /dev/null -w '%{http_code}\n' \
+  -X POST 'http://localhost:5173/settings/schedules?/setAmPmMinGap' \
+  -F 'minutes=45'
+```
+
+Expect **404** for the Veent jar.
+
+Cleanup: add `or id like 'mtest-gap-%'` to the M-script cleanup delete, and
+`UPDATE organizations SET am_pm_min_gap_minutes = NULL WHERE id = 'org_jojo';`.
+
 
 ---
 
@@ -1598,6 +2183,40 @@ mandatory `pnpm prisma generate` step and the explicit note in §Prisma Contract
 version in the lockfile, by the fact that the parser never touches disk or `eval`, and by
 `sanitizeCell` treating every parsed cell as hostile.
 
+**R10 — A misconfigured threshold silently re-splits a whole tenant (new, Amendment 1).** This is
+the amendment's real cost and it partly reverses a VALIDATE finding. Before the amendment the
+failure was **asymmetric**: a too-large hardcoded constant produced *no* split rather than a wrong
+one (contract row "`MIN_AM_PM_GAP_MS` = 30 min is safe as specified" — verdict SAFE, on exactly
+that reasoning). With an operator-settable value the failure becomes **symmetric**: a threshold of
+5 makes a mis-punch re-punch the "longest gap" and manufactures a fake AM/PM boundary that looks
+entirely plausible.
+- *Mitigation 1, and the reason this is still survivable:* **D2 is untouched.** AM/PM remains
+  display-only, so the worst case is still a wrong label, never a wrong peso. Manual step M1b
+  step 7 asserts `worked_hours` is byte-identical across a threshold change, which is the
+  mechanical proof.
+- *Mitigation 2:* the 5-minute floor (§1.11.5) is set precisely to keep the threshold above
+  input-error noise, and no route can store a value below it (A16, plus the service-layer
+  second check).
+- *Mitigation 3:* the finite/positive fallback in `derive.ts` (§1.11.2c) means a `NaN` or a
+  negative that somehow reaches the engine restores the default instead of propagating. A12
+  pins it; its mutation is in the §1.11.7 table.
+- *Residual, recorded honestly:* nothing proves the number an operator picks is the right one
+  for their tenant. That was already true of the hardcoded 30 (contract §"What this coverage does
+  NOT prove"); the amendment moves the choice to the operator without proving it.
+
+**R11 — Changing the threshold does not retroactively re-split stored days (new, Amendment 1).**
+The four AM/PM columns are materialised at derive time. After an operator saves a new threshold,
+every existing `attendance_days` row keeps the split computed under the OLD value until someone
+clicks **Refresh** for that range — and days that are `isLocked` or `manuallyEdited` will never
+pick it up at all, because `deriveRange` skips them (`index.ts:249`, `:251`). So a tenant can sit
+with two different boundary rules across one report. Mitigations: M1b step 6 makes the Refresh
+requirement explicit in the operator's own workflow; the settings card's helper text should be
+read as describing future derives. This interacts with contract correction **P1** — a
+non-`editingTimes` correction already leaves AM/PM stale, and a threshold change is a second way
+to get a stale split. Fold both into P1's resolution rather than treating them separately. Not
+worth building a re-derive-on-save trigger: it would silently rewrite historical rows the operator
+did not ask to touch, which is the failure `manuallyEdited` exists to prevent.
+
 **R8 — Phase coupling.** Phase 2 and 3 share `TimeLog.dedupKey`. Rolling back Phase 2's schema
 while Phase 3 is live breaks the web punch. Recorded in §2.9.
 
@@ -1619,6 +2238,10 @@ Plan-level acceptance, in addition to the SPEC's 20:
    pass. If one must change, Decision 1 has been violated — stop and escalate.
 4. `grep -rn "listPunches" src/` returns exactly 2 call sites after Phase 3.
 5. Each of the three phases is a separate commit, so a phase can be reverted independently.
+6. (Amendment 1) The AM/PM threshold is per-organization: the same punch set splits differently
+   under two different `Organization.amPmMinGapMinutes` values, a NULL column behaves exactly as
+   the pre-amendment hardcoded 30 minutes did, and no value outside 5–240 can be stored by any
+   route. Org **gating** is still `isFoodServiceOrg()` — the column tunes, it never gates.
 
 ## Phase Completion Rules
 
@@ -1666,6 +2289,36 @@ Phase 1 — #162:
 13. Write `tests/unit/payroll-am-pm-days-of-work.test.ts`.
 14. Write `tests/unit/hours-engine-parity-am-pm.test.ts`.
 15. Run the §1.9 gate; run the §1.7 mutation checks; commit.
+
+**Amendment 1 steps (§1.11) — Phase 1, interleaved.** These are deliberately *suffixed*, not
+renumbered: the `## Validate Contract` binds E1→item 13, E2→item 11, E5→item 15 and E7→item 12,
+and renumbering would silently break those anchors.
+
+- **1a.** `prisma/schema.prisma` — add `amPmMinGapMinutes Int?` to `model Organization` after
+  `trackTardiness`, with the comment in §1.11.1. Run with step 2's push/generate.
+- **3a.** `derive.ts` — rename the constant to `DEFAULT_AM_PM_MIN_GAP_MINUTES` (exported) +
+  `DEFAULT_AM_PM_MIN_GAP_MS`; add `AM_PM_MIN_GAP_FLOOR`, `AM_PM_MIN_GAP_CEILING`,
+  `isValidAmPmMinGap` (§1.11.2a, §1.11.5).
+- **3b.** `derive.ts` — add `amPmMinGapMs?: number` to `DeriveInput` (§1.11.2b).
+- **5a.** `derive.ts` — `splitAmPmBlocks` takes `minGapMs` as a third parameter; compare against
+  it in steps 3 and 4 (§1.11.2c).
+- **6a.** `derive.ts` — the §1.2d call site computes `minGapMs` with the finite/positive fallback
+  and passes it (§1.11.2c).
+- **7a.** `attendance/index.ts` — widen `deriveRange`'s org `select` to
+  `{ trackTardiness: true, amPmMinGapMinutes: true }`; hoist `amPmMinGapMs` beside
+  `orgTracksTardiness` at `:175`; pass it to `deriveAttendanceDay` (§1.11.3).
+- **8a.** `attendance/index.ts` — the same two changes in `correctDay` at `:436-442` (§1.11.3).
+- **8b.** `attendance/schedules.ts` — add `setOrgAmPmMinGap` after `setOrgTardiness` (§1.11.4).
+- **9a.** `settings/schedules/+page.server.ts` — widen the `load` select; return `showAmPmGap`,
+  `amPmMinGapMinutes`, `amPmMinGapDefault`; add the `setAmPmMinGap` action with
+  `requireAnyCapability('MANAGE_HR')` + `requireFoodServiceOrg` + the strict parse (§1.11.5–6).
+- **10a.** `settings/schedules/+page.svelte` — add the threshold card below the org-wide
+  tardiness card at `:52-70` (§1.11.6).
+- **12a.** Extend `tests/unit/attendance-am-pm-split.test.ts` with A9–A13 (§1.11.7).
+- **14a.** Write `tests/unit/attendance-ampm-gap-setting.test.ts` (A14–A20), using
+  `mockImplementation` keyed on the `where`/`select` shape (§1.11.7).
+- **15a.** Run the §1.11.7 mutation table (12 rows) in addition to §1.7's, and manual step M1b
+  (§1.11.11), before committing.
 
 Phase 2 — #200:
 
@@ -1720,6 +2373,9 @@ Phase 3 — #177:
 | `src/routes/(app)/attendance/export/+server.ts` | 1 | 4 conditional CSV columns |
 | `src/lib/server/services/attendance/import.ts` | 2 | **new** |
 | `package.json` | 2 | `papaparse`, `@types/papaparse` |
+| `src/lib/server/services/attendance/schedules.ts` | 1 (Amendment 1) | `setOrgAmPmMinGap` setter beside `setOrgTardiness` |
+| `src/routes/(app)/settings/schedules/+page.server.ts` | 1 (Amendment 1) | `load` select widened; 3 returned values; `setAmPmMinGap` action |
+| `src/routes/(app)/settings/schedules/+page.svelte` | 1 (Amendment 1) | 1 threshold card below the tardiness card |
 | `src/lib/server/services/timelog.ts` | 3 | `recordPunch` employee resolution, `dedupKey`, location |
 | `src/routes/(app)/punch/+page.server.ts` | 3 | **new** |
 | `src/routes/(app)/punch/+page.svelte` | 3 | **new** |
@@ -1748,9 +2404,10 @@ Phase 3 — #177:
 
 ## Blast Radius
 
-- **Files changed:** 12 modified + 3 new source files + 10 new test files.
+- **Files changed:** 15 modified + 3 new source files + 11 new test files (Amendment 1 adds
+  3 modified source files and 1 new test file — see §1.11.9 for the delta).
 - **Packages:** single package (this is not a monorepo).
-- **Schema:** 9 new nullable columns across 2 tables, 1 new unique index, **0 enum changes**,
+- **Schema:** 10 new nullable columns across 3 tables (Amendment 1 adds `Organization.amPmMinGapMinutes`), 1 new unique index, **0 enum changes**,
   **0 renames**, **0 data migrations**.
 - **Risk classes present:** schema/migration; payroll-adjacent; new public surface; sensitive
   personal data (location); new production dependency; file upload.
@@ -1787,6 +2444,21 @@ Phase 3 — #177:
 | `pnpm format:check && pnpm lint && pnpm check && pnpm test`, in order, per phase | Fully-Automated | all |
 | Manual script M1–M11 | Agent-Probe | 1, 2, 6, 8, 11, 12, 13, 15, 16, 18, 20 |
 
+Amendment 1 rows:
+
+| Gate / Scenario | Strategy | Proves SPEC criterion |
+|---|---|---|
+| `attendance-am-pm-split` A9 (NULL → default), A11 (30 min → no split) | Fully-Automated | 1 (threshold half; supersedes the hardcoded-constant assumption) |
+| `attendance-am-pm-split` A10 + A13 (same punches, two thresholds, two answers; per-call state) | Fully-Automated | 1 |
+| `attendance-am-pm-split` A12 (NaN / negative / 0 / Infinity fall back) | Fully-Automated | 1 (trust boundary, defence in depth) |
+| `attendance-ampm-gap-setting` A14, A16 (bounds 5–240 rejected at both layers) | Fully-Automated | 1, 18 (writer boundary) |
+| `attendance-ampm-gap-setting` A15 (empty clears to NULL = default) | Fully-Automated | 1 |
+| `attendance-ampm-gap-setting` A17, A20 (write shape + audit row) | Fully-Automated | 17-equivalent for the setting |
+| `attendance-ampm-gap-setting` A18 (Veent → 404 on the action, not just a hidden control) | Fully-Automated | 2, 20 |
+| `attendance-ampm-gap-setting` A19 (form-supplied `organizationId` ignored) | Fully-Automated | 20 (cross-tenant) |
+| Manual M1b steps 2, 5, 7, 8, 9, 10 — split moves, worked hours do not, bounds reject, empty restores, Sweetleaf and Veent unaffected | Agent-Probe | 1, 2, 3 (display-only holds across a threshold change), 20 |
+| §1.11.7 mutation table (12 rows) confirmed RED and reverted | Agent-Probe | all Amendment 1 guards |
+
 **Known gaps** (recorded, not silently accepted):
 
 | Gap | Why | Resolution |
@@ -1811,18 +2483,265 @@ Phase 3 — #177:
 1. **Selected plan file:** `process/features/timesheet-capture/active/timesheet-capture-162-177-200_17-08-26/timesheet-capture-162-177-200_PLAN_17-08-26.md`
 2. **Last completed phase or step:** none — PLAN written, no code changes on
    `feat/timesheet-capture-162-177-200` (branch is clean, 2 doc commits).
-3. **Validate-contract status:** pending — see the placeholder section below.
+3. **Validate-contract status:** written (CONDITIONAL, 17-08-26; E1–E9 and P1–P8 binding).
+   **Amended after validation** — see `### Amendment 1` at the top of `## Validate Contract`
+   and §1.11. The next VALIDATE pass must re-check exactly one row: the "`MIN_AM_PM_GAP_MS` =
+   30 min is safe as specified" verified claim.
 4. **Supporting context files loaded:** `research-findings_REF_17-08-26.md` and
    `timesheet-capture-162-177-200_SPEC_17-08-26.md` in this task folder; `CLAUDE.md`;
    the twelve source files quoted above.
-5. **Next step for a fresh agent:** run VALIDATE against this plan. Then execute **Phase 1 only**,
+5. **Next step for a fresh agent:** re-run VALIDATE against §1.11 only (the rest of the plan is
+   already contracted). Then execute **Phase 1 only**, including the suffixed Amendment 1 steps,
    stopping at the §1.9 gate. Do not begin Phase 2 until all four CI gates are green and the
    §1.7 mutation checks have each been confirmed RED and reverted. Commit each phase separately
    (three commits, one PR) so a phase can be reverted independently.
 
 ## Validate Contract
 
-(placeholder — vc-validate-agent writes this section before EXECUTE)
+Status: CONDITIONAL
+Date: 17-08-26
+date: 2026-08-17
+generated-by: outer-pvl
+
+Parallel strategy: sequential
+Rationale: 5/7 signals present (S2 schema/API surface, S4 phase program, S5 depth requested,
+S6 high-risk classes, S7 5+ files) would normally select parallel subagents for the read-only
+two-layer fan-out. The Agent/Task tool was DISABLED in the validating session, so the Layer 1
+dimension checks and the three Layer 2 phase-feasibility checks were executed sequentially
+in-thread against live source. No coverage was dropped; only wall-clock time was spent.
+
+### Amendment 1 — plan changed AFTER this contract was written
+
+**Date:** 17-08-26 (same day, after the VALIDATE pass below). **Author:** PLAN, on direct user
+instruction. **Nothing in this contract has been deleted or rewritten** — this entry records what
+moved underneath it so the next VALIDATE pass knows exactly what to re-check.
+
+**What changed:** the AM/PM gap threshold became per-organization. Full detail in **§1.11**.
+- New nullable `Organization.amPmMinGapMinutes Int?` (NULL = built-in default). Populated table,
+  but a catalog-only `ADD COLUMN` — no index, no default, no rewrite.
+- `derive.ts`: `MIN_AM_PM_GAP_MS` → exported `DEFAULT_AM_PM_MIN_GAP_MINUTES`; `splitAmPmBlocks`
+  takes the threshold as a parameter; new `amPmMinGapMs?: number` on `DeriveInput`; new
+  `AM_PM_MIN_GAP_FLOOR`/`CEILING`/`isValidAmPmMinGap`.
+- `attendance/index.ts`: two **existing** org `select`s widened (`:173`, `:438`). **Zero new
+  queries.**
+- New writer `setOrgAmPmMinGap` in `attendance/schedules.ts`; new `setAmPmMinGap` action and
+  threshold card on `/settings/schedules`.
+- New specs A9–A13 and a new file `tests/unit/attendance-ampm-gap-setting.test.ts` (A14–A20),
+  plus a 12-row mutation table (§1.11.7) and manual step M1b (§1.11.11).
+- New risks **R10** (a misconfigured threshold re-splits a tenant) and **R11** (a threshold change
+  does not retroactively re-split stored days).
+- Checklist steps are **suffixed** (1a, 3a, 3b, 5a, 6a, 7a, 8a, 8b, 9a, 10a, 12a, 14a, 15a), never
+  renumbered, precisely so this contract's E1→item 13, E2→item 11, E5→item 15 and E7→item 12
+  anchors still resolve.
+
+**SPEC status:** Decision 4 is **half superseded by direct user instruction dated 2026-08-17**.
+Org *gating* remains `isFoodServiceOrg()` exactly as Decision 4 requires. Only the *threshold*
+moves to a column. SPEC §Out Of Scope's "no new `Organization` column/flag for food-service
+gating" is still literally true — this column does no gating.
+
+**Effect on this contract's findings — re-check list for the next VALIDATE:**
+
+| Finding | Status after Amendment 1 |
+|---|---|
+| E1–E9 | **All still valid, none invalidated.** E7's A2 rewrite is unaffected: adding `amPmMinGapMs` to `DeriveInput` adds no key to `AttendanceDayResult`, so "deep-equal after deleting the four AM/PM keys" still describes an implementable test. |
+| P1 (`correctDay` non-`editingTimes` branch leaves AM/PM stale) | **Still valid, and now broader.** R11 is a second route to a stale split. Fold both into one resolution. |
+| P2, P3, P4, P5, P6 | Unaffected (Phase 2 / Phase 3). |
+| P7 (seed scripts write `AttendanceDay`) | Still valid, and reinforced — those scripts also bypass the threshold. Harmless: the columns stay nullable. |
+| P8 (populated-table push; `BODY_SIZE_LIMIT`) | Still valid, **not worsened**. `organizations` is populated (3 rows) but `ADD COLUMN` with no default/index is not the `time_logs` unique-index case P8 is about. |
+| Verified claim "`MIN_AM_PM_GAP_MS` = 30 min is safe as specified" — verdict SAFE | **PARTLY SUPERSEDED — the one real invalidation.** Its *conclusion* survives: worst case is still a display error, because D2 (display-only) is untouched. Its *reasoning* does not: "the failure is asymmetric — you get no split rather than a wrong one" was true only for a fixed 30. An operator-set 5 can now manufacture a wrong split. Re-check this row. See R10. |
+| "What this coverage does NOT prove" — "nor that 30 minutes is the right threshold for any actual tenant" | Still true, now by design: the amendment moves the choice to the operator without proving the operator's choice. |
+| Every other Verified Claim | Unaffected. |
+
+### Test Gates
+
+| criterion id | behavior | strategy | proving test | gap-resolution |
+|---|---|---|---|---|
+| 1 | AM/PM boundary = longest qualifying mid-day gap | Fully-Automated | `pnpm test` — `tests/unit/attendance-am-pm-split.test.ts` A1, A3, A5, A7, A8 | A |
+| 2 | `splitAmPm: false` leaves the pre-#162 result untouched | Fully-Automated | `pnpm test` — A2 **rewritten** per E7, plus `attendance-derive` / `attendance-autoderive` / `attendance-correct-derive` / `attendance-schedule-fallback` re-run green with zero edits | B |
+| 3 | "Days of Work" and every payroll bucket are identical with the flag on and off | Fully-Automated | `pnpm test` — `tests/unit/payroll-am-pm-days-of-work.test.ts`, **extended per E1** to assert the `buildAttendanceInput` seam directly | B |
+| 4 | Engine A / engine B parity on the AM/PM punch set | Fully-Automated | `pnpm test` — `tests/unit/hours-engine-parity-am-pm.test.ts` | A |
+| 5 | Single-punch partial day does not throw | Fully-Automated | `pnpm test` — A6 | A |
+| 6 | A WEB punch persists latitude/longitude/accuracy/capturedAt | Hybrid | `pnpm test` — `punch-location-capture` C1; then `pnpm test:e2e -g "timesheet-punch-location"` — precondition: `./start.sh` + `pnpm db:seed:e2e` + a Playwright browser | A |
+| 7 | A location failure never costs the employee their punch | Fully-Automated | `pnpm test` — `punch-location-route` C7, C8 | A |
+| 8 | Denied permission still records the punch | Hybrid | `pnpm test:e2e -g "timesheet-punch-location"` permission-denied case — precondition: seeded DB + browser | A |
+| 9 | Accuracy is never rendered as bare coordinates (server half) | Fully-Automated | `pnpm test` — `punch-location-route` C8, C9 | A |
+| 9 | Accuracy qualifier is actually **rendered** (display half) | Agent-Probe | Manual script M8 step 3 — read the status line and the Recent-punches row | D |
+| 10 | No reading present → graceful server-side handling | Fully-Automated | `pnpm test` — `punch-location-route` C7 | A |
+| 11 | Location is not visible to a stranger | Fully-Automated | `pnpm test` — existing `tests/unit/punch-access.test.ts`, re-run unchanged | A |
+| 11 | Self-visibility of one's own location | Agent-Probe | Manual script M11 | C |
+| 12 | Discord and MANUAL punches carry no location | Fully-Automated | `pnpm test` — `punch-location-capture` C2, `punch-location-route` C11, plus the B6 assertion that no `createMany` record has a `latitude` key | A |
+| 13 | A backlog CSV applies rows and materialises days | Fully-Automated | `pnpm test` — `attendance-backlog-import` B6, **extended per E8** to assert the `+08:00` timestamp values | B |
+| 14 | An out-of-org employee number is rejected and never written | Fully-Automated | `pnpm test` — `attendance-backlog-import` B7 (where-shape mock, mandatory) | A |
+| 15 | Locked and hand-corrected days are refused before any write | Fully-Automated | `pnpm test` — `attendance-backlog-import` B8, B9 (where-shape mocks, mandatory) | A |
+| 16 | Re-upload is idempotent (app layer) | Fully-Automated | `pnpm test` — `attendance-backlog-import` B10, **converted to a where-shape mock per E8** | B |
+| 16 | Re-upload is idempotent (DB constraint layer) | Known residual | — the unique index cannot be exercised by a mocked-`db` unit test | D |
+| 17 | One bounded audit summary row per import | Fully-Automated | `pnpm test` — `attendance-backlog-import` B11, **fixture extended past 20 rejections per E8** | B |
+| 18 | `MANAGE_HR` + food-service gate on the import action | Fully-Automated | `pnpm test` — `attendance-backlog-rbac` B13, B14, B15, asserted against the `actions` **export** | A |
+| 19 | Malformed / hostile / oversize files are rejected with reasons | Fully-Automated | `pnpm test` — `attendance-backlog-parse` B2–B5 + `attendance-backlog-rbac` B16 | A |
+| 20 | Veent is untouched by all three issues | Fully-Automated | `pnpm test` — A2 + B14 + C11, the three negative controls | A |
+| 20 | Veent is untouched, observed end-to-end | Agent-Probe | Manual script M2, M7 — **M2 step 2 corrected per E6** | B |
+| all | Four CI gates, in order, per phase | Fully-Automated | `pnpm format:check && pnpm lint && pnpm check && pnpm test` — each exits 0, CI stops at the first failure | A |
+| all guards | Every guard is proved by a mutation confirmed RED and reverted | Agent-Probe | §1.7, §2.5, §3.6 mutation tables **plus the eight additions in E5** | B |
+| — | CSV export gains 4 columns for food-service orgs only, uniform key set on every row | Fully-Automated | **NEW test required per E2** in `tests/unit/reports-csv.test.ts` | B |
+| — | Cross-tenant punch cannot be written by a cross-org account | Fully-Automated | **NEW assertion required per E3** in `punch-location-route` | B |
+| — | Size and row caps bound the work before it happens | Fully-Automated | **NEW assertions required per E4** in `attendance-backlog-rbac` B16 | B |
+| — | `db push` adding a unique index to a POPULATED `time_logs` | Known residual | — local `time_logs` has 0 rows; cannot be proven on this machine | D |
+| — | Production `BODY_SIZE_LIMIT` admits a 2 MB multipart body | Known residual | — `vite dev` does not apply the adapter-node limit | D |
+| 6 | Real-device GPS accuracy variance | Known residual | — Playwright `setGeolocation` supplies a synthetic fix with no accuracy variance | D |
+
+gap-resolution legend:
+- A — proven now (gate passes in this cycle)
+- B — fixed in this plan (gate added by this plan's checklist / by an execute-agent instruction below)
+- C — deferred to a named later phase/plan
+- D — backlog test-building stub (named residual; keep-active; continue)
+
+Legacy line form (retained so existing validate-contract consumers still parse):
+- Attendance derive engine (`derive.ts`): Fully-automated: `pnpm test` — `attendance-am-pm-split` A1–A8
+- Payroll seam (`attendance/input.ts` → `payroll/calculator.ts`): Fully-automated: `pnpm test` — `payroll-am-pm-days-of-work`
+- Attendance page + CSV export: Fully-automated: `pnpm test` — new `reports-csv` case (E2) | Agent-probe: M1, M2
+- CSV backlog import service: Fully-automated: `pnpm test` — `attendance-backlog-parse` + `attendance-backlog-import`
+- Import RBAC + org gate: Fully-automated: `pnpm test` — `attendance-backlog-rbac`
+- Web punch service + route: Fully-automated: `pnpm test` — `punch-location-capture` + `punch-location-route`
+- Web punch browser behaviour: Hybrid: `pnpm test:e2e` — precondition: `./start.sh` + `pnpm db:seed:e2e`
+- Prisma schema push: Hybrid: `pnpm db:push && pnpm prisma generate && pnpm check` — precondition: `veent-db-5434` up
+- Populated-table push + prod body-size limit + real-device GPS: known-gap: documented
+
+Dimension findings:
+- Infra fit: CONCERN — every referenced path resolves and all four CI gate scripts exist verbatim in `package.json`; but `svelte.config.js` sets only `{ out: 'build' }`, so `@sveltejs/adapter-node`'s 512 KB default `BODY_SIZE_LIMIT` may reject the 2 MB CSV in production while `vite dev` accepts it (F3b), and local `time_logs` has 0 rows so the populated-table `db push` is unproven (F10).
+- Test coverage: CONCERN — the pure-function coverage is genuinely mutation-honest, but the CSV export change has NO automated gate (F5), 8 guards have no named mutation (F7), 5 mocked assertions beyond the 5 the plan pre-flagged cannot fail (F8), and A2 is unimplementable as written (F8).
+- Breaking changes: CONCERN — "the Discord route shows zero changed lines" is CONFIRMED, and the punch behaviour for the existing caller is byte-identical; but §3.2 step 5 adds `hasLocation` to the audit `newValue` for EVERY punch, so Discord audit rows change shape in a file with a zero-line diff (F-claim2). `papaparse` is confirmed absent from the tree with zero runtime dependencies, though its stated size is wrong by ~6× (F12).
+- Security surface: CONCERN — self-scoping is CONFIRMED safe (no `employeeId` in the form, employee resolved from `locals.user.id`, `(app)/+layout.server.ts` enforces the session); but the resolution is NOT org-scoped and `profile/+page.server.ts:29-31` carries an explicit comment saying that is wrong for cross-org accounts (F2), and both import caps are enforced AFTER the work they exist to bound (F3).
+- Section 1 feasibility (Phase 1 — #162): CONCERN — mechanically feasible, every quoted line reference verified findable (`derive.ts:19-21`, `:47-63`, `:65-83`, `:130-150`, `:162-188`, `:262`; `index.ts:258`, `:287`; `+page.svelte` team `<thead>` 468 / `<tbody>` 480 / colspan 592, per-employee `<thead>` 606 / `<tbody>` 619 / colspan 748 — both colspans present and both attributions correct). Gaps: `correctDay`'s non-`editingTimes` branch leaves AM/PM stale (F4); no automated export test (F5); M2 step 2 asserts 8 `<th>`s where an HR user gets 9 (F6). Highest-risk edit: adding the four fields to `data` in `deriveRange` — mitigated because one object feeds both the `create` and `update` arms of the upsert (verified at `index.ts:268-291`).
+- Section 2 feasibility (Phase 2 — #200): CONCERN — feasible; `toFail`'s allow-list is exactly `[400, 404, 409]` as stated, `requireFoodServiceOrg`/`requireAnyCapability` exist and throw 404/403 as described, `exportToCSV`'s `Object.keys(rows[0])` trap is real. Gaps: cap ordering (F3), the read-side formula regex is not the mirror it claims to be and duplicates a module-private constant (F9), `importBacklog` vs `importBacklogCsv` naming inconsistency (F13), the 62-day span guard has no test and no mutation (F7). Highest-risk edit: step 5's lock/manual-edit pre-check — must reject BEFORE any `TimeLog` write, which R3 depends on.
+- Section 3 feasibility (Phase 3 — #177): CONCERN — feasible; `Employee.userId` is `@unique` so `findUnique` compiles, `PunchSource` already carries `WEB` and `MANUAL`, `canTouchEmployee` gates the punches API at `+server.ts:33`, and `tests/e2e/timesheet-punch.spec.ts` and `timelog-replay.spec.ts` both exist as the cited patterns. Gaps: the unlisted `/profile` `listPunches` caller breaks the §3.9 gate (F1), missing org scoping (F2), "exactly one of `discordId`/`employeeId`" is required by Public Contracts and checklist item 28 but never implemented in §3.2 step 1 (F7). Highest-risk edit: widening `recordPunch` — mitigated because the Discord call site passes only `discordId` and every new field is optional.
+
+Open gaps:
+- CSV export column-set drift (R4): no automated gate as planned — resolved by execute-agent instruction E2 in this cycle.
+- Accuracy-qualifier rendering (criterion 9, display half): Agent-Probe only via M8 — accepted; the server half is fully automated by C9.
+- DB-level dedup backstop (criterion 16, constraint layer): known-gap — a mocked-`db` unit test cannot exercise a Postgres unique index. Covered indirectly by manual step M4.
+- `db push` adding a unique index to a POPULATED `time_logs`: known-gap — local `time_logs` has 0 rows, so a green local push proves nothing about staging/prod. `prisma db push` builds the index without `CONCURRENTLY` (ACCESS EXCLUSIVE lock). Precedent: #236.
+- Production `BODY_SIZE_LIMIT`: known-gap — `vite dev` does not apply the adapter-node limit, so no local test can detect the divergence.
+- Real-device GPS accuracy behaviour: known-gap, already recorded by the plan — backlog stub `web-punch-real-device-accuracy_NOTE_17-08-26.md`.
+- `TimesheetModal.svelte` engine C has no test at all: known-gap, pre-existing and explicitly out of scope — backlog stub `timesheet-modal-engine-c-coverage_NOTE_17-08-26.md`.
+- Non-HTTPS `navigator.geolocation`: accepted as a browser guarantee, not this code's behaviour.
+
+What this coverage does NOT prove:
+- `pnpm test` (vitest, `environment: node`, no typecheck step) does NOT typecheck. A mutation that breaks types still runs, and `svelte-check` covers neither `scripts/**` nor `prisma/**` (precedent: #282). Two seed scripts write `AttendanceDay` and would not be caught.
+- `attendance-am-pm-split` proves the boundary rule on synthetic punch arrays. It does NOT prove that real tenant punch data produces sensible AM/PM blocks, nor that 30 minutes is the right threshold for any actual tenant.
+- `payroll-am-pm-days-of-work` proves the payroll seam ignores AM/PM **today**. It does NOT prevent a future `select`-less reader from being added upstream of `payroll/calculator.ts`. The display-only property is a convention held by the schema comment, not an enforced constraint.
+- `attendance-backlog-import` mocks `$lib/server/db`. It proves the service's call shapes and branch logic. It does NOT prove any Prisma query is valid SQL, that `@@unique([dedupKey, employeeId])` behaves as expected, that `createMany({ skipDuplicates: true })` absorbs a real race, or that `$transaction` rolls back correctly.
+- `attendance-backlog-rbac` and `punch-location-route` import the `actions` export. They prove the guard runs before the service call. They do NOT prove SvelteKit routes the form POST to that action, that `enctype="multipart/form-data"` is set, or that the file reaches the handler at all.
+- `punch-location-capture` proves `recordPunch` writes the right `data`. It does NOT prove Postgres accepts `Float` for the coordinates, nor that `src/hooks.ts` transports them correctly to the client — no test exercises the transport hook with a `Float` field (these would be the first `Float` columns in the schema).
+- The e2e location test uses Playwright `setGeolocation` — a synthetic fix. It does NOT prove real-device GPS behaviour, accuracy variance, timeout behaviour under poor signal, or the 9-second watchdog firing.
+- No gate proves the CSV export's uniform-key rule until E2 is implemented; until then a conditional key dropping columns for later rows would ship green.
+- No gate proves the two `colspan` fixes. A wrong colspan renders a misaligned "no rows" placeholder and no test sees it.
+- `grep -rn "listPunches" src/` as written in §3.9 is not a valid gate — it returns 4 lines today (see E9).
+- Manual steps M1–M11 are Agent-Probe: they prove one operator saw one outcome once, on seeded data, on `localhost`.
+
+Gate: CONDITIONAL (13 concerns, 0 FAILs; user accepted with the nine execute-agent instructions below recorded as binding)
+Accepted by: user (VALIDATE invocation, 17-08-26: "Present the validate-menu, then write the contract section into the plan file"). Accepted concerns, by name: F1 `/profile` third `listPunches` caller; F2 punch route not org-scoped; F3 cap ordering + prod body-size limit; F4 `correctDay` non-`editingTimes` branch; F5 no automated CSV export gate; F6 M2 step 2 assertion wrong; F7 eight guards with no named mutation; F8 five unflagged vacuous mocks + A2 unimplementable; F9 formula regex is not a true mirror; F10 populated-table push unproven; F11 seed scripts write `AttendanceDay` unlisted; F12 papaparse size misstated; F13 `importBacklog`/`importBacklogCsv` naming.
+
+### Execute-Agent Instructions (binding — each must be applied and reported in the phase report)
+
+| # | Instruction | Trigger condition |
+|---|---|---|
+| E1 | Extend `tests/unit/payroll-am-pm-days-of-work.test.ts` to assert the payroll **seam**, not just the derive engine: build two `AttendanceDay`-shaped rows differing ONLY in the four AM/PM columns, run both through `accumulateDay` / `buildAttendanceInput`'s accumulator shape, and assert the resulting `AttendanceInput` objects are deep-equal. This is the only mechanical proof that display-only holds; the schema comment is not a gate. | Phase 1, checklist item 13 |
+| E2 | Add a case to `tests/unit/reports-csv.test.ts` proving the export's uniform-key rule: build a row set where at least one day is `null`, run it through the `amPmCols()` spread + `exportToCSV`, and assert (a) the header line contains `AM In,AM Out,PM In,PM Out` when `showAmPm`, (b) EVERY line has the same field count, (c) the header is absent when `showAmPm` is false. Risk R4 currently has no automated gate at all. | Phase 1, checklist item 11 |
+| E3 | In `src/routes/(app)/punch/+page.server.ts`, resolve the employee with the **org-scoped** form used by `profile/+page.server.ts:29-31` — `db.employee.findFirst({ where: { userId: user.id, organizationId: user.organizationId }, select: { id: true } })` — NOT `findUnique({ where: { userId } })`. Apply in BOTH `load` and the `punch` action. A cross-org account (the CEO, #224) would otherwise punch into their home tenant while the active org is a different one. Add an assertion to `punch-location-route` C12 covering the cross-org case, and copy the profile page's comment so the reason survives. | Phase 3, checklist items 32 and 36 |
+| E4 | Move both import caps ahead of the work they bound. In the `importBacklog` **action** (`attendance/+page.server.ts`), check `file.size > MAX_IMPORT_BYTES` → 413 and the `.csv` extension → 415 BEFORE `await file.text()`. In `parseBacklogCsv`, pass papaparse `{ preview: MAX_IMPORT_ROWS + 1 }` so the row cap bounds the parse instead of being checked after it. Keep the in-service `file.size` check as a second layer for any future caller. Extend B16 to assert `file.text()` is never called on an oversize upload. | Phase 2, checklist items 18–20 and 25 |
+| E5 | Add these eight mutation rows and run each one RED-then-revert: (1) 62-day span guard — raise the limit past the fixture; (2) NUL-byte rejection — delete the check; (3) BOM strip — delete it; (4) `.csv` extension check — delete it; (5) `toFail` 413/415 widening — revert to `[400,404,409]` and assert a 500 does NOT reach the user; (6) "exactly one of `discordId`/`employeeId`" — call `recordPunch` with neither and assert a clean 400, not a Prisma 500; (7) accuracy-qualifier rendering — remove the "(accuracy unknown)" branch; (8) `amPmCols` uniform spread — apply it only to non-null days and assert E2's field-count check goes red. | Each phase's mutation-check step (items 15, 26, 38) |
+| E6 | Correct manual step M2 step 2 before running it. `+page.svelte:616` is `{#if data.canManage}<th …></th>{/if}`, so a Veent **HR** user sees **9** `<th>`s, not 8. Assert 9 headers and that none of them reads `AM In`/`AM Out`/`PM In`/`PM Out`. Assert something positive — count the headers AND name the four that must be absent. | Manual script, before M2 |
+| E7 | Rewrite spec A2. "The whole result object deep-equals the pre-change baseline" is unimplementable once `AttendanceDayResult` gains four keys. Implement it as: call `deriveAttendanceDay` twice on the same input, once with `splitAmPm: true` and once with `false`, and assert the two results are deep-equal **after deleting the four AM/PM keys from both**. That proves the flag changes nothing else, which is what criterion 2 actually needs. | Phase 1, checklist item 12 |
+| E8 | Harden four mocked specs that cannot currently fail. **B10**: replace the flat `timeLog.findMany.mockResolvedValue` with a `mockImplementation(({ where }) => …)` that returns keys only when `where.dedupKey.in` actually contains them. **B6**: add an assertion on the literal `timestamp` values written, proving the `` new Date(`${date}T${hhmm}:00+08:00`) `` construction — nothing else covers PHT conversion, and it is the most likely thing to be wrong. **B11**: use a fixture with more than 20 rejections so `rejectedSample.length <= 20` is a real bound rather than a trivially-true assertion on an empty array. **B12**: branch on the `where` shape, not call count. Reference `tests/unit/punch-access.test.ts:57-65` in a comment in each file. | Phase 2, checklist items 24–25 |
+| E9 | Fix §3.9's broken pre-merge gate and §3.5's incomplete table. `src/routes/(app)/profile/+page.server.ts:44` is a THIRD `listPunches` caller the plan does not list — `grep -rn "listPunches" src/` returns 4 lines today and 6 after Phase 3, so the "exactly 2 call sites" gate fails against correct code. Replace it with a gate that counts CALL sites and expects 3, and add a row to §3.5 recording that `/profile` is self-scoped (`userId` + `organizationId`) and that its `.map()` at :48-56 projects only `id/type/label/source/dayKey/at`, so latitude and longitude never reach the client. If a future change makes `/profile` return raw rows, that row becomes a leak — say so in the table. | Phase 3, before the §3.9 gate |
+
+### Plan Corrections (apply during EXECUTE; each is a documented plan defect, not a discovery)
+
+| # | Correction | Where |
+|---|---|---|
+| P1 | `correctDay` has a second branch. `index.ts:425` computes `editingTimes = 'timeIn' in data \|\| 'timeOut' in data`; when FALSE, `write = { ...data }` and the AM/PM columns are left untouched while `manuallyEdited: true` is still written. `correctSchema` permits editing `status`/`regularHours`/`overtimeHours`/`note` with no date, so this branch is reachable. Either clear the four columns in that branch too, or extend §1.3c's comment to state that a non-time correction deliberately preserves the existing split (consistent with how it already preserves `timeIn`/`timeOut`). Do not leave it unstated. | §1.3c |
+| P2 | Stop calling the read-side regex a "mirror of `reports.ts:622`". The real constant is `/^[=+\-@\t\r]/`; the plan's copy is `/^[=+\-@]/`. The defence still works because `.trim()` strips `\t` and `\r` first, but `FORMULA_PREFIX` is module-private in `reports.ts`, so this creates a second copy that can drift. Either export the constant from `reports.ts` and import it, or state plainly that this is an independent read-side check with its own character class. | §2.3c |
+| P3 | `papaparse` is **259 KiB unpacked** (registry `dist.unpackedSize = 265221`, v5.6.0), not "~45 kB". Zero runtime sub-dependencies is CONFIRMED. Correct the number — the justification is on the record per the SPEC. | §2.1 |
+| P4 | Name collision: §2.3d exports `importBacklog`, §2.4 calls `importBacklogCsv`, and the form action is also named `importBacklog`. Pick one service-function name and use it consistently, and keep the action name distinct from it. | §2.3d / §2.4 |
+| P5 | §3.2 step 1 does not implement the "exactly one of `discordId`/`employeeId`" runtime throw that Public Contracts and checklist item 28 both require. With both absent, `findUnique({ where: { discordId: undefined } })` raises a Prisma validation error (500), not a clean 400. Add the explicit guard at the top of `recordPunch`. | §3.2 step 1 |
+| P6 | §3.2 step 5 adds `hasLocation: Boolean(input.location)` to the audit `newValue` for EVERY punch, so Discord audit rows gain `hasLocation: false` even though `log/+server.ts` has a zero-line diff. Either scope it (`...(input.location ? { hasLocation: true } : {})`) or state in the plan that the Discord audit shape changes. No existing test asserts that payload, so nothing goes red either way — which is exactly why it must be written down. | §3.2 step 5 |
+| P7 | Add `scripts/seed-attendance-demo.ts:101` (upsert) and `scripts/seed-payslip-demo.ts:58` (createMany) to the `AttendanceDay` writer set in §1.3c. Both write without AM/PM — harmless because the columns are nullable, but the upsert leaves stale values on re-seed, and `pnpm check` covers neither `scripts/**` nor `prisma/**` (#282). | §1.3c |
+| P8 | Record in §2.2 and §Risks that local `time_logs` has **0 rows**, so a green local `pnpm db:push` proves nothing about the populated staging/prod table, and that `prisma db push` creates the unique index WITHOUT `CONCURRENTLY` (ACCESS EXCLUSIVE lock). Note also that `svelte.config.js` passes only `{ out: 'build' }` to `@sveltejs/adapter-node`, whose `BODY_SIZE_LIMIT` defaults to 512 KB — verify the deployment sets it before trusting `MAX_IMPORT_BYTES = 2 MB`. `storage.ts` already permits 10 MB uploads, so it is probably already set; confirm rather than assume. | §2.2, §Risks (new R9) |
+
+### Verified Claims — evidence on record
+
+| Claim | Verdict | Evidence |
+|---|---|---|
+| AM/PM is display-only; a wrong boundary can never produce a wrong peso | **CONFIRMED** | Complete reader enumeration: `input.ts:35`/`:62` return whole rows but `accumulateDay:13-25` enumerates 11 named fields; `payroll/payslip-fetch.ts:134` uses a 6-field `select`; `reports.ts:384`/`:429` use narrow `select`s; `dashboard/+page.server.ts:62` is a `groupBy status`; `team/+page.server.ts:63` selects 3 fields; `attendanceEntriesForRange` (`index.ts:347`) reads whole rows but its `.map()` projects 6 named fields, so AM/PM never reaches `TimesheetEntry`; `payroll/calculator.ts` consumes `AttendanceInput`, never a row. Only `listAttendanceDays` (`:99`) and `listTeamDay` (`:113`) pass whole rows on, and both terminate at the page and the CSV export. **No path exists.** Residual: this is a convention, not a constraint — see E1. |
+| The Discord route shows zero changed lines | **CONFIRMED** | `log/+server.ts:48-57` passes `discordId`, `punchType`, `timestamp`, `discordMessageId`, `source`. Under the widened signature every one is still valid and `discordId?: string` still accepts it. No argument moves. |
+| Behaviour for the existing Discord caller is unchanged | **CONFIRMED for the punch; REFUTED for the audit row** | Body walk: the `findUnique` branch takes the `discordId` arm when `employeeId` is undefined — identical query. The generalised pre-check `if (input.discordMessageId \|\| input.dedupKey)` is false/false when `messageId` is absent (it is `.optional()` at `log/+server.ts:23`) and otherwise takes the `discordMessageId` arm, producing the identical `where` — identical. `dedupKey: undefined` in `create` is a Prisma no-op. **But** the audit `newValue` gains `hasLocation` for every punch — see P6. |
+| Postgres treats NULLs as distinct in a composite unique index | **CONFIRMED empirically** | Live scratch test on `veent-db-5434`: `create unique index on _vc_scratch(a,b)` then three rows with `a = NULL, b = 'e1'` — `INSERT 0 3`, all accepted. A non-NULL duplicate `('k','e1')` was correctly rejected with `duplicate key value violates unique constraint`. Scratch table dropped. The live precedent `time_logs_discordMessageId_employeeId_key` confirms the same shape already ships. |
+| `db push` adding this to a POPULATED table succeeds | **PLAUSIBLE, not confirmed** | `select count(*) from time_logs` returns **0** locally. Cannot be proven on this machine. See P8 and the Open Gaps entry. |
+| Twin doors: lock/manual-edit refusal wired at both `deriveRange` and `correctDay` | **CONFIRMED, with a seventh case found on the READ side** | Live enumeration. `AttendanceDay` writers in `src/`: exactly five — `deriveRange` upsert (`index.ts:287`, covered §1.3b), `correctDay` update (`:499`, covered §1.3c but see P1), `resetDayToDerived` (`:538`, writes `manuallyEdited` only), `lockRange` (`:562`) and `unlockRange` (`:591`), both writing `isLocked` only. `TimeLog` writers in `src/`: `recordPunch` create (`timelog.ts:69`), `aggregateTimeLogsToTimesheet` updateMany (`:294`, `timesheetId` only), plus new `importBacklog`; also `scripts/seed-punches-demo.ts:161`. Guard-state writers check out: `isLocked` only from `lockRange`/`unlockRange`; `manuallyEdited` only from `correctDay` (true) and `resetDayToDerived` (false). **No open door on the write side.** The seventh case is `/profile` calling `listPunches` — see E9. |
+| Proposed unit tests contain no vacuous mocks | **REFUTED** | Beyond the five the plan pre-flags (B7, B8, B12, C4, C10): B10, B6, B11 and C5 cannot fail as specified, and A2 is unimplementable. See E7 and E8. |
+| Every guard names a mutation that turns a test red | **REFUTED** | Eight guards have no named mutation. See E5. |
+| `papaparse` is not already in the tree, has no runtime sub-dependencies, and needs no `storage.ts` change | **CONFIRMED** (size misstated) | Absent from `package.json`, `pnpm-lock.yaml` and `node_modules`. Registry: v5.6.0 has NO `dependencies` field → zero runtime sub-dependencies. `@types/papaparse@5.5.2` depends only on `@types/node`, already a devDependency. `storage.ts` is an explicitly-called library, not a global upload hook — `ALLOWED_MIME:12-17`, `sniffMime:27`, `MAX_UPLOAD_BYTES:11` all verified where the plan says, and nothing routes form uploads through them automatically. Size is 259 KiB, not 45 kB — see P3. |
+| No enum renamed; every new column nullable and additive; `prisma generate` mandated | **CONFIRMED** | `PunchSource` already contains `DISCORD`, `WEB`, `MANUAL`; `PunchType` contains `IN`, `OUT`, `BREAK_START`, `BREAK_END`. No `ALTER TYPE` needed, so no `scripts/migrate-*.ts`. All nine new columns are `?`. `package.json` confirms `db:push` = `dotenv -e .env.dev -- prisma db push`, `postinstall` = `prisma generate`, and the four CI gates exist verbatim with `lint` = `eslint .` (it does NOT run `format:check`). |
+| `Float?` stays clear of the `Decimal` hook; no new `Decimal` field | **CONFIRMED** | `src/hooks.ts` `isDecimal()` duck-types on the presence of `d`, `e`, `s` AND a `toNumber` function — a plain JS number matches none of them, so `Float` bypasses the transport entirely. No `Decimal` field is introduced anywhere in the plan. Note these would be the schema's FIRST `Float` columns; no existing test exercises the hook with one. |
+| `MIN_AM_PM_GAP_MS` = 30 min is safe as specified | **SAFE** | The failure is asymmetric. A sub-threshold gap makes `splitAmPmBlocks` return all-null (step 5), so a 20-minute-changeover tenant sees NO split rather than a wrong one. Combined with display-only, the worst case is a missing label corrected by a `Refresh` after the constant changes. Record the failure direction in the constant's comment; the upgrade seam is the `Organization` flag `orgs.ts` already documents. |
+| `correctDay` collapsing AM/PM is safe, recoverable via `resetDay` | **SAFE** | Recovery verified: `resetDayToDerived` (`index.ts:521-551`) clears `manuallyEdited` then calls `deriveRange(organizationId, { from: day.date, to: day.date, employeeId })`, which under §1.3b writes the split back. Two caveats to record: it refuses on a locked day and on a non-ACTIVE employee (both 409), so recovery is not universal, and it restores only what the punches support. Read-only AM/PM cells (§1.5) are the correct call — an editable cell would be a writer with no service-side handler. |
+| The web punch prevents punching as another employee | **CONFIRMED** | `(app)/+layout.server.ts:8-10` redirects to `/login` when `locals.user` is absent. `Employee.userId` is `@unique`. The form carries no `employeeId` and the action never reads one; the id comes from `locals.user.id`. C10 pins it. **Separate gap:** the resolution is not org-scoped — see E3. |
+| Read-side formula-injection rejection | **CONFIRMED it works; REFUTED that it is a "mirror"** | `reports.ts:622` is `/^[=+\-@\t\r]/`; the plan's copy is `/^[=+\-@]/`. Because `sanitizeCell` strips leading tabs then `.trim()`s (which removes `\t`, `\r`, `\n` and ` `), payloads like `\r=cmd` and `\t=HYPERLINK(...)` are still caught. No legitimate value in the six columns starts with `=`, `+`, `-` or `@`, so false positives are near-zero. Honest assessment: the defence is close to theatre — parsed cells become timestamps and employee-number lookups, never re-exported strings. Keep it as cheap garbage rejection; do not credit it as a load-bearing control. See P2. |
+| Row-count and upload-size caps are enforced before any parsing work | **REFUTED** | §2.4 does `await file.text()` before `importBacklog` runs, so §2.3e step 1's `file.size` check happens after the whole body is decoded into memory. §2.3e step 3 checks `MAX_IMPORT_ROWS` after `parseBacklogCsv` has parsed the entire string. Both caps exist and both precede any DB read (the plan's literal claim), but neither bounds the work it exists to bound. See E4. |
+
+## Autonomous Goal Block
+
+```
+SESSION GOAL
+Implement the timesheet capture cluster (#162 AM/PM split, #200 CSV backlog import, #177 web
+punch with location) on branch feat/timesheet-capture-162-177-200, as three sequentially-gated
+phases in one PR, following:
+process/features/timesheet-capture/active/timesheet-capture-162-177-200_17-08-26/timesheet-capture-162-177-200_PLAN_17-08-26.md
+
+Reference for latest state: the plan file above. Its ## Validate Contract is binding.
+
+CONTRACT SUMMARY
+Gate: CONDITIONAL (13 concerns, 0 FAILs). Nine execute-agent instructions (E1-E9) and eight
+plan corrections (P1-P8) in the ## Validate Contract are BINDING, not advisory. Each must be
+applied and each must be reported in the phase report. Verified safe: AM/PM is display-only
+with no path to payroll; the Discord route keeps a zero-line diff; Postgres NULL-distinct is
+empirically confirmed; no enum is renamed; Float bypasses the Decimal hook; nobody can punch
+as another employee. Verified wrong: import caps do not bound their work (E4); the punch route
+is not org-scoped (E3); /profile is an unlisted third listPunches caller that breaks the
+plan's own pre-merge gate (E9); the CSV export has no automated test (E2); eight guards have
+no mutation (E5); five mocked specs cannot fail and one is unimplementable (E7, E8).
+
+AUTONOMY RULES
+- Execute Phase 1 only, then STOP at the §1.9 gate. Do not start Phase 2 from a CODE DONE
+  predecessor. A phase is VERIFIED only per ## Phase Completion Rules, all six conditions.
+- Run the four CI gates in order every phase: pnpm format:check, pnpm lint, pnpm check,
+  pnpm test. Stop at the first failure. pnpm lint does NOT run format:check.
+- After every prisma/schema.prisma edit: pnpm db:push then pnpm prisma generate, always both.
+  A stale client has produced phantom pnpm check errors three times on this repo.
+- Apply every mutation check by hand, confirm RED, revert, and record it. An unconfirmed
+  mutation means the guard is unproven.
+- Do not edit any pre-existing test to make a new change pass. If one must change, Decision 1
+  has been violated: STOP and escalate.
+- Three separate commits, one per phase, so a phase can be reverted independently.
+- Never add a Co-Authored-By or Co-Author trailer to any commit.
+
+HARD STOPS
+- Any pre-existing attendance or payroll spec needs editing to pass.
+- pnpm db:push reports data loss or a non-additive change.
+- Any new reader of AttendanceDay would put amTimeIn/amTimeOut/pmTimeIn/pmTimeOut on a path
+  to payroll/calculator.ts or attendance/input.ts. The display-only property is the whole
+  safety argument; if it breaks, stop and re-validate.
+- Pushing to a remote, opening a PR, or running anything against staging or production.
+- Running prisma db push against any database other than local veent-db-5434.
+
+NEXT PHASE
+Phase 1 (#162): schema columns, derive.ts splitAmPm + splitAmPmBlocks, index.ts deriveRange
+and correctDay wiring, showAmPm on the attendance page and CSV export, three new unit test
+files, plus E1, E2, E5 (rows 7-8), E6, E7 and corrections P1 and P7.
+
+EXECUTE START COMMAND
+ENTER EXECUTE MODE — plan: process/features/timesheet-capture/active/timesheet-capture-162-177-200_17-08-26/timesheet-capture-162-177-200_PLAN_17-08-26.md — Phase 1 only, stop at the §1.9 gate.
+```
 
 ---
 
