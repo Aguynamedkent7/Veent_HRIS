@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte'
 	import { enhance } from '$app/forms'
+	import PunchMapDialog from '$lib/components/timesheets/PunchMapDialog.svelte'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
@@ -180,10 +181,17 @@
 	const btnMuted = `${btnBase} border border-border hover:bg-accent hover:text-accent-foreground`
 
 	// A coordinate pair is unreadable and unverifiable to the person it belongs to, and it is the
-	// most sensitive string on the page. Link to a map instead, with the accuracy in the LABEL so
-	// the qualifier is never separated from the reading.
-	const mapUrl = (p: { latitude: number; longitude: number }) =>
-		`https://www.openstreetmap.org/?mlat=${p.latitude}&mlon=${p.longitude}#map=17/${p.latitude}/${p.longitude}`
+	// most sensitive string on the page. Show a map instead, with the accuracy in the LABEL so
+	// the qualifier is never separated from the reading. The map itself lives in PunchMapDialog.
+	//
+	// The punch whose map is open, or null. Holds the row itself so the modal can label the reading
+	// with the same accuracy qualifier the trigger showed.
+	let mapFor = $state<{
+		at: string
+		latitude: number
+		longitude: number
+		locationAccuracyM: number | null
+	} | null>(null)
 </script>
 
 <svelte:head><title>Punch — Veent HRIS</title></svelte:head>
@@ -307,16 +315,21 @@
 								{#if p.latitude !== null && p.longitude !== null}
 									<!-- An accuracy qualifier ALWAYS accompanies the reading — it is never
 									     presented as if it were exact. -->
-									<a
-										href={mapUrl({ latitude: p.latitude, longitude: p.longitude })}
-										target="_blank"
-										rel="noopener noreferrer"
+									<button
+										type="button"
+										onclick={() =>
+											(mapFor = {
+												at: p.at,
+												latitude: p.latitude!,
+												longitude: p.longitude!,
+												locationAccuracyM: p.locationAccuracyM
+											})}
 										class="underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
 									>
 										View on map {p.locationAccuracyM === null
 											? '(accuracy unknown)'
 											: `(±${Math.round(p.locationAccuracyM)} m)`}
-									</a>
+									</button>
 								{:else}
 									No location recorded
 								{/if}
@@ -328,3 +341,5 @@
 		</section>
 	{/if}
 </div>
+
+<PunchMapDialog bind:punch={mapFor} />

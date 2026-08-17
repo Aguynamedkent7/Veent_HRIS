@@ -129,10 +129,24 @@ test('a granted location is captured, and a second tap inside the capture window
 	await expect(row).toContainText('Clock in')
 
 	// The employee sees their OWN reading back: a map they can check, with the accuracy qualifier
-	// in the link's own label so it can never be read apart from it.
-	const map = row.getByRole('link', { name: /View on map/ })
-	await expect(map).toHaveAttribute('href', /mlat=8\.4772/)
+	// in the trigger's own label so it can never be read apart from it.
+	const map = row.getByRole('button', { name: /View on map/ })
 	await expect(map).toContainText(/\((?:±\d+ m|accuracy unknown)\)/)
+
+	// The map opens in place rather than navigating away, and it is centred on THIS punch.
+	await map.click()
+	const dialog = page.getByRole('dialog', { name: 'Punch location' })
+	await expect(dialog).toBeVisible()
+	await expect(dialog.getByTestId('punch-map')).toHaveAttribute('data-lat', /^8\.4772/)
+	// Leaflet mounted rather than leaving an empty box — its own container class is the proof.
+	await expect(dialog.locator('.leaflet-container')).toBeVisible()
+	// The qualifier rides along inside the modal too.
+	await expect(dialog).toContainText(/(?:±\d+ m|Accuracy unknown)/)
+
+	// Escape closes it, and the page underneath is still the punch page.
+	await page.keyboard.press('Escape')
+	await expect(dialog).toBeHidden()
+	await expect(page).toHaveURL(/\/punch$/)
 
 	await context.close()
 })
