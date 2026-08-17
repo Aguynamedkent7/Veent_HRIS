@@ -178,7 +178,14 @@ async function deleteEmployee(employeeId: string) {
 			select: { storageKey: true }
 		})
 	])
-	const storageKeys = [...employeeDocs, ...requestDocs].map((d) => d.storageKey)
+	// #299/AC-9: the requestDocument query above stays UNFILTERED — every byte of a purged employee
+	// must go, tombstoned or not. The null filter is NOT cosmetic here: removeFiles() is typed
+	// `string[]` and the private deleteStoredFile above calls path.resolve(UPLOAD_DIR, storageKey),
+	// which throws `TypeError: The "path" argument must be of type string` on a null — mid-purge, on
+	// the droplet. `pnpm check` does not read scripts/, so nothing in the pipeline would flag it.
+	const storageKeys = [...employeeDocs, ...requestDocs]
+		.map((d) => d.storageKey)
+		.filter((k): k is string => k !== null)
 
 	const [
 		timesheetEntries,

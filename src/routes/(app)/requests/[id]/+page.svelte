@@ -305,6 +305,45 @@
 				</p>
 			</form>
 		{/if}
+
+		<!-- #299/AC-5: the audit view. Removed documents are never deleted — the row, its filename
+		     and above all its signer are kept forever, because that signer is what the #283/F3 bar
+		     reads. Read-only by construction: no Remove and no Verify control here, and the download
+		     link exists only while the bytes survive the FIFO cap (D-3/D-4). -->
+		{#if req.documentHistory.some((d) => d.deletedAt)}
+			<div class="space-y-2">
+				<h3 class="text-sm font-semibold text-muted-foreground">Removed documents</h3>
+				<ul class="space-y-2">
+					{#each req.documentHistory.filter((d): d is typeof d & { deletedAt: Date } => d.deletedAt !== null) as doc (doc.id)}
+						<li
+							class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-3 opacity-80"
+						>
+							<div class="min-w-0 flex-1">
+								<p class="break-words text-sm font-medium text-muted-foreground">{doc.label}</p>
+								<p class="text-xs text-muted-foreground">
+									uploaded {formatShortDate(doc.uploadedAt)} · removed {formatShortDate(
+										doc.deletedAt
+									)}
+								</p>
+								{#if doc.verifiedBy}
+									<p class="text-xs text-muted-foreground">
+										Signed off by {doc.verifiedBy.email}
+									</p>
+								{/if}
+							</div>
+							<!-- No download CONTROL here, by AC-5: this panel is an audit record, not a file
+							     list. That is a UI choice and deliberately NOT a route rule — the v1 download
+							     URL still serves a tombstone while its bytes survive (D-3), because the bytes
+							     and the row are separate facts. Once the FIFO cap evicts them, say so plainly
+							     rather than leaving a blank. -->
+							<div class="shrink-0 text-xs text-muted-foreground">
+								{#if !doc.storageKey}File removed{/if}
+							</div>
+						</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
 	</div>
 
 	<div class="space-y-3">

@@ -860,6 +860,16 @@ model ApprovalStep {
 // #283/D11: the two columns do NOT mean the same thing. `verifiedAt` means currently verified;
 // `verifiedById` is the durable record of who last signed off and SURVIVES clearing, because the
 // F3 separation-of-duties bar keys on it. Nulling both on an un-verify reopens a one-click bypass.
+//
+// #299: rows here are NEVER deleted. Removing a document sets `deletedAt` (a tombstone) and keeps
+// every fact about it — including `verifiedById` — forever, because a hard delete erased the column
+// the F3 bar reads and let the un-verify -> delete -> re-upload sequence launder a signature away.
+// Only the BYTES may go: `storageKey` is nulled once evicted. Readers are split DELIBERATELY —
+// seven must INCLUDE tombstones (decide()'s F3 read, the pending-queue SoD, actBlockedReason, the
+// Removed-documents history panel, the request-delete sweep, both storage scripts) and four must
+// EXCLUDE them (download list, upload cap, approvals chip, detail-page live list). A uniform
+// `where: { deletedAt: null }` reopens the bypass with every test green. See
+// process/general-plans/.../soft-delete-request-documents-299_PLAN_12-08-26.md for the reader table.
 model RequestDocument {
   id           String    @id @default(cuid())
   requestId    String
@@ -867,15 +877,22 @@ model RequestDocument {
   fileName     String // original upload filename
   mimeType     String
   size         Int // bytes
-  storageKey   String // path relative to UPLOAD_DIR
+  storageKey   String? // path relative to UPLOAD_DIR; null once the bytes are evicted (#299/D-4)
   uploadedAt   DateTime  @default(now())
   verifiedById String?
   verifiedAt   DateTime?
+  // #299: BOTH the tombstone flag and the FIFO ordering key. The row is never deleted; eviction
+  // walks tombstones oldest-`deletedAt`-first, which is not the same order as `uploadedAt` once
+  // documents are swapped out of upload order.
+  deletedAt    DateTime?
 
   request    Request @relation(fields: [requestId], references: [id], onDelete: Cascade)
   verifiedBy User?   @relation("RequestDocumentVerifier", fields: [verifiedById], references: [id])
 
   @@index([requestId])
+  // #299: tombstones are kept forever and are unbounded, so every eviction pass filters and sorts
+  // on deletedAt. Also the greppable declaration that deletedAt IS a query dimension here.
+  @@index([requestId, deletedAt])
   @@map("request_documents")
 }
 

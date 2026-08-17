@@ -74,6 +74,38 @@ const projectDocs = <T extends Record<string, unknown>>(
 	args: { include?: Record<string, { select?: Record<string, true> } | undefined> }
 ) => project(rows, args?.include, 'documents')
 
+/**
+ * #299 — `projectDocs` honours the include's `select` KEYS and is blind to a `where`.
+ *
+ * That blindness matters here specifically: `listPendingRequestsForApprover`'s documents array
+ * feeds `verifiedDocActorIds`, the queue's mirror of the #283/F3 bar, and it must keep seeing a
+ * TOMBSTONED signer. Add `where: { deletedAt: null }` to that include and reader 2 of 9 silently
+ * stops barring the actor who signed evidence they then removed — on the reader that is watched
+ * least, with every other test still green.
+ *
+ * A deliberate local copy of the helper in approval-self-guard.test.ts, not a shared import: two
+ * callers is duplication, and this repo promotes to tests/unit/helpers/ at a third, not a second.
+ */
+const projectDocsHonouringWhere = <T extends Record<string, unknown>>(
+	rows: T[],
+	args: {
+		include?: {
+			documents?: { select?: Record<string, true>; where?: Record<string, unknown> }
+		}
+	}
+) => {
+	const where = args?.include?.documents?.where
+	const filtered = !where
+		? rows
+		: rows.map((r) => ({
+				...r,
+				documents: (r.documents as Record<string, unknown>[]).filter((d) =>
+					Object.entries(where).every(([k, v]) => d[k] === v)
+				)
+			}))
+	return projectDocs(filtered as T[], args)
+}
+
 const VIEWER = 'user-viewer'
 const TWO_HAT: Role[] = ['VERIFIER', 'APPROVER']
 
@@ -135,6 +167,48 @@ describe('listPendingRequestsForApprover (#283/AC-15)', () => {
 		dbMock.request.findMany.mockImplementation(async (args: never) => projectDocs([cleared], args))
 
 		expect(await listPendingRequestsForApprover('org1', TWO_HAT, 'emp-viewer', VIEWER)).toEqual([])
+	})
+
+	// #299 — the queue half of AC-2. #283 made a CLEARED sign-off keep barring the actor; this makes
+	// a REMOVED document keep barring them, which is the same bypass one step further along:
+	// un-verify, delete, re-upload. Runs through the `where`-honouring helper above, so adding a
+	// filter to the documents include at approvals.ts flips this case from exclude to include.
+	it('keeps excluding it after the document was removed (#299)', async () => {
+		const tombstoned = {
+			...requestAt('signed', 'user-else'),
+			documents: [{ id: 'd1', verifiedAt: null, verifiedById: VIEWER, deletedAt: new Date() }]
+		}
+		const seeded = [tombstoned, requestAt('clean', 'user-else')]
+		dbMock.request.findMany.mockImplementation(async (args: never) =>
+			projectDocsHonouringWhere(seeded, args)
+		)
+
+		const rows = await listPendingRequestsForApprover('org1', TWO_HAT, 'emp-viewer', VIEWER)
+		expect(rows.map((r) => r.id)).toEqual(['clean'])
+	})
+
+	// #299/AC-8 — the P-5 split, both halves in ONE case on purpose. `documents` is the bar's input
+	// and keeps the tombstone; `liveDocuments` is what the approvals page's document chip and
+	// unverified badge count, and must not, because an approver cannot open a removed file. Asserted
+	// together so a future edit cannot satisfy one half and quietly break the other.
+	it('exposes liveDocuments without tombstones while documents keeps them (#299/AC-8)', async () => {
+		const seeded = [
+			{
+				...requestAt('mixed', 'user-else'),
+				documents: [
+					{ id: 'd-removed', verifiedAt: null, verifiedById: null, deletedAt: new Date() },
+					{ id: 'd-live', verifiedAt: null, verifiedById: null, deletedAt: null }
+				]
+			}
+		]
+		dbMock.request.findMany.mockImplementation(async (args: never) =>
+			projectDocsHonouringWhere(seeded, args)
+		)
+
+		const rows = await listPendingRequestsForApprover('org1', TWO_HAT, 'emp-viewer', VIEWER)
+
+		expect(rows[0].liveDocuments.map((d) => d.id)).toEqual(['d-live'])
+		expect(rows[0].documents.map((d) => d.id)).toEqual(['d-removed', 'd-live'])
 	})
 
 	it('still returns the same request for a different approver', async () => {

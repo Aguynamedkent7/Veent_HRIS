@@ -19,6 +19,12 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 		if (me?.id !== doc.request.employeeId) error(403, 'Insufficient permissions')
 	}
 
+	// #299/D-3: a tombstoned document is still downloadable WHILE its bytes survive — the reviewer
+	// can see it in the detail page's history panel, so serving it is the honest answer. The 404 is
+	// keyed on the bytes being gone (storageKey nulled by eviction), never on `deletedAt`. Enforced
+	// here at the route, not only in Svelte, because this URL is reachable directly.
+	if (!doc.storageKey) error(404, 'File no longer available')
+
 	const bytes = await readStoredFile(doc.storageKey)
 	return new Response(new Uint8Array(bytes), {
 		headers: {
