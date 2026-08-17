@@ -311,16 +311,31 @@ export function deriveAttendanceDay(input: DeriveInput): AttendanceDayResult {
 	// that in full would make it look like a long meal and suppress the deduction below.
 	const punchedBreakMs = grossWorkedMs - punchedNetMs
 
+	// Time between two work segments — clocked OUT and not yet back IN. On a split shift this is
+	// the break, and it never entered `punchedNetMs` because it falls outside every work segment.
+	// `punchedBreakMs` cannot see it: that only measures BREAK_* punches landing INSIDE a segment.
+	//
+	// Without this the scheduled meal break was deducted on top of a break already taken, and a
+	// JoJo Potato split shift paid an hour short (7.00 h for 08:00–11:00 + 13:00–17:00, where the
+	// employee was off the clock for two hours already). It fired on any two-segment day and
+	// predates #162; #162 only made split shifts common enough to notice.
+	const offClockBetweenSegsMs = workSegs.reduce(
+		(s, seg, i) => (i === 0 ? 0 : s + (seg[0] - workSegs[i - 1][1])),
+		0
+	)
+	const breakAlreadyTakenMs = punchedBreakMs + offClockBetweenSegsMs
+
 	// The scheduled meal break is unpaid whether or not it gets punched, and in practice
 	// employees only punch IN and OUT. Deducting it here is what keeps an 8–5 day at 8h
-	// instead of 9h with a phantom hour of overtime. `max` rather than a sum: a punched
-	// break *is* the meal break, so it must never be deducted twice.
+	// instead of 9h with a phantom hour of overtime. `max` rather than a sum: a break the
+	// employee has already taken — punched, or spent clocked out between segments — *is* the
+	// meal break, so only the shortfall comes off. A longer real break is never topped up.
 	const scheduledBreakMs =
 		dayType === 'REGULAR' && schedule && punchedNetMs > MEAL_BREAK_OWED_AFTER_MS
 			? schedule.breakMinutes * 60_000
 			: 0
-	const unpaidBreakMs = Math.max(punchedBreakMs, scheduledBreakMs)
-	const netWorkedMs = Math.max(0, punchedNetMs - (unpaidBreakMs - punchedBreakMs))
+	const unpaidBreakMs = Math.max(breakAlreadyTakenMs, scheduledBreakMs)
+	const netWorkedMs = Math.max(0, punchedNetMs - (unpaidBreakMs - breakAlreadyTakenMs))
 	const workedHours = round2(netWorkedMs / 3_600_000)
 
 	// Night-differential window (may wrap midnight).
