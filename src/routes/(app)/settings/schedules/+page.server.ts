@@ -111,10 +111,15 @@ export const actions: Actions = {
 			// between a bad value and the database; this regex only adds the notations that WOULD
 			// coerce to a valid in-range integer — '1e2', '0x1E', '+45' — which no operator types
 			// on purpose and which we would rather reject than silently accept as 100/30/45.
-			if (!/^\d+$/.test(raw)) return fail(400, { error: 'Enter a whole number of minutes.' })
+			// `field` names the control the message belongs to, so the page can attach it to the
+			// input (aria-invalid + aria-describedby) instead of dropping it in the page-top banner
+			// where it is indistinguishable from a tardiness-toggle error. Convention from #142.
+			if (!/^\d+$/.test(raw))
+				return fail(400, { field: 'minutes', error: 'Enter a whole number of minutes.' })
 			minutes = Number(raw)
 			if (minutes < AM_PM_MIN_GAP_FLOOR || minutes > AM_PM_MIN_GAP_CEILING)
 				return fail(400, {
+					field: 'minutes',
 					error: `The AM/PM gap must be between ${AM_PM_MIN_GAP_FLOOR} and ${AM_PM_MIN_GAP_CEILING} minutes.`
 				})
 		}
@@ -128,10 +133,19 @@ export const actions: Actions = {
 			})
 		} catch (e: unknown) {
 			const err = e as { status?: number; body?: { message?: string } }
-			if (err?.status) return fail(err.status, { error: err.body?.message ?? 'Update failed' })
+			if (err?.status)
+				return fail(err.status, {
+					field: 'minutes',
+					error: err.body?.message ?? 'Update failed'
+				})
 			throw e
 		}
-		return { success: true }
+		// `saved` is the success confirmation the card renders next to the control. Without it a
+		// saved value looks exactly like an unsubmitted one — the number just sits in the box.
+		return {
+			success: true,
+			saved: minutes === null ? 'Cleared — using the default.' : `Saved — ${minutes} minutes.`
+		}
 	},
 
 	toggleTardiness: async ({ request, locals, getClientAddress }) => {

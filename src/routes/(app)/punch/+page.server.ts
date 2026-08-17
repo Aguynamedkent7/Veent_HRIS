@@ -1,4 +1,4 @@
-import { error, fail } from '@sveltejs/kit'
+import { fail } from '@sveltejs/kit'
 import { z } from 'zod'
 import { db } from '$lib/server/db'
 import { requireFoodServiceOrg } from '$lib/server/rbac'
@@ -49,7 +49,14 @@ export const load: PageServerLoad = async ({ locals }) => {
 	requireFoodServiceOrg(user.organizationId)
 
 	const me = await findSelfEmployee(user)
-	if (!me) error(404, 'No employee record is linked to your account')
+	// #177 M-7 — an account with no employee row in the ACTIVE org (an HR admin, or the cross-org
+	// CEO whose only profile lives in the home tenant) reaches this page from a nav link that is
+	// shown to the whole food-service tenant. A hard 404 here throws them out of the app shell
+	// onto the bare SvelteKit error page with no nav and no way back. This is a UI state, not a
+	// refusal — the page renders an explanation instead. The ACTION's `fail(404, …)` stays exactly
+	// as it is: that one is the security boundary.
+	if (!me)
+		return { linked: false, employeeName: '', punches: [], historyDays: HISTORY_DAYS, since: null }
 
 	const from = new Date(Date.now() - HISTORY_DAYS * 86_400_000)
 	const rawPunches = await listPunches(me.id, { from })
@@ -70,10 +77,18 @@ export const load: PageServerLoad = async ({ locals }) => {
 		}))
 		.reverse()
 
+	// #177 M-4 — "am I clocked in?" is the first question a worker arriving at a shift has, and the
+	// page could only answer it by making them read a timestamp list below the fold. The punches
+	// are already loaded and `.reverse()` above puts the newest first, so the answer is the type of
+	// the newest one. Derived here rather than in the component: the timestamp is already formatted
+	// PHT server-side, and re-deriving it client-side would re-open the timezone question.
+	const latest = punches[0]
 	return {
+		linked: true,
 		employeeName: `${me.firstName} ${me.lastName}`,
 		punches,
-		historyDays: HISTORY_DAYS
+		historyDays: HISTORY_DAYS,
+		since: latest?.punchType === 'IN' ? latest.at : null
 	}
 }
 

@@ -23,6 +23,24 @@ const TENANT = 'JoJo Potato'
 // Cagayan de Oro — where the seeded JoJo stores are.
 const FIX = { latitude: 8.4772, longitude: 124.6459 }
 
+/**
+ * Hold every geolocation answer back by CAPTURE_MS, so the capture window — normally 2–8 s on a
+ * real phone with `enableHighAccuracy`, and near-instant under Playwright's synthetic fix — is a
+ * real, deterministic span the test can act inside. Without this the race below cannot be staged
+ * at all: the reading arrives before a second tap could ever land.
+ */
+const CAPTURE_MS = 1500
+
+async function slowGeolocation(context: BrowserContext) {
+	await context.addInitScript((ms) => {
+		const real = navigator.geolocation.getCurrentPosition.bind(navigator.geolocation)
+		Object.defineProperty(navigator.geolocation, 'getCurrentPosition', {
+			configurable: true,
+			value: (...args: Parameters<typeof real>) => setTimeout(() => real(...args), ms)
+		})
+	}, CAPTURE_MS)
+}
+
 async function openPunchPage(context: BrowserContext): Promise<Page> {
 	const page = await context.newPage()
 	await login(page, CREW, TENANT)
@@ -35,28 +53,60 @@ async function openPunchPage(context: BrowserContext): Promise<Page> {
 	return page
 }
 
-test('a granted location is captured and shown back with an accuracy qualifier', async ({
+test('a granted location is captured, and a second tap inside the capture window cannot change the punch type', async ({
 	browser
 }) => {
 	const context = await browser.newContext({
 		permissions: ['geolocation'],
 		geolocation: FIX
 	})
+	await slowGeolocation(context)
 	const page = await openPunchPage(context)
 
 	// A real <button>, reached by its accessible name — not a div with a click handler.
 	await page.getByRole('button', { name: 'Punch In' }).click()
 
-	// The live region reports the granted state, with the accuracy figure the SPEC requires.
+	// THE REGRESSION. The lock has to be up from the TAP, not from the submit — the submit is
+	// still CAPTURE_MS away. Before the fix `punch.busy` was the only guard, so it was still
+	// false here: both buttons stayed live, the status line still claimed nothing had been
+	// requested, and a tap of Punch Out re-entered the handler and reassigned the hidden
+	// `punchType` field. The first request then submitted with no submitter, the hidden field
+	// won, and an OUT was recorded for someone who tapped IN.
+	// `data-ready` says the handler is live; `data-busy` says a punch is in flight — which now
+	// starts at the tap, so this is true long before the form is submitted.
+	await expect(page.locator('form[data-busy="true"]')).toBeVisible()
 	const status = page.getByRole('status')
-	await expect(status).toContainText(/Location captured/)
-	await expect(status).toContainText(/Punched in with your location\./)
+	await expect(status).toContainText(/Finding your location/)
+	const punchOut = page.getByRole('button', { name: 'Punch Out' })
+	await expect(punchOut).toBeDisabled()
+	await expect(page.getByRole('button', { name: 'Punching in…' })).toBeVisible()
 
-	// The employee sees their OWN reading back — coordinates AND an accuracy qualifier, never
-	// bare coordinates presented as if they were exact.
-	const row = page.getByRole('listitem').filter({ hasText: 'Clock in' }).first()
-	await expect(row).toContainText('8.47720, 124.64590')
-	await expect(row).toContainText(/\((?:±\d+ m|accuracy unknown)\)/)
+	// `dispatchEvent` rather than `click`: it fires the handler even on a disabled button, so this
+	// asserts the JS re-entry guard itself and not merely the `disabled` attribute in front of it.
+	await punchOut.dispatchEvent('click')
+
+	// The live region reports the granted state, with the accuracy figure the SPEC requires — and
+	// says "reading", never "captured", because nothing is stored yet at that point.
+	await expect(status).toContainText(/Got a location reading/)
+
+	// The outcome lives in its own assertive region, so a screen reader marks it as the ANSWER.
+	const outcome = page.getByRole('alert')
+	await expect(outcome).toContainText(/Punched in with your location\./)
+	await expect(outcome).not.toContainText(/Punched out/)
+
+	// The page now answers "am I clocked in?" without scrolling.
+	await expect(page.getByText(/Clocked in since /)).toBeVisible()
+
+	// The newest punch — the list is newest-first — is the IN that was tapped. A stolen OUT would
+	// sit here instead.
+	const row = page.getByRole('listitem').first()
+	await expect(row).toContainText('Clock in')
+
+	// The employee sees their OWN reading back: a map they can check, with the accuracy qualifier
+	// in the link's own label so it can never be read apart from it.
+	const map = row.getByRole('link', { name: /View on map/ })
+	await expect(map).toHaveAttribute('href', /mlat=8\.4772/)
+	await expect(map).toContainText(/\((?:±\d+ m|accuracy unknown)\)/)
 
 	await context.close()
 })
@@ -79,11 +129,10 @@ test('a denied permission still records the punch, driven by keyboard alone', as
 	await expect(punchOut).toBeFocused()
 	await page.keyboard.press('Enter')
 
-	const status = page.getByRole('status')
 	// The punch is the assertion that matters. The location copy varies by browser (denied vs
 	// no fix), so assert that it is one of the punch-anyway states rather than pinning one.
-	await expect(status).toContainText(/Punched out without a location\./)
-	await expect(status).toContainText(/punching without it\./)
+	await expect(page.getByRole('alert')).toContainText(/Punched out without a location\./)
+	await expect(page.getByRole('status')).toContainText(/punching without it\./)
 
 	const row = page.getByRole('listitem').filter({ hasText: 'Clock out' }).first()
 	await expect(row).toContainText('No location recorded')

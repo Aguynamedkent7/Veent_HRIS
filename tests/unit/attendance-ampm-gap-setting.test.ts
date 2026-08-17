@@ -115,7 +115,7 @@ describe('#162 Amendment 1 — the setAmPmMinGap action (A15–A19)', () => {
 			where: { id: JOJO },
 			data: { amPmMinGapMinutes: null }
 		})
-		expect(res).toEqual({ success: true })
+		expect(res).toEqual({ success: true, saved: 'Cleared — using the default.' })
 	})
 
 	it('A15b a whitespace-only field clears too — the value is trimmed before it is parsed', async () => {
@@ -135,10 +135,13 @@ describe('#162 Amendment 1 — the setAmPmMinGap action (A15–A19)', () => {
 		for (const raw of ['12.5', 'abc', '1e3', '1e2', '0x1E', '+45', '-30', '30.0']) {
 			const res = (await actions.setAmPmMinGap!(event(JOJO, { minutes: raw }))) as {
 				status: number
-				data: { error: string }
+				data: { field: string; error: string }
 			}
 			expect(res.status, raw).toBe(400)
 			expect(res.data.error, raw).toBe('Enter a whole number of minutes.')
+			// The message is tagged with the control it belongs to, so the page can attach it to
+			// the input instead of dropping it in the shared page-top banner (#142 convention).
+			expect(res.data.field, raw).toBe('minutes')
 		}
 		expect(dbMock.organization.update).not.toHaveBeenCalled()
 	})
@@ -147,10 +150,11 @@ describe('#162 Amendment 1 — the setAmPmMinGap action (A15–A19)', () => {
 		for (const raw of ['4', '0', '241', '100000']) {
 			const res = (await actions.setAmPmMinGap!(event(JOJO, { minutes: raw }))) as {
 				status: number
-				data: { error: string }
+				data: { field: string; error: string }
 			}
 			expect(res.status, raw).toBe(400)
 			expect(res.data.error, raw).toBe('The AM/PM gap must be between 5 and 240 minutes.')
+			expect(res.data.field, raw).toBe('minutes')
 		}
 		expect(dbMock.organization.update).not.toHaveBeenCalled()
 	})
@@ -161,7 +165,7 @@ describe('#162 Amendment 1 — the setAmPmMinGap action (A15–A19)', () => {
 			where: { id: JOJO },
 			data: { amPmMinGapMinutes: 45 }
 		})
-		expect(res).toEqual({ success: true })
+		expect(res).toEqual({ success: true, saved: 'Saved — 45 minutes.' })
 	})
 
 	it('A18 a non-food-service org gets a 404 and never reaches the setter (twin door)', async () => {

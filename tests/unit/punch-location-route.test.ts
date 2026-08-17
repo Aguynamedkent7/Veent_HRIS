@@ -204,6 +204,55 @@ describe('C12 — a food-service user with no employee record', () => {
 		expect(res).toMatchObject({ status: 404 })
 		expect(recordPunch).not.toHaveBeenCalled()
 	})
+
+	it('load renders an empty state rather than throwing a bare 404 (M-7)', async () => {
+		// The nav link is shown to the whole food-service tenant, so an HR admin — or the cross-org
+		// CEO, whose profile lives only in the home tenant — lands here. A thrown 404 drops them on
+		// the bare error page, outside the app shell, with no nav and no way back. The ACTION's
+		// `fail(404, …)` above is the security boundary and stays; this one was only ever a UI state.
+		const res = await load!(event(JOJO, {}, 'user-with-no-employee'))
+		expect(res).toMatchObject({ linked: false, punches: [], since: null })
+		expect(listPunches).not.toHaveBeenCalled()
+	})
+})
+
+describe('M-4 — the page answers "am I clocked in?" without reading the list', () => {
+	const punchRow = (punchType: 'IN' | 'OUT', iso: string) => ({
+		id: `tl-${punchType}-${iso}`,
+		punchType,
+		source: 'WEB',
+		timestamp: new Date(iso),
+		latitude: null,
+		longitude: null,
+		locationAccuracyM: null
+	})
+
+	it('reports the time when the NEWEST punch is an IN', async () => {
+		// `listPunches` returns oldest-first; `load` reverses. Two rows, so a bug that read the
+		// oldest instead of the newest gives the opposite answer rather than the same one.
+		listPunches.mockResolvedValue([
+			punchRow('OUT', '2026-08-16T09:00:00Z'),
+			punchRow('IN', '2026-08-17T00:03:00Z')
+		])
+		const res = (await load!(event(JOJO))) as { since: string | null; punches: { at: string }[] }
+		expect(res.since).toBe(res.punches[0].at)
+		expect(res.since).toContain('8:03 AM PHT')
+	})
+
+	it('reports null when the newest punch is an OUT', async () => {
+		listPunches.mockResolvedValue([
+			punchRow('IN', '2026-08-17T00:03:00Z'),
+			punchRow('OUT', '2026-08-17T09:00:00Z')
+		])
+		const res = (await load!(event(JOJO))) as { since: string | null }
+		expect(res.since).toBeNull()
+	})
+
+	it('reports null when there are no punches at all', async () => {
+		listPunches.mockResolvedValue([])
+		const res = (await load!(event(JOJO))) as { since: string | null }
+		expect(res.since).toBeNull()
+	})
 })
 
 describe('the punch type is the only required field', () => {

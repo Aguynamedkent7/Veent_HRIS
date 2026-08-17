@@ -14,7 +14,11 @@ import {
 	resetDayToDerived,
 	createTimesheetFromAttendance
 } from '$lib/server/services/attendance'
-import { importBacklogCsv, MAX_IMPORT_BYTES } from '$lib/server/services/attendance/import'
+import {
+	importBacklogCsv,
+	MAX_IMPORT_BYTES,
+	MAX_IMPORT_ROWS
+} from '$lib/server/services/attendance/import'
 import { paginate } from '$lib/server/pagination'
 import { isFoodServiceOrg } from '$lib/orgs'
 import { manilaDayKey } from '$lib/utils/dates'
@@ -117,6 +121,11 @@ export const load: PageServerLoad = async ({ locals, url, getClientAddress }) =>
 		team,
 		pagination,
 		maxRangeDays: MAX_RANGE_DAYS,
+		// #200: the import card states its own limits, so an operator learns them before a 413
+		// rather than from one. They come from the service that enforces them — a literal in the
+		// markup would drift the moment either cap moved.
+		maxImportBytes: MAX_IMPORT_BYTES,
+		maxImportRows: MAX_IMPORT_ROWS,
 		// #162: the AM/PM columns render for food-service tenants only.
 		showAmPm: isFoodServiceOrg(user.organizationId)
 	}
