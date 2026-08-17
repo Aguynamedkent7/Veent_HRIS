@@ -35,8 +35,11 @@
 		light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
 		dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
 	}
-	// Attribution is a licence condition of both CARTO and OSM, not decoration. Keep it.
-	const ATTRIBUTION = '© OpenStreetMap · © CARTO'
+	// Attribution is a licence condition of both CARTO and OSM, not decoration. OSM's map data is
+	// ODbL, and its guidelines ask for "© OpenStreetMap contributors" LINKED to the copyright
+	// page — plain text does not satisfy it. Leaflet renders this string as HTML.
+	const ATTRIBUTION =
+		'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener noreferrer">CARTO</a>'
 	// Fallback only, for a reading with no accuracy figure: ≈ a few streets around the pin.
 	const ZOOM = 16
 	// With an accuracy figure the view FRAMES the margin circle instead. A fixed zoom made a
@@ -48,13 +51,22 @@
 	let cardEl = $state<HTMLElement>()
 	let tilesFailed = $state(false)
 
+	// What had focus when the modal opened — the "View on map" trigger for a keyboard user. Closing
+	// must hand focus back to it; without this the caret lands on <body> and the reader restarts
+	// from the top of the page.
+	let lastFocused: HTMLElement | null = null
+
 	function close() {
 		punch = null
+		lastFocused?.focus()
+		lastFocused = null
 	}
 
 	// Focus the card on open so Escape is handled here rather than bubbling away.
 	$effect(() => {
-		if (punch) cardEl?.focus()
+		if (!punch) return
+		lastFocused = document.activeElement as HTMLElement | null
+		cardEl?.focus()
 	})
 
 	/**
@@ -65,6 +77,8 @@
 		if (!punch || !mapEl) return
 		const { latitude, longitude, locationAccuracyM } = punch
 		const container = mapEl
+		// Per-open state: a tile failure on an earlier punch must not caption this one as broken.
+		tilesFailed = false
 		let map: import('leaflet').Map | undefined
 		let cancelled = false
 
@@ -116,10 +130,40 @@
 		}
 	})
 
+	// `aria-modal` tells a screen reader the rest of the page is inert; it does NOT stop Tab from
+	// walking out of the dialog into the page behind it. This does.
+	const FOCUSABLE =
+		'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
 	function onKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') {
 			e.stopPropagation()
 			close()
+			return
+		}
+		if (e.key !== 'Tab' || !cardEl) return
+
+		// Rebuilt per keypress rather than cached: Leaflet adds its attribution links after the
+		// dialog mounts, so a list taken on open would miss them.
+		const items = [...cardEl.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+			(el) => el.offsetParent !== null
+		)
+		if (items.length === 0) {
+			e.preventDefault()
+			cardEl.focus()
+			return
+		}
+
+		const first = items[0]
+		const last = items[items.length - 1]
+		const active = document.activeElement
+		// The card itself holds focus on open, so Shift+Tab from there wraps to the end.
+		if (e.shiftKey && (active === first || active === cardEl)) {
+			e.preventDefault()
+			last.focus()
+		} else if (!e.shiftKey && active === last) {
+			e.preventDefault()
+			first.focus()
 		}
 	}
 </script>
