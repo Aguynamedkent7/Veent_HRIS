@@ -118,7 +118,7 @@ the backlog importer goes, which org gate to reuse, how location data is retaine
 
 **AM/PM punch flow (#162), food-service tenants only:**
 
-```
+```text
 Employee (JoJo Potato / Sweetleaf)
         |
         v
@@ -148,7 +148,7 @@ Veent (non-food-service) employee: unaffected — still IN -> OUT, one pair, one
 
 **Web punch + location capture flow (#177):**
 
-```
+```text
 Employee opens the web punch page (JoJo Potato / Sweetleaf, session-authenticated)
         |
         v
@@ -189,7 +189,7 @@ Employee opens the web punch page (JoJo Potato / Sweetleaf, session-authenticate
 
 **Offline backlog import flow (#200, spreadsheet only):**
 
-```
+```text
 Employee works offline, keeps their own record (paper / app / notes)
         |
         v
@@ -289,9 +289,10 @@ existing suite, to be authored during PLAN/EXECUTE since this is new behavior) a
    `proven by:` new scenario `punch-location-low-accuracy` (unit).
    `strategy:` Fully-Automated
 
-10. The web punch page requires HTTPS. Since the browser's Geolocation API itself will not
-    operate on an insecure origin, the punch flow treats "no HTTPS" identically to "no
-    location available" — it degrades gracefully rather than erroring.
+10. HTTPS is required for the **browser Geolocation API**, not for punching. The API refuses to
+    operate on an insecure origin, so on plain HTTP the page reaches the `unsupported` state and
+    the punch is recorded **without** location. The punch route itself is unaffected by the
+    scheme and succeeds either way — no HTTPS means no coordinates, never no punch.
     `proven by:` new scenario `punch-location-https-required` (unit, asserting the punch
     write path's graceful-degradation behavior when no geolocation reading is present).
     `strategy:` Fully-Automated

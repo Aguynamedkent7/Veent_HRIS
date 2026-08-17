@@ -128,6 +128,14 @@ export const actions: Actions = {
 
 		// A missing, malformed or out-of-range reading is discarded silently — never surfaced as
 		// a 400. `raw.employeeId` is deliberately not read here and never will be (layer 3).
+		//
+		// These coordinates are SELF-REPORTED AND UNVERIFIED. They arrive as an ordinary form
+		// field: anyone who can reach this action can post any pair, and `locationSchema` only
+		// range-checks it — that is input validation, not proof that a person was there. Store
+		// them, show them back to the employee, but do not build attendance ENFORCEMENT on top
+		// of them — geofencing, pay deductions, discipline — as though they placed someone
+		// somewhere. That needs a trusted source this route does not have. The page's
+		// disclosure is worded to match; keep the two honest together.
 		const loc = locationSchema.safeParse(raw)
 		const location = loc.success
 			? {

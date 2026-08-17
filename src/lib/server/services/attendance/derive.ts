@@ -206,13 +206,17 @@ function emptyResult(status: AttendanceStatus, timeIn: Date | null = null): Atte
  * the smallest gap that counts as a boundary; the caller resolves it from the org's setting or
  * the built-in default.
  *
+ * The gap before a dangling IN competes on equal terms with the closed gaps — it is one more
+ * candidate, not a fallback. Treating it as an else-branch meant a day with a narrow closed gap
+ * and a wide open one split on the narrow boundary and dropped the still-running block entirely.
+ *
  * Ties go to the EARLIEST qualifying gap, so the result is deterministic for a day whose two
  * gaps are exactly equal. Returns all-null when there is no qualifying gap; a single-block day
  * is deliberately NOT reported as "AM only", because a lone evening shift is not a morning.
  *
  * Because the boundary always lands on the longest gap, the threshold can only turn a split ON
- * or OFF — it can never move an existing boundary. The one exception is the dangling-IN case
- * below, where lowering the threshold can flip an open PM block into a closed one.
+ * or OFF — it can never move an existing boundary. The one exception is the dangling-IN case,
+ * where lowering the threshold can flip an open PM block into a closed one.
  */
 function splitAmPmBlocks(
 	segs: Array<[number, number]>,
@@ -233,22 +237,29 @@ function splitAmPmBlocks(
 		}
 	}
 
-	if (k !== -1 && widest >= minGapMs)
-		return {
-			amIn: new Date(segs[0][0]),
-			amOut: new Date(segs[k][1]),
-			pmIn: new Date(segs[k + 1][0]),
-			pmOut: new Date(segs[segs.length - 1][1])
-		}
-
 	const lastOut = segs[segs.length - 1][1]
-	if (openWork !== null && openWork - lastOut >= minGapMs)
+	const openGap = openWork === null ? -1 : openWork - lastOut
+
+	// The open gap is the LAST gap of the day by construction, so on an exact tie with a closed
+	// gap the strict `>` leaves `widest` in place and the closed (earlier) boundary wins — the
+	// same earliest-wins rule the scan above uses. It must clear the threshold on its own too:
+	// when no closed gap qualifies either, the widest gap of the day being an open one is not
+	// enough to manufacture a PM block out of a short re-punch.
+	if (openWork !== null && openGap > widest && openGap >= minGapMs)
 		// AM complete, PM still running.
 		return {
 			amIn: new Date(segs[0][0]),
 			amOut: new Date(lastOut),
 			pmIn: new Date(openWork),
 			pmOut: null
+		}
+
+	if (k !== -1 && widest >= minGapMs)
+		return {
+			amIn: new Date(segs[0][0]),
+			amOut: new Date(segs[k][1]),
+			pmIn: new Date(segs[k + 1][0]),
+			pmOut: new Date(segs[segs.length - 1][1])
 		}
 
 	return none

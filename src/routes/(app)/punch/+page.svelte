@@ -218,10 +218,17 @@
 
 			<!-- The disclosure sits BEFORE the buttons because it has to be read before the data is
 			     taken, not after. It also carries the promise that a location failure costs nothing,
-			     which was previously only visible once a failure had already happened. -->
+			     which was previously only visible once a failure had already happened.
+
+			     It says what is RECORDED and never what is PROVEN. The old copy said the location let
+			     the branch "confirm the shift"; nothing here confirms anything — the coordinates are
+			     whatever the phone reports, posted as an ordinary form field (see the note on the
+			     parse in +page.server.ts). Promising evidentiary weight the data does not have is
+			     exactly the claim that would be leaned on when someone is accused of not being where
+			     they said they were. -->
 			<p class="text-sm text-muted-foreground">
-				Punching records where you are, so your branch can confirm the shift. If you say no, or your
-				phone cannot find you, your punch is still saved.
+				Punching sends the location your phone reports, and your branch can see it with the punch.
+				If you say no, or your phone cannot find you, your punch is still saved.
 			</p>
 
 			<!-- Set by the click handler before requestSubmit(). Placed BEFORE the buttons so that in

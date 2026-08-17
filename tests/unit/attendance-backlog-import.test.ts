@@ -11,7 +11,8 @@ import type { Role } from '@prisma/client'
  * `tests/unit/punch-access.test.ts:57-65` ("Discriminate on the where-shape, not call order").
  *
  * `deriveRange` is mocked because it is the neighbouring service, not this one; what matters here
- * is that it is called once, after the transaction, over the file's own date span.
+ * is that it is called after the transaction, over the file's own date span, once PER EMPLOYEE the
+ * import actually wrote for — unscoped it re-derives every active employee in the organization.
  */
 
 const { dbMock, txMock, writeAuditLog, deriveRange } = vi.hoisted(() => {
@@ -50,8 +51,10 @@ const DIRECTORY: Record<string, { id: string; org: string }> = {
 
 /** Days that already exist, keyed `employeeId:YYYY-MM-DD`. */
 let existingDays: Record<string, { isLocked: boolean; manuallyEdited: boolean }> = {}
-/** dedupKeys already in `time_logs`. */
-let storedKeys = new Set<string>()
+/** Rows already in `time_logs`, keyed the way the unique index is: `employeeId|dedupKey`. The
+ *  constraint is `@@unique([dedupKey, employeeId])`, so a fixture keyed on the dedupKey alone
+ *  cannot tell a real duplicate from another tenant's row that happens to share the key. */
+let storedPairs = new Set<string>()
 
 const CTX = {
 	organizationId: JOJO,
@@ -74,7 +77,7 @@ const written = () => txMock.timeLog.createMany.mock.calls.flatMap((c) => c[0].d
 beforeEach(() => {
 	vi.clearAllMocks()
 	existingDays = {}
-	storedKeys = new Set()
+	storedPairs = new Set()
 
 	// Resolve ONLY the numbers asked for, and only inside the org the query scopes to. Delete
 	// `user: { organizationId }` from the service and SL-009 starts resolving for JoJo — which is
@@ -111,12 +114,22 @@ beforeEach(() => {
 			)
 	)
 
-	// Return a key only when the query asked for it (E8: a flat mock would report every punch a
-	// duplicate no matter what the service looked up).
+	// Return a stored row only when the query covers BOTH its employee and its key (E8: a flat mock
+	// would report every punch a duplicate no matter what the service looked up, and a mock keyed
+	// on dedupKey alone would make the employee filter unobservable). A service that stops sending
+	// `employeeId` fails here on `where.employeeId.in` being undefined.
 	dbMock.timeLog.findMany.mockImplementation(
-		({ where }: { where: { dedupKey: { in: string[] } } }) =>
+		({ where }: { where: { employeeId: { in: string[] }; dedupKey: { in: string[] } } }) =>
 			Promise.resolve(
-				where.dedupKey.in.filter((k) => storedKeys.has(k)).map((k) => ({ dedupKey: k }))
+				[...storedPairs]
+					.map((pair) => {
+						const [employeeId, dedupKey] = pair.split('|')
+						return { employeeId, dedupKey }
+					})
+					.filter(
+						(r) =>
+							where.employeeId.in.includes(r.employeeId) && where.dedupKey.in.includes(r.dedupKey)
+					)
 			)
 	)
 
@@ -173,6 +186,39 @@ describe('B6 — the happy path writes every punch through one bulk insert', () 
 		expect(org).toBe(JOJO)
 		expect((range.from as Date).toISOString().slice(0, 10)).toBe('2026-08-10')
 		expect((range.to as Date).toISOString().slice(0, 10)).toBe('2026-08-14')
+		expect(range.employeeId).toBe('e1')
+	})
+
+	it('derives once per employee written for, never for the whole organization', async () => {
+		// Two of the org's employees are in the file; a third (e9, another tenant) is not. An
+		// unscoped call would re-derive every active employee in JoJo — assert the id is present and
+		// that the set of ids is exactly the two the file touched.
+		await importBacklogCsv(
+			JOJO,
+			upload(
+				HEADER +
+					'JJ-001,2026-08-10,08:00,,,\nJJ-002,2026-08-10,09:00,,,\nJJ-001,2026-08-11,08:00,,,\n'
+			),
+			CTX
+		)
+		expect(deriveRange).toHaveBeenCalledTimes(2)
+		expect(deriveRange.mock.calls.map((c) => c[1].employeeId).sort()).toEqual(['e1', 'e2'])
+		// Every call still carries the range — a call with an employee but no span derives nothing.
+		for (const call of deriveRange.mock.calls) {
+			expect((call[1].from as Date).toISOString().slice(0, 10)).toBe('2026-08-10')
+			expect((call[1].to as Date).toISOString().slice(0, 10)).toBe('2026-08-11')
+		}
+	})
+
+	it('does not derive for an employee whose every punch was already stored', async () => {
+		storedPairs = new Set(['e2|backlog:JJ-002:2026-08-10:amIn'])
+		await importBacklogCsv(
+			JOJO,
+			upload(HEADER + 'JJ-001,2026-08-10,08:00,,,\nJJ-002,2026-08-10,09:00,,,\n'),
+			CTX
+		)
+		expect(deriveRange).toHaveBeenCalledTimes(1)
+		expect(deriveRange.mock.calls[0][1].employeeId).toBe('e1')
 	})
 
 	it('refuses a span wider than the 2-month cap before touching the database', async () => {
@@ -281,13 +327,13 @@ describe('B10 — re-uploading the same file is a no-op', () => {
 		HEADER + 'JJ-001,2026-08-10,08:00,11:00,13:00,17:00\nJJ-002,2026-08-10,09:00,12:00,,\n'
 
 	it('skips every punch already stored and writes nothing', async () => {
-		storedKeys = new Set([
-			'backlog:JJ-001:2026-08-10:amIn',
-			'backlog:JJ-001:2026-08-10:amOut',
-			'backlog:JJ-001:2026-08-10:pmIn',
-			'backlog:JJ-001:2026-08-10:pmOut',
-			'backlog:JJ-002:2026-08-10:amIn',
-			'backlog:JJ-002:2026-08-10:amOut'
+		storedPairs = new Set([
+			'e1|backlog:JJ-001:2026-08-10:amIn',
+			'e1|backlog:JJ-001:2026-08-10:amOut',
+			'e1|backlog:JJ-001:2026-08-10:pmIn',
+			'e1|backlog:JJ-001:2026-08-10:pmOut',
+			'e2|backlog:JJ-002:2026-08-10:amIn',
+			'e2|backlog:JJ-002:2026-08-10:amOut'
 		])
 		const res = await importBacklogCsv(JOJO, upload(csv), CTX)
 		expect(res).toMatchObject({ applied: 0, skippedDuplicate: 2, punchesWritten: 0 })
@@ -295,7 +341,10 @@ describe('B10 — re-uploading the same file is a no-op', () => {
 	})
 
 	it('still writes the punches that are genuinely new', async () => {
-		storedKeys = new Set(['backlog:JJ-001:2026-08-10:amIn', 'backlog:JJ-001:2026-08-10:amOut'])
+		storedPairs = new Set([
+			'e1|backlog:JJ-001:2026-08-10:amIn',
+			'e1|backlog:JJ-001:2026-08-10:amOut'
+		])
 		const res = await importBacklogCsv(JOJO, upload(csv), CTX)
 		expect(res.punchesWritten).toBe(4)
 		expect(
@@ -313,6 +362,62 @@ describe('B10 — re-uploading the same file is a no-op', () => {
 	it('asks the DB to absorb a concurrent double-submit as well', async () => {
 		await importBacklogCsv(JOJO, upload(csv), CTX)
 		expect(txMock.timeLog.createMany.mock.calls[0][0].skipDuplicates).toBe(true)
+	})
+
+	it('treats a stored row with the same key but a DIFFERENT employee as no duplicate at all', async () => {
+		// The constraint is the pair. Employee numbers are unique per organization, so the key
+		// `backlog:JJ-001:2026-08-10:amIn` can already exist against someone else. A pre-check keyed
+		// on the key alone silently drops JJ-001's real punch and calls it skippedDuplicate.
+		//
+		// e2 must also be IN the file: the query's two `in` lists are a cross product, so the stranger
+		// row only comes BACK when its employee is one the file touched. With JJ-002 absent the row is
+		// filtered out by scoping alone and the pair matching is never exercised.
+		storedPairs = new Set(['e2|backlog:JJ-001:2026-08-10:amIn'])
+		const res = await importBacklogCsv(
+			JOJO,
+			upload(HEADER + 'JJ-001,2026-08-10,08:00,,,\nJJ-002,2026-08-10,09:00,,,\n'),
+			CTX
+		)
+		expect(res).toMatchObject({ applied: 2, skippedDuplicate: 0, punchesWritten: 2 })
+		expect(
+			written()
+				.map((r) => `${r.employeeId}|${r.dedupKey}`)
+				.sort()
+		).toEqual(['e1|backlog:JJ-001:2026-08-10:amIn', 'e2|backlog:JJ-002:2026-08-10:amIn'])
+	})
+
+	it('scopes the duplicate lookup to the employees the file touched', async () => {
+		await importBacklogCsv(
+			JOJO,
+			upload(HEADER + 'JJ-001,2026-08-10,08:00,,,\nJJ-002,2026-08-10,09:00,,,\n'),
+			CTX
+		)
+		// Without this filter the query scans time_logs by dedupKey across every employee in every
+		// organization.
+		const where = dbMock.timeLog.findMany.mock.calls[0][0].where
+		expect([...where.employeeId.in].sort()).toEqual(['e1', 'e2'])
+		expect([...where.dedupKey.in].sort()).toEqual([
+			'backlog:JJ-001:2026-08-10:amIn',
+			'backlog:JJ-002:2026-08-10:amIn'
+		])
+	})
+
+	it('collapses a punch repeated inside ONE upload instead of racing it into two inserts', async () => {
+		// The same (employeeNumber, date, slot) on two lines. Both would otherwise be sent to
+		// createMany and race the unique index, and the counts the operator reads would not be the
+		// counts that happened.
+		const res = await importBacklogCsv(
+			JOJO,
+			upload(HEADER + 'JJ-001,2026-08-10,08:00,11:00,,\nJJ-001,2026-08-10,08:00,11:00,,\n'),
+			CTX
+		)
+		expect(written().map((r) => r.dedupKey)).toEqual([
+			'backlog:JJ-001:2026-08-10:amIn',
+			'backlog:JJ-001:2026-08-10:amOut'
+		])
+		expect(res).toMatchObject({ applied: 1, skippedDuplicate: 1, punchesWritten: 2 })
+		// The query carries the collapsed set too — the second copy is dropped before the lookup.
+		expect(dbMock.timeLog.findMany.mock.calls[0][0].where.dedupKey.in).toHaveLength(2)
 	})
 })
 
@@ -368,10 +473,13 @@ describe('B11 — exactly one bounded audit summary row per import', () => {
 
 describe('B12 — the queries stay bulk, whatever the row count', () => {
 	it('runs one employee, one attendance and one timeLog query for a 50-row file', async () => {
+		// 2 employees x 25 days = 50 DISTINCT rows (the periods are coprime, so no pair repeats —
+		// with a repeat the collapse step would legitimately shrink the query and the 100 below
+		// would be measuring the collapse rather than bulkness).
 		const rows = Array.from(
 			{ length: 50 },
 			(_, i) =>
-				`JJ-00${(i % 2) + 1},2026-08-${String((i % 28) + 1).padStart(2, '0')},08:00,11:00,,\n`
+				`JJ-00${(i % 2) + 1},2026-08-${String((i % 25) + 1).padStart(2, '0')},08:00,11:00,,\n`
 		).join('')
 		await importBacklogCsv(JOJO, upload(HEADER + rows), CTX)
 		expect(dbMock.employee.findMany).toHaveBeenCalledTimes(1)

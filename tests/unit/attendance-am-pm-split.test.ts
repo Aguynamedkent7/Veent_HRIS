@@ -183,6 +183,77 @@ describe('#162 — AM/PM split (A1–A8)', () => {
 	})
 })
 
+describe('#162 — a dangling IN competes with the closed gaps (A14–A17)', () => {
+	// The open gap used to be an else-branch, reached only when NO closed gap qualified, so a
+	// narrow-but-qualifying closed gap won the day and the still-running block vanished. Gap
+	// sizes below are written as literal clock times on purpose: sizing a fixture off the
+	// threshold constant would move both sides of the comparison and stay green under mutation.
+
+	it('A14 the wider open gap beats a qualifying closed gap', () => {
+		// closed gap 10:00→11:00 = 1 h (qualifies); open gap 13:00→16:00 = 3 h (wider).
+		const r = derive([
+			p('IN', T('08:00')),
+			p('OUT', T('10:00')),
+			p('IN', T('11:00')),
+			p('OUT', T('13:00')),
+			p('IN', T('16:00'))
+		])
+		expect(at(r.amTimeIn)).toBe('08:00')
+		expect(at(r.amTimeOut)).toBe('13:00')
+		expect(at(r.pmTimeIn)).toBe('16:00')
+		expect(r.pmTimeOut).toBeNull()
+		expect(r.status).toBe('INCOMPLETE')
+	})
+
+	it('A15 a wider closed gap still wins over the open gap', () => {
+		// closed gap 10:00→14:00 = 4 h; open gap 15:00→16:00 = 1 h.
+		const r = derive([
+			p('IN', T('08:00')),
+			p('OUT', T('10:00')),
+			p('IN', T('14:00')),
+			p('OUT', T('15:00')),
+			p('IN', T('16:00'))
+		])
+		expect(at(r.amTimeIn)).toBe('08:00')
+		expect(at(r.amTimeOut)).toBe('10:00')
+		expect(at(r.pmTimeIn)).toBe('14:00')
+		expect(at(r.pmTimeOut)).toBe('15:00')
+	})
+
+	it('A16 an exact tie between a closed gap and the open gap goes to the closed one', () => {
+		// closed gap 10:00→12:00 = 2 h; open gap 14:00→16:00 = 2 h. Earliest qualifying gap wins,
+		// and the open gap is always the latest, so the closed boundary keeps the day.
+		const r = derive([
+			p('IN', T('08:00')),
+			p('OUT', T('10:00')),
+			p('IN', T('12:00')),
+			p('OUT', T('14:00')),
+			p('IN', T('16:00'))
+		])
+		expect(at(r.amTimeIn)).toBe('08:00')
+		expect(at(r.amTimeOut)).toBe('10:00')
+		expect(at(r.pmTimeIn)).toBe('12:00')
+		expect(at(r.pmTimeOut)).toBe('14:00')
+	})
+
+	it('A17 an open gap that is widest but below the threshold splits nothing', () => {
+		// closed gap 12:00→12:10 = 10 min; open gap 13:00→13:20 = 20 min. The open gap wins the
+		// comparison and still fails the 30-minute default, so the day stays unsplit. Without the
+		// threshold test on the open gap this would manufacture a PM block at 13:20.
+		const r = derive([
+			p('IN', T('08:00')),
+			p('OUT', T('12:00')),
+			p('IN', T('12:10')),
+			p('OUT', T('13:00')),
+			p('IN', T('13:20'))
+		])
+		expect(r.amTimeIn).toBeNull()
+		expect(r.amTimeOut).toBeNull()
+		expect(r.pmTimeIn).toBeNull()
+		expect(r.pmTimeOut).toBeNull()
+	})
+})
+
 describe('#162 Amendment 1 — per-organization threshold (A9–A13)', () => {
 	it('A9 an undefined threshold falls back to the built-in default', () => {
 		expect(DEFAULT_AM_PM_MIN_GAP_MINUTES).toBe(30)

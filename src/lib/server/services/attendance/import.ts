@@ -211,7 +211,7 @@ export async function importBacklogCsv(
 	if (rows.length === 0) error(400, 'No usable rows in this file')
 
 	// Span guard before any DB work: `deriveRange` at the end walks every day in the range for
-	// every active employee, so an accidental 10-year file must not reach it.
+	// every employee the file touched, so an accidental 10-year file must not reach it.
 	const dayKeys = rows.map((r) => r.date).sort()
 	const minDate = new Date(dayKeys[0])
 	const maxDate = new Date(dayKeys[dayKeys.length - 1])
@@ -281,16 +281,45 @@ export async function importBacklogCsv(
 		}))
 	)
 
-	// One duplicate query. The DB unique index is the second layer for the concurrent case.
+	// The constraint is `@@unique([dedupKey, employeeId])` — a PAIR. Everything below keys on the
+	// pair, never on `dedupKey` alone: employee numbers are unique per organization, so two tenants
+	// sharing a prefix produce the same key for different people, and a key-only check would report
+	// one tenant's legitimate punch as an already-imported duplicate.
+	// `dedupKey` is nullable on the model — every Discord punch carries NULL — so the rows Prisma
+	// hands back are typed that way even though this query filters `in` a list of strings and can
+	// never actually return one. Accept the null rather than asserting it away: a NULL key pairs to
+	// a string no candidate can produce, so it simply never matches.
+	const pairOf = (r: { employeeId: string; dedupKey: string | null }) =>
+		`${r.employeeId}|${r.dedupKey}`
+
+	// Collapse pairs repeated INSIDE one upload first. Two identical (employeeNumber, date, slot)
+	// lines would otherwise become two inserts racing the unique index, and the counts the operator
+	// reads would not be the counts that happened.
+	const inFile = new Set<string>()
+	const unique = candidates.filter((c) => {
+		const pair = pairOf(c.record)
+		if (inFile.has(pair)) return false
+		inFile.add(pair)
+		return true
+	})
+
+	// One duplicate query, scoped to the employees actually involved — without that filter it scans
+	// `time_logs` by dedupKey across every employee in every organization. The DB unique index is
+	// the second layer for the concurrent case.
 	const seen =
-		candidates.length === 0
+		unique.length === 0
 			? []
 			: await db.timeLog.findMany({
-					where: { dedupKey: { in: candidates.map((c) => c.record.dedupKey) } },
-					select: { dedupKey: true }
+					where: {
+						employeeId: { in: [...new Set(unique.map((c) => c.record.employeeId))] },
+						dedupKey: { in: [...new Set(unique.map((c) => c.record.dedupKey))] }
+					},
+					select: { employeeId: true, dedupKey: true }
 				})
-	const seenKeys = new Set(seen.map((s) => s.dedupKey))
-	const fresh = candidates.filter((c) => !seenKeys.has(c.record.dedupKey))
+	// The two `in` lists are a cross product, so a returned row may be a pair no candidate holds;
+	// matching on the pair discards those.
+	const seenPairs = new Set(seen.map(pairOf))
+	const fresh = unique.filter((c) => !seenPairs.has(pairOf(c.record)))
 
 	const freshLines = new Set(fresh.map((c) => c.line))
 	const applied = survivors.filter(({ row }) => freshLines.has(row.line)).length
@@ -329,7 +358,13 @@ export async function importBacklogCsv(
 	// After the transaction: materialise the days through the one authoritative engine, which
 	// independently skips locked and hand-edited days — so the guard above is doubled. Skipped
 	// when nothing was written; there is no new punch for it to re-pair.
-	if (fresh.length > 0) await deriveRange(organizationId, { from: minDate, to: maxDate }, ctx)
+	//
+	// Once per employee we actually wrote for. `deriveRange` takes ONE optional `employeeId`, and
+	// unscoped it re-derives every active employee in the organization across the span — a
+	// three-employee backlog in a 200-person tenant would do ~12,400 day derivations for ~186 days
+	// of real work.
+	for (const employeeId of new Set(fresh.map((c) => c.record.employeeId)))
+		await deriveRange(organizationId, { from: minDate, to: maxDate, employeeId }, ctx)
 
 	return { applied, skippedDuplicate, rejected, punchesWritten: fresh.length }
 }

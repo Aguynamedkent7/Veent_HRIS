@@ -18,7 +18,7 @@ Produced by three parallel `vc-research-agent` runs. Every claim below is a cita
 
 ## 1. The data path today
 
-```
+```text
 Discord /in, /out
   → POST /api/v1/timesheets/log      (HMAC, ±5 min window, NOT session-auth)
   → recordPunch()                     src/lib/server/services/timelog.ts:26

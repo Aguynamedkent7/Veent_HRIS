@@ -75,7 +75,7 @@ index, which Prisma performs with no data-loss warning. Ran `pnpm prisma generat
 
 ### Pre-merge assertions (§3.9, E9-corrected)
 
-```
+```text
 listPunches CALL sites                                              3  ✓
 git diff --stat src/routes/api/v1/timesheets/log/+server.ts     empty  ✓
 ```
@@ -144,21 +144,38 @@ replacement, so a silently-skipped mutation could not masquerade as red.
      `await tick()` before `requestSubmit()`. **No unit test could have caught either** — both
      live entirely in the browser's render/submit timing.
 
-## The four geolocation states
+## The six geolocation states
 
 Separate, named branches; each reached by exactly one code path; all copy in one `locationCopy`
 table so a later UX pass edits that table and nothing else.
 
 | State | Reached by | Punch still recorded? |
 |---|---|---|
+| `idle` | initial render — nothing requested yet | n/a, no punch attempted |
+| `requesting` | set at the TAP, before `getCurrentPosition` returns | pending |
 | `granted` | `getCurrentPosition` success callback | Yes, with coordinates |
 | `denied` | error callback, `err.code === PERMISSION_DENIED` | Yes, without |
 | `nofix` | error callback (timeout / position unavailable) **or** the 9 s watchdog | Yes, without |
 | `unsupported` | `!('geolocation' in navigator)` — insecure origin or old browser | Yes, without |
 
-`idle` is the fifth, pre-request state. The watchdog (9 s) is deliberately longer than the API
-timeout (8 s) so the normal path is the API's own callback. `settled` makes the submit happen
-exactly once regardless of which branch arrives first.
+`requesting` was added by the UI/UX fix pass and is the state the user spends the most time in.
+Without it `punch.busy` stayed false until submit — up to nine seconds — so both buttons stayed
+live and the page still read "Location has not been requested yet". That was not only silent: a
+second tap re-entered the handler and reassigned `punchType`, so tapping In then Out recorded an
+**OUT**. The lock now goes up at the tap.
+
+The watchdog (9 s) is deliberately longer than the API timeout (8 s) so the normal path is the
+API's own callback. `settled` makes the submit happen exactly once regardless of which branch
+arrives first.
+
+Announcements are split by urgency: the location line lives in a `role="status"` region
+(`aria-live="polite"`), and the punch outcome in its own `role="alert"`, so a failed punch is not
+announced as routinely as a status change. A failure is prefixed "Not punched." so the meaning
+survives greyscale and sunlight rather than resting on colour.
+
+The history list does **not** print a raw coordinate pair. It renders a "View on map (±N m)" link
+carrying the coordinates in its `href`, so the accuracy qualifier is always attached and the most
+sensitive string on the page is not the thing the eye lands on.
 
 ## Security — built in full
 

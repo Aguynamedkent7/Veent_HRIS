@@ -1,4 +1,5 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test'
+import { PrismaClient } from '@prisma/client'
 import { login } from './helpers'
 
 /**
@@ -30,6 +31,31 @@ const FIX = { latitude: 8.4772, longitude: 124.6459 }
  * at all: the reading arrives before a second tap could ever land.
  */
 const CAPTURE_MS = 1500
+
+/**
+ * Drop every WEB punch this account already has, before each test.
+ *
+ * The action debounces on `web:<employeeId>:<type>:<PHT minute>`, so a rerun inside the same
+ * minute — a CI retry, or simply running this file twice — replays a used key and gets a 409,
+ * failing a test that would otherwise pass. Deleting the rows frees the key.
+ *
+ * WEB only, and only this crew account: the DISCORD punches are seeded fixtures other suites
+ * aggregate and assert hour totals against, so they must survive. Both punch tests below still
+ * run serially and each still owns one punch TYPE — this removes the cross-RUN collision, not
+ * the within-run one.
+ */
+async function clearWebPunches() {
+	const db = new PrismaClient()
+	try {
+		await db.timeLog.deleteMany({
+			where: { source: 'WEB', employee: { user: { email: CREW.email } } }
+		})
+	} finally {
+		await db.$disconnect()
+	}
+}
+
+test.beforeEach(clearWebPunches)
 
 async function slowGeolocation(context: BrowserContext) {
 	await context.addInitScript((ms) => {

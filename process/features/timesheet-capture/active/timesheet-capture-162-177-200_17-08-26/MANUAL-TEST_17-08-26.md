@@ -14,12 +14,13 @@ Markers used throughout: employee **JJ-002 (Benjie Fryer)**, dates **2026-08-04*
 
 ## 0. Setup
 
+From the repository root:
+
 ```bash
-cd /home/hyuse/Desktop/VeentApps/veent_hris
 ./start.sh                 # Postgres on 5434
 pnpm db:push               # the branch adds columns; skip only if already pushed
 pnpm prisma generate       # ALWAYS after a push — a stale client fakes type errors
-pnpm dev                   # http://localhost:5173
+pnpm dev                   # prints the port; 5173 unless it is taken
 ```
 
 Log in at `/login`. It is a **two-step tenant login**: click the tenant first, then enter
