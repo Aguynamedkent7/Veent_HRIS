@@ -472,6 +472,13 @@
 						<th class="px-3 py-3 text-left font-medium text-muted-foreground">Status</th>
 						<th class="px-3 py-3 text-left font-medium text-muted-foreground">In</th>
 						<th class="px-3 py-3 text-left font-medium text-muted-foreground">Out</th>
+						{#if data.showAmPm}
+							<!-- #162: read-only display split. The In/Out inputs stay the only correction door. -->
+							<th class="px-3 py-3 text-left font-medium text-muted-foreground">AM In</th>
+							<th class="px-3 py-3 text-left font-medium text-muted-foreground">AM Out</th>
+							<th class="px-3 py-3 text-left font-medium text-muted-foreground">PM In</th>
+							<th class="px-3 py-3 text-left font-medium text-muted-foreground">PM Out</th>
+						{/if}
 						<th class="px-3 py-3 text-right font-medium text-muted-foreground">Reg</th>
 						<th class="px-3 py-3 text-right font-medium text-muted-foreground">OT</th>
 						<th class="w-[1%] whitespace-nowrap px-3 py-3"></th>
@@ -531,6 +538,12 @@
 										class={CELL_TIME}
 									/>{:else}{fmtTime(d?.timeOut ?? null)}{/if}</td
 							>
+							{#if data.showAmPm}
+								<td class="px-3 py-2 text-muted-foreground">{fmtTime(d?.amTimeIn ?? null)}</td>
+								<td class="px-3 py-2 text-muted-foreground">{fmtTime(d?.amTimeOut ?? null)}</td>
+								<td class="px-3 py-2 text-muted-foreground">{fmtTime(d?.pmTimeIn ?? null)}</td>
+								<td class="px-3 py-2 text-muted-foreground">{fmtTime(d?.pmTimeOut ?? null)}</td>
+							{/if}
 							<td class="px-3 py-2 text-right font-mono"
 								>{#if editable && d}<input
 										name="regularHours"
@@ -589,7 +602,9 @@
 						</tr>
 					{:else}
 						<tr
-							><td colspan="8" class="px-3 py-8 text-center text-muted-foreground"
+							><td
+								colspan={data.showAmPm ? 12 : 8}
+								class="px-3 py-8 text-center text-muted-foreground"
 								>{exceptionsOnly
 									? 'No exceptions — everyone is accounted for.'
 									: 'No active employees.'}</td
@@ -609,6 +624,13 @@
 						<th class="px-3 py-3 text-left font-medium text-muted-foreground">Status</th>
 						<th class="px-3 py-3 text-left font-medium text-muted-foreground">In</th>
 						<th class="px-3 py-3 text-left font-medium text-muted-foreground">Out</th>
+						{#if data.showAmPm}
+							<!-- #162: read-only display split. The In/Out inputs stay the only correction door. -->
+							<th class="px-3 py-3 text-left font-medium text-muted-foreground">AM In</th>
+							<th class="px-3 py-3 text-left font-medium text-muted-foreground">AM Out</th>
+							<th class="px-3 py-3 text-left font-medium text-muted-foreground">PM In</th>
+							<th class="px-3 py-3 text-left font-medium text-muted-foreground">PM Out</th>
+						{/if}
 						<th class="px-3 py-3 text-right font-medium text-muted-foreground">Reg</th>
 						<th class="px-3 py-3 text-right font-medium text-muted-foreground">OT</th>
 						<th class="px-3 py-3 text-right font-medium text-muted-foreground">Night</th>
@@ -665,6 +687,12 @@
 										class={CELL_TIME}
 									/>{:else}{fmtTime(d.timeOut)}{/if}</td
 							>
+							{#if data.showAmPm}
+								<td class="px-3 py-2 text-muted-foreground">{fmtTime(d?.amTimeIn ?? null)}</td>
+								<td class="px-3 py-2 text-muted-foreground">{fmtTime(d?.amTimeOut ?? null)}</td>
+								<td class="px-3 py-2 text-muted-foreground">{fmtTime(d?.pmTimeIn ?? null)}</td>
+								<td class="px-3 py-2 text-muted-foreground">{fmtTime(d?.pmTimeOut ?? null)}</td>
+							{/if}
 							<td class="px-3 py-2 text-right font-mono">
 								{#if editable}
 									<input
@@ -745,7 +773,7 @@
 					{:else}
 						<tr
 							><td
-								colspan={data.canManage ? 9 : 8}
+								colspan={(data.canManage ? 9 : 8) + (data.showAmPm ? 4 : 0)}
 								class="px-3 py-8 text-center text-muted-foreground"
 								>{#if exceptionsOnly}No exceptions in this range.{:else}No attendance for this range{#if data.canManage}
 										— no punches yet, or use Refresh{/if}.{/if}</td

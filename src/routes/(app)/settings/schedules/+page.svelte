@@ -69,6 +69,39 @@
 		</form>
 	</div>
 
+	{#if data.showAmPmGap}
+		<!-- #162: per-tenant AM/PM boundary. Food-service tenants only. The min/max/step attributes
+		     below are a convenience, NOT the validation — the action re-checks the bounds server-side
+		     and must keep doing so even though the input appears to limit them. -->
+		<div class="flex items-center justify-between gap-4 rounded-lg border p-4">
+			<div>
+				<p class="text-sm font-medium">AM/PM split threshold</p>
+				<p class="text-xs text-muted-foreground">
+					The shortest break that separates a morning block from an evening block. Leave blank to
+					use the default ({data.amPmMinGapDefault} minutes). Between 5 and 240. New values apply the
+					next time a day is derived — use Refresh on Attendance to re-split existing days.
+				</p>
+			</div>
+			<form method="POST" action="?/setAmPmMinGap" use:enhance class="flex items-center gap-2">
+				<label class="sr-only" for="amPmMinGap">AM/PM split threshold in minutes</label>
+				<input
+					id="amPmMinGap"
+					name="minutes"
+					type="number"
+					min="5"
+					max="240"
+					step="1"
+					placeholder={String(data.amPmMinGapDefault)}
+					value={data.amPmMinGapMinutes ?? ''}
+					class="w-20 rounded-md border bg-background px-2 py-1 text-sm"
+				/>
+				<button type="submit" class="rounded-full bg-muted px-3 py-1 text-xs font-medium"
+					>Save</button
+				>
+			</form>
+		</div>
+	{/if}
+
 	{#if showCreate}
 		<form
 			method="POST"

@@ -404,6 +404,23 @@ honest reading: HR has declared the day is one pair. Add this comment above the 
 The recovery path already exists and needs no change: `resetDayToDerived` (`index.ts:521-552`)
 clears `manuallyEdited` and delegates to `deriveRange`, which now writes the split.
 
+**Correction P1 — `correctDay` has a second branch, and it deliberately does nothing here.**
+`index.ts:425` computes `editingTimes = 'timeIn' in data || 'timeOut' in data`; when FALSE,
+`write = { ...data }` and the four AM/PM columns are left untouched while `manuallyEdited: true`
+is still written. `correctSchema` permits editing `status`/`regularHours`/`overtimeHours`/`note`
+with no date, so the branch is reachable. **Resolution taken in EXECUTE: leave the split alone in
+that branch, and say so in the code comment.** A correction that never touches the times leaves
+`timeIn`/`timeOut` alone too, so the stored split still describes the punches it came from;
+clearing it would make a note edit silently erase a correct split. R11 (a threshold change not
+re-splitting stored days) is the same defect reached a third way and has the same recovery — the
+Refresh/reset path — so all three fold into this one resolution.
+
+**Correction P7 — two seed scripts also write `AttendanceDay`,** and neither writes AM/PM:
+`scripts/seed-attendance-demo.ts:101` (`upsert`) and `scripts/seed-payslip-demo.ts:58`
+(`createMany`). Harmless because the columns are nullable, but the `upsert` leaves stale values on
+a re-seed, and `pnpm check` covers neither `scripts/**` nor `prisma/**` (#282), so nothing would
+catch it. Not changed by this phase; recorded so the writer set is complete.
+
 **Every other `AttendanceDay` writer is verified untouched:** `lockRange` (`:562-569`) and
 `unlockRange` (`:591-598`) write only `isLocked`; `autoDeriveFromPunches` (`:334`) delegates to
 `deriveRange`. That is the complete writer set from the RESEARCH map §3.
@@ -537,7 +554,14 @@ both `deriveAttendanceDay` (engine A) and `pairPunchesToDailyHours` (engine B, `
 and assert the **documented** relationship rather than naive equality — B applies a fixed
 12:00–13:00 lunch and an 08:00–17:00 OT window and ignores `WorkSchedule` (`timelog.ts:146-150`),
 so with a punch set whose gap *is* 12:00–13:00 and a schedule of 08:00–17:00/60 min break, the
-two must agree to within 0.01 h. Add a comment stating that this test pins the AM/PM case only
+two **do not agree** — and the plan's "within 0.01 h" claim is wrong against live code.
+**Measured in EXECUTE:** engine B pays **8.00 h** (its fixed 12:00–13:00 lunch overlaps no worked
+time, because the employee is punched OUT across it); engine A pays **7.00 h** (an unpunched
+inter-block gap is already outside the work segments, and `derive.ts` then deducts the schedule's
+60-minute break a second time, because a schedule stores a duration and never a position). The
+test therefore pins **A = B − scheduleBreak** and states the reason. This divergence predates
+#162 — it applies to any day with two work segments — and is recorded, not fixed: changing either
+engine moves real pesos and is outside this phase. Add a comment stating that this test pins the AM/PM case only
 and that full engine unification is out of scope per the SPEC.
 
 ### Mutation checks — Phase 1
@@ -596,7 +620,7 @@ Code: `git revert` the phase-1 commit(s) — the change is confined to 6 files a
 additive.
 Schema: the four columns are nullable with no default and no reader outside §1.5/§1.6, so they
 may be **left in place** after a code revert with zero effect. If they must go:
-`ALTER TABLE attendance_days DROP COLUMN am_time_in, DROP COLUMN am_time_out, DROP COLUMN pm_time_in, DROP COLUMN pm_time_out;`
+`ALTER TABLE attendance_days DROP COLUMN "amTimeIn", DROP COLUMN "amTimeOut", DROP COLUMN "pmTimeIn", DROP COLUMN "pmTimeOut";`
 then revert the schema file and `pnpm prisma generate`. No data loss: nothing else writes them.
 
 ## 1.11 Amendment 1 — per-organization AM/PM gap threshold
@@ -847,7 +871,9 @@ export function isValidAmPmMinGap(minutes: number): boolean {
   handle. Allowing 600 would mean an operator could set a threshold no real gap ever reaches,
   turning the AM/PM feature silently off with no error and no UI signal. Four hours is
   comfortably above the longest genuine split-shift break at these tenants and comfortably below
-  "this can never fire."
+  "this can never fire". **Softened per A-P4:** 240 stops an operator setting 600; it does NOT
+  eliminate the "silently off" mode. A tenant whose genuine split-shift break is three hours can
+  set 240 and get no split, no error and no UI signal. Accepted residual, not a solved problem.
 - Both bounds sit far inside a Postgres `Int`, so no overflow path exists.
 
 **What an empty submission means: it clears the value back to NULL (the built-in default).**
@@ -893,10 +919,15 @@ labelled "Leave blank to use the default (30 minutes)", rendered from the export
 	}
 ```
 
-The `/^\d+$/` test is doing real work: it rejects `-30`, `12.5`, `1e3`, `abc`, ` `, and `Infinity`
-before `Number()` is ever consulted. Relying on `Number(raw)` alone would accept `12.5` and
-`1e3`, and `isValidAmPmMinGap`'s `Number.isInteger` would then be the only thing standing
-between a decimal and the database.
+**Corrected per A-E2 — the earlier justification was overstated.** `isValidAmPmMinGap`'s
+`Number.isInteger` plus the bounds check, not the regex, is what stands between a bad value and
+the database: with the regex deleted, `12.5` is still rejected as non-integer, `1e3` and `abc`
+are still rejected, and `-30` is still rejected. The regex's genuinely UNIQUE rejections are
+`'1e2'`, `'0x1E'` and `'+45'` — each of which coerces to a valid IN-RANGE integer (100, 30, 45)
+and would otherwise be silently accepted. **EXECUTE kept the regex and pinned exactly those three
+in spec A16a**, so the guard has a mutation that can go red. Note ` ` (whitespace) is NOT one of
+its cases: `.trim()` runs first, so a whitespace-only field takes the empty branch and clears the
+column, which is correct.
 
 ### 1.11.6 UI — `/settings/schedules`
 
@@ -1009,9 +1040,11 @@ dbMock.organization.findUnique.mockImplementation(({ where, select }) =>
 )
 ```
 
-A flat mock returns JoJo's threshold for a Sweetleaf query, which makes A19 pass even after the
-org scoping is deleted — precisely the class of defect VALIDATE found five times (contract
-finding F8). Reference `tests/unit/punch-access.test.ts:57-65` in a comment in the new file.
+**Rationale corrected per finding A-10.** The where/select-keyed mock is the right pattern, but it
+does NOT protect A19: the `setAmPmMinGap` action never calls `findUnique`. A19 is honestly proved
+by its `organization.update` `where.id` assertion. The place the keyed mock genuinely matters is
+the `load` spec (A-E7), where a flat mock would hand Veent JoJo's stored threshold. Keep the rule,
+for that reason. Reference `tests/unit/punch-access.test.ts:57-65` in a comment in the new file.
 
 Also extend `tests/unit/attendance-autoderive.test.ts`-style coverage of `deriveRange` only if
 that file already mocks the org `findUnique`; if it does not, do **not** add a mocked
@@ -1042,7 +1075,7 @@ Each must be applied by hand, confirmed RED, and reverted.
 | Guard | Its twin | Covered? |
 |---|---|---|
 | Food-service gate on the threshold control | The **render condition** (`{#if data.showAmPmGap}`) vs the **action** (`requireFoodServiceOrg`) | **Both.** The render condition is cosmetic; A18 pins the action. This is the same rule §2.6 applies to the import action — a load-only or render-only gate is bypassed by a direct POST. |
-| Threshold is read by `deriveRange` | **`correctDay`** — the other `deriveAttendanceDay` caller | **Both, §1.11.3.** A threshold wired into only one of them would make a hand-corrected day split differently from a derived one. |
+| Threshold is read by `deriveRange` | **`correctDay`** — the other `deriveAttendanceDay` caller | **Wired in both (§1.11.3), but NOT a covered twin (A-P1).** `correctDay` builds `punches` from at most one `timeIn` + one `timeOut` (`index.ts:460-462`), so `workSegs.length <= 1` and `openWork === null`, and `splitAmPmBlocks` returns all-null for EVERY threshold value. The wiring can never change an output. It is kept for symmetry — a future multi-pair correction form would need it — and is recorded as behaviourally dead rather than counted as proved. |
 | Bounds validation at the action | **The service** (`setOrgAmPmMinGap`) | **Both, §1.11.4/§1.11.5.** The service is the only writer, so its check is what protects any future caller (a script, a seed, a second UI). |
 | Bounds validation at the server | The `min`/`max`/`step` **HTML attributes** | Attributes are convenience only, explicitly commented as such. The server check is the gate. |
 | Every writer of `Organization.amPmMinGapMinutes` | — | **Exactly one:** `setOrgAmPmMinGap`. Confirmed by construction — the column is new, so no pre-existing writer can exist. `prisma/seed.ts` and `scripts/seed-*.ts` do not set it; they will leave NULL, which is the correct default. |
@@ -1074,9 +1107,9 @@ Independent of the rest of Phase 1, and cheaper:
 2. Data: **nothing to migrate.** Every row is NULL unless an operator typed a value, and NULL
    already means "use the default" — so a code-only revert restores the pre-amendment behaviour
    for every tenant regardless of column contents.
-3. Schema (optional, and safe to skip): `ALTER TABLE organizations DROP COLUMN am_pm_min_gap_minutes;`
+3. Schema (optional, and safe to skip): `ALTER TABLE organizations DROP COLUMN "amPmMinGapMinutes";`
    then revert the schema file and `pnpm prisma generate`.
-4. To disable **just** the feature without a code change: `UPDATE organizations SET am_pm_min_gap_minutes = NULL;` — every org returns to the 30-minute default immediately, no deploy.
+4. To disable **just** the feature without a code change: `UPDATE organizations SET "amPmMinGapMinutes" = NULL;` — every org returns to the 30-minute default immediately, no deploy.
 
 ### 1.11.11 Manual test — M1b (run straight after M1)
 
@@ -1085,10 +1118,13 @@ That day's gap is 2 hours, far above any threshold in range, so it cannot demons
 Plant a **second** marker day whose gap straddles the bounds:
 
 ```bash
+# NOTE (EXECUTE, verified live): only TABLE names are @@map'd in this schema — the COLUMNS are
+# camelCase and must be double-quoted in psql. The snake_case spellings this script originally
+# carried (`employee_number`, `am_time_in`, `am_pm_min_gap_minutes`) do not exist.
 EMP=$(docker exec -i veent-db-5434 psql -U veent -d veent_hris -p 5434 -tAc \
-  "select id from employees where employee_number='JJ-0001'")
+  "select id from employees where \"employeeNumber\"='JJ-0001'")
 docker exec -i veent-db-5434 psql -U veent -d veent_hris -p 5434 -c \
-"insert into time_logs (id,employee_id,punch_type,source,timestamp,created_at) values
+"insert into time_logs (id,\"employeeId\",\"punchType\",source,timestamp,\"createdAt\") values
  ('mtest-gap-1','$EMP','IN','MANUAL','2026-08-18 00:00:00+00',now()),
  ('mtest-gap-2','$EMP','OUT','MANUAL','2026-08-18 03:00:00+00',now()),
  ('mtest-gap-3','$EMP','IN','MANUAL','2026-08-18 03:20:00+00',now()),
@@ -1105,8 +1141,8 @@ UTC times = PHT 08:00, 11:00, **11:20**, 17:00 — a **20-minute** gap, delibera
 
 ```bash
 docker exec -i veent-db-5434 psql -U veent -d veent_hris -p 5434 -c \
-"select time_in, time_out, am_time_in, pm_time_in from attendance_days
- where employee_id='$EMP' and date='2026-08-18';"
+"select \"timeIn\", \"timeOut\", \"amTimeIn\", \"pmTimeIn\" from attendance_days
+ where \"employeeId\"='$EMP' and date='2026-08-18';"
 ```
 
 Expect `time_in` and `time_out` non-null, `am_time_in` and `pm_time_in` **NULL**.
@@ -1119,11 +1155,11 @@ Expect `time_in` and `time_out` non-null, `am_time_in` and `pm_time_in` **NULL**
 
 ```bash
 docker exec -i veent-db-5434 psql -U veent -d veent_hris -p 5434 -c \
-"select am_pm_min_gap_minutes from organizations where id='org_jojo';"
+"select \"amPmMinGapMinutes\" from organizations where id='org_jojo';"
 docker exec -i veent-db-5434 psql -U veent -d veent_hris -p 5434 -c \
-"select action, entity_type, new_value from audit_logs
- where entity_type='Organization' and entity_id='org_jojo'
- order by created_at desc limit 1;"
+"select action, \"entityType\", \"newValue\" from audit_logs
+ where \"entityType\"='Organization' and \"entityId\"='org_jojo'
+ order by \"createdAt\" desc limit 1;"
 ```
 
 Expect `15`, and an `UPDATE` / `Organization` row whose `new_value` is
@@ -1136,8 +1172,8 @@ Expect `15`, and an `UPDATE` / `Organization` row whose `new_value` is
 
 ```bash
 docker exec -i veent-db-5434 psql -U veent -d veent_hris -p 5434 -c \
-"select am_time_in, am_time_out, pm_time_in, pm_time_out, worked_hours from attendance_days
- where employee_id='$EMP' and date='2026-08-18';"
+"select \"amTimeIn\", \"amTimeOut\", \"pmTimeIn\", \"pmTimeOut\", \"workedHours\" from attendance_days
+ where \"employeeId\"='$EMP' and date='2026-08-18';"
 ```
 
 Expect four non-null timestamps — and `worked_hours` **identical to the value recorded at step
@@ -1149,7 +1185,7 @@ Expect four non-null timestamps — and `worked_hours` **identical to the value 
 
 ```bash
 docker exec -i veent-db-5434 psql -U veent -d veent_hris -p 5434 -c \
-"select am_pm_min_gap_minutes from organizations where id='org_jojo';"
+"select \"amPmMinGapMinutes\" from organizations where id='org_jojo';"
 ```
 
 Expect **15**, unchanged. Repeat with **241** and **-5**; same assertion each time.
@@ -1174,7 +1210,7 @@ curl -s -b /tmp/jar2.txt -o /dev/null -w '%{http_code}\n' \
 Expect **404** for the Veent jar.
 
 Cleanup: add `or id like 'mtest-gap-%'` to the M-script cleanup delete, and
-`UPDATE organizations SET am_pm_min_gap_minutes = NULL WHERE id = 'org_jojo';`.
+`UPDATE organizations SET "amPmMinGapMinutes" = NULL WHERE id = 'org_jojo';`.
 
 
 ---
@@ -1980,9 +2016,10 @@ Expect six non-null timestamps, with `time_in = am_time_in` and `time_out = pm_t
 ### M2 — Veent is untouched (criteria 2, 20)
 
 1. `curl -c /tmp/jar2.txt … -d '{"email":"hr@veent.test"}'`, open `/attendance`.
-2. **Assert positively:** the table header row reads exactly
-   `Date | Status | In | Out | Reg | OT | Night | Late/UT` — count the `<th>`s; there are **no**
-   AM/PM headers.
+2. **Assert positively (corrected per contract instruction E6):** a Veent **HR** user sees
+   **9** `<th>`s, not 8 — `+page.svelte`'s per-employee `<thead>` ends with
+   `{#if data.canManage}<th …></th>{/if}`, an actions column. Count the headers (**9**) AND name
+   the four that must be absent: `AM In`, `AM Out`, `PM In`, `PM Out`. A non-HR Veent user sees 8.
 3. Click **Export CSV**. **Assert positively:** the first line of the downloaded file is
    `Date,Status,Time In,Time Out,Regular Hrs,OT Hrs,Night Diff Hrs,Late Min,Undertime Min,Locked`
    — 10 fields, no `AM In`.
@@ -2200,6 +2237,15 @@ entirely plausible.
 - *Mitigation 3:* the finite/positive fallback in `derive.ts` (§1.11.2c) means a `NaN` or a
   negative that somehow reaches the engine restores the default instead of propagating. A12
   pins it; its mutation is in the §1.11.7 table.
+- *Bound the risk assessment missed (A-P2), and the strongest safety argument the amendment has:*
+  the boundary always lands on the **longest** gap, so changing the threshold can only turn a
+  split **on or off** — it can never MOVE an existing boundary. The single exception is the
+  dangling-IN case (§1.2c step 4), where lowering the threshold can flip an open PM block into a
+  closed one. R10's blast radius is therefore "a day gains or loses its split", not "every
+  boundary moves".
+- *New surface R10 missed (A-P3):* §1.6 puts AM/PM into the **CSV export**, which leaves the
+  application. A fake split cannot reach `payroll/calculator.ts` — D2 holds — but it can reach a
+  payroll processor's spreadsheet. D2 bounds the *system*, not the *paper*.
 - *Residual, recorded honestly:* nothing proves the number an operator picks is the right one
   for their tenant. That was already true of the hardcoded 30 (contract §"What this coverage does
   NOT prove"); the amendment moves the choice to the operator without proving it.
@@ -2209,7 +2255,11 @@ The four AM/PM columns are materialised at derive time. After an operator saves 
 every existing `attendance_days` row keeps the split computed under the OLD value until someone
 clicks **Refresh** for that range — and days that are `isLocked` or `manuallyEdited` will never
 pick it up at all, because `deriveRange` skips them (`index.ts:249`, `:251`). So a tenant can sit
-with two different boundary rules across one report. Mitigations: M1b step 6 makes the Refresh
+with two different boundary rules across one report. **The two skip reasons are not equal
+(A-P5):** a `manuallyEdited` day IS recoverable — `resetDay`
+(`attendance/+page.server.ts:201-206`) clears the flag and re-derives. A **locked** day is the
+real dead end: `resetDayToDerived` refuses it with 409 and no UI path exists, so the operator must
+unlock the range first. Mitigations: M1b step 6 makes the Refresh
 requirement explicit in the operator's own workflow; the settings card's helper text should be
 read as describing future derives. This interacts with contract correction **P1** — a
 non-`editingTimes` correction already leaves AM/PM stale, and a threshold change is a second way

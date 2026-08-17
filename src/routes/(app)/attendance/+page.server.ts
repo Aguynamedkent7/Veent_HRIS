@@ -15,6 +15,7 @@ import {
 	createTimesheetFromAttendance
 } from '$lib/server/services/attendance'
 import { paginate } from '$lib/server/pagination'
+import { isFoodServiceOrg } from '$lib/orgs'
 import { manilaDayKey } from '$lib/utils/dates'
 import type { Actions, PageServerLoad, RequestEvent } from './$types'
 
@@ -114,7 +115,9 @@ export const load: PageServerLoad = async ({ locals, url, getClientAddress }) =>
 		days,
 		team,
 		pagination,
-		maxRangeDays: MAX_RANGE_DAYS
+		maxRangeDays: MAX_RANGE_DAYS,
+		// #162: the AM/PM columns render for food-service tenants only.
+		showAmPm: isFoodServiceOrg(user.organizationId)
 	}
 }
 

@@ -4,6 +4,7 @@ import { db } from '$lib/server/db'
 import { listAttendanceDays, listTeamDay } from '$lib/server/services/attendance'
 import { exportToCSV } from '$lib/server/services/reports'
 import { manilaDayKey } from '$lib/utils/dates'
+import { isFoodServiceOrg } from '$lib/orgs'
 import type { RequestHandler } from './$types'
 
 const DAY_MS = 86_400_000
@@ -32,6 +33,30 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 	let rows: Record<string, unknown>[] = []
 	let filename = 'attendance.csv'
 
+	// #162 — four extra columns for food-service tenants. Spread into EVERY row, including rows
+	// with no day: `exportToCSV` takes its header list from `rows[0]` only, so a key present on
+	// some rows and absent on others silently drops columns for the rest of the file.
+	const showAmPm = isFoodServiceOrg(user.organizationId)
+	const amPmCols = (
+		d:
+			| {
+					amTimeIn: Date | null
+					amTimeOut: Date | null
+					pmTimeIn: Date | null
+					pmTimeOut: Date | null
+			  }
+			| null
+			| undefined
+	) =>
+		showAmPm
+			? {
+					'AM In': fmtTime(d?.amTimeIn ?? null),
+					'AM Out': fmtTime(d?.amTimeOut ?? null),
+					'PM In': fmtTime(d?.pmTimeIn ?? null),
+					'PM Out': fmtTime(d?.pmTimeOut ?? null)
+				}
+			: {}
+
 	if (view === 'team') {
 		const date = url.searchParams.get('date') ?? today
 		const team = await listTeamDay(user.organizationId, date)
@@ -43,6 +68,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			Status: t.day?.status ?? 'NO RECORD',
 			'Time In': fmtTime(t.day?.timeIn ?? null),
 			'Time Out': fmtTime(t.day?.timeOut ?? null),
+			...amPmCols(t.day),
 			'Regular Hrs': t.day ? num(t.day.regularHours) : '',
 			'OT Hrs': t.day ? num(t.day.overtimeHours) : '',
 			'Night Diff Hrs': t.day ? num(t.day.nightDiffHours) : '',
@@ -77,6 +103,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
 			Status: d.status,
 			'Time In': fmtTime(d.timeIn),
 			'Time Out': fmtTime(d.timeOut),
+			...amPmCols(d),
 			'Regular Hrs': num(d.regularHours),
 			'OT Hrs': num(d.overtimeHours),
 			'Night Diff Hrs': num(d.nightDiffHours),
