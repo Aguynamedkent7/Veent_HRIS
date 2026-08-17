@@ -9,6 +9,8 @@
 
 	// #108: a double-click would create a duplicate work schedule.
 	const createSchedule = createSubmitGuard()
+	// #162: same guard on the threshold form — a double submit writes (and audits) it twice.
+	const saveAmPmGap = createSubmitGuard()
 
 	const DOW = [
 		{ v: 1, l: 'Mon' },
@@ -41,7 +43,9 @@
 		>
 	</div>
 
-	{#if form?.error}
+	<!-- A message tagged with a `field` belongs to that control and is rendered beside it, not
+	     here — a page-top banner cannot say which card it came from. -->
+	{#if form?.error && !form?.field}
 		<div
 			class="rounded-md border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-red-400"
 		>
@@ -68,6 +72,60 @@
 			>
 		</form>
 	</div>
+
+	{#if data.showAmPmGap}
+		<!-- #162: per-tenant AM/PM boundary. Food-service tenants only. The min/max/step attributes
+		     below are a convenience, NOT the validation — the action re-checks the bounds server-side
+		     and must keep doing so even though the input appears to limit them. -->
+		{@const gapError = form?.field === 'minutes' ? form.error : undefined}
+		<div class="space-y-3 rounded-lg border p-4">
+			<div>
+				<p class="text-sm font-medium">AM / PM break length</p>
+				<!-- The columns this controls are labelled PM In / PM Out, so the copy says
+				     afternoon, never evening — one name per thing. -->
+				<p id="amPmMinGap-desc" class="text-xs text-muted-foreground">
+					A break at least this long splits the day into a morning (AM) and an afternoon (PM) block
+					on Attendance. Shorter breaks are ignored. Leave blank for the default, {data.amPmMinGapDefault}
+					minutes. Allowed: 5 to 240. Changes apply to days derived from now on — press Refresh on Attendance
+					to re-split older days.
+				</p>
+			</div>
+			<form
+				method="POST"
+				action="?/setAmPmMinGap"
+				use:enhance={saveAmPmGap.enhance}
+				class="flex flex-wrap items-end gap-3"
+			>
+				<div class="grid gap-1.5">
+					<label for="amPmMinGap" class="text-sm font-medium">Minutes</label>
+					<input
+						id="amPmMinGap"
+						name="minutes"
+						type="number"
+						min="5"
+						max="240"
+						step="1"
+						placeholder={String(data.amPmMinGapDefault)}
+						value={data.amPmMinGapMinutes ?? ''}
+						aria-invalid={gapError ? true : undefined}
+						aria-describedby={gapError ? 'amPmMinGap-desc amPmMinGap-error' : 'amPmMinGap-desc'}
+						class="h-9 w-24 rounded-md border border-input bg-background px-3 text-sm"
+					/>
+				</div>
+				<button type="submit" disabled={saveAmPmGap.busy} class="btn-primary"
+					>{saveAmPmGap.busy ? 'Saving…' : 'Save'}</button
+				>
+			</form>
+			<!-- Outside the form row, not inside the field's grid: growing the row would drag the
+			     bottom-aligned Save button down with it. `aria-describedby` carries the association. -->
+			{#if gapError}
+				<p id="amPmMinGap-error" class="text-xs text-red-600 dark:text-red-400">{gapError}</p>
+			{/if}
+			{#if form?.saved}
+				<p role="status" class="text-xs text-green-600 dark:text-green-400">{form.saved}</p>
+			{/if}
+		</div>
+	{/if}
 
 	{#if showCreate}
 		<form

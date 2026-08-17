@@ -296,6 +296,11 @@ model Organization {
   // Master switch for schedule-based tardiness (#190). Off → no employee is ever marked LATE,
   // company-wide; ANDs with each WorkSchedule.trackTardiness. Default keeps current behavior.
   trackTardiness       Boolean  @default(true)
+  // Smallest gap between two work blocks that counts as the AM/PM boundary, in minutes (#162).
+  // NULL → use the built-in default (DEFAULT_AM_PM_MIN_GAP_MINUTES in attendance/derive.ts).
+  // Only read when the org is food-service (isFoodServiceOrg) — it is a tuning knob, never a
+  // gate. Bounded 5–240 at every writer; a value outside that range cannot be stored.
+  amPmMinGapMinutes    Int?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
@@ -1403,20 +1408,46 @@ model AuditLog {
 // by the aggregation service. A punch is linked to a Timesheet once aggregated.
 
 model TimeLog {
-  id               String      @id @default(cuid())
-  employeeId       String
-  punchType        PunchType
-  source           PunchSource @default(DISCORD)
-  timestamp        DateTime    @db.Timestamptz(3)
-  discordMessageId String?
-  note             String?
-  timesheetId      String?
-  createdAt        DateTime    @default(now())
+  id                 String      @id @default(cuid())
+  employeeId         String
+  punchType          PunchType
+  source             PunchSource @default(DISCORD)
+  timestamp          DateTime    @db.Timestamptz(3)
+  discordMessageId   String?
+  // #200 — deterministic idempotency key for punches that have no Discord message to key on.
+  // `backlog:<employeeNumber>:<YYYY-MM-DD>:<slot>` for a CSV backlog import row. Null for every
+  // Discord punch, which keeps using discordMessageId. Same two-layer defence as #99: an
+  // app-level bulk pre-check for a clean message, plus the unique constraint below to close the
+  // concurrent race. Postgres treats NULL as distinct in a unique index, so the existing
+  // null-keyed rows do not collide — the same property @@unique([discordMessageId, employeeId])
+  // already relies on.
+  dedupKey           String?
+  // #177 — captured from navigator.geolocation at the moment of a WEB punch, and only there.
+  // Null for every DISCORD and MANUAL punch by construction: `recordPunch` writes these four
+  // only when its caller passes a `location`, and the Discord route and the backlog importer
+  // never do. Sensitive personal data — readable only through
+  // GET /api/v1/timesheets/:employeeId/punches (gated by `canTouchEmployee`: owner, their
+  // manager, branch manager, org HR) and the employee's own /punch page. Never in the audit
+  // log (#242), never in the attendance CSV export. Retention follows the TimeLog row itself —
+  // no separate purge window.
+  //
+  // Float (double precision), never Decimal: these are not money and are never summed, so the
+  // Decimal transport hook in src/hooks.ts stays out of the picture entirely.
+  latitude           Float?
+  longitude          Float?
+  locationAccuracyM  Float?
+  // Timestamptz like `timestamp` above, not a naive `timestamp(3)`: two time columns on one
+  // punch row must not disagree about what a time means when the whole app runs in Manila time.
+  locationCapturedAt DateTime?   @db.Timestamptz(3)
+  note               String?
+  timesheetId        String?
+  createdAt          DateTime    @default(now())
 
   employee  Employee   @relation(fields: [employeeId], references: [id])
   timesheet Timesheet? @relation(fields: [timesheetId], references: [id])
 
   @@unique([discordMessageId, employeeId])
+  @@unique([dedupKey, employeeId])
   @@index([employeeId, timestamp])
   @@index([timesheetId])
   @@map("time_logs")
@@ -1900,6 +1931,16 @@ model AttendanceDay {
   dayType    DayType          @default(REGULAR)
   timeIn     DateTime?
   timeOut    DateTime?
+
+  // #162 — food-service tenants only (isFoodServiceOrg). The AM/PM pair is a DISPLAY split of
+  // the same punches `timeIn`/`timeOut` already bracket: amTimeIn === timeIn and
+  // pmTimeOut === timeOut whenever a PM block exists. Never read by payroll, reports, or the
+  // payslip — those keep reading timeIn/timeOut (first punch / last punch of the day). Null on
+  // every non-food-service row and on any day with no second work block.
+  amTimeIn   DateTime?
+  amTimeOut  DateTime?
+  pmTimeIn   DateTime?
+  pmTimeOut  DateTime?
 
   workedHours           Decimal @default(0) @db.Decimal(5, 2)
   regularHours          Decimal @default(0) @db.Decimal(5, 2)

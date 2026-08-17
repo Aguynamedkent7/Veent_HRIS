@@ -20,5 +20,11 @@ pnpm exec tsx scripts/migrate-employment-type-regular.ts
 # hand. Idempotent: a no-op on a fresh database and on every start after the first.
 pnpm exec tsx scripts/migrate-user-role-to-roles.ts
 
+# Add time_logs.dedupKey and its unique index before the push (#200). Push refuses to add a unique
+# constraint to a populated table without --accept-data-loss, and this file passes no such flag by
+# design. Creating the index here means push finds it already present and warns about nothing.
+# Idempotent: a no-op on a fresh database and on every start after the first.
+pnpm exec tsx scripts/migrate-timelog-dedup-key.ts
+
 # Swap for `prisma migrate deploy` once you adopt real Prisma migrations.
 pnpm exec prisma db push --skip-generate

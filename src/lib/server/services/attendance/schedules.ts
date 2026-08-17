@@ -2,6 +2,7 @@ import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import { Prisma } from '@prisma/client'
+import { AM_PM_MIN_GAP_CEILING, AM_PM_MIN_GAP_FLOOR, isValidAmPmMinGap } from './derive'
 import type { AuditContext } from '../types'
 
 /**
@@ -81,6 +82,36 @@ export async function setOrgTardiness(organizationId: string, enabled: boolean, 
 		entityType: 'Organization',
 		entityId: organizationId,
 		newValue: { trackTardiness: enabled }
+	})
+}
+
+/**
+ * Set (or clear, with null) the org's AM/PM boundary threshold in minutes (#162). Null restores
+ * the built-in default. Bounds are enforced here as well as at the action, because this is the
+ * only writer and a bad value silently re-splits every day in the tenant. `organizationId` is
+ * always the session's own org, so the update is org-scoped by construction — never accept an
+ * organization id from a form.
+ */
+export async function setOrgAmPmMinGap(
+	organizationId: string,
+	minutes: number | null,
+	ctx: AuditContext
+) {
+	if (minutes !== null && !isValidAmPmMinGap(minutes))
+		error(
+			400,
+			`The AM/PM gap must be a whole number of minutes between ${AM_PM_MIN_GAP_FLOOR} and ${AM_PM_MIN_GAP_CEILING}.`
+		)
+
+	await db.organization.update({
+		where: { id: organizationId },
+		data: { amPmMinGapMinutes: minutes }
+	})
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'Organization',
+		entityId: organizationId,
+		newValue: { amPmMinGapMinutes: minutes }
 	})
 }
 

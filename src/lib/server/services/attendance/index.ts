@@ -5,6 +5,7 @@ import { manilaDayKey } from '$lib/utils/dates'
 import { deriveAttendanceDay, type AttPunchType, type DayType, type ScheduleDay } from './derive'
 import { createTimesheet } from '../timesheets'
 import { requireAnyCapability } from '$lib/server/rbac'
+import { isFoodServiceOrg } from '$lib/orgs'
 import type { AuditContext } from '../types'
 import type { HolidayType } from '@prisma/client'
 
@@ -170,9 +171,16 @@ export async function deriveRange(
 	// Org master tardiness switch (#190). ANDs with the employee's effective schedule flag below.
 	const org = await db.organization.findUnique({
 		where: { id: organizationId },
-		select: { trackTardiness: true }
+		select: { trackTardiness: true, amPmMinGapMinutes: true }
 	})
 	const orgTracksTardiness = org?.trackTardiness ?? true
+
+	// #162 — AM/PM display split is food-service only (isFoodServiceOrg). Hoisted once per run.
+	const splitAmPm = isFoodServiceOrg(organizationId)
+	// #162: NULL → derive.ts's built-in default. Never a new query — this rides the org row the
+	// tardiness switch already fetches. `!= null` (loose) catches null and undefined while letting
+	// a legitimate 0 through to the pure function's own guard, which then rejects it.
+	const amPmMinGapMs = org?.amPmMinGapMinutes != null ? org.amPmMinGapMinutes * 60_000 : undefined
 
 	// PHT day range expressed as an absolute UTC window (PHT day D = [D 00:00+08:00, D+1 00:00+08:00)).
 	const phtStart = new Date(`${fromKey}T00:00:00+08:00`)
@@ -261,7 +269,9 @@ export async function deriveRange(
 				dayType,
 				approvedOtHours: approvedOtByDay.get(dayKey) ?? 0,
 				onLeave,
-				enforceTardiness
+				enforceTardiness,
+				splitAmPm,
+				amPmMinGapMs
 			})
 
 			const data = {
@@ -269,6 +279,10 @@ export async function deriveRange(
 				dayType,
 				timeIn: r.timeIn,
 				timeOut: r.timeOut,
+				amTimeIn: r.amTimeIn,
+				amTimeOut: r.amTimeOut,
+				pmTimeIn: r.pmTimeIn,
+				pmTimeOut: r.pmTimeOut,
 				workedHours: r.workedHours,
 				regularHours: r.regularHours,
 				overtimeHours: r.overtimeHours,
@@ -435,8 +449,12 @@ export async function correctDay(
 		// HR-corrected day honors the same setting as the batch derive.
 		const org = await db.organization.findUnique({
 			where: { id: organizationId },
-			select: { trackTardiness: true }
+			select: { trackTardiness: true, amPmMinGapMinutes: true }
 		})
+		// #162: same threshold read as deriveRange, on the org row this already fetches. It cannot
+		// currently change any output — see the comment above `write` below — and is wired for
+		// symmetry so a future multi-pair correction form inherits the org's setting.
+		const amPmMinGapMs = org?.amPmMinGapMinutes != null ? org.amPmMinGapMinutes * 60_000 : undefined
 		const enforceTardiness =
 			(org?.trackTardiness ?? true) &&
 			(assigned ? assigned.trackTardiness : (defaultSchedule?.trackTardiness ?? true))
@@ -466,17 +484,32 @@ export async function correctDay(
 			schedule: day.dayType === 'REGULAR' ? schedDay : null,
 			dayType: day.dayType as DayType,
 			approvedOtHours,
-			enforceTardiness
+			enforceTardiness,
+			splitAmPm: isFoodServiceOrg(organizationId),
+			amPmMinGapMs
 		})
 
 		// HR changing the dropdown to something other than the day's current status is an
 		// explicit override; otherwise the derived status stands.
 		const statusOverride = data.status && data.status !== day.status ? data.status : undefined
 
+		// #162: the correction form expresses exactly ONE pair (the `punches` array above holds at
+		// most one IN and one OUT), so the AM/PM split resolves to null here for every threshold
+		// value and the columns are cleared. That is deliberate — a hand-correction is a
+		// declaration that the day is one block. `resetDay` re-derives from punches and brings the
+		// split back. Note the non-time branch below takes the opposite route: a correction that
+		// touches only status/hours/note leaves the stored split ALONE, exactly as it already
+		// leaves timeIn/timeOut alone, so the split keeps describing the punches it came from.
+		// (A threshold change is a third route to a stale split — R11; the recovery is the same
+		// Refresh/reset path.)
 		write = {
 			status: statusOverride ?? r.status,
 			timeIn: r.timeIn,
 			timeOut: r.timeOut,
+			amTimeIn: r.amTimeIn,
+			amTimeOut: r.amTimeOut,
+			pmTimeIn: r.pmTimeIn,
+			pmTimeOut: r.pmTimeOut,
 			workedHours: r.workedHours,
 			regularHours: r.regularHours,
 			overtimeHours: r.overtimeHours,
