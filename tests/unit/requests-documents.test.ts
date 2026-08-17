@@ -21,6 +21,7 @@ const { dbMock } = vi.hoisted(() => ({
 			findFirst: vi.fn(),
 			findMany: vi.fn(),
 			update: vi.fn(),
+			updateMany: vi.fn(),
 			create: vi.fn(),
 			delete: vi.fn(),
 			deleteMany: vi.fn()
@@ -39,8 +40,13 @@ const { storageMock } = vi.hoisted(() => ({
 }))
 vi.mock('$lib/server/storage', () => ({ ...storageMock, MAX_UPLOAD_BYTES: 1 }))
 
-const { setRequestDocumentVerified, evictTombstonedBytes, saveRequestDocuments } =
-	await import('$lib/server/services/requests/documents')
+const {
+	setRequestDocumentVerified,
+	evictTombstonedBytes,
+	saveRequestDocuments,
+	deleteRequestDocument
+} = await import('$lib/server/services/requests/documents')
+const { writeAuditLog } = await import('$lib/server/audit')
 
 const CTX = {
 	organizationId: 'org1',
@@ -284,5 +290,44 @@ describe('saveRequestDocuments counts live documents only (#299/AC-6)', () => {
 		expect(dbMock.request.findFirst.mock.calls[0][0].select._count).toEqual({
 			select: { documents: { where: { deletedAt: null } } }
 		})
+	})
+})
+
+/**
+ * #299 — the tombstone transition is conditional.
+ *
+ * The `verifiedAt`/`deletedAt` guards above it run against a SEPARATE read, so an id-only update
+ * lets two concurrent removals both write `deletedAt` and both write a DELETE audit entry, and
+ * lets a verify landing in between tombstone a now-verified document. Re-asserting both
+ * preconditions in the WHERE is what makes the transition happen exactly once.
+ */
+describe('deleteRequestDocument guards the transition it already checked (#299)', () => {
+	beforeEach(() => {
+		dbMock.request.findFirst.mockResolvedValue({ id: 'req1', status: 'PENDING' })
+		dbMock.requestDocument.findMany.mockResolvedValue([])
+	})
+
+	it('re-asserts deletedAt and verifiedAt in the update WHERE', async () => {
+		dbMock.requestDocument.updateMany.mockResolvedValue({ count: 1 })
+
+		await deleteRequestDocument('doc1', 'emp-owner', 'org1', CTX)
+
+		expect(dbMock.requestDocument.updateMany.mock.calls[0][0].where).toEqual({
+			id: 'doc1',
+			deletedAt: null,
+			verifiedAt: null
+		})
+		expect(dbMock.requestDocument.delete).not.toHaveBeenCalled()
+		expect(dbMock.requestDocument.deleteMany).not.toHaveBeenCalled()
+	})
+
+	it('409s and writes no audit entry when the row moved under it', async () => {
+		dbMock.requestDocument.updateMany.mockResolvedValue({ count: 0 })
+
+		await expect(deleteRequestDocument('doc1', 'emp-owner', 'org1', CTX)).rejects.toMatchObject({
+			status: 409
+		})
+		expect(writeAuditLog).not.toHaveBeenCalled()
+		expect(storageMock.deleteStoredFile).not.toHaveBeenCalled()
 	})
 })

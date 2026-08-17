@@ -865,10 +865,10 @@ model ApprovalStep {
 // every fact about it — including `verifiedById` — forever, because a hard delete erased the column
 // the F3 bar reads and let the un-verify -> delete -> re-upload sequence launder a signature away.
 // Only the BYTES may go: `storageKey` is nulled once evicted. Readers are split DELIBERATELY —
-// five must INCLUDE tombstones (decide()'s F3 read, the pending-queue SoD, actBlockedReason, the
-// request-delete sweep, both storage scripts) and four must EXCLUDE them (download list, upload
-// cap, approvals chip, detail-page live list). A uniform `where: { deletedAt: null }` reopens the
-// bypass with every test green. See
+// seven must INCLUDE tombstones (decide()'s F3 read, the pending-queue SoD, actBlockedReason, the
+// Removed-documents history panel, the request-delete sweep, both storage scripts) and four must
+// EXCLUDE them (download list, upload cap, approvals chip, detail-page live list). A uniform
+// `where: { deletedAt: null }` reopens the bypass with every test green. See
 // process/general-plans/.../soft-delete-request-documents-299_PLAN_12-08-26.md for the reader table.
 model RequestDocument {
   id           String    @id @default(cuid())

@@ -278,7 +278,15 @@ export async function deleteRequestDocument(
 	// deletes of one id cannot force extra eviction cycles.
 	if (doc.deletedAt) error(404, 'Document not found')
 
-	await db.requestDocument.update({ where: { id: doc.id }, data: { deletedAt: new Date() } })
+	// The guards above ran against a separate read, so re-assert both of them in the WHERE. Without
+	// that, two concurrent removals of one id each write a `deletedAt` AND a DELETE audit entry, and
+	// a verify landing between the read and this write tombstones a document that is now verified —
+	// exactly what the 409 above promises it will not do.
+	const { count } = await db.requestDocument.updateMany({
+		where: { id: doc.id, deletedAt: null, verifiedAt: null },
+		data: { deletedAt: new Date() }
+	})
+	if (count === 0) error(409, 'This document changed while it was being removed')
 	// Bytes are a cleanup concern and the user's removal already succeeded, so a storage failure
 	// must not surface as an error or skip the DELETE audit entry — same reasoning as the inline
 	// unlink this replaced.
