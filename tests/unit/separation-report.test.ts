@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { Prisma } from '@prisma/client'
 
 /**
  * #305 — `generateSeparationReport`, the CSV/report row mapper.
@@ -109,6 +110,22 @@ describe('generateSeparationReport (#305)', () => {
 				}
 			})
 		)
+	})
+
+	// `FinalPay` is written as `r.finalPayAmount ? … : ''`, which READS like a bug: a falsy check
+	// that would swallow a genuine zero. It is not one. Prisma hands back `Decimal`, an OBJECT,
+	// and every object is truthy — so only a real null renders blank. This test exists so that
+	// anyone "fixing" the falsy check to `!= null` finds out here that there was nothing to fix.
+	it('renders a final pay of exactly zero as 0.00, not blank', async () => {
+		const [row] = records()
+		row.finalPayAmount = new Prisma.Decimal(0) as unknown as number
+		dbMock.separationRecord.findMany.mockResolvedValue([row])
+
+		const rows = await generateSeparationReport('org1', RANGE)
+
+		expect(rows[0].FinalPay).toBe('0.00')
+		// And the null case still blanks, so the two are distinguishable in the CSV.
+		expect(records()[1].finalPayAmount).toBeNull()
 	})
 
 	it('leaves the department blank when the employee has none', async () => {

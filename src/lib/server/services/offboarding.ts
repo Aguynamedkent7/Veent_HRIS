@@ -70,8 +70,14 @@ export interface OffboardingItemInput {
 
 // `departmentId` arrives straight off a form field, so it is checked against the caller's own
 // org before it is stored — otherwise one tenant can plant another tenant's department id.
-async function resolveDepartmentId(organizationId: string, departmentId?: string | null) {
-	if (!departmentId) return null
+// IMMEDIATE_SUPERVISOR is a relationship, not a department, so it never carries a pointer (#306);
+// the rule lives here rather than in each caller so the two write paths cannot drift apart.
+async function resolveDepartmentId(
+	organizationId: string,
+	area: ClearanceArea,
+	departmentId?: string | null
+) {
+	if (area === 'IMMEDIATE_SUPERVISOR' || !departmentId) return null
 	const dept = await db.department.findFirst({
 		where: { id: departmentId, organizationId },
 		select: { id: true }
@@ -89,7 +95,7 @@ export async function addItem(
 	const area = input.area
 	if (!label) error(400, 'Label is required')
 	if (!CLEARANCE_AREAS.includes(area)) error(400, 'A valid clearance area is required')
-	const departmentId = await resolveDepartmentId(organizationId, input.departmentId)
+	const departmentId = await resolveDepartmentId(organizationId, area, input.departmentId)
 	const max = await db.offboardingChecklistItem.aggregate({
 		where: { organizationId },
 		_max: { order: true }
@@ -105,7 +111,7 @@ export async function addItem(
 				action: 'CREATE',
 				entityType: 'OffboardingChecklistItem',
 				entityId: created.id,
-				newValue: { label, area }
+				newValue: { label, area, departmentId }
 			},
 			tx
 		)
@@ -128,7 +134,7 @@ export async function updateItem(
 	const area = input.area
 	if (!label) error(400, 'Label is required')
 	if (!CLEARANCE_AREAS.includes(area)) error(400, 'A valid clearance area is required')
-	const departmentId = await resolveDepartmentId(organizationId, input.departmentId)
+	const departmentId = await resolveDepartmentId(organizationId, area, input.departmentId)
 	return db.$transaction(async (tx) => {
 		const updated = await tx.offboardingChecklistItem.update({
 			where: { id },
@@ -140,7 +146,7 @@ export async function updateItem(
 				action: 'UPDATE',
 				entityType: 'OffboardingChecklistItem',
 				entityId: id,
-				newValue: { label, area }
+				newValue: { label, area, departmentId }
 			},
 			tx
 		)
