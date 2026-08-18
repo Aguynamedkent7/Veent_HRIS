@@ -485,7 +485,9 @@ red output into the execution report.
 This is a SIMPLE single-phase plan, so the phase is the whole plan.
 
 - `CODE DONE` = checklist steps 1-13 complete and `pnpm test`, `pnpm check`, `pnpm lint` green.
-- `TESTED` = mutation checks M1-M6 (§Mutation checks) all recorded RED-on-break, reverted.
+- `TESTED` = mutation checks **M1-M8** (§Mutation checks) all recorded RED-on-break, reverted.
+  M7 and M8 are the two DELETE mutations; M1-M6 only perturb the guards, so a run that stops at
+  M6 has not proven the tests depend on the guards existing at all.
 - `✅ VERIFIED` = live steps L0-L6 run before AND after, screenshots and psql output captured,
   AND the user has confirmed working — user-confirmed, not agent-asserted. Never mark VERIFIED on a green unit suite
   alone — the unit suite mocks the DB and cannot prove a permission hole.
@@ -499,35 +501,124 @@ Status: CONDITIONAL
 Date: 18-08-26
 date: 2026-08-18
 generated-by: outer-pvl
+supersedes: 2026-08-18 (outer-pvl) — re-validated from V1 after the G1/G2/G3/G5 repair pass and the orchestrator's G4 decision
 
 Parallel strategy: sequential
-Rationale: 6/7 signals present, but the validating agent had no Agent/Task tool, so both fan-out
-layers ran inline against the live source. This plan's own EXECUTE is genuinely sequential — a
-single file set, one strict checklist, tests-before-guards.
+Rationale: 6/7 signals present, but this plan's own EXECUTE is genuinely sequential — a single file
+set, one strict checklist, tests-before-guards. Both fan-out layers ran inline against the live
+source and the live database (read-only). The plan itself runs on an independent track and may go
+in parallel with the two payroll plans.
+
+### Re-validation result — the four mandated repairs are DONE
+
+- **G1 — DONE.** `d3-not-defeatable-by-reclear` now exists as a named, standalone gate (Verification
+  Evidence), as a TDD stub, as checklist step 9, and as the live L2e walk. It is written as one
+  test covering the whole sequence, explicitly "NOT as a consequence of" the two one-step tests —
+  which is what AC-9.4 asks for.
+- **G2 — DONE.** AC-9.1 / AC-9.2 / AC-9.3 / AC-9.4 are re-tiered **Hybrid** in the Verification
+  Evidence table, with live L2c (B re-clears A's item → 403), L2d (A un-clears and re-clears their
+  own → both succeed), and L2e (the full defeat route) added and named in checklist step 15.
+- **G3 — DONE.** M7 (delete the self check outright) and M8 (delete `if (bar) error(403, bar)`
+  outright) are present, are labelled DELETE, and carry the correct "must go red" targets. The
+  table's own note — "M1–M6 only perturb the guards; only M7/M8 prove the tests depend on them
+  existing" — is the right framing.
+- **G5 — DONE.** G10 now cites AC-9.1 – AC-9.5. The stale "VALIDATE should confirm the owner is
+  content for D8 to ship without a SPEC amendment" risk row is replaced with "No longer an
+  interpretation. The owner confirmed D8 on 18-08-26 in both directions."
+- **G6 — RECORDED, not built,** in both the non-goals table and the Risks table, correctly framed
+  as a consequence of the owner's locked decision rather than a defect.
+
+### G4 — the orchestrator's decision to keep 403: JUDGED CORRECT
+
+Every cited site was read this session.
+
+| Site | Code | Is it a self-action bar? |
+|---|---|---|
+| `approvals.ts:231` — "You cannot decide your own request" | **403** | yes |
+| `employee-access.ts:136` — `assertNotSelf` → `SELF_ACTION_DENIED` | **403** | yes |
+| `action-proposals.ts:71` — "You cannot confirm a change you proposed yourself." | **403** | yes |
+| `action-proposals.ts:80` — "You cannot confirm a change to your own pay." | **403** | yes |
+| `employees.ts:1217` — "You cannot offboard your own employee record — ask another admin to do it." | **400** | yes — the outlier |
+| `employees.ts:399` — "An employee cannot report to themselves." | 400 | no — a field-validation error |
+
+**One correction to the evidence, which does not change the verdict.** `timesheets.ts:125` was cited
+as a fifth 403 self-action bar. It is not one: the code is
+`if (isOwner) return { isOwner: true } … error(403, 'You can only modify your own timesheet')` — an
+**ownership requirement**, the logical inverse of a self-action bar. It refuses you for acting on
+someone ELSE's record. So the count is **four self-action bars at 403 against one at 400**, not five
+to one. Still decisive, and the argument does not lean on the fifth.
+
+Keeping 403 is right on the merits too: the request is well-formed and it is the *actor* who is
+refused, which is exactly what 403 means. AC-4.3 asks for consistency in "wording style and
+placement" and does not name a status code, so `self-guard-consistent-with-offboard` must assert:
+
+- **wording** — "ask another admin to do it", which matches `employees.ts:1217` verbatim in shape;
+- **placement** — in the service, before the transaction, covering both the form action and any
+  future v1 API twin in one check;
+- and it must **NOT** assert the status code.
+
+Not in scope: changing `offboardEmployee` to 403 to match. It is a live API contract and nobody
+asked. Recorded so the inconsistency is deliberate and known rather than a fresh accident.
+
+### Re-verified line anchors (unchanged since the first pass — code has not moved)
+
+`getSeparation` ends at `:115`/`:116`; `setClearanceItem` starts at `:118`; its FINALIZED check is
+at `:129`; `finalizeSeparation` at `:228` with `:229` fetch, `:230` the 409, `:232` the pending
+count, `:233` the pending 409. `setClearanceItem`'s `findFirst` returns the full `ClearanceItem`
+row (only the nested `separation` is `select`-narrowed), so `item.status` and `item.clearedById` are
+available with NO extra query. `offboardEmployee`'s self-guard is at `employees.ts:1216-1218`.
+`MANAGE_HR: ['MANAGER','HR_ADMIN','SUPER_ADMIN','CEO']` at `rbac.ts:25`.
+
+### NEW findings from this pass
+
+**N1 — the Phase Completion Rules are stale by two mutations.** `TESTED = mutation checks M1-M6
+(§Mutation checks) all recorded RED-on-break`. M7 and M8 were added by the G3 repair and are the
+plan's own strongest checks — the only two that prove the tests depend on the guards *existing*.
+Excluding them from the definition of TESTED means the plan can be marked TESTED without the
+evidence it says matters most. One-line fix: `M1-M8`. Severity: CONCERN (documentation).
+
+**N2 — the G4 rationale lived only in the superseded contract.** The plan BODY records the
+decision's *effect* (§6.2 and §6.4 both use 403) but not its *reason*, and the "assert wording and
+placement, not the status code" instruction existed only in a TDD-stub comment inside the old
+contract. It is carried forward in full above; add a one-line pointer at §6.2 so a reader of the
+plan alone does not re-open it. Severity: CONCERN (documentation).
+
+**N3 — the small-tenant premise is VERIFIED TRUE against the live database.** The plan's whole
+no-carve-out decision rests on "JoJo Potato and Sweetleaf each have exactly one active MANAGE_HR
+holder, and the CEO reaches both". Read live: `org_jojo` has exactly one active user with any HR
+role — `manager@jojo.ph` (`{MANAGER}`) — and `org_sweetleaf` has exactly one — `manager@sweetleaf.ph`
+(`{MANAGER}`). `MANAGE_HR` does include `MANAGER` (`rbac.ts:25`, #133), so each really is a single
+local MANAGE_HR holder. `ceo@veent.ph` is the only CEO and
+`src/routes/api/v1/session/switch-org/+server.ts` exists, so L6 is executable end to end. Not a
+concern — recorded because L6 is the gate the whole decision rests on and it now has confirmed
+actors. `separation_records` and `clearance_items` are both **empty**, as the plan says; a new case
+seeds its checklist from `clearanceTemplateForOrg` with built-in defaults (`separation.ts:49`), so
+L0 will produce tickable items. All four org_seed admins (`admin@`, `hr@`, `ceo@`,
+`manager@veent.ph`) have `employees` rows, so L4's "a case for A's own employee record" works.
 
 ### Test gates (5-column)
 
 | criterion id | behavior | strategy | proving test | gap-resolution |
 |---|---|---|---|---|
-| AC-5.2 | current behaviour is pinned before any guard lands | Fully-Automated | `pnpm test tests/unit/separation-characterization.test.ts` GREEN against unmodified code | A |
+| AC-5.2 | current behaviour is pinned before any guard lands | Fully-Automated | `pnpm test tests/unit/separation-characterization.test.ts` GREEN against unmodified code (checklist step 3 hard gate) | A |
 | AC-3.1 | a clearer of ≥1 item is refused at finalize, with a reason | Hybrid | `pnpm test -- separation-finalize-sod` (`finalize-refuses-clearer`) + live L2 (curl-forced POST → 403, psql shows still not FINALIZED) | A |
 | AC-3.2 | a clean actor finalizes AND all the writes still happen | Hybrid | `pnpm test -- separation-finalize-sod` (`finalize-allows-clean-actor`, asserting finalPayAmount / OFFBOARDED / isActive:false) + live L3 psql | A |
 | AC-3.2 | the pure predicate is correct on all four shapes | Fully-Automated | `pnpm test -- separation-finalize-sod` — 4 `clearedAnyItem` cases, ZERO db mocks | A |
 | AC-3.3 | the screen warns before the first tick | Hybrid | live L1 screenshot of the amber warning + `pnpm check` on the `+page.svelte` edit | A |
-| AC-3.4 | a single-HR tenant is not stranded | Agent-Probe | live L6 — CEO switches into org_jojo and org_sweetleaf and finalizes end to end | A |
+| AC-3.4 | a single-HR tenant is not stranded | Agent-Probe | live L6 — `ceo@veent.ph` switches into `org_jojo` and `org_sweetleaf` and finalizes end to end. Actors verified present this pass | A |
 | AC-3.5 | pre-existing frozen checklists still complete | Hybrid | `pnpm test -- separation-finalize-sod` (`existing-cases-unaffected`, null `clearedById`) + live L5 | A |
 | AC-3.6 | who may tick a fresh item is unchanged | Fully-Automated | `pnpm test -- separation-clearance-reclear` (`clear-pending-item-unchanged`) | A |
 | AC-4.1 | nobody finalizes their own separation | Hybrid | `pnpm test -- separation-finalize-sod` (`finalize-refuses-self`) + live L4 | A |
 | AC-4.2 | another admin can finalize that same case | Hybrid | `pnpm test -- separation-finalize-sod` (`finalize-allows-other-for-self-case`) + live L4 second half | A |
-| AC-4.3 | the self refusal reads and sits like the offboard refusal | Fully-Automated | `pnpm test -- separation-finalize-sod` (`self-guard-consistent-with-offboard`) — **must also pin the HTTP status, see G2** | B |
+| AC-4.3 | the self refusal reads and sits like the offboard refusal | Fully-Automated | `pnpm test -- separation-finalize-sod` (`self-guard-consistent-with-offboard`) — asserts **wording and placement only**, never the status code. 403 is the deliberate, recorded choice | A |
 | AC-4.4 | the self bar and the clearer bar are independent and ordered | Fully-Automated | `pnpm test -- separation-finalize-sod` (`finalize-guards-independent`, `finalize-bar-above-pending`) | A |
-| AC-9.1 | person B is refused when re-clearing A's item | Hybrid | `pnpm test -- separation-clearance-reclear` (`reclear-refused-for-other-actor`) + **NEW live L2c** (see G1) | B |
+| AC-9.1 | person B is refused when re-clearing A's item | Hybrid | `pnpm test -- separation-clearance-reclear` (`reclear-refused-for-other-actor`) + live **L2c** | A |
 | AC-9.2 | person B is refused when un-clearing A's item | Hybrid | `pnpm test -- separation-clearance-reclear` (`unclear-refused-for-other-actor`) + live L2b | A |
-| AC-9.3 | person A may still un-clear and re-clear their own item | Hybrid | `pnpm test -- separation-clearance-reclear` (`reclear-allowed-for-original-clearer`) + **NEW live L2d** (see G1) | B |
-| AC-9.4 | the un-clear-then-clear defeat route does not work, end to end | Hybrid | **MISSING — must be added as a named test `d3-not-defeatable-by-reclear`** (see G1) | B |
+| AC-9.3 | person A may still un-clear and re-clear their own item | Hybrid | `pnpm test -- separation-clearance-reclear` (`reclear-allowed-for-original-clearer`) + live **L2d** (both calls succeed, `clearedById` ends back at A) | A |
+| AC-9.4 | the un-clear-then-clear defeat route does not work, end to end | Hybrid | `pnpm test -- separation-clearance-reclear` (**`d3-not-defeatable-by-reclear`**, one named test, the full sequence) + live **L2e** (three curl POSTs, all 403, `clearedById` still A, record still OPEN) | A |
 | AC-9.5 | a fresh, never-cleared item is clearable by anybody who could clear it before | Fully-Automated | `pnpm test -- separation-clearance-reclear` (`clear-pending-item-unchanged`) | A |
-| AC-5.1 | every new refusal is proven live, refusal AND success, both sides | Agent-Probe | live L1–L4 run BEFORE and AFTER the change with the same script; before the change L2 and L4 must SUCCEED | A |
-| AC-5.3 | every guard is mutation-checked | Fully-Automated | M1–M6 RUN with results recorded, **plus new M7/M8** (see G3) | B |
+| AC-5.1 | every new refusal is proven live, refusal AND success, both sides | Agent-Probe | live L1–L4 plus L2b–L2e run BEFORE and AFTER the change with the same script; before the change L2 and L4 must SUCCEED | A |
+| AC-5.3 | every guard is mutation-checked | Fully-Automated | **M1–M8** RUN with results recorded, including the two DELETE mutations M7 and M8 | A |
 
 Failing stubs (Fully-Automated rows only — red-first starting points for EXECUTE):
 
@@ -551,68 +642,54 @@ test("unclear-refused-for-other-actor", () => {
   throw new Error("NOT IMPLEMENTED — TDD stub for: already-cleared item, different actor, cleared=false -> 403")
 })
 test("d3-not-defeatable-by-reclear", () => {
-  throw new Error("NOT IMPLEMENTED — TDD stub for: AC-9.4 — B un-clears A's item, then clears it; refused at BOTH steps and still cannot finalize")
+  throw new Error("NOT IMPLEMENTED — TDD stub for: AC-9.4 — B un-clears A's item, then clears it; refused at BOTH steps, clearedById still A, and B still cannot finalize")
 })
 test("clear-pending-item-unchanged", () => {
   throw new Error("NOT IMPLEMENTED — TDD stub for: a PENDING item is still clearable by anyone with MANAGE_HR")
 })
 test("self-guard-consistent-with-offboard", () => {
-  throw new Error("NOT IMPLEMENTED — TDD stub for: the self refusal matches offboardEmployee in WORDING. Status code is 403 by G4 below, deliberately NOT matching offboard's 400.")
+  throw new Error("NOT IMPLEMENTED — TDD stub for: the self refusal matches offboardEmployee in WORDING and PLACEMENT. Do NOT assert the status code — 403 is the deliberate, recorded choice (G4).")
 })
 ```
 
 Legacy line form (for existing validate-contract consumers):
 
 - separation guards (unit): `Fully-automated: pnpm test -- separation-characterization separation-finalize-sod separation-clearance-reclear`
-- full-suite regression: `Fully-automated: pnpm test` — baseline verified in-session at 119 files / 1446 tests / 19s
-- live refusal + success, both sides: `hybrid: the _dev/login-as curl harness + docker exec veent-db-5434 psql assertions` — precondition: the USER starts the dev server and the database
-- small-tenant escape route: `agent-probe: CEO switches into org_jojo and org_sweetleaf and finalizes a case in each`
-- AC-9.4 defeat-route walk: `known-gap: documented — NOT present in the plan as written; must be added before EXECUTE (see G1)`
+- full-suite regression: `Fully-automated: pnpm test` — baseline verified in a prior session at 119 files / 1446 tests / 19s
+- live refusal + success, both sides: `hybrid: the _dev/login-as curl harness + docker exec veent-db-5434 psql -p 5434 assertions` — precondition: the USER starts the dev server and the database (both currently up)
+- small-tenant escape route: `agent-probe: ceo@veent.ph switches into org_jojo and org_sweetleaf and finalizes a case in each; the single local MANAGE_HR holder is manager@jojo.ph / manager@sweetleaf.ph`
+- AC-9.4 defeat-route walk: `Fully-automated: pnpm test -- separation-clearance-reclear` (`d3-not-defeatable-by-reclear`) + `hybrid: live L2e`
 
 ### Dimension findings
 
-- Infra fit: PASS — runner is vitest via `pnpm test` (correct; there is no `test:unit`). No schema change, no `db:push`, nothing in `prisma/**` or `scripts/**`, so the `pnpm check` blind spot does not apply. `tests/unit/offboard-self-guard.test.ts` exists and is the right harness template. The `_dev/login-as` route exists at `src/routes/api/v1/_dev/login-as`.
-- Test coverage: CONCERN — the characterization-first ordering (write it, prove it GREEN against unmodified code, only then add guards) is the strongest anti-vacuous-mock design of the three plans. But AC-9.4 has no test at all, three D8 criteria are tiered one level below what the SPEC requires, and the two headline guards have no delete-mutation.
-- Breaking changes: PASS — no schema, no capability, no route, no signature change. The one caller is `src/routes/(app)/separations/[id]/+page.server.ts:57`, confirmed in-session; there is genuinely no v1 API twin. `finalizeBarFor` returning a message string is additive page data.
-- Security surface: PASS — this is object-level actor comparison, established shape 1, no third auth mechanism. `finalizeBarFor` deliberately does a SCOPED `employee.findUnique({ select: { userId: true } })` instead of widening `getSeparation`'s select — verified that `getSeparation` (`separation.ts:96-116`) does NOT select `userId` and that its result goes straight to the client. That is the correct #111/#290 lesson applied. The refusal messages carry no id and no name. The D8 check is NULL-safe in the safe direction.
-- Section feasibility (§6.1 predicate): PASS — insert point "after `getSeparation`, before `setClearanceItem`, ~line 117" is EXACT: `getSeparation` ends at `:116`, `setClearanceItem` starts at `:118`.
-- Section feasibility (§6.3 D8 precondition): PASS — `setClearanceItem`'s `findFirst` returns the full `ClearanceItem` row (only the nested `separation` is `select`-narrowed), so `item.status` and `item.clearedById` are available with NO extra query. The FINALIZED check is at `:129` as stated. Confirmed verbatim.
-- Section feasibility (§6.4 guard order): PASS — `finalizeSeparation` at `:228`; `:229` fetch, `:230` FINALIZED 409, `:232` pending count, `:233` pending 409. The `:229-233` replacement block is exact. `getSeparation` already loads every clearance item, so no extra query is needed — confirmed.
-- Section feasibility (§6.5/§6.6 UI): PASS — every anchor verified exact: `load` returns `{ separation, finalPay }` at `:24`; `isFinalized` `:11`; `pendingCount` `:12`; checklist `<h2>` `:85`; pending warning `:163-168`; `disabled={pendingCount > 0 || finalize.busy}` `:172`. This is the most mechanically accurate plan of the three.
+- Infra fit: PASS — runner is vitest via `pnpm test` (correct; there is no `test:unit`). No schema change, no `db:push`, nothing in `prisma/**` or `scripts/**`, so the `pnpm check` blind spot does not apply. `tests/unit/offboard-self-guard.test.ts` exists and is the right harness template. `src/routes/api/v1/_dev/login-as/+server.ts` and `src/routes/api/v1/session/switch-org/+server.ts` both exist. The database is up and holds the actors every live step needs.
+- Test coverage: PASS — the characterization-first ordering (write it, prove it GREEN against unmodified code, only then add guards) remains the strongest anti-vacuous-mock design of the three plans, and the four gaps that made this CONCERN last pass are all closed: AC-9.4 now has its own named test and its own live walk, the three D8 criteria are Hybrid, and both headline guards now carry a delete-mutation.
+- Breaking changes: PASS — no schema, no capability, no route, no signature change. The one caller is `src/routes/(app)/separations/[id]/+page.server.ts:57`; there is genuinely no v1 API twin. `finalizeBarFor` returning a message string is additive page data.
+- Security surface: PASS — object-level actor comparison, established shape 1, no third auth mechanism. `finalizeBarFor` does a SCOPED `employee.findUnique({ select: { userId: true } })` instead of widening `getSeparation`'s select — the correct #111/#290 lesson. Refusal messages carry no id and no name. The D8 check is NULL-safe in the safe direction (a legacy CLEARED row with a null `clearedById` stays editable rather than frozen).
+- Section feasibility (§6.1 predicate): PASS — insert point exact.
+- Section feasibility (§6.3 D8 precondition): PASS — `item.status` and `item.clearedById` available with no extra query; FINALIZED check at `:129` confirmed verbatim.
+- Section feasibility (§6.4 guard order): PASS — the `:229-233` replacement block is exact; `getSeparation` already loads every clearance item.
+- Section feasibility (§6.5/§6.6 UI): PASS — every anchor verified exact in the prior pass and unchanged since. This is still the most mechanically accurate plan of the three.
 
 ### Open gaps
 
-- **G1 — AC-9.4 is not satisfied. This is the largest gap in the plan.** The SPEC amendment of 18-08-26 added AC-9.1 – AC-9.5, and AC-9.4 demands a **named** test `d3-not-defeatable-by-reclear` that walks the exact two-step defeat route (B un-clears A's item, then clears it) and proves B is refused at BOTH steps AND still cannot finalize — explicitly "not as a consequence of AC-9.1 and AC-9.2". The plan has `unclear-refused-for-other-actor` and `reclear-refused-for-other-actor` as two separate one-step tests and no end-to-end walk. Required before EXECUTE: add `d3-not-defeatable-by-reclear` to `tests/unit/separation-clearance-reclear.test.ts`. Severity: CONCERN (near-FAIL — it is the single criterion that exists to prove D8 does its job).
-- **G2 — three D8 criteria are tiered below the SPEC.** SPEC marks AC-9.1, AC-9.2, AC-9.3 and AC-9.4 as **Hybrid** (unit + live). The plan marks all four D8 gates Fully-Automated. Live coverage exists only for the un-clear direction (L2b). Required before EXECUTE: add **L2c** (B tries to RE-clear A's item → 403; psql shows `clearedById` unchanged) and **L2d** (A un-clears then re-clears their own item → succeeds; psql shows `clearedById` back to A). Severity: CONCERN.
-- **G3 — the two headline guards have no delete-mutation.** M1/M2 mutate the predicate, M3/M4 reorder, M5/M6 mutate the D8 clause. Nothing deletes `if (employee?.userId === actorId)` or `if (bar) error(403, bar)` outright — which is exactly the "a guard whose removal leaves the suite green is not proven" case SPEC AC-5.3 names. Add: **M7** delete the self check → `finalize-refuses-self` must go red; **M8** delete the `if (bar) error(403, bar)` block → `finalize-refuses-clearer` AND `finalize-refuses-self` must both go red. Severity: CONCERN.
-- **G4 — AC-4.3 status-code mismatch.** `offboardEmployee` (`employees.ts:1216`) refuses with **`error(400, …)`**. This plan's self-finalize guard uses **`error(403, …)`**. The wording matches ("ask another admin to do it") but AC-4.3 asks for consistency in "wording style **and placement**", and an API caller sees two different codes for the same rule. Decide and record: either match 400, or state in the plan why 403 is the deliberate choice (it is arguably the more correct code) and have `self-guard-consistent-with-offboard` assert the wording only. Severity: CONCERN.
-
-  **DECIDED 18-08-26 — keep `403`.** The house majority is 403, and it is not close. Every
-  other self-action bar in the codebase uses it: `approvals.ts:231` ("You cannot decide your
-  own request"), `employee-access.ts:136` (`SELF_ACTION_DENIED`), `action-proposals.ts:71` and
-  `:80` (the #224 propose→confirm bars), and `timesheets.ts:125`. That is **five sites to one**.
-  `offboardEmployee` (`employees.ts:1217`) is the outlier, not the precedent. The other 400 in
-  this area, `employees.ts:399` ("An employee cannot report to themselves"), is a genuine
-  validation error where 400 is correct — it is not a self-action bar and is not support for one.
-
-  403 is also the more correct code: the request is well-formed, and it is the *actor* who is
-  refused. That is what 403 means.
-
-  AC-4.3 asks for consistency in "wording style **and placement**" — it does not name the
-  status code. So `self-guard-consistent-with-offboard` asserts the **wording** matches
-  ("ask another admin to do it") and the **placement** matches (service layer, before the
-  transaction, covering both the form action and the v1 API in one place). It must **not**
-  assert the status code.
-
-  **Not in scope:** changing `offboardEmployee` to 403 to match. It is a live API contract and
-  a change nobody asked for. Recorded here so the inconsistency is deliberate and known rather
-  than a fresh accident.
-- **G5 — the plan's D8 provenance text is stale.** G10 says "D8 (owner-added; no SPEC AC — see §Risks)" and the Risks table says "VALIDATE should confirm the owner is content for D8 to ship without a SPEC amendment". **The SPEC was amended on 18-08-26**: D8 is confirmed in both directions and carries AC-9.1 – AC-9.5. Update G10 to cite AC-9.1–AC-9.5 and delete that risk row. The plan's both-directions reading is now the owner's confirmed decision, not an interpretation. Severity: CONCERN (documentation).
-- **G6 — new stranding path that D8 creates and nobody has addressed.** Once A clears an item, ONLY A may change it. If A ticked an item in error and then leaves, is deactivated, or is simply unavailable, that item can never be un-cleared by anyone, and a wrongly-ticked item is now permanent. The plan's AC-3.5 answer ("nothing is bricked") is about *finalize*, not about *correcting a tick*. The declined clearance-history table would have solved it. Record for the owner; do not build. Severity: CONCERN — new, owner-visible, not in the SPEC.
-- known-gap: nothing stops the SUBJECT of a separation clearing their own clearance items — `setClearanceItem` has no self-check. Correctly identified as a distinct hole and correctly excluded from the locked decisions. Documented as NEW PLAN REQUIRED. gap-resolution D.
+- **N1 — Phase Completion Rules say `M1-M6`; the table is now M1–M8.** The two DELETE mutations are excluded from the definition of TESTED. Fix to `M1-M8` before EXECUTE marks anything TESTED. gap-resolution B.
+- **N2 — the G4 403 rationale is contract-only.** Carried forward in full above; add a one-line pointer at §6.2 so the plan alone is enough. gap-resolution B.
+- **G6 — the D8 stranding path**, recorded not built: once A clears an item, ONLY A may change it, so a wrongly-ticked item whose clearer has left the company can never be un-cleared and the case never finalized. A direct consequence of the owner's locked D8 decision; the clearance-history table that would solve it was declined. Report to the owner; do not build; no issue filed. gap-resolution C.
+- known-gap: nothing stops the SUBJECT of a separation clearing their own clearance items — `setClearanceItem` has no self-check. A distinct hole, correctly excluded from the locked decisions. Documented as NEW PLAN REQUIRED. gap-resolution D.
 - known-gap: `computeFinalPay` arithmetic, `createSeparation`, `listSeparations`, `generateSeparationReport` and all three routes stay uncovered. Filed as #305. gap-resolution D.
+- known-gap: `offboardEmployee` keeps its 400 while every new self-action bar uses 403. Deliberate, recorded, not fixed. gap-resolution C.
 
-### D9 drift check (requested explicitly)
+### Execute-agent instructions
+
+| # | Instruction | Trigger |
+|---|---|---|
+| E1 | Before marking anything TESTED, change Phase Completion Rules `M1-M6` to `M1-M8`. M7 and M8 are the two that prove the tests depend on the guards existing. | Checklist step 14 |
+| E2 | `self-guard-consistent-with-offboard` asserts **wording** ("ask another admin to do it") and **placement** (service layer, before the transaction). It must NOT assert the HTTP status. 403 is deliberate (G4) and `offboardEmployee`'s 400 is the outlier that stays. | Checklist step 8 |
+| E3 | Live actors, verified present: A and B are any two of `hr@veent.ph`, `manager@veent.ph`, `ceo@veent.ph`, `admin@veent.ph` (all org_seed, all MANAGE_HR, all with `employees` rows). L6's CEO is `ceo@veent.ph`; the single local MANAGE_HR holder is `manager@jojo.ph` in org_jojo and `manager@sweetleaf.ph` in org_sweetleaf. | Checklist step 15 |
+| E4 | `separation_records` and `clearance_items` are both empty. Every live case must be created by hand; the checklist seeds from `clearanceTemplateForOrg`'s built-in defaults. Plant the `SOD297-CASE-1` / `SOD297-SELF` / `SOD297-LEGACY` markers as written and clean up after, or say why not. | Checklist step 15 |
+
+### D9 drift check
 
 **No drift.** This plan does NOT assume any final-pay arithmetic change. Its non-goals table lists
 "Final-pay understatement | SPEC out-of-scope 9", its test-mock guidance states "the arithmetic is
@@ -621,24 +698,27 @@ plan. Consistent with the SPEC's 18-08-26 drop of D9.
 
 ### Execution track
 
-This plan runs on an **independent track** and may proceed in parallel with the two payroll plans
-at any time. Its file set — `separation.ts`, both `/separations/[id]` route files, three new
+This plan runs on an **independent track** and may proceed in parallel with the two payroll plans at
+any time. Its file set — `separation.ts`, both `/separations/[id]` route files, three new
 `tests/unit/separation-*.test.ts` — is fully disjoint from `payroll-void-audit-298` and
 `void-semantics-and-sweep`. No shared file, no shared test file, no schema overlap. The only
-coupling is the shared `pnpm test` run, which is a whole-suite gate for both tracks.
+coupling is the shared `pnpm test` run, which is a whole-suite gate for both tracks. Its Phase 0
+"before" live pass (L0–L4 including L2b–L2e) should still be taken in the same clean-tree session as
+the payroll plans' before-pass, so one dev-server session covers all three.
 
 ### What this coverage does NOT prove
 
-- `pnpm test -- separation-*` mocks `$lib/server/db`. It does NOT prove that a 403 reaches a real HTTP client, that the guards hold under real tenant scoping, or that `clearedById` really matches a real session's user id. Only L2/L2b/L3/L4 psql do.
+- `pnpm test -- separation-*` mocks `$lib/server/db`. It does NOT prove that a 403 reaches a real HTTP client, that the guards hold under real tenant scoping, or that `clearedById` really matches a real session's user id. Only L2/L2b–L2e/L3/L4 psql do.
+- `d3-not-defeatable-by-reclear` proves the defeat route is closed against the mocked db. Only L2e proves it against Postgres with real session cookies — and only for the UI's un-clear-then-clear path. A direct DB write, or a future second re-clear route, is outside what either proves.
 - The characterization test proves the finalize path's WRITES happen. It does NOT prove the final-pay figures are correct — the arithmetic is deliberately out of scope, so a regression in `computeFinalPay` would pass this suite silently.
 - `pnpm check` proves the `.svelte` edits typecheck. It does NOT prove the amber warning is VISIBLE, correctly placed, or readable. Only the L1 screenshot does — and an assertion cannot tell a hidden element from a missing one.
-- Nothing proves the CEO escape route holds in PRODUCTION. L6 proves it in development seed data only. SPEC Open Question B stays open.
-- The D8 gates as written prove the two directions SEPARATELY. Until `d3-not-defeatable-by-reclear` is added (G1), nothing proves the two-step defeat route is closed end to end — which is the entire reason D8 exists.
-- No test covers the G6 stranding path (a wrongly-ticked item whose clearer is gone). It is recorded, not gated.
-- A green suite does NOT prove the guards exist: M1–M6 as written can all pass while a bare deletion of either headline guard goes unnoticed. G3's M7/M8 close that.
+- Nothing proves the CEO escape route holds in PRODUCTION. L6 proves it in development seed data, where each small tenant happens to have exactly one MANAGER. SPEC Open Question B stays open.
+- No test covers the G6 stranding path (a wrongly-ticked item whose clearer is gone). It is recorded, not gated. Nothing in this plan would detect it in the field.
+- Nothing covers the SUBJECT clearing their own clearance items. That hole is untouched by this plan and is not gated by any test here.
+- M1–M8 prove the tests depend on the guards. They prove nothing about a path that reaches `clearanceItem.update` or `separationRecord.updateMany` without going through these two service functions.
 
-Gate: CONDITIONAL (0 FAILs, 6 CONCERNs, 2 known-gaps). G1, G2, G3 and G5 are MANDATORY plan updates before EXECUTE starts — they are additions to the checklist and the gate tables, not design changes. G4 is a decision to record. G6 is an owner report.
-Accepted by: session — accepted concerns, by name: G1 AC-9.4 has no named test (mandatory fix); G2 AC-9.1/9.2/9.3 tiered below the SPEC's Hybrid (mandatory: add live L2c and L2d); G3 no delete-mutation on either headline guard (mandatory: add M7 and M8); G4 403-vs-400 mismatch with the offboard precedent (decide and record); G5 stale "D8 has no SPEC AC" text (documentation fix); G6 D8 creates a new wrongly-ticked-item stranding path (report to owner, do not build). Plus known-gaps: the subject may clear their own items; the rest of the separation service stays untested (#305).
+Gate: CONDITIONAL — 0 FAILs, 2 new documentation CONCERNs (N1 the stale `M1-M6` completion rule; N2 the G4 rationale lived only in the superseded contract), 4 known-gaps. G1, G2, G3 and G5 are all verified applied; G4 is judged CORRECT with one cited site reclassified. Both new concerns are one-line plan edits covered by E1 and E2. EXECUTE may proceed on the independent track.
+Accepted by: session — accepted concerns, by name: N1 Phase Completion Rules still define TESTED as `M1-M6`, excluding the two DELETE mutations that G3 added (fixed by E1); N2 the G4 403-vs-400 rationale and the "assert wording and placement, not the status code" instruction existed only in the superseded contract and are carried forward here (pointer added by E2); G6 the D8 stranding path, recorded for the owner and deliberately not built. Plus known-gaps: the subject may clear their own items; the rest of the separation service stays untested (#305); `offboardEmployee` keeps its outlier 400.
 
 ## Autonomous Goal Block
 
@@ -648,39 +728,51 @@ Execute process/general-plans/active/clearance-signoff-297_PLAN_17-08-26.md — 
 half: whoever cleared any clearance item may not finalize that separation (D3), nobody finalizes
 their own separation (D4), and a second person may neither re-clear nor un-clear an item somebody
 else already cleared (D8). One shared helper finalizeBarFor() feeds both the server 403 and the
-greyed-out Finalize button. Characterization tests first.
+greyed-out Finalize button. Characterization tests first. Gate is CONDITIONAL; the four mandated
+repairs from the first VALIDATE pass are verified applied.
 
 AUTONOMY RULES
 - Follow the Implementation Checklist 1-16 in order. Step 3 is a hard gate: the characterization
   suite MUST be green against UNMODIFIED code before any guard is written. Do not proceed past it.
-- BEFORE writing the guards, apply the four contract-mandated plan updates:
-  G1 add the named test d3-not-defeatable-by-reclear (AC-9.4 — B un-clears A's item, then clears
-     it; refused at BOTH steps and still cannot finalize).
-  G2 add live steps L2c (B re-clears A's item -> 403) and L2d (A re-clears their own -> succeeds).
-  G3 add mutation M7 (delete the self check) and M8 (delete the `if (bar) error(403, bar)` block).
-  G5 update G10 and the Risks table to cite SPEC AC-9.1-AC-9.5; D8 is owner-confirmed, not an
-     interpretation.
-- Decide G4 (403 vs offboardEmployee's 400) and write the decision into the plan.
-- Do NOT touch prisma/schema.prisma, any payroll service, or the audit-log pages. A parallel plan
-  owns them. Confirm with git diff --name-only at the end.
-- Record the ACTUAL red output of every mutation row. A mutation table in a plan is a hypothesis.
+- Apply these four execute-agent instructions from the contract:
+  E1 change Phase Completion Rules "M1-M6" to "M1-M8" before marking anything TESTED. M7 and M8 are
+     the DELETE mutations and are the only two that prove the tests depend on the guards existing.
+  E2 self-guard-consistent-with-offboard asserts WORDING ("ask another admin to do it") and
+     PLACEMENT (service layer, before the transaction). It must NOT assert the status code. 403 is
+     the deliberate choice; offboardEmployee's 400 is the outlier and stays.
+  E3 live actors verified present: A/B from hr@veent.ph, manager@veent.ph, ceo@veent.ph,
+     admin@veent.ph (all org_seed, all MANAGE_HR, all with employees rows). L6's CEO is
+     ceo@veent.ph; the single local MANAGE_HR holder is manager@jojo.ph and manager@sweetleaf.ph.
+  E4 separation_records and clearance_items are EMPTY. Create every live case by hand; the checklist
+     seeds from clearanceTemplateForOrg's built-in defaults. Plant the SOD297- markers, clean up
+     after or say why not.
+- Record the ACTUAL red output of every mutation row M1-M8. A mutation table in a plan is a
+  hypothesis.
 - Run pnpm prisma generate before believing a red pnpm check.
 
 HARD STOPS
-- Ask the user to start the dev server and the veent-db-5434 container. Never start either yourself.
+- Ask the user to start the dev server and the veent-db-5434 container. Never start either
+  yourself. Both are currently UP.
+- Do not mutate the database outside the SOD297- marker cases.
 - If L6 fails (the CEO cannot reach /separations in org_jojo or org_sweetleaf), STOP and report.
   The whole no-carve-out decision rests on it.
+- Do NOT touch prisma/schema.prisma, any payroll service, or the audit-log pages. Two parallel
+  plans own them. Confirm with git diff --name-only at the end.
 - Commit nothing. Committing is a separately authorised step.
 - Do not file any GitHub issue.
 
 NEXT PHASE
-EXECUTE. This plan runs on an independent track — its file set is disjoint from both payroll
-plans, so it may run in parallel with them at any time.
+EXECUTE. This plan runs on an INDEPENDENT track — its file set is disjoint from both payroll plans,
+so it may run in parallel with them at any time. Take its L0-L4 (including L2b-L2e) "before" pass in
+the same clean-tree dev-server session as the payroll plans' Phase 0.
 
 CONTRACT SUMMARY
-Gate CONDITIONAL. 0 FAILs, 6 CONCERNs, 2 known-gaps. Four concerns (G1, G2, G3, G5) are mandatory
-plan updates before the guards land. Mechanically this is the most accurate of the three plans:
-every line anchor in it was verified exact against the live source.
+Gate CONDITIONAL. 0 FAILs, 2 documentation CONCERNs, 4 known-gaps. G1 (the named d3-not-defeatable-
+by-reclear test), G2 (Hybrid re-tiering plus live L2c/L2d/L2e), G3 (delete-mutations M7/M8) and G5
+(the stale D8 provenance text) are all verified applied. G4's decision to keep 403 is judged
+CORRECT: four self-action bars use 403 against offboardEmployee's one 400 — the fifth cited site,
+timesheets.ts:125, is an ownership check, not a self-action bar, so the count is 4-to-1 not 5-to-1,
+and the verdict is unchanged.
 
 EXECUTE START COMMAND
 ENTER EXECUTE MODE for process/general-plans/active/clearance-signoff-297_PLAN_17-08-26.md

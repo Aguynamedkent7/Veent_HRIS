@@ -953,224 +953,141 @@ have no automated form at all.
 
 ## Validate Contract
 
-Status: BLOCKED
+Status: CONDITIONAL
 Date: 18-08-26
 date: 2026-08-18
 generated-by: outer-pvl
+supersedes: 2026-08-18 (outer-pvl) — re-validated from V1 after the F1/F2/F3 repair pass; all three FAILs verified fixed against the live source
 
 Parallel strategy: sequential
-Rationale: 6/7 signals present, but this plan CANNOT be parallelised with
-`payroll-void-audit-298` under any strategy — both edit the body of `voidRun` and the same region
-of `periods.ts`. Sequential is the only safe execution for the payroll track. The validating agent
-also had no Agent/Task tool, so both fan-out layers ran inline against the live source.
+Rationale: 6/7 signals present, but this plan CANNOT be parallelised with `payroll-void-audit-298`
+under any strategy — both edit the body of `voidRun` and the same region of `periods.ts`. Sequential
+is the only safe execution for the payroll track. Both fan-out layers ran inline against the live
+source and the live database (read-only).
 
----
+### Re-validation result — the three FAILs are RESOLVED
 
-## THE GLOBAL EXECUTION ORDER (binding, all three plans)
+Each was re-checked against the code, not against the plan's description of itself.
 
-This is the single most load-bearing output of this validation. Deviating from it either
-destroys evidence that can only be captured once, or puts two agents in the same function body.
+**F1 — RESOLVED, and edit E1 is sufficient.** Traced the post-step-8 `voidRun` against the real
+mock at `tests/unit/override-finalized-guard.test.ts:28-58` and its `beforeEach` at `:119-127`:
 
-**PHASE 0 — clean tree, live, ONE dev-server session, no code written.**
-The user starts the dev server and the `veent-db-5434` container. Then, in this order:
-1. This plan's **step 1** — the D10 live probe (`ZZ-D10-PROBE`) and its period-void negative
-   control (`ZZ-D10-PROBE-2`). Record the four post-void numbers.
-2. This plan's **step 2** — write the verdict into the report. THIS BRANCHES EVERYTHING BELOW.
-3. This plan's **step 12a** — the "before" `PAYDATE:` capture on `ZZ-D12-PROBE`
-   (locked, never approved). **This is the ONLY window in which 12a can ever be executed.**
-4. `payroll-void-audit-298`'s **L1–L5 "before" pass** and its **L7 "before"** capture. L7-before
-   and step 12a are the SAME evidence — capture it ONCE, on one period, and cite it from both plans.
-5. `clearance-signoff-297`'s **L1–L4 "before" pass** (its L2 and L4 must SUCCEED here — that is
-   what proves its harness can observe the difference).
+- `dbMock.payrollRun.findFirst` resolves `{ id: 'x1', status: 'APPROVED' }` — no `period` key, so
+  `run.period?.status` is `undefined`, `wasLocked` is `false`, and `reverseAmortization` is never
+  called. The mock therefore needs **no** `payrollEntry`, `loan`, `loanPayment` or `cashAdvance`
+  keys — this was the specific risk in accepting E1 and it does not materialise.
+- `$transaction: async (fn: any) => fn(dbMock)` passes `dbMock` as `tx`, so `tx.payrollRun.update`
+  IS `dbMock.payrollRun.update`, which `beforeEach` already resolves to
+  `{ id: 'x1', status: 'VOIDED' }`. `resolves.toMatchObject({ status: 'VOIDED' })` (`:136`, `:146`)
+  and `expect(dbMock.payrollRun.update).toHaveBeenCalled()` (`:149`, `:161`, `:166`) all hold.
+- `run.status === 'VOIDED'` is false (`APPROVED`), so step 6's new 400 does not fire.
+- `writeAuditLog` is already mocked (`:61`).
+- The arrow closes over the module-scope `dbMock` const lazily, so the self-reference inside the
+  `vi.hoisted` object literal is evaluated at call time and is safe. `vi.clearAllMocks()` clears
+  calls, not implementations, so a plain arrow (or a `vi.fn`) both survive it.
 
-**PHASE 1 — `payroll-void-audit-298`, steps 1–13, in order.** Owns `prisma/schema.prisma`,
-`periods.ts` (lock / release / voidPeriod's audit call), `runs.ts` (voidRun's audit call), both
-audit-log page arrays, the count script. Nothing from this plan may run concurrently.
+Verdict: every existing assertion in that file passes after E1 alone. The AC-7.4 replacement gate
+("assertions untouched and green, and `git diff` shows only the E1 line") is achievable as written.
 
-**PHASE 2 — this plan, steps 3–8, ONLY IF step 1 reproduced.** Both steps touch files Phase 1
-just edited. Verify with `git log --oneline` that Phase 1 landed before starting.
+**F2 — RESOLVED, and `:316-361` is exact and brace-balanced.** Read live:
 
-**PHASE 3 — this plan, step 9 (the doc).** Runs whether or not step 1 reproduced — see F4.
+- `:314` `await db.$transaction(async (tx) => {` — stays
+- `:315` `if (run && wasLocked) {` — stays
+- `:316` the `// Reverse the amortization committed at lock.` comment — moves
+- `:317-320` `tx.payrollEntry.findMany({ … include: { deductions: true } })` — moves
+- `:321-361` the `for (const entry of entries)` loop, both arms, `:360` closes the inner `for`,
+  `:361` closes the outer `for` — moves
+- `:362` `}` closes `if (run && wasLocked)` — stays
+- `:363` `if (run) await tx.payrollRun.update(… 'VOIDED')` — stays
+- `:364` `await tx.payrollPeriod.update(… 'VOIDED')` — stays
+- `:365` `})` — stays
 
-**PHASE 4 — this plan, steps 10–11 (the sweep and the regression fence).** Step 11 is only
-meaningful AFTER Phase 1 step 8 has removed the `lock()` approver write. See F5.
+316-361 is exactly the if-body and is balanced. The only `run.id` inside the span is `:318`, which
+step 3's `payrollRunId: runId` rename covers. No status write is inside the span, so the extracted
+function cannot void the period. The step-4 grep gate and mutation M11 both remain meaningful.
 
-**PHASE 5 — this plan, steps 12b / 12c / 12e.** The "after" PAYDATE pair, the approved-run
-control, and the Finance hand-off note. Must be after Phase 1 step 8.
+**F3 — RESOLVED and it typechecks.** `prisma/schema.prisma:1082` `periodId String?` and `:1097`
+`period PayrollPeriod? @relation(...)` confirmed. With `include: { period: true }` the field is
+`PayrollPeriod | null`; `run.period?.status` yields `PayrollPeriodStatus | undefined`, which
+compares to the `'LOCKED'` / `'RELEASED'` literals without error. Confirmed live in the database:
+`select count(*) from payroll_periods` → **0**, and both existing `payroll_runs` rows have a
+**NULL `periodId`** — the period-less shape is real data, not theoretical.
 
-**PHASE 6 — the "after" live passes and every mutation row** for both payroll plans.
+**F4–F10 — RESOLVED.** Cancel branch is now 3–8 with step 9 surviving; step 12a is a Phase 0 action
+and is the same capture as the sibling's L7-before; the cash-advance fence now states plainly that
+this plan converts a dormant over-credit into a live one, measured by L7 in pesos and reached by
+M10; step 10's guaranteed-pass check is replaced with Check A, which returns exactly the four
+`approvedById` writers (re-run in this session: `approvals.ts:673`, `payroll/index.ts:508`,
+`periods.ts:252`, `recruitment.ts:174` — four, nothing else); the schema grep returns **18**,
+recorded as a known gap; the D9 placeholder cites the 18-08-26 drop.
 
-**INDEPENDENT TRACK — `clearance-signoff-297`.** Disjoint file set (`separation.ts`, both
-`/separations/[id]` route files, three new `separation-*` test files). No shared file with either
-payroll plan and no schema overlap. It may run in parallel with any phase above.
+### Stale-promise sweep (greps, not summaries)
 
----
+Every removed claim was grepped for in the plan body. All remaining hits are the deliberate
+withdrawal statements or the historical FAIL text inside the superseded contract:
 
-## FAILs (must be resolved before this plan may execute)
+- "zero edits" — only the withdrawal prose and the `payroll-lock-idempotency` gate (which is
+  genuinely zero-edit). No live promise remains.
+- `314-370` / `313-370` — only in the "an earlier draft said" correction at `:433`.
+- `run.period.status` without the optional chain — only in the "does not typecheck" warnings.
+- "steps 3–9 are cancelled" — gone from the body.
+- "no ordering constraint at all" — only the true residue, "step 10 genuinely has no ordering
+  constraint", which is correct.
+- "Do not modify `override-finalized-guard.test.ts`" — gone.
+- `M1–M9` — gone from the body's mutation and completion rules; both now say M1–M11.
 
-**F1 — steps 7 and 8 break `tests/unit/override-finalized-guard.test.ts`. The plan's own
-completion rule and its AC-7.4 proof mechanism are therefore impossible as written.**
+### NEW findings from this pass
 
-Verified in-session by reading the test file:
-- its `dbMock` is `{ payrollRun: { findFirst, update }, employee: {...}, payrollPeriod: { findFirst }, attendanceDay: {...} }` — there is **no `$transaction` key at all** (`grep -n '\$transaction'` on that file returns nothing);
-- its `beforeEach` sets `dbMock.payrollRun.findFirst.mockResolvedValue({ id: 'x1', status: 'APPROVED' })` — **no `period`**;
-- `voidRun` is deliberately left **real** throughout that file.
+**N1 — the extraction breaks `pnpm lint`, and the plan does not say so.** `sum` is imported in
+`periods.ts:6` (`import { D, q2, sum } from './money'`) and is used at **exactly one place in the
+whole file — `:337`**, which is INSIDE the extracted span. After step 3, `sum` is an unused import
+and lint goes red. Also unstated: the new `src/lib/server/services/payroll/amortization.ts` needs
+`import { D, sum } from './money'` and `import type { Prisma } from '@prisma/client'`. `D` stays
+used in `periods.ts` (`:183`, `:193`, `:228`) so its import stays. Execute-agent instruction E2
+below. Severity: CONCERN.
 
-So step 8's `db.$transaction(...)` calls `undefined`, and step 7's `run.period.status` reads a
-property of `undefined`. Every test in that file that gets PAST the guard — "still allows the Super
-Admin", "admits an actor holding SUPER_ADMIN as a secondary role, and voids (#256)", "still allows a
-single-role Super Admin through the v1 API twin" — will throw.
+**N2 — step 5's premise is factually wrong in one detail.** The plan says the void branch "today it
+has no try/catch at all". `src/routes/api/v1/payroll/[id]/+server.ts:67-71` DOES have a try/catch —
+around `requireAnyCapability` only. The `voidRun` call at `:73-77` is genuinely unwrapped, so the
+instruction (wrap the service call, map 400/403/404 to `apiError`, message `'Cannot void this
+run'`) is correct and step 5 still must run before step 6. Severity: CONCERN (plan text).
 
-This directly contradicts three statements in this plan: the Verification Evidence row
-`void-run-capability-unchanged` ("stays green **with zero edits**"), the instruction "**Do not
-modify** `tests/unit/override-finalized-guard.test.ts`", and done-means item 4.
+**N3 — one user in the entire dev database can void anything.** `OVERRIDE_FINALIZED` is
+`['SUPER_ADMIN']` (`src/lib/rbac.ts:73`) and the live `users` table holds exactly one active
+SUPER_ADMIN: **`admin@veent.ph`** (org_seed). Step 1's `SUPERADMIN_EMAIL_HERE` placeholder resolves
+to that address and nothing else. Severity: CONCERN (live-step precision).
 
-Resolution required: the plan must explicitly PERMIT editing that file's mock — add `$transaction:
-async (fn) => fn(dbMock)` and add `period: { status: 'GENERATED' }` to the `findFirst` mock — and
-must then replace the AC-7.4 proof mechanism, because "green with zero edits" is no longer
-available. The replacement should be: the file's 403/admit assertions are unchanged and still pass,
-diffed to show only mock scaffolding moved. Note that `payroll-void-audit-298` does NOT have this
-problem — its edits keep `voidRun`'s shape, so its own AC-1.4 claim stands.
-
-**F2 — step 3's extraction range is wrong, and following it literally voids the period.**
-
-The plan says the block to lift is `periods.ts:313-370` (Touchpoints) / `periods.ts:314-370`
-(step 3, "moved verbatim"). Verified actual structure:
-
-- `:314` — `await db.$transaction(async (tx) => {`  ← the transaction opener, not the reversal
-- `:315` — `if (run && wasLocked) {`
-- `:316-360` — the reversal: the `payrollEntry.findMany` with deductions and the loop
-- `:363` — `if (run) await tx.payrollRun.update({ ..., data: { status: 'VOIDED' } })`
-- `:364` — `await tx.payrollPeriod.update({ ..., data: { status: 'VOIDED' } })`
-- `:367-372` — `writeAuditLog`
-
-A verbatim move of `314-370` is not brace-balanced, and the nearest sane reading sweeps in `:363`
-and `:364` — the run AND period status flips. `voidRun` would then call `reverseAmortization` and
-**void the period**, which contradicts this plan's own Design Note ("the period is deliberately
-left alone"), the step-9 doc's stated "single remaining difference", and the Explicitly OUT OF
-SCOPE row "Making a run void also unlock or void the period".
-
-Resolution required: correct the range to **the body of the `if (run && wasLocked)` block, lines
-316–360**, and state that `reverseAmortization` contains the `findMany` and the loop ONLY — no
-status write of any kind.
-
-**F3 — `run.period` is optional; `run.period.status` is a type error and a null crash.**
-
-`prisma/schema.prisma` PayrollRun: `periodId String?` and `period PayrollPeriod? @relation(...)`.
-Step 7's `const wasLocked = run.period.status === 'LOCKED' || run.period.status === 'RELEASED'`
-does not compile under `pnpm check` and would throw at runtime on any run with no period.
-
-Resolution required: `run.period?.status` (or an explicit `if (!run.period) …` branch), and a test
-case for a run with a NULL `periodId` proving no reversal is attempted. Note this is a real data
-shape — `periodId` is nullable in the schema, so runs without periods are representable.
-
----
-
-## CONCERNs
-
-**F4 — the cancel branch cancels the thing it then says to keep.** Step 2 says "Does not
-reproduce → **steps 3–9 are cancelled** … AC-7.5 (the doc) is still worth doing". Step 9 **IS** the
-doc (AC-7.5), and it is inside the cancelled range. Restate as: cancel **3–8**; **step 9 still
-runs** and must describe the behaviour as the probe actually found it. Verified that nothing else
-downstream depends on 3–8: step 11's fence depends on `payroll-void-audit-298` step 8, not on this
-plan; step 12 is independent. But the Verification Evidence table and the mutation table M1–M6 are
-not marked conditional, so a mechanical EXECUTE could try to run mutations against code that was
-never written — add a "cancelled if step 1 disproves" marker to those rows.
-
-**F5 — "steps 10–11 and step 12 have no ordering constraint at all" is FALSE.** Three hard
-constraints exist:
-1. **Step 12a must run BEFORE `payroll-void-audit-298` step 8**, or the "before" PAYDATE sample
-   cannot be captured at all — the plan's own Dependencies table says so, then the Sequencing rule
-   contradicts it.
-2. **Step 12b/12c must run AFTER** that same step 8.
-3. **Step 11's `lock-writes-no-approver` is only true after** that same step 8; run earlier it is
-   red for the right reason but for the wrong plan.
-Resolution: replace the Sequencing rule with the Global Execution Order above.
-
-**F6 — the cash-advance fence does NOT hold. This plan makes the defect strictly worse, and has
-zero coverage of it.** The plan argues it "neither introduces nor widens" the over-credit because
-step 6 calls the existing reversal. That is wrong in one specific way:
-
-- **Today** the over-credit is reachable only through `voidPeriod`, which also flips the period to
-  `VOIDED` — so an over-credited advance sits against a payroll that is visibly dead.
-- **After this plan** it is reachable through `voidRun`, which **deliberately leaves the period
-  `LOCKED`**. So an over-credited cash advance, and a `PAID` advance resurrected to `ACTIVE`, will
-  sit against a period that still looks live. That is a new failure mode, not the same one twice.
-- `voidRun` moves **zero** money today. After this plan it moves money on a path that never did.
-
-Verified against the source (`periods.ts:352-360`): the cash-advance arm credits back the raw
-frozen `D(d.amount)` and sets `status: 'ACTIVE'` **unconditionally**, while the loan arm
-(`:333-350`) reads the real `loan_payments` rows, restores only what moved, and reopens the loan
-only when `restored.gt(0)`. The asymmetry is exactly as the plan describes.
-
-And the plan tests **none of it**: the new e2e spec clones a LOAN seed; L1–L6 seed only a loan; the
-new unit tests spy on `reverseAmortization` (proving "called", not "correct"); M1–M9 has no
-cash-advance row. The riskiest money movement in the whole plan has no gate.
-
-Minimum acceptable mitigation (do NOT fix the underlying bug — that needs a cash-advance payment
-ledger and an owner decision):
-- add a live row **L7** seeding a cash advance whose live balance is BELOW the installment, lock,
-  void the RUN, and record the resulting `cash_advances.balance` and `status` as **positive
-  measured numbers** — so the over-credit is a figure in the report, not a paragraph;
-- add the same over-credit statement to `docs/payroll-void-semantics.md` under the run-void
-  section, not only under a shared footnote;
-- add a mutation row asserting the cash-advance branch is reached at all from `voidRun`.
-
-**F7 — step 10's grep cannot confirm the 22-row table, and cannot detect a 23rd site.** Run
-in-session, the plan's own command
-`grep -nE "(approved|reviewed|…)By(Id)? +String" prisma/schema.prisma` returns **18** sites, not 22
-and not 23. Four rows of the table — `ActionProposal.initiatorId`, `ApprovalStep.actorId`,
-`PostingApprover.approverId`, `AuditLog.actorId` — do not match the pattern at all. So step 10's
-instruction "if either grep returns a site not in the table below, the sweep is not clean" produces
-a **guaranteed pass** and proves nothing about the delta. The second grep (`approvedById:` in
-`src/ scripts/`) returns exactly 4 writers — `approvals.ts:673`, `recruitment.ts:174`,
-`payroll/index.ts:508`, `periods.ts:252` — which DOES confirm the row-11 verdict.
-Settlement: **the 22-vs-23 delta is recorded as a KNOWN GAP, not as clean.** The enumeration's
-verdict (exactly one ambiguous field, `PayrollRun.approvedById`, fixed by D2) is independently
-confirmed by the second grep and stands. The COUNT is unsettled and the plan's own tool cannot
-settle it. Either widen the pattern to cover bare `actorId`/`initiatorId`/`approverId` and re-count,
-or state plainly in the report that the count is approximate and the verdict is what matters.
-
-**F8 — duplicate deliverable with `payroll-void-audit-298`.** Step 11's `lock-writes-no-approver`
-and mutation M7 are the same assertion and the same mutation as that plan's
-`approver-record-unambiguous` gate and its M9, in the file that plan creates
-(`tests/unit/payroll-period-actors.test.ts`). **Ownership is assigned to `payroll-void-audit-298`.**
-Step 11 becomes: check that file, confirm the assertion uses `not.toHaveProperty` (not
-`toBe(null)`), and skip if present. The plan already anticipates this — make it the default path,
-not the exception.
-
-**F9 — the D9 placeholder is stale.** The section says D9's fate "is a decision for the owner … it
-may be dropped from the SPEC, re-scoped … or kept". The SPEC **dropped D9 on 18-08-26** and
-withdrew AC-6.1 – AC-6.5. Update the placeholder to cite the drop. **No drift found in substance:**
-no step in this plan (or in either sibling) touches final-pay arithmetic or `separation.ts`, and
-AC-6.x appears in no gate anywhere. The requested drift check comes back clean.
-
-**F10 — the `payslip-*` module paths are abbreviated.** The plan cites `payslip-document.ts:282`
-and `payslip-pdf.ts:156`; the real paths are `src/lib/server/services/payroll/payslip-document.ts`
-and `.../payroll/payslip-pdf.ts`. Both line numbers verified exact.
-
----
+**N4 — the "same capture, done once" claim is TRUE for the artifact but the period is unnamed, and
+the obvious period cannot be used.** Step 12a and `payroll-void-audit-298`'s L7-before both want the
+literal `PAYDATE:` string from a rendered payslip PDF for an entry on a **locked-but-never-approved**
+run, on a tree where `lock()` still writes `approvedById`. That is genuinely one artifact, not two
+similar ones. But the sibling's own probe period `ZZ-298-PROBE` **cannot serve as it**: its L2 step
+approves the run as user A before locking. So the shared capture MUST be taken on
+**`ZZ-D12-PROBE`**, the never-approved period step 12a creates. Neither plan says this. Severity:
+CONCERN — execute-agent instruction E4 below.
 
 ### Test gates (5-column)
 
 | criterion id | behavior | strategy | proving test | gap-resolution |
 |---|---|---|---|---|
-| AC-7.1 | the void-run divergence is proven or disproven LIVE before any fix exists | Agent-Probe | step 1 — four post-void psql numbers + the `ZZ-D10-PROBE-2` period-void negative control, recorded either way | A |
+| AC-7.1 | the void-run divergence is proven or disproven LIVE before any fix exists | Agent-Probe | step 1 — four post-void psql numbers + the `ZZ-D10-PROBE-2` period-void negative control, recorded either way; cookie for `admin@veent.ph` | A |
 | AC-7.2 | voiding a run reverses LOAN amortization when the period was locked | Hybrid | `pnpm test:e2e -- payroll-void-run-amortization` (loan balance back at the NAMED principal, `loan_payments` = 0 rows) + live L2 | B |
 | AC-7.2 | voiding a run on an unlocked period moves NO balance | Fully-Automated | `pnpm test -- void-run-semantics` (`void-run-skips-reversal-on-unlocked-period`) + live L4 both sides | B |
-| AC-7.2 | voiding a run on a RELEASED period DOES reverse | Fully-Automated | `pnpm test -- void-run-semantics` — a RELEASED-period case, added specifically so M5 is catchable | B |
-| AC-7.2 | voiding a run reverses CASH-ADVANCE amortization correctly | Hybrid | **MISSING — no test, no live row, no mutation. See F6.** | B |
+| AC-7.2 | voiding a run on a RELEASED period DOES reverse | Fully-Automated | `pnpm test -- void-run-semantics` — a RELEASED-period case added so M5 is catchable + live L5 | B |
+| AC-7.2 | the CASH-ADVANCE arm of the new `voidRun` path is REACHED and its over-credit is measured | Hybrid | live **L7** (three peso figures: pre-lock, post-lock, post-void) + mutation **M10** + the cash-advance seed in the new e2e. Measures a known defect; does NOT prove correctness | D |
 | AC-7.3 | an already-VOIDED run is refused with a message naming "already voided" | Fully-Automated | `pnpm test -- void-run-semantics` (`void-run-status-precondition`, status 400) + live L3 | B |
 | AC-7.3 | a double void does not double-credit | Hybrid | live L3 second half — balance still equals the principal, NOT principal + installment | A |
-| AC-7.4 | nobody who can void a run in a real state is newly blocked | Fully-Automated | `pnpm test -- override-finalized-guard` — **proof mechanism INVALID as written, see F1** | B |
+| AC-7.4 | nobody who can void a run in a real state is newly blocked | Fully-Automated | `pnpm test -- override-finalized-guard` green after **E1 only**, plus `git diff tests/unit/override-finalized-guard.test.ts` showing that single added line and no assertion changed. **VERIFIED FEASIBLE this pass** | A |
+| AC-7.4 | a period-less run (`periodId` NULL) still voids, with no reversal attempted | Fully-Automated | `pnpm test -- void-run-semantics` (`void-run-no-period`) + the guard test's own period-less mock | A |
 | AC-7.4 | a COMPUTED and an APPROVED run both still void | Fully-Automated | `pnpm test -- void-run-semantics` (`void-run-allows-draft-and-approved`) | B |
 | AC-7.5 | run void vs period void described in one findable place | Fully-Automated | `docs/payroll-void-semantics.md` exists and greps for: the status precondition, what is reversed, the ending period status, and how each void is reached | B |
-| AC-8.1, AC-8.3 | every actor-attribution writer enumerated with a verdict | Fully-Automated | the in-plan enumeration + step 10's two greps — **the count is unsettled, see F7** | D |
-| AC-8.2 | a regression fence notices if D2's fix is reverted | Fully-Automated | `lock-writes-no-approver` — **owned by `payroll-void-audit-298`, see F8** | C |
-| AC-10.1 | the PAYDATE move captured as a real rendered PDF sample, before and after | Agent-Probe | step 12a (Phase 0, clean tree) + step 12b (Phase 5); literal strings transcribed, not paraphrased | A |
+| AC-7.5 | a run void leaves the period status untouched | Fully-Automated + Hybrid | (a) `grep -n "payrollPeriod.update\|payrollRun.update" src/lib/server/services/payroll/amortization.ts` returns NOTHING; (b) live L2's `payroll_periods.status` still `LOCKED`; mutation **M11** | A |
+| AC-8.1, AC-8.3 | every actor-attribution writer enumerated with a verdict | Fully-Automated | the in-plan enumeration + step 10 **Check A** (exactly four `approvedById` writers at the four named sites — re-confirmed this pass). The COUNT is a known gap | D |
+| AC-8.2 | a regression fence notices if D2's fix is reverted | Fully-Automated | `lock-writes-no-approver` — **owned by `payroll-void-audit-298`** (`approver-record-unambiguous` / its M9). Step 11 verifies and skips | C |
+| AC-10.1 | the PAYDATE move captured as a real rendered PDF sample, before and after | Agent-Probe | step 12a on **`ZZ-D12-PROBE`** (Phase 0, clean tree — the only window) + step 12b on `ZZ-D12-PROBE-2` (Phase 5); literal strings transcribed | A |
 | AC-10.2 | an APPROVED run's PAYDATE is unchanged | Hybrid | step 12c — the control on the same "after" tree | A |
 | AC-10.3 | Finance is told BEFORE the change ships | Agent-Probe | step 12e — the hand-off note in the report AND the closeout | A |
-| AC-5.3 | every guard is mutation-checked | Fully-Automated | M1–M9 RUN with actual results recorded, including M6's and M8's "nothing went red — by design" | B |
+| AC-5.3 | every guard is mutation-checked | Fully-Automated | **M1–M11** RUN with actual results recorded, including M6's and M8's "nothing went red — by design" | B |
 
 Failing stubs (Fully-Automated rows only — red-first starting points for EXECUTE, applicable only
 if step 1 reproduces):
@@ -1185,105 +1102,173 @@ test("should reverse amortization when voiding a run on a RELEASED period", () =
 test("void-run-status-precondition", () => {
   throw new Error("NOT IMPLEMENTED — TDD stub: an already-VOIDED run is refused with 400 naming 'already voided'")
 })
+test("void-run-no-period", () => {
+  throw new Error("NOT IMPLEMENTED — TDD stub: a run with a NULL periodId voids and reverseAmortization is NOT called")
+})
 test("void-run-allows-draft-and-approved", () => {
   throw new Error("NOT IMPLEMENTED — TDD stub: a COMPUTED and an APPROVED run both still void")
 })
 test("void-semantics-documented", () => {
   throw new Error("NOT IMPLEMENTED — TDD stub: docs/payroll-void-semantics.md names the precondition, what is reversed, the ending period status, and how each void is reached")
 })
-test("void-run-reverses-cash-advance-amortization", () => {
-  throw new Error("NOT IMPLEMENTED — TDD stub: F6 — voiding a run reverses cash-advance amortization; record the over-credit as a measured number")
+test("run-void-leaves-period-untouched", () => {
+  throw new Error("NOT IMPLEMENTED — TDD stub: amortization.ts contains no payrollPeriod.update and no payrollRun.update")
 })
 ```
 
 Legacy line form (for existing validate-contract consumers):
 
-- D10 gate probe: `agent-probe: curl -s -b /tmp/void-probe.txt -X POST 'http://localhost:5173/api/v1/payroll/RUN_ID?action=void'` + the three psql queries — precondition: the USER starts the dev server and `veent-db-5434`. There is NO UI button for a run void.
+- D10 gate probe: `agent-probe: curl -s -b /tmp/void-probe.txt -X POST 'http://localhost:5173/api/v1/payroll/RUN_ID?action=void'` + the three psql queries — precondition: the USER starts the dev server and `veent-db-5434`; the cookie must be for `admin@veent.ph`, the only OVERRIDE_FINALIZED holder. There is NO UI button for a run void.
 - voidRun unit gates: `Fully-automated: pnpm test -- void-run-semantics`
+- guard-test scaffolding gate: `Fully-automated: pnpm test -- override-finalized-guard` + `git diff tests/unit/override-finalized-guard.test.ts` showing only the E1 line
 - extraction no-regression: `hybrid: pnpm test:e2e -- payroll-lock-idempotency` — precondition: a working e2e environment; flaky per #287, with the step-1 psql script as the recorded manual substitute
 - new reversal e2e: `hybrid: pnpm test:e2e -- payroll-void-run-amortization`
-- the sweep: `Fully-automated: the two step-10 greps` — but see F7, they cannot settle the count
-- cash-advance arm of the new voidRun path: `known-gap: documented as NEW PLAN REQUIRED — no test exists and none can exist until a cash-advance payment ledger does`
+- the sweep: `Fully-automated: step 10 Check A` — exactly four `approvedById` writers; the schema-grep COUNT cannot be settled by this tooling
+- cash-advance arm of the new voidRun path: `known-gap: documented as NEW PLAN REQUIRED — no test exists and none can exist until a cash-advance payment ledger does; measured in pesos by L7`
 
 ### Dimension findings
 
-- Infra fit: CONCERN — commands are correct (`pnpm test` = vitest, `pnpm test:e2e` = playwright, no `test:unit`). Nothing lands in `prisma/**` or `scripts/**`, so that blind spot genuinely does not apply. `tests/e2e/payroll-lock-idempotency.spec.ts` and `tests/unit/override-finalized-guard.test.ts` both exist and are the right templates. But the e2e dependency is doubled (step 4's gate AND the new spec) on a suite the plan itself calls flaky, and the container is currently DOWN — every live step is a human action.
-- Test coverage: FAIL — F1 makes the AC-7.4 gate impossible; F6 leaves the highest-risk money movement in the plan with no test, no live row and no mutation. M1–M9 is otherwise a strong and honest table (M6 and M8 pre-declared as uncatchable is exactly right).
-- Breaking changes: CONCERN — the plan correctly identifies that `voidRun` becomes money-moving and that its only caller is the v1 API. Verified: `grep -rn "voidRun" src/` returns the service, `api/v1/payroll/[id]/+server.ts:73`, and nothing else; the run detail page exports no `void` action. Step 5's premise verified true — the void branch at `:66-79` has **no try/catch**, while the approve branch above it does (`:57-63`), so an uncaught `error(400)` would surface raw. Step 5 correctly precedes step 6.
-- Security surface: PASS — `requireAnyCapability(ctx.actorRoles, 'OVERRIDE_FINALIZED')` at `runs.ts:93` and `periods.ts:307` untouched. Verified the API route's void branch passes `user.roles`, identical to the approve branch's `const roles = user.roles` — no multi-role divergence to fix. One new 400, on a state that was never meaningful to void. No new 403.
-- Section feasibility (Phase A, the gate): PASS — step 1 is the best-built section in any of the three plans. It plants a named marker, asserts positive values, has a period-void negative control on fresh data, and invalidates itself if the lock did not move the balance. Only defect is F4's cancel-range typo.
-- Section feasibility (Phase B, the extraction): FAIL — F2. Line range wrong; the literal instruction sweeps in the period status flip.
-- Section feasibility (Phase C, voidRun): FAIL — F1 and F3. `db.$transaction` is absent from the guard test's mock; `run.period` is optional in the schema.
-- Section feasibility (Phase D, the doc): PASS — `docs/payroll-void-semantics.md` does not exist yet; no collision. Content spec is concrete and greppable.
-- Section feasibility (Phase E, the sweep): CONCERN — F7 and F8. The verdict is sound and independently confirmed; the count and the ownership are not.
-- Section feasibility (Phase F, PAYDATE): CONCERN — F5. Step 12a's window is real but the plan denies it exists.
+- Infra fit: CONCERN — commands correct (`pnpm test` = vitest, `pnpm test:e2e` = playwright, no `test:unit`). Nothing lands in `prisma/**` or `scripts/**`. `tests/e2e/payroll-lock-idempotency.spec.ts` and `tests/unit/override-finalized-guard.test.ts` both exist and are the right templates; `docs/payroll-void-semantics.md` and `src/lib/server/services/payroll/amortization.ts` do not exist, so neither create collides. **The database and app are now UP** — but zero payroll periods exist and both payroll runs have a NULL `periodId`, so every live step must build its own period (open → import → generate → lock). Residual: the e2e dependency is doubled on a suite the plan itself calls flaky, and N1's import fallout is unstated.
+- Test coverage: CONCERN — F1's gate is now feasible and F6's cash-advance arm has L7 + M10 + an e2e seed, so the two things that failed last pass are closed. M1–M11 is a strong and honest table (M6 and M8 pre-declared as uncatchable is exactly right). Residual: the cash-advance arm is measured, never proven correct — a named, permanent residual.
+- Breaking changes: PASS — `grep -rn "voidRun" src/ tests/` returns the service, `api/v1/payroll/[id]/+server.ts:73`, one comment in `periods.ts:306`, and `override-finalized-guard.test.ts`. Nothing else. The run detail page exports no `void` action. `voidRun` becoming money-moving is correctly identified as the real contract change.
+- Security surface: PASS — `requireAnyCapability(ctx.actorRoles, 'OVERRIDE_FINALIZED')` at `runs.ts:93` and `periods.ts:307` untouched. `OVERRIDE_FINALIZED: ['SUPER_ADMIN']` confirmed at `rbac.ts:73`. One new 400, on a state that was never meaningful to void. No new 403.
+- Section feasibility (Phase A, the gate): PASS — the best-built section in any of the three plans. Named marker, positive assertions, a period-void negative control on fresh data, and a self-invalidation clause if the lock did not move the balance. Only addition needed is the `admin@veent.ph` identity (N3).
+- Section feasibility (Phase B, the extraction): CONCERN — the span is now correct and balanced (F2 resolved). Residual is N1 only: the `sum` import move is unstated and lint will go red.
+- Section feasibility (Phase C, voidRun): PASS — F1 and F3 both resolved and re-verified. `findFirst` is at `runs.ts:95` as stated. Step 5's ordering is right; its premise wording is off by one detail (N2).
+- Section feasibility (Phase D, the doc): PASS — no collision, content spec is concrete and greppable.
+- Section feasibility (Phase E, the sweep): PASS — Check A re-run this session returns exactly the four named writers; the schema grep returns 18, recorded honestly as unsettled. Ownership of the fence is correctly deferred to the sibling.
+- Section feasibility (Phase F, PAYDATE): CONCERN — 12a's Phase 0 placement is right and the shared-capture claim is TRUE for the artifact, but the period is unnamed and the sibling's period cannot serve (N4).
 
 ### Open gaps
 
-- Cash-advance over-credit propagated to a second void path: **known-gap: documented as NEW PLAN REQUIRED** — needs a cash-advance payment ledger plus a backfill decision the owner has not been asked. Recorded for the owner; no GitHub issue filed (SPEC constraint 11). Must be measured live per F6 before it ships.
-- The 22-vs-23 actor-field bookkeeping delta: **known-gap: documented** — the plan's own grep returns 18 and cannot settle it. The VERDICT (one ambiguous field) is confirmed; the COUNT is not.
-- `voidPeriod`'s reversal arithmetic has no unit test at all — confirmed: `tests/unit/payroll-amortization.test.ts` covers `applyAmortizations` in `deductions.ts`, not the reversal. The step-3 extraction makes such a test cheap for the first time. Not built here. Recorded.
+- Cash-advance over-credit propagated to a second void path, onto a period that stays `LOCKED`: **known-gap: documented as NEW PLAN REQUIRED** — needs a cash-advance payment ledger plus a backfill decision the owner has not been asked. Measured in pesos by L7 before it ships. No GitHub issue filed (SPEC constraint 11).
+- The actor-field COUNT (22 enumerated / 23 reported by research / 18 matched by the grep): **known-gap: documented** — this plan's tooling cannot settle it. The VERDICT is independently confirmed by Check A.
+- `voidPeriod`'s reversal arithmetic has no unit test at all. The step-3 extraction makes one cheap for the first time. Not built here. Recorded.
 - Atomicity of the new `$transaction` is unprovable by the unit suite (M6). Only a crash-injection test would catch it; out of scope. Accepted, named.
-- The `_dev/login-as` curl harness is the ONLY way to reach `voidRun`. Worth a line in the test context docs — a whole service function with no UI path is easy to forget exists.
+- The `_dev/login-as` curl harness is the ONLY way to reach `voidRun`, and `admin@veent.ph` is the only account that can. Worth a line in the test context docs.
+
+### Execute-agent instructions
+
+| # | Instruction | Trigger |
+|---|---|---|
+| E1 | Apply the `$transaction` mock key to `tests/unit/override-finalized-guard.test.ts` **in the same commit as step 8**. Add nothing else — no `period` key, no new assertions. Then run `git diff` on that file and paste it into the report; it must show one added line. | Step 8 |
+| E2 | Step 3/4 import fallout, unstated in the plan: create `amortization.ts` with `import { D, sum } from './money'` and `import type { Prisma } from '@prisma/client'`, and **remove `sum` from `periods.ts:6`** — `:337` is its only use in that file and it sits inside the extracted span. `D` stays (`:183`, `:193`, `:228`). Skipping this turns `pnpm lint` red. | Step 3, before step 4's gate |
+| E3 | Step 1's `SUPERADMIN_EMAIL_HERE` is `admin@veent.ph` — the only active `SUPER_ADMIN` and therefore the only `OVERRIDE_FINALIZED` holder in the whole dev database. Any run void, by anyone else, is a 403 and not a probe result. | Step 1 |
+| E4 | The shared 12a / sibling-L7-before capture MUST be taken on **`ZZ-D12-PROBE`**, the never-approved period. Do NOT try to take it on the sibling's `ZZ-298-PROBE` — that period's run is approved at its L2, so it is not a "locked but never approved" run and its PAYDATE is the approval date. | Phase 0 item 3 |
+| E5 | Step 5's plan text says the void branch has "no try/catch at all". It has one, around `requireAnyCapability` (`+server.ts:67-71`). The `voidRun` call at `:73-77` is the unwrapped part — wrap that, mapping 400/403/404 to `apiError` with `'Cannot void this run'`, mirroring `:57-63`. | Step 5 |
+| E6 | Every live probe must build its own period. The database has **zero** `payroll_periods` and both existing `payroll_runs` have a NULL `periodId` — no existing run can be reused for L2/L4/L5/L7. | All live steps |
 
 ### What this coverage does NOT prove
 
-- Step 1's probe proves the divergence on ONE seeded loan in ONE dev database. It does NOT prove the divergence for cash advances, for multi-entry runs, or for a run with several deduction lines.
-- `pnpm test -- void-run-semantics` mocks `$lib/server/db` and spies on `reverseAmortization`. It proves the reversal WAS or WAS NOT CALLED. It proves **nothing about whether the reversal is arithmetically correct** — that is only ever proven by the e2e spec and the live L2/L5 psql numbers, and only for LOANS.
-- Nothing anywhere proves the cash-advance arm of the new `voidRun` path is correct. It is known to be incorrect (over-credit, unconditional `ACTIVE`) and is deliberately unfixed.
-- `pnpm test:e2e -- payroll-lock-idempotency` staying green after step 4 proves the extraction did not change the LOAN path of `voidPeriod`. It does not exercise the cash-advance branch, so a mistake in moving that branch would pass unnoticed.
+- Step 1's probe proves the divergence on ONE seeded loan in ONE dev database. It does NOT prove it for cash advances, for multi-entry runs, or for a run with several deduction lines.
+- `pnpm test -- void-run-semantics` mocks `$lib/server/db` and spies on `reverseAmortization`. It proves the reversal WAS or WAS NOT CALLED. It proves nothing about whether the reversal is arithmetically correct — that is only ever proven by the e2e spec and the live L2/L5 psql numbers, and only for LOANS.
+- Nothing anywhere proves the cash-advance arm of the new `voidRun` path is correct. It is known to be incorrect (over-credit on a capped payment, unconditional `ACTIVE`) and is deliberately unfixed. L7 measures it; measuring is not proving.
+- `pnpm test:e2e -- payroll-lock-idempotency` staying green after step 4 proves the extraction did not change the LOAN path of `voidPeriod`. It does not exercise the cash-advance branch, so a mistake in moving that branch would pass unnoticed. Only the new spec's cash-advance seed reaches it.
 - The unit suite mocks `$transaction`, so it cannot see atomicity. M6 is pre-declared as catching nothing — a crash mid-reversal leaving a half-credited void is untested by design.
-- Step 10's greps do NOT prove the enumeration is complete. They return 18 of the 22 claimed rows and can never surface a 23rd of a shape the pattern misses.
-- The PAYDATE evidence is a rendered-document sample, not a code assertion. It proves what one PDF printed on one run. It does not prove the behaviour for every payslip shape.
+- Passing `dbMock` as `tx` in E1 means the unit suite cannot distinguish a transactional write from a non-transactional one. The E1 gate proves the guard assertions survived; it proves nothing about the transaction boundary.
+- Step 10's Check A proves there is no FIFTH `approvedById` writer. It does NOT prove the 22-row enumeration is complete — the schema grep returns 18 and can never surface a 23rd field of a shape the pattern misses.
+- The PAYDATE evidence is a rendered-document sample. It proves what one PDF printed on one run. It does not prove the behaviour for every payslip shape.
 - Nothing proves the period is SAFE to leave `LOCKED` after a run void. That is an accepted, documented divergence, not a verified-harmless one.
+- The live steps prove behaviour in `org_seed` dev seed data with one Super Admin. They prove nothing about production, about a tenant with several Super Admins, or about concurrent voids.
 
-Gate: BLOCKED — 3 unresolved FAILs (F1 the guard test is broken by steps 7–8; F2 the extraction range is wrong and voids the period; F3 `run.period` is optional). Return to PLAN. Do NOT route to EXECUTE. F4–F10 are CONCERNs that should be fixed in the same pass. Note that FAILs F1–F3 are all *plan-text* corrections — no design decision changes, and the D10 design (extract, don't re-implement; VOIDED-only precondition; reverse on the period's status, not the run's) is sound and survives validation intact.
-Accepted by: n/a — BLOCKED gates are not accepted. Resolution path: correct F1, F2 and F3 in the plan, then re-run VALIDATE from V1.
+Gate: CONDITIONAL — 0 FAILs (F1, F2 and F3 all verified resolved against the live source), 4 new CONCERNs (N1 the `sum` import breaks lint; N2 step 5's premise wording; N3 the single OVERRIDE_FINALIZED account; N4 the shared-capture period is unnamed and the sibling's cannot serve), 5 known-gaps. All four new CONCERNs are handled by execute-agent instructions E2–E5; none is a design change. EXECUTE may proceed in its assigned slot.
+Accepted by: session — accepted concerns, by name: N1 `sum` becomes an unused import in `periods.ts` after the extraction and lint goes red (fixed by E2); N2 step 5 says "no try/catch at all" when a partial one exists (fixed by E5); N3 only `admin@veent.ph` holds OVERRIDE_FINALIZED in the dev database (fixed by E3); N4 the shared 12a/L7-before capture has no named period and the sibling's `ZZ-298-PROBE` cannot serve it (fixed by E4). Plus known-gaps: the cash-advance over-credit reaching a second void path; the unsettled actor-field count; `voidPeriod`'s untested reversal arithmetic; the unprovable `$transaction` atomicity; the API-only reach of `voidRun`.
+
+---
+
+## THE GLOBAL EXECUTION ORDER (binding, all three plans)
+
+Unchanged by this re-validation, with the N3/N4 identities filled in. Deviating from it either
+destroys evidence that can only be captured once, or puts two agents in the same function body.
+
+**PHASE 0 — clean tree, live, ONE dev-server session, no code written.**
+The user starts the dev server and `veent-db-5434` (both are up as of 18-08-26). Then, in order:
+1. This plan's **step 1** — the D10 live probe (`ZZ-D10-PROBE`) and its period-void negative control
+   (`ZZ-D10-PROBE-2`). Void as `admin@veent.ph`. Record the four post-void numbers.
+2. This plan's **step 2** — write the verdict into the report. THIS BRANCHES EVERYTHING BELOW.
+3. This plan's **step 12a** — the "before" `PAYDATE:` capture on **`ZZ-D12-PROBE`** (locked, never
+   approved). **This is the ONLY window in which 12a can ever be executed**, and this period is the
+   ONLY one that can carry it.
+4. `payroll-void-audit-298`'s **L1–L5 "before" pass** on `ZZ-298-PROBE`, and its **L7-before**,
+   which is item 3's result CITED, not re-run. `ZZ-298-PROBE` cannot serve as the L7 sample — its
+   run is approved at L2.
+5. `clearance-signoff-297`'s **L0–L4 "before" pass** including L2b–L2e (its L2 and L4 must SUCCEED
+   here — that is what proves its harness can observe the difference).
+
+**PHASE 1 — `payroll-void-audit-298`, steps 1–13, in order.** Owns `prisma/schema.prisma`,
+`periods.ts` (lock / release / voidPeriod's audit call), `runs.ts` (voidRun's audit call), both
+audit-log page arrays, the count script. Nothing from this plan may run concurrently.
+
+**PHASE 2 — this plan, steps 3–8, ONLY IF step 1 reproduced.** Both touch files Phase 1 just
+edited. Verify with `git log --oneline` that Phase 1 landed before starting. Edit E1 to
+`override-finalized-guard.test.ts` lands here, in the same commit as step 8.
+
+**PHASE 3 — this plan, step 9 (the doc).** Runs whether or not step 1 reproduced.
+
+**PHASE 4 — this plan, steps 10–11 (the sweep and the regression fence).** Step 11 is only
+meaningful AFTER Phase 1 step 8 removed the `lock()` approver write, and defers to the sibling's
+`tests/unit/payroll-period-actors.test.ts` if that assertion is already there.
+
+**PHASE 5 — this plan, steps 12b / 12c / 12e.** The "after" PAYDATE pair, the approved-run control,
+and the Finance hand-off note. Must be after Phase 1 step 8. This phase owns the PAYDATE "after"
+capture; `payroll-void-audit-298`'s L7-after cites it rather than repeating it.
+
+**PHASE 6 — the "after" live passes and every mutation row** for both payroll plans. Note that
+`override-finalized-guard.test.ts` now carries edit E1: `payroll-void-audit-298`'s "green with zero
+edits" criterion is scoped to Phase 1 and must NOT be read as violated here.
+
+**INDEPENDENT TRACK — `clearance-signoff-297`.** Disjoint file set (`separation.ts`, both
+`/separations/[id]` route files, three new `separation-*` test files). No shared file with either
+payroll plan and no schema overlap. It may run in parallel with any phase above.
 
 ## Autonomous Goal Block
 
 ```
 SESSION GOAL
-Repair process/general-plans/active/void-semantics-and-sweep_PLAN_18-08-26.md so it can pass
-VALIDATE, then execute it in its assigned slot. The plan carries SPEC D10 (the void-run /
-void-period divergence, gated on a live probe), D11 (the who-approved sweep, already clean), and
-D12 (the payslip PAYDATE before/after sample plus the Finance note).
+Execute process/general-plans/active/void-semantics-and-sweep_PLAN_18-08-26.md in its assigned
+slot. It carries SPEC D10 (the void-run / void-period divergence, gated on a live probe), D11 (the
+who-approved sweep, already clean — enumeration only, no code), and D12 (the payslip PAYDATE
+before/after sample plus the Finance note). Gate is CONDITIONAL; the three FAILs from the first
+VALIDATE pass are verified fixed.
 
-AUTONOMY RULES — PLAN REPAIR FIRST. This plan is BLOCKED. Fix these three before anything else:
-- F1: steps 7 and 8 break tests/unit/override-finalized-guard.test.ts. Its dbMock has NO
-  $transaction key and its findFirst mock returns no `period`, and voidRun runs real in that file.
-  Permit editing that mock (add `$transaction: async (fn) => fn(dbMock)` and
-  `period: { status: 'GENERATED' }`), and REPLACE the AC-7.4 proof mechanism — "green with zero
-  edits" is no longer available.
-- F2: step 3's extraction range is wrong. It says periods.ts:314-370. The reversal is the BODY of
-  the `if (run && wasLocked)` block, lines 316-360. Lines 363-364 are the run and period status
-  flips and MUST NOT move into reverseAmortization — moving them makes a run void also void the
-  period, which the plan explicitly forbids.
-- F3: PayrollRun.period is optional (`period PayrollPeriod?`, `periodId String?`). Step 7's
-  `run.period.status` does not compile. Use `run.period?.status` and add a null-period test case.
-Then fix the CONCERNs: F4 (the cancel branch cancels step 9, the doc, then says to keep it — cancel
-3-8 only), F5 (steps 10-12 DO have ordering constraints — adopt the Global Execution Order in this
-contract), F6 (add live row L7 measuring the cash-advance over-credit as a positive number, plus a
-doc line and a mutation row), F7 (record the 22-vs-23 count as a known gap; the grep returns 18 and
-cannot settle it), F8 (step 11's fence is owned by payroll-void-audit-298 — verify and skip),
-F9 (the D9 placeholder is stale; the SPEC dropped D9 on 18-08-26), F10 (payslip module paths are
-under src/lib/server/services/payroll/).
+AUTONOMY RULES
+- Follow the Implementation Checklist in order. Step 1 gates steps 3-8 completely; step 9 (the doc)
+  runs either way.
+- Apply these six execute-agent instructions from the contract:
+  E1 apply the $transaction mock key to override-finalized-guard.test.ts in the same commit as
+     step 8; add nothing else; paste the git diff of that file into the report.
+  E2 create amortization.ts with `import { D, sum } from './money'` and
+     `import type { Prisma } from '@prisma/client'`, and REMOVE `sum` from periods.ts:6 — :337 is
+     its only use and it moves. Skipping this turns pnpm lint red. Keep the `D` import.
+  E3 the Super Admin in step 1 is admin@veent.ph — the only OVERRIDE_FINALIZED holder in the
+     database. Nobody else can void anything.
+  E4 the shared 12a / sibling-L7-before capture is taken on ZZ-D12-PROBE only. The sibling's
+     ZZ-298-PROBE has an APPROVED run and cannot carry it.
+  E5 step 5: the void branch DOES have a try/catch (around requireAnyCapability, +server.ts:67-71).
+     The unwrapped part is the voidRun call at :73-77. Wrap that one.
+  E6 every live probe builds its own period. Zero payroll_periods exist and both payroll_runs have
+     a NULL periodId — no existing run is reusable.
+- Record the ACTUAL result of every mutation row M1-M11, including M6's and M8's "nothing went red".
+- Record L7's three cash-advance figures as pesos, and state in the report that this plan widens the
+  over-credit's reach onto a path that leaves the period LOCKED.
 
 EXECUTION ORDER — binding, do not deviate:
 PHASE 0 clean tree, live, one dev-server session: this plan's step 1 probe + step 2 verdict, then
-  step 12a (the ONLY window it can ever run in), then payroll-void-audit-298's L1-L5 and L7-before
-  (L7-before and 12a are the SAME capture — do it once), then clearance-signoff-297's L1-L4 before.
+  step 12a on ZZ-D12-PROBE (the ONLY window), then payroll-void-audit-298's L1-L5 before (L7-before
+  is 12a's result cited, not re-run), then clearance-signoff-297's L0-L4 before.
 PHASE 1 payroll-void-audit-298 steps 1-13 in order.
-PHASE 2 this plan steps 3-8, ONLY if step 1 reproduced.
+PHASE 2 this plan steps 3-8, ONLY if step 1 reproduced. E1 lands here.
 PHASE 3 this plan step 9 (the doc) — runs either way.
 PHASE 4 this plan steps 10-11.
 PHASE 5 this plan steps 12b/12c/12e.
-PHASE 6 both "after" live passes and every mutation row.
+PHASE 6 both "after" live passes and every mutation row. override-finalized-guard.test.ts now
+  carries E1 — the sibling's "zero edits" criterion was scoped to Phase 1.
 clearance-signoff-297 runs on an independent track and may go in parallel at any time.
 
 HARD STOPS
 - Ask the user to start the dev server and the veent-db-5434 container. Never start either
-  yourself. The container is currently DOWN.
+  yourself. Both are currently UP.
+- Do not mutate the database outside the ZZ- marker periods, and clean them up or say why not.
 - Step 1 is an absolute gate. If it does not reproduce, steps 3-8 are cancelled — do NOT build a
   fix for a defect that did not reproduce (SPEC constraint 12). Step 9 still runs.
 - Do NOT touch separation.ts or prisma/schema.prisma. Confirm with git diff --name-only.
@@ -1291,13 +1276,14 @@ HARD STOPS
 - Do not file any GitHub issue. No Co-Authored-By trailer. Commit nothing without owner approval.
 
 NEXT PHASE
-Return to PLAN, fix F1-F3, then re-run VALIDATE from V1. EXECUTE is not reachable from here.
+EXECUTE, in the PHASE 0 / PHASE 2-5 slots above.
 
 CONTRACT SUMMARY
-Gate BLOCKED. 3 FAILs (F1 guard test broken by steps 7-8, F2 wrong extraction range that voids the
-period, F3 optional run.period), 7 CONCERNs, 4 known-gaps. All three FAILs are plan-text
-corrections — the underlying D10 design survives validation intact.
+Gate CONDITIONAL. 0 FAILs, 4 new CONCERNs (all covered by E2-E5), 5 known-gaps. F1, F2 and F3 were
+each re-verified against the live source: E1 alone makes the guard test pass, periods.ts:316-361 is
+exactly the if-body and is brace-balanced, and run.period?.status typechecks against
+`period PayrollPeriod?`. The D10 design is unchanged and sound.
 
 EXECUTE START COMMAND
-(not available — gate is BLOCKED; return to PLAN first)
+ENTER EXECUTE MODE for process/general-plans/active/void-semantics-and-sweep_PLAN_18-08-26.md
 ```

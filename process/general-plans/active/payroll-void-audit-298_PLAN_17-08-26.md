@@ -653,12 +653,116 @@ Status: CONDITIONAL
 Date: 18-08-26
 date: 2026-08-18
 generated-by: outer-pvl
+supersedes: 2026-08-18 (outer-pvl) — re-validated from V1; this plan was NOT edited in the repair pass, so its six concerns were re-judged rather than re-checked-off
 
 Parallel strategy: sequential
 Rationale: 6/7 signals present (S2 schema/API surface, S3 3+ directions, S4 3-plan program, S5 depth
-requested, S6 high-risk class, S7 5+ files) — normally HIGH → parallel subagents. The validating
-agent had no Agent/Task tool in its tool set, so both fan-out layers were executed inline and
-sequentially against the live source. Recorded as a deviation, not a preference.
+requested, S6 high-risk class, S7 5+ files) — normally HIGH → parallel subagents. But this plan
+cannot be parallelised with `void-semantics-and-sweep` under any strategy: both edit `voidRun`'s
+body and the same region of `periods.ts`. Sequential is the only safe execution for the payroll
+track. Both fan-out layers ran inline against the live source and the live database (read-only).
+
+### Re-judgement — are G1 and G2 blocking?
+
+**Both are COSMETIC. Neither blocks EXECUTE.** Asked directly, answered directly.
+
+**G1 — the schema anchors are off by one, and it does not matter.** Confirmed live:
+`prisma/schema.prisma:1613` is `lockedAt`, `:1614` is `releasedAt`, `:1615` is `createdAt`. The
+plan's fact table says `1614-1615` and step 2 says "immediately after `releasedAt` (line 1615)".
+Why it is cosmetic:
+
+- The instruction's real anchor is the **field name** — "immediately after `releasedAt`" — and that
+  is unambiguous and correct. The parenthesised number is decoration.
+- Even followed literally, inserting at line 1615 puts `lockedById` / `releasedById` after
+  `createdAt` instead of after `releasedAt`. Both positions are inside `model PayrollPeriod`, both
+  are valid Prisma, and **field order in a Prisma model has no semantic effect** — the generated
+  client, the migration DDL and the column set are identical. The only cost is a slightly untidy
+  model.
+- The Autonomous Goal Block already carries the mitigation verbatim: "Locate every edit target by
+  FIELD NAME or by the quoted code, never by the line numbers in the plan: the schema anchors are
+  off by one (lockedAt/releasedAt are at schema.prisma:1613-1614)."
+
+Fix it in passing; do not gate on it. `AuditAction` at `194-203` and `PayrollRun.approvedById` /
+`approvedAt` at `1091-1092` are exact.
+
+**G2 — the L5-vs-L7 cross-reference is wrong, and it does not matter.** The "second-order effect"
+section says the PAYDATE change "must be shown in the live check (step **L5** below)". The PAYDATE
+step is **L7**; L5 is the period-void marker check. Why it is cosmetic:
+
+- L7 exists, is unambiguous, and says exactly what to do ("Open the payslip PDF … before and after
+  … Record both values").
+- Done-means item 5 already requires **L1–L7** run before and after, so L7 cannot be skipped by
+  following the bad pointer.
+- A reader who follows the pointer to L5 lands on a psql query about `audit_logs` and
+  `sameActorAsApprover` and will see within one line that it is not the PAYDATE check.
+
+Fix the "L5" to "L7" in passing; do not gate on it.
+
+Neither concern touches behaviour, coverage or ordering. The plan's gate stays CONDITIONAL because
+of the cross-plan items below, not because of these two.
+
+### Re-verified facts (read again this pass)
+
+- `approvedById` writers in `src/` and `scripts/`: exactly **four** — `approvals.ts:673`,
+  `payroll/index.ts:508`, `periods.ts:252`, `recruitment.ts:174` (JobPosting, different model).
+  W1/W2/W3 as the plan states.
+- `requirePeriod` (`periods.ts:21-28`) includes `runs`, so `voidPeriod` has both marker arms.
+- `voidRun`'s `findFirst` (`runs.ts:95`) returns the whole row, so `run.approvedById` is available
+  with no extra query.
+- `entityTypes` in `+page.server.ts` has 8 entries and **no `PayrollPeriod`**; `ACTIONS` in
+  `+page.svelte:21-30` has 8 entries and **no `PAYROLL_VOID`**. Both edits are findable and unique.
+- `payslip-document.ts:282` is the `payDate: run.approvedAt ? … : shortDate(run.periodEnd)` line and
+  `payslip-pdf.ts:156` is the `labelValue(doc, 'PAYDATE:', …)` line — both exact, both under
+  `src/lib/server/services/payroll/`.
+- `runs.ts` does not import `$lib/server/notifications`; only `periods.ts:9` does. G5 stands.
+- Live database: **zero** `payroll_periods`, and both existing `payroll_runs` have a NULL
+  `periodId`. Every live step must build its own period.
+
+### NEW findings from this pass
+
+**N1 — the AC-1.4 "zero edits" criterion is time-boxed, and the hard stop will misfire if it is
+not.** `void-semantics-and-sweep` now declares one permitted edit (E1) to
+`tests/unit/override-finalized-guard.test.ts` — adding `$transaction: async (fn) => fn(dbMock)` —
+because its step 8 wraps `voidRun`'s update in a transaction. That edit lands in **PHASE 2**, after
+this plan's PHASE 1. So:
+
+- **Within Phase 1, this plan's "green with zero edits" claim is TRUE** and its own changes keep it
+  true: step 10 only rewrites `voidRun`'s `writeAuditLog` payload, `writeAuditLog` is mocked in that
+  file, and `voidedOwnApproval(ctx.actorId, run)` reads `run.approvedById`, which is `undefined` on
+  the mock → predicate false → the key is simply absent. Nothing throws.
+- **From Phase 2 onward the file carries one added line.** This plan's hard stop ("If
+  `override-finalized-guard.test.ts` goes red, STOP") and done-means item 3 ("green **with zero
+  edits**") must be read as **scoped to Phase 1**, or the Phase 6 re-run reads as a violation of a
+  criterion that a sibling plan was contractually authorised to change. Severity: CONCERN
+  (cross-plan). Execute-agent instruction E1 below.
+
+**N2 — L5's negative control needs a concrete user mapping, and only ONE account in the whole
+database can void.** `OVERRIDE_FINALIZED: ['SUPER_ADMIN']` (`rbac.ts:73`), and the live `users`
+table holds exactly one active SUPER_ADMIN: `admin@veent.ph`. L5 says "repeat the whole cycle
+voiding as a **fourth** user D" — there is no fourth voider. The step is still executable, but only
+with this mapping, which the plan does not give:
+
+| Cycle | approver A | locker B | releaser C | voider | expected |
+|---|---|---|---|---|---|
+| positive arm | `admin@veent.ph` | `admin@veent.ph` | — | `admin@veent.ph` | `sameActorAsApprover: true` present |
+| absent-key arm | `ceo@veent.ph` | `hr@veent.ph` | `manager@veent.ph` | `admin@veent.ph` | key **absent** (`("newValue" ? 'sameActorAsApprover')` → `f`) |
+
+L2's "approve as A, lock as a different user B" maps to `ceo@veent.ph` / `hr@veent.ph`; L4's
+releaser C is `manager@veent.ph`. All four are active org_seed users with the required capabilities
+(`APPROVE_FINANCE: ['CEO','SUPER_ADMIN']`, `MANAGE_PAYROLL: ['MANAGER','SUPER_ADMIN','HR_ADMIN',
+'PAYROLL_OFFICER','CEO']`). Severity: CONCERN (live-step precision). E2 below.
+
+**N3 — L7's "before" sample cannot be taken on `ZZ-298-PROBE`.** L7 needs a **locked-but-never-
+approved** run. `ZZ-298-PROBE`'s run is **approved** at L2 as part of this plan's own negative
+control, so its PAYDATE is the approval date, not the lock date, and it will not show the change at
+all. The shared capture — which the sibling plan's step 12a owns and which is genuinely the SAME
+artifact, one literal `PAYDATE:` string from one rendered PDF on a pre-step-8 tree — must be taken
+on **`ZZ-D12-PROBE`**. Neither plan named the period. Severity: CONCERN (cross-plan). E3 below.
+
+**N4 — L7's "after" half duplicates the sibling's step 12b.** Both capture the post-step-8 PAYDATE
+on a locked-but-never-approved run. Assign it to **step 12b** (`ZZ-D12-PROBE-2`, PHASE 5) and cite
+the single result here, exactly as L7-before cites step 12a. Two independent captures of the same
+figure are wasted work and can disagree. Severity: CONCERN (cross-plan). E4 below.
 
 ### Test gates (5-column)
 
@@ -667,17 +771,18 @@ sequentially against the live source. Recorded as a deviation, not a preference.
 | AC-1.1 | `voidRun` and `voidPeriod` write `action: 'PAYROLL_VOID'` naming the actor | Hybrid | `pnpm test -- payroll-void-audit` + live L5 psql on `audit_logs` | A |
 | AC-1.2 | the same-actor key is ABSENT on an ordinary void, never present-and-false | Fully-Automated | `pnpm test -- payroll-void-audit` asserting `expect(newValue).not.toHaveProperty('sameActorAsApprover')` | A |
 | AC-1.2 | filtering by `PAYROLL_VOID` returns only voids | Fully-Automated | `pnpm test -- payroll-void-audit` (`override-search-returns-only-real`) | A |
-| AC-1.3 | a same-actor void carries `sameActorAsApprover: true` (approver arm AND locker arm) | Hybrid | `pnpm test -- payroll-void-audit` + L5's `("newValue" ? 'sameActorAsApprover')` psql check | A |
-| AC-1.4 | nobody is newly blocked from voiding | Fully-Automated | `pnpm test -- override-finalized-guard` green with ZERO edits (VERIFIED FEASIBLE for this plan — see NOT-proves) | A |
-| AC-1.5 | no external alert fires on void | Fully-Automated | `notifyMany` spy `not.toHaveBeenCalled()` across both void paths | B |
-| AC-2.1 | `lock()` writes `lockedById` in the SAME `updateMany` as `lockedAt` | Hybrid | `pnpm test -- payroll-period-actors` + live L3 psql on `payroll_periods` | A |
-| AC-2.2 | `release()` writes `releasedById`, distinct from `lockedById` | Hybrid | `pnpm test -- payroll-period-actors` + live L4 psql (both ids asserted positively) | A |
-| AC-2.3 | `PayrollRun.approvedById` means the approver and only the approver | Fully-Automated | `pnpm test -- payroll-period-actors` (`approver-record-unambiguous`, A approves / B locks) + two-sided live L2 | A |
+| AC-1.3 | a same-actor void carries `sameActorAsApprover: true` (approver arm AND locker arm) | Hybrid | `pnpm test -- payroll-void-audit` + L5's `("newValue" ? 'sameActorAsApprover')` psql check, run with the two-cycle user mapping in N2 | A |
+| AC-1.4 | nobody is newly blocked from voiding | Fully-Automated | `pnpm test -- override-finalized-guard` green with ZERO edits **as measured at the end of PHASE 1** — the sibling's E1 edit lands in PHASE 2 and is authorised | A |
+| AC-1.5 | no external alert fires on void | Fully-Automated | `notifyMany` spy `not.toHaveBeenCalled()` — meaningful for `voidPeriod` only; **vacuous for `voidRun`**, which imports no notifier | C |
+| AC-2.1 | `lock()` writes `lockedById` in the SAME `updateMany` as `lockedAt` | Hybrid | `pnpm test -- payroll-period-actors` + live L3 psql on `payroll_periods`; mutation M7 is the atomicity check | A |
+| AC-2.2 | `release()` writes `releasedById`, distinct from `lockedById` | Hybrid | `pnpm test -- payroll-period-actors` + live L4 psql (both ids asserted positively: B = `hr@veent.ph`, C = `manager@veent.ph`) | A |
+| AC-2.3 | `PayrollRun.approvedById` means the approver and only the approver | Fully-Automated | `pnpm test -- payroll-period-actors` (`approver-record-unambiguous`, A approves / B locks) + two-sided live L2. **This plan owns this gate**; the sibling's step 11 verifies and skips | A |
 | AC-2.4 | nobody is newly blocked from lock or release | Fully-Automated | existing payroll permission suites green, unmodified (`pnpm test`) | A |
-| AC-2.5 | approver / locker / releaser / voider read back as four separate names | Hybrid | `pnpm test -- payroll-period-actors` + live L1–L5 walkthrough | A |
-| AC-5.3 | every guard and marker is mutation-checked | Fully-Automated | mutation rows M1–M11 RUN, each actual result recorded in the EXECUTE report | A |
-| AC-1.1 (UI half) | `PAYROLL_VOID` and `PayrollPeriod` are actually selectable at `/reports/audit-log` | Agent-Probe | live L6 — name `select#action` and `select#entity`, assert the option is PRESENT, screenshot | D |
-| AC-10.1 ("before" half) | the pre-change `PAYDATE:` string on a locked-but-never-approved run | Agent-Probe | live L7 "before" capture — SHARED with `void-semantics-and-sweep` step 12a, captured ONCE in the Phase-0 window | C |
+| AC-2.5 | approver / locker / releaser / voider read back as four separate names | Hybrid | `pnpm test -- payroll-period-actors` + live L1–L5 with the N2 mapping. Note the voider can only ever be `admin@veent.ph` in this database | A |
+| AC-5.3 | every guard and marker is mutation-checked | Fully-Automated | mutation rows **M1–M11** RUN, each actual result recorded, including M10/M11's "nothing went red — by design" | A |
+| AC-1.1 (UI half) | `PAYROLL_VOID` and `PayrollPeriod` are actually selectable at `/reports/audit-log` | Agent-Probe | live L6 — name `select#action` and `select#entity`, assert the option is PRESENT, screenshot. The ONLY gate on M10/M11 | D |
+| AC-10.1 ("before" half) | the pre-change `PAYDATE:` string on a locked-but-never-approved run | Agent-Probe | live L7 "before" — **SHARED with `void-semantics-and-sweep` step 12a, captured ONCE on `ZZ-D12-PROBE` in the Phase-0 window**, never on `ZZ-298-PROBE` | C |
+| AC-10.1 ("after" half) | the post-change `PAYDATE:` string | Agent-Probe | **owned by the sibling's step 12b** (`ZZ-D12-PROBE-2`, PHASE 5); L7-after cites that one result | C |
 
 Failing stubs (Fully-Automated rows only — red-first starting points for EXECUTE):
 
@@ -692,10 +797,13 @@ test("should keep every existing voider admitted", () => {
   throw new Error("NOT IMPLEMENTED — TDD stub: nobody is newly blocked from voiding")
 })
 test("should send no external alert on void", () => {
-  throw new Error("NOT IMPLEMENTED — TDD stub: no external alert fires on void")
+  throw new Error("NOT IMPLEMENTED — TDD stub: no external alert fires on voidPeriod. NOTE: the voidRun half is vacuous — that module imports no notifier.")
 })
 test("should leave approvedById as the approver when a different user locks", () => {
   throw new Error("NOT IMPLEMENTED — TDD stub: PayrollRun.approvedById means the approver and only the approver")
+})
+test("should write lockedById in the same updateMany call as lockedAt", () => {
+  throw new Error("NOT IMPLEMENTED — TDD stub: the atomic-claim assertion M7 exists to break")
 })
 test("should keep every existing locker and releaser admitted", () => {
   throw new Error("NOT IMPLEMENTED — TDD stub: nobody is newly blocked from lock or release")
@@ -705,57 +813,79 @@ test("should keep every existing locker and releaser admitted", () => {
 Legacy line form (for existing validate-contract consumers):
 
 - audit action + marker: `Fully-automated: pnpm test -- payroll-void-audit`
-- lock/release actor columns: `hybrid: pnpm test -- payroll-period-actors` + precondition: dev server and `veent-db-5434` started BY THE USER, then the L1–L5 psql script
-- audit-log dropdown arrays: `agent-probe: open /reports/audit-log as Super Admin, assert select#action contains PAYROLL_VOID and select#entity contains PayrollPeriod, screenshot`
-- payslip PAYDATE control + Finance note: `known-gap: documented — owned by void-semantics-and-sweep_PLAN_18-08-26 steps 12c/12e, NOT by this plan`
+- lock/release actor columns: `hybrid: pnpm test -- payroll-period-actors` + precondition: dev server and `veent-db-5434` started BY THE USER (both currently up), then the L1–L5 psql script with the N2 user mapping
+- audit-log dropdown arrays: `agent-probe: open /reports/audit-log as admin@veent.ph, assert select#action contains PAYROLL_VOID and select#entity contains PayrollPeriod, screenshot`
+- schema push on a populated DB: `hybrid: pnpm db:push` + CI job 3 `schema-upgrade` — precondition: the user confirms the database is up
+- payslip PAYDATE control + Finance note: `known-gap: documented — AC-10.2 and AC-10.3 are owned by void-semantics-and-sweep steps 12c/12e, NOT by this plan`
 
 ### Dimension findings
 
-- Infra fit: PASS — `pnpm test` (vitest, no `test:unit`), `pnpm db:push`, `pnpm prisma generate` all exist and match the plan's Commands block. Enum `ADD VALUE` is genuinely additive (no `scripts/migrate-*.ts` needed — correct call). `pnpm check` does not typecheck `scripts/**`; step 13 already requires a manual run, so the known trap is handled. Baseline suite verified green in-session: **119 files / 1446 tests / 19s**.
-- Test coverage: CONCERN — M1–M11 is a strong table and M10/M11 are honestly pre-declared as uncatchable. Two soft spots: `void-no-external-alert` is near-vacuous for `voidRun` (that module does not import `notifications` at all — only `periods.ts:9` does), and the `lock-writes-no-approver` assertion is duplicated by the sibling plan (see Open gaps).
-- Breaking changes: PASS — `AuditAction` gains a value; verified in-session that **no exhaustive switch over `AuditAction` exists** (`grep -rn AuditAction src/` returns only the two type-import lines in `audit.ts`). The two hand-maintained arrays are correctly identified as the real break surface. `lockedById`/`releasedById` as bare `String?` with no relation is the right call for a populated-DB push.
-- Security surface: PASS — no capability check is touched. `requireAnyCapability(ctx.actorRoles, 'OVERRIDE_FINALIZED')` at `runs.ts:93` and `periods.ts:307` verified unchanged by this plan. The API route's void branch uses `user.roles`, identical to the approve branch's `const roles = user.roles` — no multi-role divergence. #242 masks `newValue` at the read page only; `audit.ts:22-40` writes it to the row intact, so the L5 psql assertions are valid.
-- Section feasibility (Phase A, schema): CONCERN — line anchors are off by one. `lockedAt`/`releasedAt` are at `schema.prisma:1613-1614`, not `1614-1615`; step 2 says "immediately after `releasedAt` (line 1615)". `AuditAction` at `194-203` and `PayrollRun.approvedById/approvedAt` at `1091-1092` are exact.
-- Section feasibility (Phase B/C, periods.ts): PASS — `lock()` at `:138`, the atomic claim `data: { status: 'LOCKED', lockedAt: new Date() }` at `:171`, `release()` at `:268`, the `approvedById: ctx.actorId` write at `:252` inside the `tx.payrollRun.update` at `:246-258` — all confirmed verbatim. Step 8's "the whole update becomes conditional on `overrideNote`" is correct: with the two approver keys gone, `...(overrideNote ? {...} : {})` is the entire remaining payload.
-- Section feasibility (Phase D, void marker): PASS — `voidRun`'s `findFirst` returns the whole row, so `run.approvedById` is available with no extra query; `requirePeriod` (`periods.ts:21-28`) includes `runs`, so `voidPeriod` has both arms. Confirmed.
-- Section feasibility (Phase E, filter arrays): PASS — `entityTypes` verified at `+page.server.ts` (8 entries, no `PayrollPeriod`); `ACTIONS` verified at `+page.svelte:21-30` (8 entries, no `PAYROLL_VOID`). Both edits are mechanically findable and unique.
-- Section feasibility (Phase F, count script): PASS — read-only script, correctly flagged as outside `pnpm check`'s reach.
+- Infra fit: PASS — `pnpm test` (vitest, no `test:unit`), `pnpm db:push`, `pnpm prisma generate` all exist and match the Commands block. Enum `ADD VALUE` is genuinely additive; no `scripts/migrate-*.ts` needed — correct call. `pnpm check` does not typecheck `scripts/**`; step 13 already requires a manual run. The database is UP, which removes the blocker the first pass recorded — but it holds **zero** payroll periods and two runs with NULL `periodId`, so L1 must build everything from scratch.
+- Test coverage: CONCERN — M1–M11 is a strong table and M10/M11 are honestly pre-declared as uncatchable. Residuals: `void-no-external-alert` stays vacuous on the `voidRun` half (G5), and the live L5 negative control needs the N2 user mapping to be executable at all.
+- Breaking changes: PASS — `AuditAction` gains a value; no exhaustive switch over `AuditAction` exists. The two hand-maintained arrays are correctly identified as the real break surface and both were re-read this pass. `lockedById`/`releasedById` as bare `String?` with no relation is the right call for a populated-DB push.
+- Security surface: PASS — no capability check is touched. `requireAnyCapability(ctx.actorRoles, 'OVERRIDE_FINALIZED')` at `runs.ts:93` and `periods.ts:307` verified unchanged by this plan. `OVERRIDE_FINALIZED: ['SUPER_ADMIN']` at `rbac.ts:73`. #242 masks `newValue` at the read page only; the row is written intact, so the L5 psql assertions are valid.
+- Section feasibility (Phase A, schema): CONCERN — G1, cosmetic. `lockedAt`/`releasedAt` are at `1613-1614`, not `1614-1615`. Locate by field name; the insertion point is valid either way because Prisma field order carries no meaning.
+- Section feasibility (Phase B/C, periods.ts): PASS — `lock()` at `:138`, the atomic claim at `:171`, `release()` at `:268`, the `approvedById: ctx.actorId` write at `:252` inside the `tx.payrollRun.update` at `:246-258` — all confirmed. Step 8's "the whole update becomes conditional on `overrideNote`" is correct.
+- Section feasibility (Phase D, void marker): PASS — both marker arms are reachable with no extra query. Step 10's rewrite of `voidRun`'s `writeAuditLog` keeps the guard test green (see N1).
+- Section feasibility (Phase E, filter arrays): PASS — both arrays re-read this pass; both edits mechanically findable and unique.
+- Section feasibility (Phase F, count script): PASS — read-only, correctly flagged as outside `pnpm check`'s reach.
 
 ### Open gaps
 
-- **G1 — schema line anchors off by one.** `schema.prisma` fact table says `1614-1615`; actual is `1613-1614`. EXECUTE must locate by field name, not by line number. Severity: CONCERN.
-- **G2 — internal cross-reference error.** The "second-order effect" section says the PAYDATE change "must be shown in the live check (step **L5** below)". The PAYDATE step is **L7**. L5 is the period-void marker check. Severity: CONCERN.
-- **G3 — payslip module paths are abbreviated.** The reader table cites `payslip-document.ts:88, 282` and `payslip-pdf.ts:156`; the real paths are `src/lib/server/services/payroll/payslip-document.ts` and `.../payroll/payslip-pdf.ts`. Line numbers verified exact (`payslip-document.ts:282`, `payslip-pdf.ts:156`). Severity: CONCERN.
-- **G4 — duplicate deliverable with the sibling plan.** This plan's `approver-record-unambiguous` gate and its M9 mutation are the same assertion and the same mutation as `void-semantics-and-sweep` step 11's `lock-writes-no-approver` / M7. **Ownership is assigned to THIS plan** (it creates `tests/unit/payroll-period-actors.test.ts`). The sibling must verify-and-skip. Severity: CONCERN.
-- **G5 — `void-no-external-alert` is near-vacuous on the `voidRun` half.** `runs.ts` does not import `$lib/server/notifications`, so a `not.toHaveBeenCalled()` spy there can never fail. Keep it for `voidPeriod` (which does import `notifyMany`); state the vacuity for the run half rather than claiming AC-1.5 is proven on both paths. Severity: CONCERN.
-- **G6 — AC-10.2 and AC-10.3 are NOT covered by this plan.** L7 captures the before/after PAYDATE pair but has no approved-run control and no Finance hand-off gate. Those are `void-semantics-and-sweep` steps 12c and 12e. This plan must not be marked VERIFIED on the assumption that it discharged D12. Severity: CONCERN — cross-plan, resolved by the execution order below.
-- known-gap: the two hand-maintained dropdown arrays are structurally unprovable by the unit suite (M10/M11). Live L6 with a screenshot is the only gate. Documented, accepted, gap-resolution D.
+- **G1 — schema line anchors off by one (`1614-1615` vs `1613-1614`). COSMETIC, non-blocking.** Locate by field name. gap-resolution B.
+- **G2 — internal cross-reference error: the PAYDATE step is L7, not L5. COSMETIC, non-blocking.** Done-means item 5 already requires L1–L7. gap-resolution B.
+- **G3 — payslip module paths are abbreviated.** Real paths are `src/lib/server/services/payroll/payslip-document.ts` and `.../payroll/payslip-pdf.ts`; line numbers verified exact. Cosmetic. gap-resolution B.
+- **G4 — `approver-record-unambiguous` / M9 duplicate the sibling's `lock-writes-no-approver` / M7.** Ownership is **THIS plan** (it creates `tests/unit/payroll-period-actors.test.ts`); the sibling verifies and skips. Resolved by ownership, no work. gap-resolution C.
+- **G5 — `void-no-external-alert` is vacuous on the `voidRun` half.** `runs.ts` imports no notifier, so the spy can never fail there. Keep it for `voidPeriod`; state the vacuity rather than claiming AC-1.5 is proven on both paths. gap-resolution C.
+- **G6 — AC-10.2 and AC-10.3 are NOT covered here.** L7 has no approved-run control and no Finance hand-off gate; those are the sibling's steps 12c and 12e. Do not mark this plan VERIFIED on the assumption that it discharged D12. gap-resolution C.
+- **N1 — the AC-1.4 zero-edit criterion is scoped to PHASE 1** and must not be read as violated once the sibling's authorised E1 edit lands in PHASE 2. gap-resolution B.
+- **N2 — L5's "fourth user D" does not exist.** Only `admin@veent.ph` holds `OVERRIDE_FINALIZED`. Use the two-cycle mapping above. gap-resolution B.
+- **N3 — L7-before must be taken on `ZZ-D12-PROBE`,** not on `ZZ-298-PROBE`, whose run is approved. gap-resolution B.
+- **N4 — L7-after is the sibling's step 12b.** Capture once, cite here. gap-resolution C.
+- known-gap: the two hand-maintained dropdown arrays are structurally unprovable by the unit suite (M10/M11). Live L6 with a screenshot is the only gate. Documented, accepted. gap-resolution D.
+- known-gap: `PAYROLL_VOID` fires identically for `voidRun` and `voidPeriod`, which have different money consequences. Only `entityType` distinguishes them on the audit screen. Accepted; unifying the two voids is out of scope. gap-resolution C.
+- known-gap: historical `approvedById` rows stay ambiguous by owner decision 4. Only the step-13 count script quantifies them, and it asserts nothing. gap-resolution C.
+
+### Execute-agent instructions
+
+| # | Instruction | Trigger |
+|---|---|---|
+| E1 | Done-means item 3 and the "if `override-finalized-guard.test.ts` goes red, STOP" hard stop are **scoped to PHASE 1**. Measure the zero-edit criterion at the end of this plan's step 13. From PHASE 2 the file legitimately carries `void-semantics-and-sweep`'s edit E1 (one added `$transaction` mock key), which is contractually authorised. Do not treat that as a violation in PHASE 6. | Done-means item 3 |
+| E2 | L5 has no "fourth user D" — `admin@veent.ph` is the only `OVERRIDE_FINALIZED` holder in the database. Run two cycles: (positive) `admin@veent.ph` approves, locks and voids → key present; (absent-key) `ceo@veent.ph` approves, `hr@veent.ph` locks, `manager@veent.ph` releases, `admin@veent.ph` voids → key absent. Those are also L2's A/B and L4's C. | Live L2–L5 |
+| E3 | L7-before is the SAME capture as `void-semantics-and-sweep` step 12a and must be taken on **`ZZ-D12-PROBE`**, the never-approved period, ONCE, in the Phase-0 window. Do NOT attempt it on `ZZ-298-PROBE` — that period's run is approved at your own L2, so its PAYDATE is the approval date and it cannot show the change. | Phase 0 |
+| E4 | L7-after is owned by the sibling's step 12b (`ZZ-D12-PROBE-2`, PHASE 5). Cite that result; do not capture it a second time. | Phase 6 |
+| E5 | Fix G1 and G2 in passing: schema anchors are `1613-1614` (locate by field name regardless), and the "second-order effect" section's pointer to "step L5" should read "step L7". Neither is a gate. | Steps 1–2 |
+| E6 | Every live step must build its own period: the database has **zero** `payroll_periods` and both existing `payroll_runs` have a NULL `periodId`. No existing run is reusable for L2–L5 or L7. | Live L1 |
 
 ### Execution order (binding — this plan's slot in the global sequence)
 
-This plan is **PHASE 1** of five. It must land in full, in step order 1→13, BEFORE
-`void-semantics-and-sweep` steps 3–9, because both edit `voidRun`'s body and `voidPeriod`'s
-region of `periods.ts`. The Phase-0 "before" live pass (this plan's L1–L5 and L7-before, plus
-the sibling's step 1 probe and step 12a) happens on the clean tree, in ONE dev-server session,
-before any code is written. Full ordering is in the sibling plan's contract and repeated here:
+This plan is **PHASE 1** of six. It must land in full, in step order 1→13, BEFORE
+`void-semantics-and-sweep` steps 3–8, because both edit `voidRun`'s body and `voidPeriod`'s region
+of `periods.ts`. The full order is authored in the sibling plan's contract and repeated here:
 
-`PHASE 0 (clean tree, live)` → `PHASE 1 (this plan, steps 1–13)` → `PHASE 2 (sibling steps 3–9)`
-→ `PHASE 3 (sibling steps 10–11)` → `PHASE 4 (sibling step 12b/12c/12e)` → `PHASE 5 (both "after"
-live passes + all mutation rows)`. `clearance-signoff-297` runs on an independent track and may
-proceed in parallel at any time — its file set is disjoint.
+`PHASE 0 (clean tree, live, ONE dev-server session)` — the sibling's step 1 probe + step 2 verdict,
+then its step 12a on `ZZ-D12-PROBE`, then **this plan's L1–L5 "before" pass on `ZZ-298-PROBE`** (its
+L7-before is step 12a's result CITED, not re-run), then `clearance-signoff-297`'s L0–L4 before →
+`PHASE 1 (this plan, steps 1–13)` → `PHASE 2 (sibling steps 3–8, only if the probe reproduced;
+sibling edit E1 lands here)` → `PHASE 3 (sibling step 9, the doc)` → `PHASE 4 (sibling steps 10–11)`
+→ `PHASE 5 (sibling steps 12b/12c/12e)` → `PHASE 6 (both "after" live passes + every mutation row)`.
+`clearance-signoff-297` runs on an independent track and may proceed in parallel at any time — its
+file set is disjoint.
 
 ### What this coverage does NOT prove
 
 - `pnpm test -- payroll-void-audit payroll-period-actors` mocks `$lib/server/db`. It does NOT prove that `lockedById` reached Postgres, that the `updateMany` atomic claim behaved under concurrency, that tenant scoping holds, or that the audit row was actually persisted. Only L3/L4 psql do.
-- `pnpm test -- override-finalized-guard` staying green proves that no CAPABILITY changed. It does NOT prove that the audit payload is correct — that file never inspects `newValue` and knows nothing about `PAYROLL_VOID`.
+- `pnpm test -- override-finalized-guard` staying green proves that no CAPABILITY changed. It does NOT prove the audit payload is correct — that file never inspects `newValue` and knows nothing about `PAYROLL_VOID` or `sameActorAsApprover`.
 - No unit test proves the two dropdown arrays were updated (M10/M11 pre-declared uncatchable). Only L6 does, and only with a screenshot — an assertion cannot tell a missing `<option>` from a wrong selector.
-- `void-no-external-alert` does NOT prove AC-1.5 for `voidRun`; that module has no notifier import to suppress.
+- `void-no-external-alert` does NOT prove AC-1.5 for `voidRun`; that module has no notifier import to suppress. It proves it for `voidPeriod` only.
 - The `db:push` gate does NOT prove the enum add is safe on a PRODUCTION-sized `audit_logs` table. CI job 3 pushes against a populated dev-shaped DB only.
 - Live L1–L7 do NOT prove anything about historical rows. Pre-#298 `approvedById` values stay ambiguous by owner decision 4; only the step-13 count script quantifies them, and it asserts nothing.
+- The live pass proves the marker for the ONE account that can void. It proves nothing about a tenant with several Super Admins, where the same-actor marker's discriminating power is what actually matters.
 - Nothing here proves AC-10.2 (an approved run's PAYDATE is unmoved) or AC-10.3 (Finance was told). Those live in the sibling plan.
+- `PAYROLL_VOID` firing identically for a run void and a period void means the audit action alone does NOT tell a reviewer whether money moved back. Only `entityType` does, and nothing tests that a reviewer reads it.
 
-Gate: CONDITIONAL (0 FAILs, 6 CONCERNs — G1/G2/G3 are plan-text corrections, G4/G5/G6 are cross-plan ownership statements; all recorded, none blocking)
-Accepted by: session — accepted concerns, by name: G1 schema line anchors off by one; G2 L5/L7 cross-reference error; G3 abbreviated payslip module paths; G4 duplicate `lock-writes-no-approver` deliverable (ownership assigned to this plan); G5 vacuous `void-no-external-alert` on the `voidRun` half; G6 AC-10.2/AC-10.3 not covered here. Plus known-gap: dropdown arrays unprovable by the unit suite, covered by live L6 only.
+Gate: CONDITIONAL — 0 FAILs, 10 CONCERNs (G1/G2/G3 cosmetic plan-text; G4/G5/G6 cross-plan ownership statements; N1–N4 new cross-plan and live-step precision items), 3 known-gaps. **G1 and G2 are cosmetic and do NOT block EXECUTE** — the schema instruction anchors on a field name and Prisma field order is semantically inert, and done-means item 5 already forces L7 to run regardless of the bad pointer. All ten are covered by execute-agent instructions E1–E6. This plan is PHASE 1 and may start as soon as the Phase 0 live pass is recorded.
+Accepted by: session — accepted concerns, by name: G1 schema line anchors off by one (cosmetic, E5); G2 the L5/L7 cross-reference error (cosmetic, E5); G3 abbreviated payslip module paths (cosmetic); G4 duplicate `lock-writes-no-approver` deliverable, ownership assigned to this plan; G5 vacuous `void-no-external-alert` on the `voidRun` half; G6 AC-10.2/AC-10.3 not covered here; N1 the AC-1.4 zero-edit criterion is scoped to PHASE 1 because the sibling's authorised E1 edit lands in PHASE 2 (E1); N2 L5 has no fourth voider — `admin@veent.ph` is the only OVERRIDE_FINALIZED holder, use the two-cycle mapping (E2); N3 L7-before must be taken on `ZZ-D12-PROBE`, not on the approved `ZZ-298-PROBE` (E3); N4 L7-after duplicates the sibling's step 12b (E4). Plus known-gaps: the dropdown arrays are unprovable by the unit suite and gated only by live L6; `PAYROLL_VOID` does not distinguish a run void from a period void; historical `approvedById` rows stay ambiguous by owner decision.
 
 ## Autonomous Goal Block
 
@@ -764,32 +894,52 @@ SESSION GOAL
 Execute process/general-plans/active/payroll-void-audit-298_PLAN_17-08-26.md — the #298 payroll
 half: add the PAYROLL_VOID AuditAction, add nullable lockedById/releasedById to PayrollPeriod,
 write both from lock() and release(), stop lock() writing PayrollRun.approvedById, and stamp a
-conditional-spread same-actor marker on void audit entries. 13 steps, order load-bearing.
+conditional-spread same-actor marker on void audit entries. 13 steps, order load-bearing. This is
+PHASE 1 of the three-plan sequence. Gate is CONDITIONAL; nothing blocks.
 
 AUTONOMY RULES
 - Apply steps 1-13 in order. Do not start at step 8.
 - Locate every edit target by FIELD NAME or by the quoted code, never by the line numbers in the
   plan: the schema anchors are off by one (lockedAt/releasedAt are at schema.prisma:1613-1614).
+  This is cosmetic — Prisma field order carries no meaning — but fix it in passing (E5), along with
+  the "second-order effect" section's pointer to "step L5", which should read "step L7".
+- Apply these execute-agent instructions from the contract:
+  E1 done-means item 3 ("override-finalized-guard.test.ts green with ZERO edits") and the matching
+     hard stop are SCOPED TO PHASE 1. Measure them at the end of step 13. From PHASE 2 that file
+     legitimately carries void-semantics-and-sweep's authorised edit E1 (one $transaction mock key).
+     Do not read that as a violation in PHASE 6.
+  E2 L5 has no "fourth user D": admin@veent.ph is the ONLY OVERRIDE_FINALIZED holder in the
+     database. Run two cycles — positive: admin approves+locks+voids, key present; absent-key:
+     ceo@veent.ph approves, hr@veent.ph locks, manager@veent.ph releases, admin voids, key absent.
+     Those same users are L2's A/B and L4's C.
+  E3 L7-before is the SAME capture as the sibling's step 12a and must be taken ONCE on
+     ZZ-D12-PROBE, the never-approved period. NOT on ZZ-298-PROBE, whose run you approve at L2.
+  E4 L7-after belongs to the sibling's step 12b. Cite it; do not repeat it.
+  E6 build your own period at L1 — the database has zero payroll_periods and both existing
+     payroll_runs have a NULL periodId.
 - Do not touch separation.ts, approvals.ts:673, or payroll/index.ts:508.
 - Do not add an index to AuditLog. Do not file any GitHub issue. No Co-Authored-By trailer.
 - Run pnpm prisma generate before believing a red pnpm check.
 - Record the ACTUAL result of every mutation row M1-M11, including M10/M11's "nothing went red".
 
 HARD STOPS
-- Ask the user to start the dev server and the veent-db-5434 container. Never start either yourself.
-- Do not run pnpm db:push until the user confirms the database is up.
+- Ask the user to start the dev server and the veent-db-5434 container. Never start either
+  yourself. Both are currently UP.
+- Do not run pnpm db:push until the user confirms the database is up and has approved the push.
+- Do not mutate the database outside the ZZ-298-PROBE marker rows.
 - Commit nothing without explicit owner approval.
-- If override-finalized-guard.test.ts goes red, STOP: this plan is designed not to touch it.
 
 NEXT PHASE
-EXECUTE. This plan is PHASE 1 of the three-plan sequence. The Phase-0 clean-tree live pass
-(this plan's L1-L5 + L7-before, and void-semantics-and-sweep's step 1 probe + step 12a) must be
-captured BEFORE step 1 is applied.
+EXECUTE. This plan is PHASE 1 of six. The Phase-0 clean-tree live pass — the sibling's step 1 probe
+and step 12a, this plan's L1-L5 before, and clearance-signoff-297's L0-L4 before — must be captured
+BEFORE step 1 is applied. void-semantics-and-sweep steps 3-8 are PHASE 2 and must not start until
+this plan has landed in full.
 
 CONTRACT SUMMARY
-Gate CONDITIONAL. 0 FAILs, 6 CONCERNs (G1-G6, all plan-text or cross-plan ownership). One
-known-gap: the two hand-maintained audit-log dropdown arrays are unprovable by the unit suite
-and are gated only by live L6 with a screenshot.
+Gate CONDITIONAL. 0 FAILs, 10 CONCERNs, 3 known-gaps. The two flagged plan-text errors are COSMETIC
+and non-blocking: the schema instruction anchors on a field name and Prisma field order is inert, and
+done-means item 5 already forces L1-L7 to run regardless of the bad L5/L7 pointer. The four new
+concerns are cross-plan and live-step precision items, all covered by E1-E4.
 
 EXECUTE START COMMAND
 ENTER EXECUTE MODE for process/general-plans/active/payroll-void-audit-298_PLAN_17-08-26.md
