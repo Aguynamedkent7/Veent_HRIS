@@ -516,4 +516,129 @@ described, `ClearanceItem` at `schema.prisma:987` matches field-for-field, and
 
 ## Validate Contract
 
-(placeholder — vc-validate-agent writes this section before EXECUTE)
+Status: CONDITIONAL
+Date: 18-08-26
+date: 2026-08-18
+generated-by: outer-pvl
+
+Parallel strategy: sequential
+Rationale: 3/7 signals (S2 schema surface, S6 high-risk schema/migration class, S7 18 files). Single
+SvelteKit package, one branch, strictly ordered checklist — a fan-out has nothing independent to split.
+The VALIDATE fan-out itself ran as direct file reads (9 owner-named checks, all in one repo, no
+cross-agent talk needed).
+
+### Test gates
+
+| criterion id | behavior | strategy | proving test | gap-resolution |
+|---|---|---|---|---|
+| AC1, AC2 | schema declares the enum + both models carry `area` / `departmentId`; SQL and schema agree | Fully-Automated | `pnpm prisma validate` exits 0 | A |
+| AC2 | the raw SQL produced exactly the Prisma target shape (zero drift) | Hybrid | `pnpm db:push` twice — precondition: `veent-db-5434` up; second run reports no drift | A |
+| AC3, AC4 | backfill is idempotent and every unmapped legacy value is logged with its row count | Hybrid | `pnpm dotenv -e .env.dev -- tsx scripts/migrate-clearance-area.ts` twice — precondition: DB up; second run prints `already migrated` for both tables | A |
+| AC1 (DB side) | `area` NOT NULL, `departmentId` text nullable, no `department` column | Hybrid | `docker exec veent-db-5434 psql -U veent -p 5434 -d veent_hris -c '\d clearance_items'` — precondition: DB up | A |
+| AC5 | no source file still reads `department` on a clearance/checklist row, and no `.svelte` imports `$lib/server/*` | Fully-Automated | `pnpm check` exits 0 | B (E1 must land first — see below) |
+| AC6 | T1–T8 create/read guards and org scoping | Fully-Automated | `pnpm test tests/unit/separation-create-read.test.ts` | B |
+| AC6 | T9–T16 MONTHLY / DAILY / HOURLY rate basis + compensation-history integration | Fully-Automated | `pnpm test tests/unit/separation-final-pay.test.ts` | B |
+| AC6 | T17–T21 clearance-item branches + finalize cascade | Fully-Automated | `pnpm test tests/unit/separation-clearance-item.test.ts tests/unit/separation-finalize-effects.test.ts` | B |
+| AC6 | T22–T29 CSV report shape + all 3 route surfaces, Route B bug characterized | Fully-Automated | `pnpm test tests/unit/separation-report.test.ts tests/unit/separation-routes.test.ts` | B |
+| AC6, AC7 | the notice email renders `Immediate Supervisor`, not `IMMEDIATE_SUPERVISOR` | Fully-Automated | `pnpm test tests/unit/offboarding-notice.test.ts` | B |
+| AC8 | `MANAGE_HR` grants and a plain `EMPLOYEE` is refused, live | Hybrid | `pnpm test:e2e tests/e2e/separations.spec.ts` — preconditions: DB up, `pnpm db:seed:e2e` re-run AFTER the migration, dev server on `E2E_PORT` (playwright `webServer` has `reuseExistingServer: true` — start it yourself, see E5) | B |
+| AC9 | the enum round-trips through the real Settings form into a real separation case | Agent-Probe | step 18 hand-off script, user-executed; agent judges the pass/fail report | C — deferred to the user's live check |
+| AC10 | `separation.ts` differs from `staging` by exactly one line | Fully-Automated | `git diff staging -- src/lib/server/services/separation.ts` shows one changed line (`orderBy`) | A |
+| — | `$transaction` rollback atomicity | — | not proven; the mocked `$transaction` (`async (fn) => fn(dbMock)`) cannot prove atomicity | D — named residual, backlog stub |
+
+Failing stub (AC6 / T11 — the HOURLY branch that has never executed):
+test("an HOURLY rate is multiplied by 8", () => { throw new Error("NOT IMPLEMENTED — TDD stub: an HOURLY rate is multiplied by 8") })
+
+Failing stub (AC6 / T12 — the compensation-history integration asserted nowhere today):
+test("a raise effective before the separation date reaches final pay", () => { throw new Error("NOT IMPLEMENTED — TDD stub: a raise effective before the separation date reaches final pay") })
+
+Failing stub (AC6 / T27 — characterization, pinned not fixed):
+test("recomputes final pay when a finalized case has no stored breakdown", () => { throw new Error("NOT IMPLEMENTED — TDD stub: recomputes final pay when a finalized case has no stored breakdown") })
+
+gap-resolution legend: A — proven now; B — gate added by this plan's checklist; C — deferred; D — backlog stub.
+
+Legacy line form (retained for existing consumers):
+- schema/migration: [hybrid: `pnpm dotenv -e .env.dev -- tsx scripts/migrate-clearance-area.ts` then `pnpm db:push` twice + `\d clearance_items` — precondition: `veent-db-5434` running]
+- types/call sites: [Fully-automated: `pnpm check`]
+- unit behaviour: [Fully-automated: `pnpm test`]
+- live capability gate: [hybrid: `pnpm test:e2e tests/e2e/separations.spec.ts` — precondition: `pnpm db:seed:e2e` re-run after the migration]
+- UI enum round-trip: [agent-probe: step 18 hand-off script, user-executed]
+- transaction rollback: [known-gap: documented — backlog stub]
+
+### Dimension findings
+
+- Infra fit: CONCERN — `pnpm db:push` is confirmed as `dotenv -e .env.dev -- prisma db push` (already wraps the env file, so no extra `dotenv` prefix) and `pnpm dotenv -e .env.dev -- tsx …` was confirmed to resolve the local `dotenv-cli` binary. Two real gaps: (a) Postgres has **no `CREATE TYPE IF NOT EXISTS`** — step 1's line 1 must be a `DO $$ … $$` block or a `pg_type` pre-check, or the second (idempotence) run dies before the per-table guard is reached; (b) `playwright.config.ts` starts its own dev server via `webServer.command: pnpm dev` — with `reuseExistingServer: true` locally, the user must have the dev server up before `pnpm test:e2e`, or Playwright starts one itself, which the "user starts dev servers" rule forbids the agent from doing indirectly.
+- Test coverage: CONCERN — the plan's 29 unit tests are all writable with the repo's hoisted-`dbMock` pattern; the route tests T24–T29 have direct precedent (`tests/unit/attendance-backlog-rbac.test.ts:35` imports `{ actions }` from a `+page.server`, `tests/unit/settings-cards.test.ts:3` imports `load`, `tests/unit/leave-review-route.test.ts:22` imports `{ PATCH }` from an API `+server`). Two notes: T29 targets the **shared** `src/routes/api/v1/reports/[type]/+server.ts` (there is no separation-specific endpoint) and its guards `throw error(400, …)` rather than returning `fail`, so assert with `rejects.toMatchObject`; and D4 says "all 9 exports" but no new test covers `finalizeBarFor` — it is already covered by the existing `separation-finalize-sod.test.ts`, so state that rather than leaving AC-vs-inventory drift.
+- Breaking changes: PASS — `separation.ts` carries `department` at :108, :111, :385 and :399; only :111 is the clearance `orderBy`, the other three are the **relational** `Employee.department`. Acceptance criterion 10 (exactly one changed line) holds. No seed or script writes `department` on a clearance/checklist row: `prisma/seed.ts`, `prisma/seed-e2e.ts` and `prisma/seed-core.ts` have zero hits (seed-core touches `onboardingChecklistItem`, a different model with no `department` field), and `scripts/*.ts` hits are all the relational `Department`. The plan's touchpoint list has no hole here.
+- Security surface: PASS — no auth, billing, secret or trust-boundary logic is modified. `requireAnyCapability(user.roles, 'MANAGE_HR')` at `src/routes/(app)/separations/+page.server.ts:10` and `:37` is read by the new e2e spec and never changed. No evidence pack is required: the high-risk class here is schema/data migration on a local-only DB with no production environment, and the rollback (`pg_dump` before step 4, `db:push --force-reset` after) is written.
+- Section A (#306 schema, steps 1–10) feasibility: FAIL (accepted as CONDITIONAL, see E1) — steps 1–9 are mechanically sound; **step 10 as written does not build**. It has `settings/offboarding/+page.svelte` and `separations/[id]/+page.svelte` iterate `CLEARANCE_AREA_LABELS`, which step 6 defines in `src/lib/server/services/offboarding.ts`. SvelteKit refuses any `$lib/server/*` import from client-side code; zero `.svelte` files in this repo import `$lib/server` today, and `src/lib/components/Pagination.svelte:4` carries a comment saying exactly that. Highest-risk edit in the section: the destructive `DROP COLUMN "department"` in step 1 — mitigation is already planned (step 3 dry-read, then the `pg_dump` in §Rollback before step 4).
+- Section B (#305 tests, steps 11–17) feasibility: PASS — the E2 e2e check is writable exactly as specced: `tests/e2e/helpers.ts` exports both `login()` and `USERS.employee`, `prisma/seed-core.ts:773–779` seeds `employee@veent.ph` with `roles: ['EMPLOYEE']` (no `MANAGE_HR`), and `tests/e2e/leave-balances.spec.ts:40` is the precedent for asserting `expect(res?.status()).toBe(403)` on a `page.goto`. No downgrade needed. Highest-risk edit: writing any new test before step 8 lands — it would assert `{ area: 'asc' }` against the old field and go red for the wrong reason. The plan already sequences around this.
+
+### Execute-agent instructions
+
+- **E1 (blocking, do before step 10).** Do NOT put `CLEARANCE_AREA_LABELS` in `src/lib/server/services/offboarding.ts`. Create `src/lib/utils/clearance-area.ts` — the client-safe twin of the existing `src/lib/utils/employment-type.ts` — and export the label map (and a bare value list for zod) from there. `offboarding.ts`, `notifications.ts`, `+page.server.ts` and both `.svelte` files then import from `$lib/utils/clearance-area`. Type-only `import type { ClearanceArea } from '@prisma/client'` is fine in that module. Everything else in steps 6, 9 and 10 is unchanged. This is a file-location correction, not a design change — D1–D5 and the plain-column decision are untouched.
+- **E2 (step 1).** Postgres has no `CREATE TYPE IF NOT EXISTS`. Guard it: `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ClearanceArea') THEN CREATE TYPE "ClearanceArea" AS ENUM ('IT','HR','ADMIN','FINANCE','IMMEDIATE_SUPERVISOR'); END IF; END $$;`. Also note the template `scripts/migrate-employment-type-regular.ts` reads its guard with `$queryRawUnsafe` and writes with `$executeRawUnsafe` — the plan names only the latter; use both.
+- **E3 (step 10, zod).** `z.nativeEnum(ClearanceArea)` is valid on the installed zod (3.25.76 — `nativeEnum` is present in `node_modules/zod/v3/types.d.ts` and is not deprecated in the v3 classic API). But this repo has **zero** `nativeEnum` call sites; all 20+ enum fields use `z.enum([...])`. Prefer the house form, fed from the new util so a new enum member cannot leave the validator behind: `area: z.enum(CLEARANCE_AREAS)` where `CLEARANCE_AREAS` mirrors `EMPLOYMENT_TYPES` in `src/lib/utils/employment-type.ts:26`. Either form passes `pnpm check`; `nativeEnum` is the one that would need rewriting on a future zod 4 bump.
+- **E4 (step 17, T29).** Point T29 at `src/routes/api/v1/reports/[type]/+server.ts` with `type: 'separation'` (there is no separation-specific report endpoint). Its guards are `error(400, 'End date must be on or after start date')` at `:88` and `` error(400, `Date range must be ${MAX_RANGE_DAYS} days or fewer`) `` at `:91` — assert with `rejects.toMatchObject({ status: 400, … })`, not on a returned `fail`.
+- **E5 (AC8).** Do not run `pnpm test:e2e` while no dev server is up — `playwright.config.ts` would start `pnpm dev` itself. Ask the user to start the dev server (and to re-run `pnpm db:seed:e2e` AFTER the migration, per §Wrong-Reason Failures), then run the spec.
+- **E6 (AC / D4 wording).** `finalizeBarFor` gets no new test; it is already pinned by `tests/unit/separation-finalize-sod.test.ts`. Say so in the phase report so "all 9 exports" is not read as a miss.
+
+Open gaps:
+- Transaction rollback atomicity: known-gap: documented — the mocked `$transaction` cannot prove it; T21 proves the writes are *issued*, not atomic. Backlog stub required at completion.
+- `createSeparation` does not await `sendOffboardingNoticeEmail`: known-gap — out of scope for both issues, file separately.
+- `finalizeSeparation` writes its audit log outside the transaction: known-gap — behaviour change in a file under characterization.
+- Route B's live-recompute-on-null-breakdown bug: characterized by T27, not fixed — a product decision.
+- `departmentId` has no referential integrity and no reader: accepted by §Shape of departmentId (D2/D5).
+- `pnpm db:push` zero-drift after the raw-SQL backfill is PLAUSIBLE, not proven — it cannot be checked without a running DB. Step 5 IS the gate; if it drifts, fix the SQL, not the schema.
+
+What this coverage does NOT prove:
+- `pnpm prisma validate` proves the schema parses. It does NOT prove the live DB matches it — only the second `db:push` does.
+- `pnpm db:push` reporting no drift proves shape agreement. It does NOT prove the row data was mapped correctly — only the step 3 dry-read plus the step 4 stdout row counts do, and only for values the operator actually reads.
+- The migration script's `already migrated` on a second run proves table-level idempotence. It does NOT prove partial-failure recovery: the 7 DDL statements are not one transaction, so a crash mid-table leaves a shape the guard will happily skip.
+- `pnpm check` proves no type still reads `department`. It does NOT cover `prisma/**` or `scripts/**` (known repo gap) — here that is harmless, because those directories were grepped and hold zero clearance/checklist `department` writes.
+- T1–T29 run against a mocked `db`. They prove the arguments the service sends. They do NOT prove Postgres accepts them, that the enum column round-trips, that the transaction is atomic, or that the new `orderBy: { area: 'asc' }` produces any particular order (Postgres sorts enums by declaration order — nothing asserts the resulting sequence).
+- E1/E2 prove the `MANAGE_HR` gate on `/separations` grants and denies. They do NOT prove the Settings→Offboarding enum form works, that `departmentId` persists, or that any clearance item renders — only step 18's hand-off script touches that.
+- Step 18 is user-executed judgment. It proves nothing on its own if the user's report is thin — require an explicit pass/fail per numbered step.
+
+Gate: CONDITIONAL (concerns noted, accepted; E1 is a mandatory pre-step-10 correction, not an optional one)
+Accepted by: user / session — accepted concerns: (1) server-module import into `.svelte` [Section A FAIL, resolved by E1]; (2) no `CREATE TYPE IF NOT EXISTS` in Postgres [E2]; (3) `nativeEnum` is off-convention for this repo [E3]; (4) T29 route target correction [E4]; (5) `pnpm test:e2e` self-starts a dev server [E5]; (6) `finalizeBarFor` has no new test [E6]; (7) transaction-rollback atomicity [known-gap, backlog stub]; (8) zero-drift push unproven without a running DB [live gate at step 5].
+
+---
+
+## Autonomous Goal Block
+
+SESSION GOAL
+Ship #306 + #305 as one PR on branch fix/clearance-department-separation-tests-305-306: replace
+ClearanceItem/OffboardingChecklistItem free-text `department` with a required ClearanceArea enum plus
+an optional plain `departmentId` column, then pin src/lib/server/services/separation.ts and its 3
+route surfaces with 29 unit tests and 1 Playwright spec. Plan file:
+process/general-plans/active/clearance-area-and-separation-tests-305-306_PLAN_18-08-26.md
+
+AUTONOMY RULES
+- Follow the plan's 18 steps in order. The ordering is load-bearing: schema and migration before any
+  new test.
+- Decisions D1-D5 and the plain-column shape of departmentId are OWNER-LOCKED. Do not re-open them.
+- Apply execute-agent instructions E1-E6 from the Validate Contract. E1 is blocking: the clearance
+  label map goes in src/lib/utils/clearance-area.ts, never in a $lib/server module.
+- Touch only the files in §Touchpoints. Do not fix the four known gaps; they are recorded, not missed.
+- Take the pg_dump named in §Rollback before running step 4.
+
+HARD STOPS
+- Never run `pnpm dev`, `./start.sh`, or `pnpm test:e2e` (it starts a dev server). Ask the user to
+  start the DB and the app, and to report step 18's results.
+- Stop before any destructive DDL if step 3's dry-read shows values outside the 6 known template
+  values without the operator seeing the log.
+- Do not push or open the PR without being asked.
+
+NEXT PHASE
+EXECUTE — start at step 1 (write scripts/migrate-clearance-area.ts), with E2's DO-block guard.
+
+CONTRACT SUMMARY
+Gate CONDITIONAL. 0 unresolved FAILs (the one Section A FAIL is resolved by E1). 8 accepted concerns,
+1 named residual (transaction-rollback atomicity, backlog stub owed at completion). Test gates:
+prisma validate + pnpm check + pnpm test fully automated; migration/push/psql and the e2e spec hybrid
+(DB up, db:seed:e2e re-run AFTER the migration); step 18 agent-probe.
+
+EXECUTE START COMMAND
+ENTER EXECUTE MODE with plan
+process/general-plans/active/clearance-area-and-separation-tests-305-306_PLAN_18-08-26.md
