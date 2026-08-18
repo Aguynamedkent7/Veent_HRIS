@@ -32,7 +32,8 @@ const { dbMock, periodsMock, attendanceMock } = vi.hoisted(() => ({
 		// Only the first lookup each real service makes past its guard — enough to tell "refused"
 		// from "admitted" without standing up voidPeriod's amortization-reversal transaction.
 		payrollPeriod: { findFirst: vi.fn() },
-		attendanceDay: { updateMany: vi.fn() }
+		attendanceDay: { updateMany: vi.fn() },
+		$transaction: async (fn: (tx: unknown) => unknown) => fn(dbMock)
 	},
 	periodsMock: {
 		listPeriods: vi.fn(),

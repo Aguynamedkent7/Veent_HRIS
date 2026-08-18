@@ -4,7 +4,8 @@ import { error } from '@sveltejs/kit'
 import { Prisma } from '@prisma/client'
 import { computePayroll } from './index'
 import { voidedOwnApproval } from './audit-markers'
-import { D, q2, sum } from './money'
+import { D, q2 } from './money'
+import { reverseAmortization } from './amortization'
 import { deriveRange, lockRange } from '../attendance'
 import { isValidStandardPeriod } from '$lib/utils/pay-periods'
 import { notifyMany } from '../notifications'
@@ -313,6 +314,7 @@ export async function release(id: string, organizationId: string, ctx: AuditCont
 	return updated
 }
 
+/** Run void vs period void — what each one does and does not reverse: `docs/payroll-void-semantics.md`. */
 export async function voidPeriod(id: string, organizationId: string, ctx: AuditContext) {
 	// Voiding a finalized period is Super-Admin-only (#224) — enforced here, not just at the route,
 	// so the form action and the v1 API twin are covered by one check, as `voidRun` already is.
@@ -324,54 +326,7 @@ export async function voidPeriod(id: string, organizationId: string, ctx: AuditC
 	const wasLocked = period.status === 'LOCKED' || period.status === 'RELEASED'
 
 	await db.$transaction(async (tx: Prisma.TransactionClient) => {
-		if (run && wasLocked) {
-			// Reverse the amortization committed at lock.
-			const entries = await tx.payrollEntry.findMany({
-				where: { payrollRunId: run.id },
-				include: { deductions: true }
-			})
-			for (const entry of entries) {
-				for (const d of entry.deductions) {
-					// #119: balances stay in exact decimal — no Number() round-trip. Both operands are
-					// scale-2 at rest, so decrements introduce no drift and the running balance stays
-					// reconcilable against the original principal.
-					const amount = D(d.amount)
-					if (amount.lte(0) || !d.refId) continue
-					if (d.code === 'LOAN') {
-						// Reverse what was actually applied, not the frozen deduction line. Lock
-						// re-caps against the live balance, so the two can differ; the payment
-						// rows are the record of what really moved. Reversing `d.amount` blind
-						// would credit back money that was never collected.
-						const payments = await tx.loanPayment.findMany({
-							where: { loanId: d.refId, payrollEntryId: entry.id },
-							select: { amount: true }
-						})
-						const reversal = sum(payments.map((p) => p.amount))
-						const loan = await tx.loan.findUnique({ where: { id: d.refId } })
-						if (loan && reversal.gt(0)) {
-							const restored = D(loan.balance).plus(reversal)
-							await tx.loan.update({
-								where: { id: d.refId },
-								// Only reopen a loan the reversal actually un-pays; a loan settled
-								// by some other payment stays PAID.
-								data: { balance: restored, status: restored.gt(0) ? 'ACTIVE' : loan.status }
-							})
-						}
-						await tx.loanPayment.deleteMany({
-							where: { loanId: d.refId, payrollEntryId: entry.id }
-						})
-					} else if (d.code === 'CASH_ADVANCE') {
-						const ca = await tx.cashAdvance.findUnique({ where: { id: d.refId } })
-						if (ca) {
-							await tx.cashAdvance.update({
-								where: { id: d.refId },
-								data: { balance: D(ca.balance).plus(amount), status: 'ACTIVE' }
-							})
-						}
-					}
-				}
-			}
-		}
+		if (run && wasLocked) await reverseAmortization(tx, run.id)
 		if (run) await tx.payrollRun.update({ where: { id: run.id }, data: { status: 'VOIDED' } })
 		await tx.payrollPeriod.update({ where: { id }, data: { status: 'VOIDED' } })
 	})
