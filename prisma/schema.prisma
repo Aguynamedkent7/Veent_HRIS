@@ -1871,10 +1871,31 @@ model CashAdvance {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
-  employee Employee @relation(fields: [employeeId], references: [id])
+  employee Employee             @relation(fields: [employeeId], references: [id])
+  payments CashAdvancePayment[]
 
   @@index([employeeId])
   @@map("cash_advances")
+}
+
+// #309: the mirror of LoanPayment. Without it a void credited back the frozen deduction
+// line instead of what lock actually took, so a capped payment came back over-credited —
+// measured live at ₱300 returned against ₱100 collected.
+model CashAdvancePayment {
+  id             String   @id @default(cuid())
+  cashAdvanceId  String
+  payrollEntryId String?
+  amount         Decimal  @db.Decimal(12, 2)
+  paidAt         DateTime @default(now())
+
+  cashAdvance CashAdvance @relation(fields: [cashAdvanceId], references: [id], onDelete: Cascade)
+
+  // Idempotency key for the amortization committed at period lock: one payment per
+  // (advance, payroll entry). NULL payrollEntryId stays distinct in Postgres, so manual
+  // off-payroll payments are unaffected.
+  @@unique([cashAdvanceId, payrollEntryId])
+  @@index([cashAdvanceId])
+  @@map("cash_advance_payments")
 }
 
 // Recurring monthly earning HR assigns to an employee (allowance or incentive).

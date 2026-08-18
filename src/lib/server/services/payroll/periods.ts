@@ -227,12 +227,24 @@ export async function lock(
 					const ca = await tx.cashAdvance.findUnique({ where: { id: d.refId } })
 					if (!ca) continue
 
-					// Cash advances have no payment ledger, so there is no idempotency key to
-					// lean on — the atomic period claim above is what stops a second pass, and
-					// this conditional update is what stops a concurrent one.
+					// `amount` is the frozen deduction line; re-cap it against the live balance
+					// exactly as the loan arm does.
 					const liveBalance = D(ca.balance)
 					const applied = q2(amount.lt(liveBalance) ? amount : liveBalance)
 					if (applied.lte(0)) continue
+
+					// #309: record what was ACTUALLY taken. The void reverses these rows, so a
+					// capped payment can no longer be credited back at the uncapped figure. The
+					// unique key on (advance, entry) makes a replayed lock a no-op.
+					try {
+						await tx.cashAdvancePayment.create({
+							data: { cashAdvanceId: d.refId, payrollEntryId: entry.id, amount: applied }
+						})
+					} catch (e) {
+						if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') continue
+						throw e
+					}
+
 					const newBalance = liveBalance.minus(applied)
 					const res = await tx.cashAdvance.updateMany({
 						where: { id: d.refId, balance: ca.balance },

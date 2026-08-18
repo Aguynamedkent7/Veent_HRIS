@@ -26,8 +26,8 @@ has not been decided.
 1. Refuses if the run is already `VOIDED`. Voiding twice would credit the amortization back a
    second time. `DRAFT` and `APPROVED` runs still void — that was always allowed and stays allowed.
 2. If the run's period is `LOCKED` or `RELEASED`, reverses the amortization committed at lock:
-   loan balances are restored from the recorded `loan_payments` rows (which are then deleted), and
-   cash-advance balances are credited back.
+   loan balances are restored from the recorded `loan_payments` rows and cash-advance balances from
+   the recorded `cash_advance_payments` rows (both are then deleted).
 3. Flips the run to `VOIDED`. Steps 2 and 3 are one transaction.
 4. Leaves the period status alone.
 5. Writes a `PAYROLL_VOID` audit entry, marked if the voider is the same person who approved.
@@ -35,20 +35,19 @@ has not been decided.
 A run with **no period** (`periodId` is nullable and real rows have it null) voids normally with no
 reversal — amortization is only ever applied at a period lock, so there is nothing to reverse.
 
-> **Known defect — a run void can OVER-CREDIT a cash advance.** Lock applies
-> `min(installment, live balance)`; the reversal credits back the full frozen deduction line and
-> forces the advance to `ACTIVE` regardless. So a capped payment comes back too big, and an advance
-> that some other payment settled can be resurrected. Loans are not affected — they have a payment
-> ledger and the reversal reads it. **This is worse on the run path**, because the period stays
-> `LOCKED`, so the over-credited advance sits against a payroll that still looks alive. Pre-existing,
-> out of scope for #298, fixing it needs a cash-advance payment ledger. See the comment on
-> `reverseAmortization`.
+> **#309 — fixed.** A void used to credit a cash advance back at the full frozen deduction line
+> while lock had only taken `min(installment, live balance)`, and forced the advance to `ACTIVE`
+> regardless. Measured live: ₱100 borrowed and fully repaid came back as ₱300 owed. Both arms now
+> reverse recorded payment rows, so neither can over-credit.
+>
+> One consequence of the ledger arriving late: an advance amortized by a payroll locked **before**
+> `cash_advance_payments` existed has no rows to reverse, so voiding it credits back nothing. No
+> such payroll exists in any database (the app has never been deployed), so there is no backfill.
 
 ## What a PERIOD void does
 
 1. Refuses if the period is already `VOIDED`.
-2. If the period was `LOCKED` or `RELEASED`, reverses the same amortization, the same way — and
-   carries the same cash-advance over-credit described above.
+2. If the period was `LOCKED` or `RELEASED`, reverses the same amortization, the same way.
 3. Flips **both** its run and the period to `VOIDED`, in one transaction.
 
 ## What neither does
