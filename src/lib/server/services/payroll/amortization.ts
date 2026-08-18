@@ -82,10 +82,7 @@ export async function reverseAmortization(
 						data: { balance: restored, status: restored.gt(0) ? 'ACTIVE' : ca.status }
 					})
 					if (res.count === 0) {
-						error(
-							409,
-							'A cash-advance balance changed while voiding — nothing was reversed, retry'
-						)
+						error(409, 'A cash-advance balance changed while voiding — nothing was reversed, retry')
 					}
 				}
 				await tx.cashAdvancePayment.deleteMany({
