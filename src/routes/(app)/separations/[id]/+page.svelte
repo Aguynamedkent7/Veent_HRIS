@@ -92,7 +92,7 @@
 				>
 			</div>
 			{#if !isFinalized}
-				<p class="mt-1 text-xs text-amber-600">
+				<p class="mt-1 text-xs text-amber-700 dark:text-amber-400">
 					Marking any item cleared here means you will not be able to finalize this case. Another HR
 					administrator, or your CEO, will have to finalize it.
 				</p>
@@ -172,17 +172,20 @@
 				{formatShortDate(s.effectiveDate)}), and disables their login. This cannot be undone.
 			</p>
 			{#if pendingCount > 0}
-				<p class="mt-2 text-sm text-amber-600">
+				<p class="mt-2 text-sm text-amber-700 dark:text-amber-400">
 					{pendingCount} clearance item{pendingCount === 1 ? '' : 's'} still pending — clear all before
 					finalizing.
 				</p>
 			{/if}
 			{#if finalizeBar}
-				<p class="mt-2 text-sm text-amber-600">{finalizeBar}</p>
+				<p id="finalize-bar" class="mt-2 text-sm text-amber-700 dark:text-amber-400">
+					{finalizeBar}
+				</p>
 			{/if}
 			<form method="POST" action="?/finalize" use:enhance={finalize.enhance} class="mt-3">
 				<button
 					type="submit"
+					aria-describedby={finalizeBar ? 'finalize-bar' : undefined}
 					disabled={pendingCount > 0 || !!finalizeBar || finalize.busy}
 					class="rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
 					>{finalize.busy ? 'Finalizing…' : 'Finalize & offboard'}</button
