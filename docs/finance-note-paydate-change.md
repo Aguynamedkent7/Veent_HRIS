@@ -1,12 +1,19 @@
 # Draft note for Finance — the PAYDATE on payslips
 
-**Status: DRAFT, not sent.** Sending it is your call. It is due **before** this ships, not after.
+**Status: CLOSED 18-08-26 — a record, not a pending action.**
 
-Everything inside the quoted block is the message itself — edit the tone or trim it, then send it
-however you normally reach Finance. The background after it is for you, not for them.
+This began as a note to send Finance before shipping. It was overtaken: the owner took the question
+to HR, and HR answered with a rule rather than a concern —
 
-> **Rewritten 18-08-26 after HR's answer.** An earlier draft said approved payrolls were untouched.
-> That is no longer true: HR's rule changes the date on _every_ payslip, not just a subset.
+> _"The paydate should be on the day that the payslip was released."_ — HR, 18-08-26
+
+and the owner confirmed that **"released" means the day the payslips were given to the employees**,
+which is exactly what `PayrollPeriod.releasedAt` records. So the stakeholder consultation happened,
+it produced a requirement, the requirement is built, and there is nothing left to notify anyone
+about. AC-10.3 is satisfied by that exchange.
+
+The message below is kept because it is the clearest plain-language statement of what changed and
+why. Send it if it is ever useful; it is not owed to anyone.
 
 ---
 
@@ -72,9 +79,9 @@ has no release date to show. That is defensible. The alternative is a two-line c
 `approvedAt` for those legacy runs only, which for them was a genuine approval. Still open if you
 change your mind.
 
-**Is "released" the same as "paid"?** Release means the payslip became visible. If money actually
-lands on a different day, that is a third date we do not currently store. Worth confirming with HR
-if anyone asks.
+**Is "released" the same as "paid"?** Asked and answered, 18-08-26: the owner confirmed release
+means **the day the payslips were given to the employees**. That is precisely what `releasedAt`
+records, so there is no third date and no gap. Do not reopen this.
 
 **Related.** `process/general-plans/active/phase0-evidence_18-08-26.md` (the before/after captures),
 SPEC decision D12, AC-10.1 / AC-10.2 / AC-10.3.
