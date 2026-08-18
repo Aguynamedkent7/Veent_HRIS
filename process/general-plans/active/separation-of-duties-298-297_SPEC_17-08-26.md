@@ -3,7 +3,7 @@ name: spec:separation-of-duties-298-297
 description: "LOCKED requirements for #298 (payroll void made visible, lock/release actors recorded) and #297 (clearer cannot finalize, self-finalize blocked), amended 18-08-26 to fold in three correctness follow-ups"
 date: 17-08-26
 feature: general-plans
-status: LOCKED — owner answered 17-08-26; AMENDED 18-08-26 (D9, D10, D11 folded in; D6 approved)
+status: LOCKED — owner answered 17-08-26; AMENDED 18-08-26 (D10, D11, D12 in; D9 folded in then DROPPED; D6 approved)
 ---
 
 # Separation of Duties — #298 and #297
@@ -15,13 +15,15 @@ requirements record. It is frozen — INNOVATE and PLAN may proceed from it.
 >
 > 1. Three "not deciding here" follow-ups were **folded into this work** — the final-pay
 >    understatement (**D9**, AC-6), the void-run/void-period divergence (**D10**, AC-7), and
->    the "who approved" sweep (**D11**, AC-8).
+>    the "who approved" sweep (**D11**, AC-8). **D9 was then dropped the same day — RESEARCH
+>    disproved its premise. See the D9 record below.**
 > 2. **D6 approved** — the five remaining follow-ups are filed as issues **#304 – #308**.
 > 3. **D8 confirmed and given criteria.** The bar on touching an already-cleared item runs in
 >    **both** directions. AC-9.1 – AC-9.5.
 > 4. **D12 added** — the payslip PDF `PAYDATE:` change is accepted deliberately. AC-10.1 –
 >    AC-10.3.
-> 5. **D5 approved**, and it is now load-bearing: D9 depends on the characterization baseline.
+> 5. **D5 approved.** It was briefly load-bearing for D9; with D9 dropped it stands on its
+>    own merits — the separation service has zero tests and D3, D4 and D8 all land in it.
 
 It still contains no implementation detail. It says **what** must be true and **how we will
 know**, not how to build it.
@@ -41,24 +43,21 @@ know**, not how to build it.
 | 2 | What about lock and release? | **B — Record who did it.** Record who locked and who released a payroll period. Fix the "who approved" record so it means exactly one thing. **No narrowing, no second-person rule.** | Yes |
 | 3 | Should clearance sign-off need a second person? | **B — Whoever cleared any item may not finalize.** Per-department clearance is **rejected** for this work. | Yes |
 | 4 | Block a person finalizing their own separation? | **A — Yes, block it, in this work.** Mirrors the guard offboarding already has. | Yes |
-| 5 | Write separation tests first? | **APPROVED 18-08-26 — yes, characterization tests first.** Now load-bearing: D9 depends on it. | Yes |
+| 5 | Write separation tests first? | **APPROVED 18-08-26 — yes, characterization tests first.** | Yes |
 | 6 | File the follow-up findings as issues? | **APPROVED 18-08-26.** The follow-ups not folded in are filed as issues. | Yes — done |
 | 7 | Confirm production head counts before building? | **PROPOSED — no longer blocking.** Downgraded to "worth confirming". | Proposed |
 | 8 | May a second person touch an item somebody else already cleared? | **No — barred in BOTH directions**, clearing and un-clearing. Confirmed by the owner 18-08-26. Added after this SPEC first locked. | Yes |
-| 12 | The payslip PDF `PAYDATE:` changes for locked-but-never-approved runs. Accept it? | **Yes, accept 18-08-26.** The new value is the more correct one. Verify live before and after, record a sample, and tell Finance the printed date moves. | Yes |
-| 9 | Fix the final-pay understatement? | **Yes — folded in 18-08-26.** Final pay may be understated by a large factor. Fix it, behind a characterization baseline. | Yes |
+| 9 | Fix the final-pay understatement? | **DROPPED 18-08-26 — the premise is false.** Folded in that morning, disproved by RESEARCH the same day. The guard already exists. See the D9 record below. | **No** |
 | 10 | Fix the void-run / void-period divergence? | **Yes — folded in 18-08-26.** Voiding a run leaves loan and cash-advance balances reduced for a payroll that no longer exists, and has no status precondition. | Yes |
-| 11 | Sweep the "who approved" ambiguity beyond payroll periods? | **Yes — folded in 18-08-26.** D2 fixes the payroll period. D11 checks every other place the same ambiguity exists and fixes what it finds. | Yes |
+| 11 | Sweep the "who approved" ambiguity beyond payroll periods? | **Yes — folded in 18-08-26.** D2 fixes the payroll period. D11 checks every other place the same ambiguity exists and fixes what it finds. **Result: the sweep is CLEAN — nothing to fix beyond D2.** | Yes |
+| 12 | The payslip PDF `PAYDATE:` changes for locked-but-never-approved runs. Accept it? | **Yes, accept 18-08-26.** The new value is the more correct one. Verify live before and after, record a sample, and tell Finance the printed date moves. | Yes |
 
 **Decisions 5 and 7 were never put to the owner.** They are the orchestrator's
 recommendations, recorded here so they are not lost. They are clearly marked PROPOSED
 throughout and must not be treated as approved. **D6 was approved on 18-08-26** and is no
 longer proposed.
 
-> **D5 is now load-bearing.** D9 changes final-pay arithmetic in a service with **zero**
-> tests. A characterization baseline is no longer a nice-to-have — without it there is no way
-> to show the fix changed only what it meant to change. If the owner still rejects D5, D9 must
-> be dropped with it.
+> **D12** covers the payslip PDF `PAYDATE:` consequence of D2. See its criteria at AC-10.
 
 ### Why each answer was chosen
 
@@ -97,13 +96,48 @@ qualified person therefore exists for both single-holder tenants.
 writing off their own outstanding loans is indefensible. The equivalent guard already exists
 on offboarding. This closes the matching hole in the same work, not a separate issue.
 
-### The three folded in on 18-08-26
+### The ones folded in on 18-08-26
 
-**D9 — final pay may be understated by a large factor.** This was listed as a follow-up
-because it is arithmetic, not authority. It is folded in because it is **money leaving the
-company wrong**, it lives in the exact service D3 and D4 already touch, and D5's
-characterization baseline — already required for that service — is most of the cost of fixing
-it. Doing it separately would mean building the same baseline twice.
+**D9 — DROPPED the same day. Its premise was false.** It was folded in on the grounds that
+final pay "may be understated by a large factor", citing a 22×/176× trap. RESEARCH went to
+read it and found **the guard already exists**, at `src/lib/server/services/separation.ts:204-211`:
+
+```
+// #189: the stored figure means something different per basis (mirror payslip-document.ts). Dividing
+// an hourly/daily rate by the monthly working days would understate the day value 176×/22×.
+const dailyRate =
+    comp.rateType === 'HOURLY' ? rate * 8
+        : comp.rateType === 'DAILY' ? rate
+        : rate / WORKING_DAYS_PER_MONTH
+```
+
+The "22×/176×" in this SPEC was **quoted from that comment**. The comment describes the bug
+**#189 already fixed**, not a live one. Both mirror sites agree with the guard —
+`payslip-document.ts:178-186` and `payroll/types.ts:137-144` — so there is no unguarded twin
+either. No code path divides a daily or hourly rate by the monthly working days.
+
+Verified independently by the orchestrator, not taken on the research agent's word, because
+dropping a decision the owner had just made needed more than one reader.
+
+**The lesson, which is why this is written out in full rather than deleted:** a code comment
+describing a *fixed* bug reads exactly like a code comment describing a *live* one. The
+distinguishing evidence is the code underneath it. Check that a quoted defect is not the
+epitaph of its own fix.
+
+Three real findings survived the disproof and are recorded so they are not lost with D9:
+
+1. **A `FINALIZED` separation with a falsy `finalPayBreakdown` is recomputed live on read** —
+   `src/routes/(app)/separations/[id]/+page.server.ts:19-22`. It would then display a figure
+   different from the one actually paid. Whether any such row exists needs a database count.
+   **Not in scope; awaiting the owner's decision on whether to file it.**
+2. **Final pay omits 13th-month pay, tax refunds and last unpaid salary** — deliberately and
+   documented at `separation.ts:167-169`, because they need year-to-date payroll. This is a
+   real "the leaver is paid less than they are owed" mechanism, but it is a scope question,
+   not arithmetic. **Not in scope.**
+3. **A latent divergence:** `separation.ts` hardcodes 22 working days and 8 hours, while
+   `payslip-document.ts` and `payroll/types.ts` take injected values defaulting to the same
+   numbers. Nothing passes those values today, so the three agree. If they ever become
+   configurable, separation will silently keep using 22/8. **Not in scope.**
 
 **D10 — voiding a run and voiding a period do different things.** Folded in because it is
 inside #298's own blast radius: it is a payroll void, the same action D1 is making visible.
@@ -470,32 +504,15 @@ change ships.
 - proven by: an explicit hand-off note to the owner, recorded in the plan closeout
 - strategy: Agent-Probe
 
-### D9 — Final pay is computed correctly *(folded in 18-08-26)*
+### D9 — DROPPED 18-08-26
 
-**AC-6.1** — A characterization baseline pins the **current** final-pay result for a set of
-representative leavers before anything is changed. AC-5.2 is its precondition.
-- proven by: `final-pay-characterization-baseline`
-- strategy: Fully-Automated
+**AC-6.1 – AC-6.5 are withdrawn.** They were written on the morning of 18-08-26 and withdrawn
+the same day when RESEARCH disproved the premise. AC-6.2 required a failing test that "names
+the wrong figure and the right one" — on the evidence, no such test can be written, because
+there is no wrong figure.
 
-**AC-6.2** — The understatement is reproduced as a failing test that names the wrong figure
-and the right one, before any fix is written.
-- proven by: `final-pay-understatement-reproduced` (must be red first, and recorded as red)
-- strategy: Fully-Automated
-
-**AC-6.3** — After the fix, final pay is correct for every case in the baseline, and every
-case whose result changes is listed with its before and after figure.
-- proven by: `final-pay-correct-after-fix` + a written before/after table
-- strategy: Fully-Automated
-
-**AC-6.4** — A live finalize on the dev server produces the corrected figure end to end, not
-just in the unit suite.
-- proven by: `final-pay-live-before-after`
-- strategy: Agent-Probe
-
-**AC-6.5** — No already-finalized separation is retro-changed. The fix applies to new
-computations only.
-- proven by: `final-pay-no-retrofix`
-- strategy: Fully-Automated
+Nothing else depends on them. **AC-5.2** (the characterization baseline) stands on its own
+merits: the separation service has zero tests and D3, D4 and D8 all land in it.
 
 ### D10 — Voiding a run and voiding a period are consistent *(folded in 18-08-26)*
 
@@ -556,8 +573,8 @@ characterization tests exist that pin the **current** behaviour of the separatio
 including the final-pay arithmetic. The change is then provably the only difference.
 - proven by: `separation-characterization-baseline`
 - strategy: Fully-Automated
-- **18-08-26: now load-bearing.** D9 changes the final-pay arithmetic, so this is a hard
-  precondition for AC-6.2 and AC-6.3. Rejecting D5 now means dropping D9 with it.
+- **18-08-26: approved.** It was briefly a precondition for D9; with D9 dropped it stands on
+  its own — the separation service has zero tests and D3, D4 and D8 all land in it.
 
 **AC-5.3** — Every new refusal and every guard is mutation-checked: break it on purpose and a
 test must go red. A guard whose removal leaves the suite green is not proven.
@@ -582,12 +599,12 @@ Explicitly **not** part of this work:
 6. **Any change to who may prepare a payroll, or to who may tick a clearance item.**
 7. **Fixing that JoJo Potato and Sweetleaf have no Super Admin.** A staffing matter, not code.
 8. **Building an un-finalize, amend or reversal path for separations.** Filed as issue #304.
-9. ~~**Fixing the risk that final pay may be understated by a large factor.**~~ **NOW IN
-   SCOPE** as D9, folded in 18-08-26.
+9. **Fixing the risk that final pay may be understated by a large factor.** Folded in as D9
+   on 18-08-26 and **dropped the same day — the risk does not exist.** The guard is already
+   in the code. Out of scope, and there is nothing to file either.
 10. **The unreliable end-to-end browser suite.** A known problem, not solved here.
 11. **Reworking the roles and permissions model.** No new mechanism is invented.
 12. **Retro-fixing historical records.** No back-filling of past payrolls or separations.
-    This still holds under D9 — see AC-6.5.
 13. ~~**Filing any GitHub issue.**~~ **D6 was approved 18-08-26.** The follow-ups not folded in
     are filed. No *further* issue may be filed without a fresh approval.
 
@@ -623,8 +640,8 @@ Explicitly **not** part of this work:
     18-08-26, for the follow-ups listed below. It does not carry to anything else.
 12. **D10 is unproven until it is run.** No fix may be designed for it from code reading
     alone. AC-7.1 gates the rest of D10.
-13. **D9 touches money that has already been paid out.** Nothing may retro-change a finalized
-    separation. A corrected figure applies to new computations only.
+13. **Nothing may retro-change a finalized separation.** Held over from the dropped D9
+    because it is a good standing rule near this code, not because D9 needs it.
 
 ---
 
@@ -664,7 +681,7 @@ filed as issues; one is not a code change. Nothing here is still pending a filin
 
 | Was | Now |
 |---|---|
-| 2 — Final pay may be understated by a large factor | **D9**, AC-6.1 – AC-6.5 |
+| 2 — Final pay may be understated by a large factor | **D9 — folded in, then DROPPED 18-08-26.** The premise was false; see the D9 record above. Not re-filed: there is no defect to file. |
 | 3 — Voiding a run and voiding a period do different things | **D10**, AC-7.1 – AC-7.5 |
 | 5 — The "who approved" record means two different things | **D11**, AC-8.1 – AC-8.3 |
 
@@ -768,8 +785,10 @@ verification in the development environment.
   separations with full HR authority** — so a second person does exist. **This is what made the
   small-tenant stranding objection weak, and is why D3 = B was safe to choose.**
 - **Zero tests exist for the entire separation area** — all functions, all screens, including
-  final-pay arithmetic that carries a documented risk of understating pay by a large factor.
-  This is why D5 is proposed.
+  the final-pay arithmetic. This is why D5 was proposed, and it is confirmed: no test file in
+  the repo imports the separation service. **Correction 18-08-26:** the "documented risk of
+  understating pay by a large factor" originally recorded here was a misreading of the #189
+  guard's comment. The risk is not live. See the D9 record. Filed independently as **#305**.
 
 **House rules that apply**
 
