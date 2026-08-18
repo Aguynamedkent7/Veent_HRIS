@@ -1,15 +1,27 @@
 ---
 name: spec:separation-of-duties-298-297
-description: "LOCKED requirements for #298 (payroll void made visible, lock/release actors recorded) and #297 (clearer cannot finalize, self-finalize blocked)"
+description: "LOCKED requirements for #298 (payroll void made visible, lock/release actors recorded) and #297 (clearer cannot finalize, self-finalize blocked), amended 18-08-26 to fold in three correctness follow-ups"
 date: 17-08-26
 feature: general-plans
-status: LOCKED — owner answered 17-08-26
+status: LOCKED — owner answered 17-08-26; AMENDED 18-08-26 (D9, D10, D11 folded in; D6 approved)
 ---
 
 # Separation of Duties — #298 and #297
 
 **STATUS: DECISIONS LOCKED.** The owner answered on 17-08-26. This document is now the
 requirements record. It is frozen — INNOVATE and PLAN may proceed from it.
+
+> **AMENDMENT 18-08-26.** Five changes, none of which alter D1–D4:
+>
+> 1. Three "not deciding here" follow-ups were **folded into this work** — the final-pay
+>    understatement (**D9**, AC-6), the void-run/void-period divergence (**D10**, AC-7), and
+>    the "who approved" sweep (**D11**, AC-8).
+> 2. **D6 approved** — the five remaining follow-ups are filed as issues **#304 – #308**.
+> 3. **D8 confirmed and given criteria.** The bar on touching an already-cleared item runs in
+>    **both** directions. AC-9.1 – AC-9.5.
+> 4. **D12 added** — the payslip PDF `PAYDATE:` change is accepted deliberately. AC-10.1 –
+>    AC-10.3.
+> 5. **D5 approved**, and it is now load-bearing: D9 depends on the characterization baseline.
 
 It still contains no implementation detail. It says **what** must be true and **how we will
 know**, not how to build it.
@@ -29,13 +41,24 @@ know**, not how to build it.
 | 2 | What about lock and release? | **B — Record who did it.** Record who locked and who released a payroll period. Fix the "who approved" record so it means exactly one thing. **No narrowing, no second-person rule.** | Yes |
 | 3 | Should clearance sign-off need a second person? | **B — Whoever cleared any item may not finalize.** Per-department clearance is **rejected** for this work. | Yes |
 | 4 | Block a person finalizing their own separation? | **A — Yes, block it, in this work.** Mirrors the guard offboarding already has. | Yes |
-| 5 | Write separation tests first? | **PROPOSED — yes, characterization tests first.** *Not yet owner-approved.* | Proposed |
-| 6 | File the follow-up findings as issues? | **PROPOSED — yes, but do not file yet.** Filing is outward-facing and needs explicit owner approval. | Proposed, on hold |
+| 5 | Write separation tests first? | **APPROVED 18-08-26 — yes, characterization tests first.** Now load-bearing: D9 depends on it. | Yes |
+| 6 | File the follow-up findings as issues? | **APPROVED 18-08-26.** The follow-ups not folded in are filed as issues. | Yes — done |
 | 7 | Confirm production head counts before building? | **PROPOSED — no longer blocking.** Downgraded to "worth confirming". | Proposed |
+| 8 | May a second person touch an item somebody else already cleared? | **No — barred in BOTH directions**, clearing and un-clearing. Confirmed by the owner 18-08-26. Added after this SPEC first locked. | Yes |
+| 12 | The payslip PDF `PAYDATE:` changes for locked-but-never-approved runs. Accept it? | **Yes, accept 18-08-26.** The new value is the more correct one. Verify live before and after, record a sample, and tell Finance the printed date moves. | Yes |
+| 9 | Fix the final-pay understatement? | **Yes — folded in 18-08-26.** Final pay may be understated by a large factor. Fix it, behind a characterization baseline. | Yes |
+| 10 | Fix the void-run / void-period divergence? | **Yes — folded in 18-08-26.** Voiding a run leaves loan and cash-advance balances reduced for a payroll that no longer exists, and has no status precondition. | Yes |
+| 11 | Sweep the "who approved" ambiguity beyond payroll periods? | **Yes — folded in 18-08-26.** D2 fixes the payroll period. D11 checks every other place the same ambiguity exists and fixes what it finds. | Yes |
 
-**Decisions 5, 6 and 7 were never put to the owner.** They are the orchestrator's
+**Decisions 5 and 7 were never put to the owner.** They are the orchestrator's
 recommendations, recorded here so they are not lost. They are clearly marked PROPOSED
-throughout and must not be treated as approved.
+throughout and must not be treated as approved. **D6 was approved on 18-08-26** and is no
+longer proposed.
+
+> **D5 is now load-bearing.** D9 changes final-pay arithmetic in a service with **zero**
+> tests. A characterization baseline is no longer a nice-to-have — without it there is no way
+> to show the fix changed only what it meant to change. If the owner still rejects D5, D9 must
+> be dropped with it.
 
 ### Why each answer was chosen
 
@@ -73,6 +96,39 @@ qualified person therefore exists for both single-holder tenants.
 **D4 = A.** A person processing their own departure, computing their own final pay and
 writing off their own outstanding loans is indefensible. The equivalent guard already exists
 on offboarding. This closes the matching hole in the same work, not a separate issue.
+
+### The three folded in on 18-08-26
+
+**D9 — final pay may be understated by a large factor.** This was listed as a follow-up
+because it is arithmetic, not authority. It is folded in because it is **money leaving the
+company wrong**, it lives in the exact service D3 and D4 already touch, and D5's
+characterization baseline — already required for that service — is most of the cost of fixing
+it. Doing it separately would mean building the same baseline twice.
+
+**D10 — voiding a run and voiding a period do different things.** Folded in because it is
+inside #298's own blast radius: it is a payroll void, the same action D1 is making visible.
+Making a void visible while it silently leaves loan balances reduced would be a half-control.
+**This finding is confirmed by code reading only and has never been run.** It must be
+verified live before any fix is designed. If the live check shows it does not reproduce, D10
+drops out and nothing else changes.
+
+**D8 — an already-cleared item may not be touched by a second person.** Without it, D3 is
+trivially defeatable: B re-ticks A's item, becomes the clearer, wipes A's record, and can wipe
+their own bar the same way. The owner confirmed on 18-08-26 that the bar runs in **both**
+directions — a second person may neither re-clear nor un-clear. The reason is mechanical: the
+only re-clear path in the UI is un-clear-then-clear, so a re-clear-only bar is defeated in one
+extra click. A full clearance history table was offered and declined as too big for now.
+
+**D12 — the payslip PDF `PAYDATE:` change is accepted.** D2 was meant to be record-only, but
+it has one visible consequence. For a payroll run that was **locked but never approved**, the
+PDF prints the lock date today and the period end date afterwards. The owner accepted the new
+value on 18-08-26 because it is the more correct one. It must be verified live on both sides
+with a recorded sample, and Finance must be told before it ships, not after.
+
+**D11 — the "who approved" ambiguity may exist elsewhere.** D2 already fixes it for the
+payroll period. D11 is the search for the same shape in other places, plus a fix for whatever
+it finds. If the search finds nothing, D11 closes as "swept, clean" and that result is
+recorded — a clean sweep is a result, not a non-event.
 
 ---
 
@@ -237,7 +293,7 @@ Nothing here breaks a case that is already in flight.
                         +--> disable their login
                         |
                         v
-                  ( still permanent — no un-finalize. See NOT-deciding item 1. )
+                  ( still permanent — no un-finalize. Filed as issue #304. )
 
    Small tenant escape hatch (verified live):
       a cross-organization administrator can act as the second person.
@@ -367,6 +423,127 @@ subject and a clearer is refused; somebody who is neither is allowed.
 - proven by: `finalize-guards-independent`
 - strategy: Fully-Automated
 
+### D8 — A second person may not touch an already-cleared item *(criterion added 18-08-26)*
+
+**AC-9.1** — When person A has cleared an item, person B is refused when they try to
+**re-clear** it, and the refusal states the reason.
+- proven by: `cleared-item-refuses-second-clearer` + a live run showing the refusal
+- strategy: Hybrid
+
+**AC-9.2** — Person B is also refused when they try to **un-clear** that same item. The bar
+runs in both directions.
+- proven by: `cleared-item-refuses-second-unclearer` + the same live run
+- strategy: Hybrid
+
+**AC-9.3** — Person A, the original clearer, may still un-clear and re-clear their own item.
+The bar is about a *different* person, not about the item being frozen.
+- proven by: `cleared-item-allows-original-clearer`
+- strategy: Hybrid
+
+**AC-9.4** — D3 cannot be defeated by the un-clear-then-clear route. A test walks the exact
+two-step sequence — B un-clears A's item, then clears it — and B is still refused at both
+steps and still cannot finalize.
+- proven by: `d3-not-defeatable-by-reclear` (this is the reason D8 exists; it must exist as a
+  named test, not as a consequence of AC-9.1 and AC-9.2)
+- strategy: Hybrid
+
+**AC-9.5** — An item nobody has cleared yet can be cleared by anybody who could clear it
+before. D8 introduces no refusal on a fresh item.
+- proven by: `uncleared-item-permissions-unchanged`
+- strategy: Fully-Automated
+
+### D12 — The payslip PDF date change is deliberate and recorded *(added 18-08-26)*
+
+**AC-10.1** — For a payroll run that was **locked but never approved**, the `PAYDATE:` field
+on the generated payslip PDF is captured before and after the change, as a recorded sample of
+the actual rendered document — not as an assertion about the code path.
+- proven by: `payslip-paydate-before-after` (a recorded pair, kept with the plan)
+- strategy: Agent-Probe
+
+**AC-10.2** — For a run that **was** approved, `PAYDATE:` is unchanged. Only the
+locked-but-never-approved case moves.
+- proven by: `payslip-paydate-unchanged-when-approved`
+- strategy: Hybrid
+
+**AC-10.3** — Finance is told the printed date moves on that class of payslip, **before** the
+change ships.
+- proven by: an explicit hand-off note to the owner, recorded in the plan closeout
+- strategy: Agent-Probe
+
+### D9 — Final pay is computed correctly *(folded in 18-08-26)*
+
+**AC-6.1** — A characterization baseline pins the **current** final-pay result for a set of
+representative leavers before anything is changed. AC-5.2 is its precondition.
+- proven by: `final-pay-characterization-baseline`
+- strategy: Fully-Automated
+
+**AC-6.2** — The understatement is reproduced as a failing test that names the wrong figure
+and the right one, before any fix is written.
+- proven by: `final-pay-understatement-reproduced` (must be red first, and recorded as red)
+- strategy: Fully-Automated
+
+**AC-6.3** — After the fix, final pay is correct for every case in the baseline, and every
+case whose result changes is listed with its before and after figure.
+- proven by: `final-pay-correct-after-fix` + a written before/after table
+- strategy: Fully-Automated
+
+**AC-6.4** — A live finalize on the dev server produces the corrected figure end to end, not
+just in the unit suite.
+- proven by: `final-pay-live-before-after`
+- strategy: Agent-Probe
+
+**AC-6.5** — No already-finalized separation is retro-changed. The fix applies to new
+computations only.
+- proven by: `final-pay-no-retrofix`
+- strategy: Fully-Automated
+
+### D10 — Voiding a run and voiding a period are consistent *(folded in 18-08-26)*
+
+**AC-7.1** — The divergence is **verified live first**: void a run on a locked period and
+show, from the database, whether loan and cash-advance balances stay reduced. This result
+gates everything else in D10.
+- proven by: `void-run-divergence-live-probe` (recorded result — reproduced or not)
+- strategy: Agent-Probe
+
+**AC-7.2** — Voiding a payroll run no longer leaves loan and cash-advance repayments applied
+for a payroll that no longer exists.
+- proven by: `void-run-reverses-amortization`
+- strategy: Hybrid
+
+**AC-7.3** — Voiding a run has a status precondition. An already-voided run is refused, and
+the refusal states why. Today it will void a draft, an approved or an already-voided run
+alike.
+- proven by: `void-run-status-precondition`
+- strategy: Fully-Automated
+
+**AC-7.4** — Nobody is newly blocked from voiding a run that is in a valid state. The refusal
+added by AC-7.3 fires only on states that were never meaningful to void.
+- proven by: `void-run-capability-unchanged`
+- strategy: Fully-Automated
+
+**AC-7.5** — A run void and a period void are described in one place, so a reader can see what
+each does and does not reverse.
+- proven by: `void-semantics-documented`
+- strategy: Fully-Automated
+
+### D11 — The "who approved" ambiguity is swept *(folded in 18-08-26)*
+
+**AC-8.1** — Every writer of an "approved by" style record in the codebase is enumerated, with
+a verdict on each: correct, ambiguous, or out of scope. `JobPosting.approvedById` is a
+different model and is explicitly out of scope.
+- proven by: a written enumeration in the plan, with file and line for every writer
+- strategy: Fully-Automated
+
+**AC-8.2** — Any record found to mean two things is fixed the same way D2 fixes the payroll
+period: the ambiguous meaning gets its own field, and the original means one thing.
+- proven by: `approver-records-unambiguous-sweep`
+- strategy: Fully-Automated
+
+**AC-8.3** — A clean sweep is an acceptable result and is **recorded as such**. If no other
+site is ambiguous, that finding is written down with the evidence, not left silent.
+- proven by: the enumeration in AC-8.1 standing as the record
+- strategy: Fully-Automated
+
 ### Applies to all of the above
 
 **AC-5.1** — Every new refusal is proven live in a real browser, showing the refusal AND the
@@ -379,6 +556,8 @@ characterization tests exist that pin the **current** behaviour of the separatio
 including the final-pay arithmetic. The change is then provably the only difference.
 - proven by: `separation-characterization-baseline`
 - strategy: Fully-Automated
+- **18-08-26: now load-bearing.** D9 changes the final-pay arithmetic, so this is a hard
+  precondition for AC-6.2 and AC-6.3. Rejecting D5 now means dropping D9 with it.
 
 **AC-5.3** — Every new refusal and every guard is mutation-checked: break it on purpose and a
 test must go red. A guard whose removal leaves the suite green is not proven.
@@ -402,14 +581,15 @@ Explicitly **not** part of this work:
    a relationship rather than a department.
 6. **Any change to who may prepare a payroll, or to who may tick a clearance item.**
 7. **Fixing that JoJo Potato and Sweetleaf have no Super Admin.** A staffing matter, not code.
-8. **Building an un-finalize, amend or reversal path for separations.** See NOT-deciding item 1.
-9. **Fixing the risk that final pay may be understated by a large factor.** An arithmetic
-   correctness problem, separate from who may press the button.
+8. **Building an un-finalize, amend or reversal path for separations.** Filed as issue #304.
+9. ~~**Fixing the risk that final pay may be understated by a large factor.**~~ **NOW IN
+   SCOPE** as D9, folded in 18-08-26.
 10. **The unreliable end-to-end browser suite.** A known problem, not solved here.
 11. **Reworking the roles and permissions model.** No new mechanism is invented.
 12. **Retro-fixing historical records.** No back-filling of past payrolls or separations.
-13. **Filing any GitHub issue.** Filing is outward-facing and needs explicit owner approval —
-    see D6.
+    This still holds under D9 — see AC-6.5.
+13. ~~**Filing any GitHub issue.**~~ **D6 was approved 18-08-26.** The follow-ups not folded in
+    are filed. No *further* issue may be filed without a fresh approval.
 
 ---
 
@@ -439,7 +619,12 @@ Explicitly **not** part of this work:
    locked decisions, but not to be quoted as production fact.
 10. **Merges go to a staging branch, so `Closes #N` never fires.** #298 and #297 must be
     **closed by hand** once this ships.
-11. **No GitHub issue may be filed without explicit owner approval.**
+11. **No GitHub issue may be filed without explicit owner approval.** Granted once, on
+    18-08-26, for the follow-ups listed below. It does not carry to anything else.
+12. **D10 is unproven until it is run.** No fix may be designed for it from code reading
+    alone. AC-7.1 gates the rest of D10.
+13. **D9 touches money that has already been paid out.** Nothing may retro-change a finalized
+    separation. A corrected figure applies to new computations only.
 
 ---
 
@@ -454,48 +639,64 @@ Two notes remain, both downgraded to non-blocking:
 | A | Do production head counts match the development seed counts used here? | **Worth confirming, non-blocking** | D1 = A blocks nobody, so head counts cannot strand anyone on the payroll side. On the offboarding side the verified cross-organization administrator path covers the two single-holder tenants. |
 | B | Does the cross-organization administrator's access to separations hold in production as it does in development? | **Note only** | Verified live in development. Worth a production spot-check before relying on it as the small-tenant escape hatch, but AC-3.4 proves the mechanism either way. |
 
-Three orchestrator recommendations are recorded as **PROPOSED, not owner-approved**: D5
-(characterization tests first), D6 (file the follow-ups, but not yet), D7 (head counts
-non-blocking). They do not block this SPEC. If the owner later rejects D5, AC-5.2 drops out
-and nothing else changes.
+**D5 and D6 were approved on 18-08-26.** One orchestrator recommendation is still **PROPOSED,
+not owner-approved**: D7 (head counts non-blocking). It does not block this SPEC.
+
+### Answered 18-08-26 — were carried over from 17-08-26
+
+These three were deferred by the owner at the end of 17-08-26. All three are now answered and
+folded into the decisions above. Recorded here so the reasoning is not lost.
+
+| # | Question | Answer |
+|---|---|---|
+| i | **D8 "both directions"** — the plans bar a second person from touching an already-cleared item in *either* direction. That was the plan agent's reading, not the owner's words. | **Confirmed — both directions.** Now D8, proven by AC-9.1 – AC-9.5. AC-9.4 names the defeat route explicitly. |
+| ii | **D8 had no acceptance criterion** — added after this SPEC first locked, shipping with gates in the #297 plan instead. | **Fixed.** AC-9.1 – AC-9.5 written into this record. The #297 plan's own gates stay; they are now the implementation of these criteria, not a substitute for them. |
+| iii | **The payslip PDF `PAYDATE:` field changes** for locked-but-never-approved runs. Chain `payslip-document.ts:282` → `payslip-pdf.ts:156`: it prints the **lock date** today and the **period end date** after D2. No Svelte component renders `approvedAt` at all — the PDF is the only render, which is why grepping components alone missed it. | **Accepted.** Now D12, proven by AC-10.1 – AC-10.3. Finance must be told before it ships. |
 
 ---
 
 ## What We Are NOT Deciding Here
 
-Each should become its own issue. **Do not file any of them yet** — filing is outward-facing
-and needs explicit owner approval (D6 PROPOSED).
+**Resolved 18-08-26.** D6 was approved. Three items were folded into this work; five were
+filed as issues; one is not a code change. Nothing here is still pending a filing decision.
 
-1. **No way to undo a finalized separation.** No un-finalize, no amend, no override. A wrong
-   finalize is permanent with no in-app remedy. *Highest-value follow-up; it has real money
-   consequences.*
-2. **Final pay may be understated by a large factor.** A documented risk in the final-pay
-   arithmetic, with zero tests covering it. *Second-highest value; also a money consequence.*
-3. **Voiding a payroll run and voiding a payroll period do materially different things, and
-   both are reachable by the same person.** Voiding a **run** only flips its status — it does
-   **not** reverse loan and cash-advance repayments and does **not** touch the period. So
-   voiding a run on a locked period leaves the period locked and the balances still reduced:
-   **money stays deducted for a payroll that no longer exists.** Voiding a **period** does
-   reverse those balances. Separately, voiding a run has **no status precondition at all** —
-   it will void a draft, an approved, or an already-voided run alike — whereas voiding a
-   period refuses one that is already voided.
-   **Confidence: confirmed by reading the code directly. NOT verified live.** Treat it as a
-   strong lead, not a proven defect, until somebody runs it.
-   *This is a stronger candidate than #298 as originally filed. It is a correctness problem,
-   not a decision, which is why it is here and not in the locked decisions.*
-4. **Zero test coverage for the separation area** — every function and every screen. AC-5.2
-   makes a baseline a precondition for this work if D5 is approved, but the gap should exist as
-   work in its own right.
-5. **The "who approved" record means two different things today.** Being fixed by D2 for
-   payroll periods. If the same ambiguity exists elsewhere, that is a separate sweep.
-6. **Clearance item departments are free text matching nothing real.** A data-quality problem
-   today, independent of the rejected Option 3.
-7. **Two tenants cannot void a payroll at all**, having no Super Admin. A staffing question for
-   the owner, not a code change.
-8. **External alerting on override.** Deferred by D1b. Revisit if the history entry proves
-   insufficient in practice.
-9. **Should self-action guards be swept across other destructive flows?** This work covers
-   finalize only.
+### Folded into this work
+
+| Was | Now |
+|---|---|
+| 2 — Final pay may be understated by a large factor | **D9**, AC-6.1 – AC-6.5 |
+| 3 — Voiding a run and voiding a period do different things | **D10**, AC-7.1 – AC-7.5 |
+| 5 — The "who approved" record means two different things | **D11**, AC-8.1 – AC-8.3 |
+
+The full text of former item 3, kept because it is the evidence D10 rests on:
+
+> Voiding a **run** only flips its status — it does **not** reverse loan and cash-advance
+> repayments and does **not** touch the period. So voiding a run on a locked period leaves the
+> period locked and the balances still reduced: **money stays deducted for a payroll that no
+> longer exists.** Voiding a **period** does reverse those balances. Separately, voiding a run
+> has **no status precondition at all** — it will void a draft, an approved, or an
+> already-voided run alike — whereas voiding a period refuses one that is already voided.
+>
+> **Confidence: confirmed by reading the code directly. NOT verified live.** Treat it as a
+> strong lead, not a proven defect, until somebody runs it.
+
+That confidence caveat is now Constraint 12 and gate AC-7.1.
+
+### Filed as issues (18-08-26)
+
+| Was | Issue | Title |
+|---|---|---|
+| 1 | **#304** | No way to undo a finalized separation |
+| 4 | **#305** | Zero test coverage for the entire separation service |
+| 6 | **#306** | `ClearanceItem.department` is free text matching no real department |
+| 8 | **#307** | External alerting when a payroll override happens (deferred by D1b) |
+| 9 | **#308** | Sweep self-action guards across the other destructive flows |
+
+### Not filed
+
+7. **Two tenants cannot void a payroll at all**, having no Super Admin. **A staffing question
+   for the owner, not a code change** — deliberately not filed, because there is nothing for a
+   developer to do with it. It stays recorded here.
 
 ---
 
@@ -537,8 +738,8 @@ verification in the development environment.
   already-voided run are all voided alike. Voiding a period refuses one that is already voided.
 - Both are reachable by the same capability holder.
 - **Confidence: confirmed by reading the code directly. NOT verified live.** Do not overstate
-  it. Recorded as NOT-deciding item 3, to be filed as its own issue once the owner approves
-  filing.
+  it. **Folded into this work on 18-08-26 as D10** — AC-7.1 makes the live check a gate on
+  everything else in D10.
 
 **#297 — clearance**
 
@@ -551,8 +752,8 @@ verification in the development environment.
   their own separation. **Now in scope to fix** (D4 = A).
 - **Not in the issue:** finalize is irreversible. It zeroes outstanding loan and cash-advance
   balances to paid, per-loan detail survives only inside a stored summary, the employee is
-  offboarded and locked out, and there is no in-app remedy. **Out of scope; recorded as
-  NOT-deciding item 1.**
+  offboarded and locked out, and there is no in-app remedy. **Out of scope; filed as issue
+  #304.**
 - **Not in the issue:** the third option needs data that does not exist. Clearance item
   "departments" are free text (IT, HR, Admin, Finance, Immediate Supervisor) that do not match
   the organization's real departments (Human Resources, Software Developers, Accounting).

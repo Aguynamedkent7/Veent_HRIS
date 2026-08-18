@@ -59,7 +59,7 @@ plan adds **no schema change at all** — every column it reads (`ClearanceItem.
 |---|---|
 | Per-department clearance (#297 Option 3) | Rejected by D3 — the department data does not exist (free text matching no real department; "Immediate Supervisor" is a relationship). |
 | A clearance history table | Offered and declined by the owner as too big for now; D8 is the cheaper defence of the same hole. |
-| No-undo-after-finalize | SPEC NOT-deciding item 1 — finalize stays permanent; this plan adds no new path to it. |
+| No-undo-after-finalize | SPEC out-of-scope item 8, filed as #304 — finalize stays permanent; this plan adds no new path to it. |
 | Final-pay understatement | SPEC out-of-scope 9 — an arithmetic correctness problem, not a "who may press the button" problem. |
 | Nothing stops the SUBJECT clearing their own items | `setClearanceItem` has no self-check. Related to D8 but a **distinct** hole and not in the locked decisions. Record it, do not fix it here. |
 | Anything payroll (#298) | Owned by a parallel agent; do not touch `prisma/schema.prisma`, payroll services, or the audit-log pages. |
@@ -441,7 +441,7 @@ red output into the execution report.
 
 ## Test Infra Improvement Notes
 
-- The separation area has **zero** tests today (SPEC NOT-deciding item 4). This plan adds three
+- The separation area has **zero** tests today (SPEC follow-up, filed as #305). This plan adds three
   files covering the two SoD guards and a thin characterization baseline; `computeFinalPay`
   arithmetic, `createSeparation`, `listSeparations`, `generateSeparationReport` and all three
   routes remain uncovered. Worth a standalone coverage task.
