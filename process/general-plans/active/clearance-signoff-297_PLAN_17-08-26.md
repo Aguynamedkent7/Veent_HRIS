@@ -400,7 +400,21 @@ curl -s -c /tmp/cj.txt -X POST http://localhost:5173/api/v1/_dev/login-as \
 | L2b | As admin **B**, try to un-tick one of A's items | 403 "already cleared by someone else"; `select \"clearedById\" from clearance_items where id='<item>';` → unchanged (D8) |
 | L2c | As admin **B**, tick (RE-clear) one of A's already-cleared items — use the checkbox in the clearance checklist on `/separations/<id>`; force the POST with curl if the box is disabled | 403 "already cleared by someone else". `select \"clearedById\",status from clearance_items where id='<item>';` → still A's user id, still `CLEARED` (AC-9.1 refusal side) |
 | L2d | As admin **A** (the original clearer), un-tick that same item, then tick it again | **Both succeed.** After the un-tick: `select status,\"clearedById\" from clearance_items where id='<item>';` → `PENDING`, `clearedById` null. After the re-tick: → `CLEARED`, `clearedById` = A's user id. This is the success side of the same control — the item is not frozen, it is A's (AC-9.3) |
-| L2e | **The defeat route, end to end.** With the item cleared by A again, as admin **B**: (1) POST the un-tick, (2) POST the tick, (3) POST Finalize. Use curl for all three so no disabled control hides the result | (1) 403 "already cleared by someone else". (2) 403, same message. (3) 403 with the clearer/self bar. After all three: `select status,\"clearedById\" from clearance_items where id='<item>';` → `CLEARED`, `clearedById` = A; `select status,\"finalizedById\" from separation_records where id='<id>';` → still `OPEN`, `finalizedById` null. B changed nothing and gained nothing (AC-9.4) |
+| L2e-pre | **Set up the two-item state.** L2 left every item cleared by A, so B owns nothing yet. As **A**, un-tick `ci2` (allowed — A is its clearer; this is the same operation L2d proves). Then as **B**, tick `ci2` (allowed — the item is now `PENDING` and nobody has cleared it, AC-9.5). | `select id,status,\"clearedById\" from clearance_items where \"separationRecordId\"='<id>';` → `ci1` `CLEARED`/A and `ci2` `CLEARED`/B. Both operations use only permitted paths — if either is refused, D8 is over-blocking and that is a defect, not a setup problem |
+| L2e | **The defeat route, end to end. Needs a TWO-item case — see the note below.** Item `ci1` cleared by **A**, item `ci2` cleared by **B**, so B is already barred and has a motive to launder ownership of `ci1`. As admin **B**: (1) POST the un-tick on `ci1`, (2) POST the tick on `ci1`, (3) POST Finalize. Use curl for all three so no disabled control hides the result | (1) 403 "already cleared by someone else". (2) 403, same message. (3) 403 with the clearer bar. After all three: `select status,\"clearedById\" from clearance_items where id='<ci1>';` → `CLEARED`, `clearedById` = A; `select status,\"finalizedById\" from separation_records where id='<id>';` → still `OPEN`, `finalizedById` null. B changed nothing and gained nothing (AC-9.4) |
+
+> **Why L2e needs two items, and why the one-item version of this step was wrong.**
+> The original step used a single item cleared by A and expected B's finalize at (3) to be
+> refused. **On a one-item case that expectation is false, and the plan would have failed a
+> correct implementation.** Steps (1) and (2) are refused precisely as designed, so B never
+> becomes a clearer of anything — and an uninvolved B is *supposed* to finalize. That is L3.
+>
+> The defeat route only means something when B is **already barred**. Then D8 is what stops B
+> from laundering A's tick into their own name, un-clearing it, and wiping their own bar. So
+> `ci2` must be cleared by B first. The unit test `d3-not-defeatable-by-reclear` was built this
+> way; this step now matches it.
+>
+> Confirmed by the owner 18-08-26.
 | L3 | As admin **B** (uninvolved, MANAGE_HR), press Finalize | Succeeds. `select status,\"finalPayAmount\",\"finalizedById\" from separation_records where id='<id>';` → FINALIZED, amount non-null, finalizedById = B. `select \"employmentStatus\" from employees where id='<emp>';` → OFFBOARDED. `select \"isActive\" from users where id=...;` → false. **Assert the DB row, not the screen.** |
 | L4 | Open a case for admin **A's own** employee record (marker `SOD297-SELF`), have **B** tick all items, then A presses Finalize | 403 with the self message. Then B finalizes → succeeds |
 | L5 | **Existing-case control.** Before applying the guards, open case `SOD297-LEGACY` and tick items as A. Apply the guards, restart, reload the page | Page still loads, checklist intact, B can still finalize. Nothing about the frozen checklist broke |
@@ -456,7 +470,7 @@ red output into the execution report.
 12. Edit `src/routes/(app)/separations/[id]/+page.svelte` per §6.6 (four edits: `$derived`, checklist warning, bar message, `disabled`).
 13. `pnpm check` && `pnpm lint` && `pnpm format:check`.
 14. Run mutation checks M1–M8 (§Mutation checks) one at a time, recording each red result, then revert each. M7 and M8 are deletions — confirm the named tests actually go RED, not merely that the suite still passes.
-15. Ask the user to start the dev server. Run live steps L0–L6 including L2b, L2c, L2d and L2e (§Live verification), before-and-after, capturing screenshots for L1 and psql output for L2, L2b, L2c, L2d, L2e, L3 and L4. Every D8 live step must show BOTH the refusal (L2b, L2c, L2e) and the success (L2d).
+15. Ask the user to start the dev server. Run live steps L0–L6 including L2b, L2c, L2d, **L2e-pre** and L2e (§Live verification), before-and-after, capturing screenshots for L1 and psql output for L2, L2b, L2c, L2d, L2e-pre, L2e, L3 and L4. **L2e-pre is not optional** — without it L2e runs on a one-item case, where B's finalize correctly succeeds and the step fails a correct implementation. Every D8 live step must show BOTH the refusal (L2b, L2c, L2e) and the success (L2d).
 16. Record results in the execution report. **Commit nothing** — this plan ends at PLAN; committing is a separate, separately-authorised step.
 
 ## Test Infra Improvement Notes
@@ -621,7 +635,7 @@ L0 will produce tickable items. All four org_seed admins (`admin@`, `hr@`, `ceo@
 | AC-9.1 | person B is refused when re-clearing A's item | Hybrid | `pnpm test -- separation-clearance-reclear` (`reclear-refused-for-other-actor`) + live **L2c** | A |
 | AC-9.2 | person B is refused when un-clearing A's item | Hybrid | `pnpm test -- separation-clearance-reclear` (`unclear-refused-for-other-actor`) + live L2b | A |
 | AC-9.3 | person A may still un-clear and re-clear their own item | Hybrid | `pnpm test -- separation-clearance-reclear` (`reclear-allowed-for-original-clearer`) + live **L2d** (both calls succeed, `clearedById` ends back at A) | A |
-| AC-9.4 | the un-clear-then-clear defeat route does not work, end to end | Hybrid | `pnpm test -- separation-clearance-reclear` (**`d3-not-defeatable-by-reclear`**, one named test, the full sequence) + live **L2e** (three curl POSTs, all 403, `clearedById` still A, record still OPEN) | A |
+| AC-9.4 | the un-clear-then-clear defeat route does not work, end to end | Hybrid | `pnpm test -- separation-clearance-reclear` (**`d3-not-defeatable-by-reclear`**, one named test, the full sequence) + live **L2e** on the two-item state built by **L2e-pre** (three curl POSTs, all 403, `clearedById` still A, record still OPEN) | A |
 | AC-9.5 | a fresh, never-cleared item is clearable by anybody who could clear it before | Fully-Automated | `pnpm test -- separation-clearance-reclear` (`clear-pending-item-unchanged`) | A |
 | AC-5.1 | every new refusal is proven live, refusal AND success, both sides | Agent-Probe | live L1–L4 plus L2b–L2e run BEFORE and AFTER the change with the same script; before the change L2 and L4 must SUCCEED | A |
 | AC-5.3 | every guard is mutation-checked | Fully-Automated | **M1–M8** RUN with results recorded, including the two DELETE mutations M7 and M8 | A |
