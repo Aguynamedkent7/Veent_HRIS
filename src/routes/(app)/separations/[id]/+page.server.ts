@@ -5,6 +5,7 @@ import {
 	computeFinalPay,
 	setClearanceItem,
 	finalizeSeparation,
+	finalizeBarFor,
 	type FinalPayResult
 } from '$lib/server/services/separation'
 import type { Actions, PageServerLoad } from './$types'
@@ -21,7 +22,12 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 			? (separation.finalPayBreakdown as unknown as FinalPayResult)
 			: await computeFinalPay(params.id, user.organizationId)
 
-	return { separation, finalPay }
+	// Cosmetic affordance only — finalizeSeparation is the enforcement (house rule: a UI check is
+	// never enforcement). Same helper, so the button and the guard cannot drift.
+	const finalizeBar =
+		separation.status === 'FINALIZED' ? null : await finalizeBarFor(separation, user.id)
+
+	return { separation, finalPay, finalizeBar }
 }
 
 export const actions: Actions = {

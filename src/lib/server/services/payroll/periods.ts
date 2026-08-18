@@ -3,7 +3,9 @@ import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import { Prisma } from '@prisma/client'
 import { computePayroll } from './index'
-import { D, q2, sum } from './money'
+import { voidedOwnApproval } from './audit-markers'
+import { D, q2 } from './money'
+import { reverseAmortization } from './amortization'
 import { deriveRange, lockRange } from '../attendance'
 import { isValidStandardPeriod } from '$lib/utils/pay-periods'
 import { notifyMany } from '../notifications'
@@ -168,7 +170,10 @@ export async function lock(
 		// transaction before any money moves.
 		const claimed = await tx.payrollPeriod.updateMany({
 			where: { id, status: 'GENERATED' },
-			data: { status: 'LOCKED', lockedAt: new Date() }
+			// #298: `lockedById` is written HERE, inside the claim — who and when are stamped by
+			// the single caller that wins the race. A second statement would let the loser of the
+			// race stamp its name onto a lock it did not perform.
+			data: { status: 'LOCKED', lockedAt: new Date(), lockedById: ctx.actorId }
 		})
 		if (claimed.count === 0) {
 			error(409, 'This period is already being locked or is no longer GENERATED')
@@ -243,24 +248,29 @@ export async function lock(
 			}
 		}
 
-		// Record who/when locked + any override, but DO NOT flip run.status to APPROVED —
-		// payslip visibility is gated on the PERIOD being RELEASED, and the LOCKED period
-		// already blocks re-generation. Keeping the run COMPUTED keeps the two flows distinct.
-		await tx.payrollRun.update({
-			where: { id: run.id },
-			data: {
-				approvedById: ctx.actorId,
-				approvedAt: new Date(),
-				...(overrideNote ? { hasOverride: true, overrideNote } : {})
-			}
-		})
+		// Record any override on the run. The lock records NO approver (#298) — who locked lives
+		// on `PayrollPeriod.lockedById`; writing `approvedById` here made the field mean "approver
+		// or locker, last write wins". And still DO NOT flip run.status to APPROVED — payslip
+		// visibility is gated on the PERIOD being RELEASED, and the LOCKED period already blocks
+		// re-generation. Keeping the run COMPUTED keeps the two flows distinct.
+		if (overrideNote) {
+			await tx.payrollRun.update({
+				where: { id: run.id },
+				data: { hasOverride: true, overrideNote }
+			})
+		}
 	})
 
 	await writeAuditLog(ctx, {
 		action: overrideNote ? 'PAYROLL_OVERRIDE' : 'UPDATE',
 		entityType: 'PayrollPeriod',
 		entityId: id,
-		newValue: { status: 'LOCKED', ...(overrideNote ? { overrideNote } : {}) }
+		// #298: `lockedById` is a plain FACT key, always present — a lock is not an override.
+		newValue: {
+			status: 'LOCKED',
+			lockedById: ctx.actorId,
+			...(overrideNote ? { overrideNote } : {})
+		}
 	})
 	return db.payrollPeriod.findUnique({ where: { id } })
 }
@@ -270,15 +280,23 @@ export async function release(id: string, organizationId: string, ctx: AuditCont
 	if (period.status !== 'LOCKED')
 		error(400, `Only a LOCKED period can be released (is ${period.status})`)
 
-	const updated = await db.payrollPeriod.update({
-		where: { id },
-		data: { status: 'RELEASED', releasedAt: new Date() }
+	// Claim the release the same way `lock()` claims the lock. Two concurrent releases would
+	// otherwise both succeed, and the loser's `releasedAt` would overwrite the winner's — which
+	// since #298 is the date printed on every payslip in the period (PAYDATE).
+	const claimed = await db.payrollPeriod.updateMany({
+		where: { id, status: 'LOCKED' },
+		data: { status: 'RELEASED', releasedAt: new Date(), releasedById: ctx.actorId }
 	})
+	if (claimed.count === 0) error(409, 'The period was already released or changed — nothing done')
+	const updated = await db.payrollPeriod.findUniqueOrThrow({ where: { id } })
 	await writeAuditLog(ctx, {
+		// #298: `releasedById` is a plain FACT key, always present — a release is not an override,
+		// so this is never a marker. It is the copy a reveal can read back if the row is later
+		// edited by hand.
 		action: 'UPDATE',
 		entityType: 'PayrollPeriod',
 		entityId: id,
-		newValue: { status: 'RELEASED' }
+		newValue: { status: 'RELEASED', releasedById: ctx.actorId }
 	})
 
 	// Notify every employee with a payslip in this period that it's now available (#169).
@@ -301,6 +319,7 @@ export async function release(id: string, organizationId: string, ctx: AuditCont
 	return updated
 }
 
+/** Run void vs period void — what each one does and does not reverse: `docs/payroll-void-semantics.md`. */
 export async function voidPeriod(id: string, organizationId: string, ctx: AuditContext) {
 	// Voiding a finalized period is Super-Admin-only (#224) — enforced here, not just at the route,
 	// so the form action and the v1 API twin are covered by one check, as `voidRun` already is.
@@ -312,63 +331,32 @@ export async function voidPeriod(id: string, organizationId: string, ctx: AuditC
 	const wasLocked = period.status === 'LOCKED' || period.status === 'RELEASED'
 
 	await db.$transaction(async (tx: Prisma.TransactionClient) => {
-		if (run && wasLocked) {
-			// Reverse the amortization committed at lock.
-			const entries = await tx.payrollEntry.findMany({
-				where: { payrollRunId: run.id },
-				include: { deductions: true }
-			})
-			for (const entry of entries) {
-				for (const d of entry.deductions) {
-					// #119: balances stay in exact decimal — no Number() round-trip. Both operands are
-					// scale-2 at rest, so decrements introduce no drift and the running balance stays
-					// reconcilable against the original principal.
-					const amount = D(d.amount)
-					if (amount.lte(0) || !d.refId) continue
-					if (d.code === 'LOAN') {
-						// Reverse what was actually applied, not the frozen deduction line. Lock
-						// re-caps against the live balance, so the two can differ; the payment
-						// rows are the record of what really moved. Reversing `d.amount` blind
-						// would credit back money that was never collected.
-						const payments = await tx.loanPayment.findMany({
-							where: { loanId: d.refId, payrollEntryId: entry.id },
-							select: { amount: true }
-						})
-						const reversal = sum(payments.map((p) => p.amount))
-						const loan = await tx.loan.findUnique({ where: { id: d.refId } })
-						if (loan && reversal.gt(0)) {
-							const restored = D(loan.balance).plus(reversal)
-							await tx.loan.update({
-								where: { id: d.refId },
-								// Only reopen a loan the reversal actually un-pays; a loan settled
-								// by some other payment stays PAID.
-								data: { balance: restored, status: restored.gt(0) ? 'ACTIVE' : loan.status }
-							})
-						}
-						await tx.loanPayment.deleteMany({
-							where: { loanId: d.refId, payrollEntryId: entry.id }
-						})
-					} else if (d.code === 'CASH_ADVANCE') {
-						const ca = await tx.cashAdvance.findUnique({ where: { id: d.refId } })
-						if (ca) {
-							await tx.cashAdvance.update({
-								where: { id: d.refId },
-								data: { balance: D(ca.balance).plus(amount), status: 'ACTIVE' }
-							})
-						}
-					}
-				}
-			}
-		}
-		if (run) await tx.payrollRun.update({ where: { id: run.id }, data: { status: 'VOIDED' } })
-		await tx.payrollPeriod.update({ where: { id }, data: { status: 'VOIDED' } })
-	})
+		// Compare-and-set, same reason as `voidRun`: the status read above is preliminary, and two
+		// concurrent voids would otherwise both reverse the amortization and credit it back twice.
+		const claimed = await tx.payrollPeriod.updateMany({
+			where: { id, status: { not: 'VOIDED' } },
+			data: { status: 'VOIDED' }
+		})
+		if (claimed.count === 0) error(400, 'Period is already voided')
 
-	await writeAuditLog(ctx, {
-		action: 'UPDATE',
-		entityType: 'PayrollPeriod',
-		entityId: id,
-		newValue: { status: 'VOIDED' }
+		if (run && wasLocked) await reverseAmortization(tx, run.id)
+		if (run) await tx.payrollRun.update({ where: { id: run.id }, data: { status: 'VOIDED' } })
+
+		// Inside the transaction: a void that is not findable in the audit log is the defect #298
+		// exists to close, so the marker must never outlive — or be outlived by — the void itself.
+		await writeAuditLog(
+			ctx,
+			{
+				action: 'PAYROLL_VOID',
+				entityType: 'PayrollPeriod',
+				entityId: id,
+				newValue: {
+					status: 'VOIDED',
+					...(voidedOwnApproval(ctx.actorId, run, period) && { sameActorAsApprover: true })
+				}
+			},
+			tx
+		)
 	})
 	return db.payrollPeriod.findUnique({ where: { id } })
 }

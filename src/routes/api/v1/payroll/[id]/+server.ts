@@ -70,12 +70,23 @@ export const POST: RequestHandler = async ({ locals, params, url }) => {
 			return apiError(403, 'Insufficient permissions')
 		}
 
-		const run = await voidRun(params.id, user.organizationId, {
-			organizationId: user.organizationId,
-			actorId: user.id,
-			actorRoles: user.roles
-		})
-		return json({ data: run })
+		try {
+			const run = await voidRun(params.id, user.organizationId, {
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRoles: user.roles
+			})
+			return json({ data: run })
+		} catch (e: unknown) {
+			// `voidRun` refuses an already-voided run with a 400 (#298 D10). Unwrapped, that
+			// surfaced as a raw SvelteKit error rather than the `apiError` shape every other
+			// branch here returns — same mapping as the approve branch above.
+			const err = e as { status?: number; body?: { message?: string } }
+			if (err?.status && [400, 403, 404].includes(err.status)) {
+				return apiError(err.status, err.body?.message ?? 'Cannot void this run')
+			}
+			throw e
+		}
 	}
 
 	return apiError(400, 'Invalid action. Use ?action=approve or ?action=void')

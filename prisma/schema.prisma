@@ -200,6 +200,10 @@ enum AuditAction {
   LOGIN_FAILED
   PAYROLL_OVERRIDE
   LEAVE_OVERRIDE
+  // #298: a payroll void used to log as a plain UPDATE, indistinguishable from every other edit
+  // in the audit filter. Its own action makes it findable from the action dropdown without
+  // revealing any payload — the #242 mask blanks oldValue/newValue on that page.
+  PAYROLL_VOID
 }
 
 // ─── Time Tracking Enums ─────────────────────────────────────────────────────
@@ -1088,6 +1092,12 @@ model PayrollRun {
   totalNet        Decimal          @default(0) @db.Decimal(14, 2)
   hasOverride     Boolean          @default(false)
   overrideNote    String?
+  // LANDMINE (#298): before #298 THREE call sites wrote this field — the finance approver
+  // (`services/approvals.ts` `decidePayrollRun`), `approvePayroll` in `services/payroll/index.ts`,
+  // and *also* whoever LOCKED the period (`services/payroll/periods.ts` `lock`). A row written
+  // before #298 therefore means "approver OR locker, whichever wrote last", and those rows were
+  // deliberately NOT backfilled. From #298 the lock no longer writes it and the field means the
+  // approver only; the lock actor lives on `PayrollPeriod.lockedById`.
   approvedById    String?
   approvedAt      DateTime?
   createdAt       DateTime         @default(now())
@@ -1612,6 +1622,12 @@ model PayrollPeriod {
   status         PayrollPeriodStatus @default(OPEN)
   lockedAt       DateTime?
   releasedAt     DateTime?
+  // #298: who locked / who released. Nullable because these record only what happened after
+  // #298 — NULL means the period predates the column, never "nobody locked it". Bare ids, not
+  // a `User` relation, so the column add stays metadata-only on a populated database (no FK to
+  // validate, no back-relation on User). `AuditLog.actorId` is the precedent.
+  lockedById     String?
+  releasedById   String?
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
 

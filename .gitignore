@@ -41,3 +41,6 @@ coverage/
 # Scratch schemas/seeds written by the schema-upgrade CI job (#236)
 prisma/.deployed-*
 prisma/.selftest-*
+
+# Playwright MCP scratch output
+.playwright-mcp/
