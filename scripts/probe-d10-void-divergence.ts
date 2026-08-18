@@ -116,6 +116,7 @@ async function report() {
 		where: { employee: { user: { email: 'employee@veent.ph' } }, amount: CA_PRINCIPAL }
 	})
 	const payments = await db.loanPayment.count({ where: { loanId: loan.id } })
+	const caPayments = await db.cashAdvancePayment.count({ where: { cashAdvanceId: ca.id } })
 
 	console.log(
 		[
@@ -125,7 +126,8 @@ async function report() {
 			`loan.status        = ${loan.status}`,
 			`loan_payments      = ${payments}`,
 			`cashAdvance.balance= ${ca.balance}  (principal ${CA_PRINCIPAL}, installment ${CA_INSTALLMENT})`,
-			`cashAdvance.status = ${ca.status}`
+			`cashAdvance.status = ${ca.status}`,
+			`ca_payments        = ${caPayments}`
 		].join('\n')
 	)
 }
@@ -148,6 +150,7 @@ async function cleanup() {
 		})
 		caIds.push(...caDeductions.flatMap((d) => (d.refId ? [d.refId] : [])))
 		await db.loanPayment.deleteMany({ where: { payrollEntryId: { in: entryIds } } })
+		await db.cashAdvancePayment.deleteMany({ where: { payrollEntryId: { in: entryIds } } })
 		await db.payrollDeduction.deleteMany({ where: { payrollEntryId: { in: entryIds } } })
 		await db.payrollEntry.deleteMany({ where: { id: { in: entryIds } } })
 		await db.payrollRun.deleteMany({ where: { id: { in: runIds } } })

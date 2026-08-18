@@ -10,9 +10,8 @@ import type { Role } from '@prisma/client'
  * advance stayed deducted from an employee for a payroll that no longer existed.
  *
  * These pin the CALL, not the arithmetic: `reverseAmortization` is spied, so what is proven here is
- * "was the reversal reached, with which run id, on which period status". Whether the reversal is
- * arithmetically right is only ever proven by the e2e spec and the live psql numbers — and for the
- * cash-advance arm, not at all (it is known-wrong and deliberately unfixed; see amortization.ts).
+ * "was the reversal reached, with which run id, on which period status". The arithmetic lives in
+ * `cash-advance-ledger.test.ts` (#309) and in the live psql numbers.
  */
 
 const { dbMock, amortizationMock } = vi.hoisted(() => ({

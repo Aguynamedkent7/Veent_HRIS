@@ -17,8 +17,8 @@ const PRINCIPAL = 10000
 const INSTALLMENT = 2500
 
 // Deliberately capped: the live advance balance is BELOW one installment, so lock applies only
-// `min(installment, balance)` = 300 while the frozen deduction line still says 500. That is the
-// known cash-advance over-credit, and this seed is what makes the run-void path reach it at all.
+// `min(installment, balance)` = 300 while the frozen deduction line still says 500. That gap is
+// what USED to be credited back on void (#309), and this seed is what exposes it.
 const CA_BALANCE = 300
 const CA_INSTALLMENT = 500
 
@@ -173,6 +173,12 @@ test('locking the period commits the amortization', async ({ page }) => {
 		const advance = await db.cashAdvance.findUniqueOrThrow({ where: { id: advanceId } })
 		expect(Number(advance.balance)).toBe(0)
 		expect(advance.status).toBe('PAID')
+
+		// #309: the ledger row records the CAPPED 300, not the frozen 500. That single row is
+		// what makes the void below a true inverse.
+		const caPayments = await db.cashAdvancePayment.findMany({ where: { cashAdvanceId: advanceId } })
+		expect(caPayments).toHaveLength(1)
+		expect(Number(caPayments[0].amount)).toBe(CA_BALANCE)
 	} finally {
 		await db.$disconnect()
 	}
@@ -195,20 +201,18 @@ test('voiding the RUN reverses the loan and leaves the period LOCKED', async ({ 
 		expect(run.status).toBe('VOIDED')
 
 		// Deliberate: a run void does NOT void or unlock the period. See
-		// docs/payroll-void-semantics.md — this is the single remaining difference between the
-		// two voids, and it is what makes the cash-advance over-credit below worse than before.
+		// docs/payroll-void-semantics.md — the single remaining difference between the two voids.
 		const period = await db.payrollPeriod.findUniqueOrThrow({ where: { id: periodId } })
 		expect(period.status).toBe('LOCKED')
 
-		// MEASURED, not asserted correct. Lock applied 300 (capped); the reversal credits back the
-		// frozen 500, so the advance comes back 200 HIGHER than it started, and ACTIVE regardless.
-		// That over-credit is a known, deliberately unfixed defect (it needs a cash-advance payment
-		// ledger). This assertion pins the CURRENT WRONG number so the arm is proven reachable from
-		// voidRun at all — if it is ever fixed, this figure changes to CA_BALANCE and this comment
-		// is the reason why.
+		// #309 — this figure used to be CA_INSTALLMENT (500), pinned as the CURRENT WRONG number
+		// while the over-credit stood, with a note saying it would become CA_BALANCE once fixed.
+		// This is that change: lock took the capped 300 and recorded it, so the void gives back
+		// exactly 300 and the advance returns to where it started. Never 500.
 		const advance = await db.cashAdvance.findUniqueOrThrow({ where: { id: advanceId } })
-		expect(Number(advance.balance)).toBe(CA_INSTALLMENT) // 500 — over-credited by 200
+		expect(Number(advance.balance)).toBe(CA_BALANCE)
 		expect(advance.status).toBe('ACTIVE')
+		expect(await db.cashAdvancePayment.count({ where: { cashAdvanceId: advanceId } })).toBe(0)
 	} finally {
 		await db.$disconnect()
 	}
@@ -227,6 +231,10 @@ test('voiding the same run twice is refused, and credits nothing a second time',
 		// The real risk of a double void is a double credit: principal, never principal + 2500.
 		const loan = await db.loan.findUniqueOrThrow({ where: { id: loanId } })
 		expect(Number(loan.balance)).toBe(PRINCIPAL)
+
+		// Same risk on the advance now that it has a ledger too: 300, never 600.
+		const advance = await db.cashAdvance.findUniqueOrThrow({ where: { id: advanceId } })
+		expect(Number(advance.balance)).toBe(CA_BALANCE)
 	} finally {
 		await db.$disconnect()
 	}

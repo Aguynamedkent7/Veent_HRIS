@@ -10,16 +10,14 @@ import type { Prisma } from '@prisma/client'
  * none of its own, and it writes NO status of any kind — the caller owns both the transaction
  * boundary and the run/period status flips. See `docs/payroll-void-semantics.md`.
  *
- * KNOWN DEFECT — the CASH_ADVANCE arm is not a true inverse, and this function makes it reachable
- * from a second void path. Lock applies `min(d.amount, liveBalance)` and records nothing, so a
- * CAPPED payment is credited back at the full frozen `d.amount` here — an over-credit of the
- * difference — and `status` is forced to `ACTIVE` unconditionally, which can resurrect an advance
- * some other payment already settled. The LOAN arm above it IS a true inverse only because
- * `loan_payments` exists to say what really moved; cash advances have no such ledger. Fixing it
- * needs a cash-advance payment ledger (a schema addition with a backfill question). PRE-EXISTING,
- * out of scope for #298, recorded for the owner. Worse than before in one specific way: called
- * from `voidRun` the period stays LOCKED, so an over-credited advance now sits against a payroll
- * that still looks live.
+ * Both arms are true inverses: each reverses the PAYMENT ROWS lock wrote, never the frozen
+ * deduction line. #309 fixed the cash-advance arm, which used to credit back the uncapped frozen
+ * `d.amount` and force `status: 'ACTIVE'` — measured live at ₱300 returned against ₱100 collected.
+ * The `cash_advance_payments` ledger added there is the mirror of `loan_payments`.
+ *
+ * Consequence: an advance amortized by a payroll LOCKED before that ledger existed has no rows to
+ * reverse, so voiding it now credits back nothing instead of too much. No such payroll exists —
+ * see the #309 note in `docs/payroll-void-semantics.md`.
  */
 export async function reverseAmortization(
 	tx: Prisma.TransactionClient,
@@ -67,13 +65,29 @@ export async function reverseAmortization(
 					where: { loanId: d.refId, payrollEntryId: entry.id }
 				})
 			} else if (d.code === 'CASH_ADVANCE') {
+				// #309: identical to the loan arm above, for the same reason — reverse the
+				// recorded payments, never the frozen line.
+				const payments = await tx.cashAdvancePayment.findMany({
+					where: { cashAdvanceId: d.refId, payrollEntryId: entry.id },
+					select: { amount: true }
+				})
+				const reversal = sum(payments.map((p) => p.amount))
 				const ca = await tx.cashAdvance.findUnique({ where: { id: d.refId } })
-				if (ca) {
-					await tx.cashAdvance.update({
-						where: { id: d.refId },
-						data: { balance: D(ca.balance).plus(amount), status: 'ACTIVE' }
+				if (ca && reversal.gt(0)) {
+					const restored = D(ca.balance).plus(reversal)
+					const res = await tx.cashAdvance.updateMany({
+						where: { id: d.refId, balance: ca.balance },
+						// Only reopen an advance the reversal actually un-pays; one settled by
+						// some other payment stays PAID.
+						data: { balance: restored, status: restored.gt(0) ? 'ACTIVE' : ca.status }
 					})
+					if (res.count === 0) {
+						error(409, 'A cash-advance balance changed while voiding — nothing was reversed, retry')
+					}
 				}
+				await tx.cashAdvancePayment.deleteMany({
+					where: { cashAdvanceId: d.refId, payrollEntryId: entry.id }
+				})
 			}
 		}
 	}
