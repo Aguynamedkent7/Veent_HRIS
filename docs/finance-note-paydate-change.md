@@ -1,74 +1,80 @@
-# Draft note for Finance — one date on some payslips is changing
+# Draft note for Finance — the PAYDATE on payslips
 
 **Status: DRAFT, not sent.** Sending it is your call. It is due **before** this ships, not after.
 
-Everything below the line is the message itself — edit the tone or trim it as you like, then send
-it however you normally reach Finance. The background section after it is for you, not for them.
+Everything inside the quoted block is the message itself — edit the tone or trim it, then send it
+however you normally reach Finance. The background after it is for you, not for them.
+
+> **Rewritten 18-08-26 after HR's answer.** An earlier draft said approved payrolls were untouched.
+> That is no longer true: HR's rule changes the date on _every_ payslip, not just a subset.
 
 ---
 
 ## The message
 
-> **Heads-up: one date on some payslips will change.**
+> **Heads-up: the PAYDATE line on payslips is changing.**
 >
-> **What changes.** On a payslip for a payroll that was **locked but never formally approved**, the
-> `PAYDATE:` line currently shows the date somebody locked the payroll. After this update it shows
-> the **last day of the pay period** instead.
+> **What it will show.** PAYDATE will be **the day the payslip was released** — the day it became
+> available to the employee.
 >
-> **A real example from our test system.** The same payslip, for the 1–15 August period:
+> **What it shows today.** The date the payroll was _approved_, or in some cases the date it was
+> _locked_. That field was being written by two different steps, so it did not always mean the same
+> thing. This makes it mean one thing.
 >
-> | | `PAYDATE:` shows | which is |
-> |---|---|---|
-> | Before | `8/18/26` | the day it was locked |
-> | After | `8/15/26` | the last day of the pay period |
+> **So the date will move on payslips going forward.** Release normally happens a little after
+> approval, so expect the printed date to be the same or slightly later than it is today.
 >
 > **What does NOT change.**
 >
-> - Payslips for payrolls that **were** approved are untouched.
 > - **No amount changes anywhere** — not gross, not deductions, not net pay.
-> - Nothing is recalculated, and **no payslip already issued is altered**. This only affects how
->   the date is worked out from now on.
+> - Nothing is recalculated.
+> - No payslip already issued is edited. This only affects how the date is worked out from now on.
 >
-> **Why we are doing it.** That date field was being filled in by two different steps, so it meant
-> two different things depending on how the payroll was processed. It now means one thing. The same
-> fix is what lets us record who locked and who released a payroll — something we could not tell
-> apart before.
+> **One exception you may notice.** A small number of older payrolls were approved directly, before
+> the current release step existed. Those never had a release date, so their PAYDATE will print
+> **blank**. In our test system that is 7 payslips under 1 old payroll. We can put the old approval
+> date back on those instead — tell us if a blank field is a problem for you.
 >
 > **What we need from you.** Please tell us if any external filing, remittance, or report keys off
-> that date for payrolls that were never approved. If it does, say so before this goes live.
+> the PAYDATE. If it does, say so before this goes live.
 
 ---
 
 ## Background — for you, not for Finance
 
-**Why this note exists at all.** The change that causes it (D2) was supposed to be record-only:
-start recording who locked and who released a payroll period, and make the "who approved" record
-mean one thing. It has exactly one user-visible side effect, and this is it.
+**Where the rule came from.** HR, 18-08-26: _"The paydate should be on the day that the payslip was
+released."_ That superseded decision D12, which had only been about a narrower subset.
 
-**Why it was nearly missed.** No Svelte component renders `approvedAt` anywhere. The PDF is the
-only thing that displays it, so searching the UI components would have turned up nothing. The chain
-is `payslip-document.ts:282` → `payslip-pdf.ts:156`.
-
-**The mechanism.** `payslip-document.ts:282` reads:
+**What it replaced.** `payslip-document.ts` used to read:
 
 ```ts
 payDate: run.approvedAt ? shortDate(run.approvedAt) : shortDate(run.periodEnd)
 ```
 
-Before this work, `lock()` wrote `approvedAt` even though locking is not approving — so a
-locked-but-never-approved run had an `approvedAt` (the lock time) and printed it. Now `lock()` no
-longer writes it, that run has a null `approvedAt`, and the expression falls through to the period
-end date.
+`approvedAt` was the problem. It was written both by a genuine approval **and** by a period lock, so
+it meant "approver or locker, whichever wrote last" (#298 D2). It now reads the period's
+`releasedAt`, which has exactly one writer and one meaning.
 
-**The evidence is real, not predicted.** Both figures in the table come from actual rendered PDFs
-captured on either side of the change — see `process/general-plans/active/phase0-evidence_18-08-26.md`,
-sections AC-10.1 and AC-10.2. The before-sample had to be taken *before* the code changed, because
-once `lock()` stopped writing `approvedAt` the old value was unrecoverable.
+**Verified live, both cases:**
 
-**Who decided this.** You did, on 18-08-26, as decision D12 in
-`separation-of-duties-298-297_SPEC_17-08-26.md`: accept the change because the new value is the
-more correct one, verify it live on both sides, and tell Finance before it ships. The first two are
-done. This note is the third.
+| Case                                    | Rendered PDF                         |
+| --------------------------------------- | ------------------------------------ |
+| Normal payslip, period released         | `PAYDATE: 8/18/26` — the release day |
+| Legacy run approved directly, no period | `PAYDATE:` blank                     |
 
-**Related acceptance criteria.** AC-10.1 (before-sample), AC-10.2 (after-sample, plus proof an
-*approved* run's date does not move), AC-10.3 (this note).
+**The blank case is real, not theoretical.** A payslip is visible when the run is `APPROVED` **or**
+its period is `RELEASED` (`runs.ts:17`). The first path predates the release lifecycle and those
+runs have no period at all — so there is no release date to print. The dev database has **1 such
+run with 7 entries**.
+
+You chose blank over a fallback, on the reasoning that a payslip that never went through a release
+has no release date to show. That is defensible. The alternative is a two-line change: fall back to
+`approvedAt` for those legacy runs only, which for them was a genuine approval. Still open if you
+change your mind.
+
+**Is "released" the same as "paid"?** Release means the payslip became visible. If money actually
+lands on a different day, that is a third date we do not currently store. Worth confirming with HR
+if anyone asks.
+
+**Related.** `process/general-plans/active/phase0-evidence_18-08-26.md` (the before/after captures),
+SPEC decision D12, AC-10.1 / AC-10.2 / AC-10.3.

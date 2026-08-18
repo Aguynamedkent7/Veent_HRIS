@@ -90,7 +90,7 @@ export async function fetchPayslipDocument(
 					status: true,
 					approvedAt: true,
 					organizationId: true,
-					period: { select: { status: true } }
+					period: { select: { status: true, releasedAt: true } }
 				}
 			},
 			earnings: { select: { code: true, label: true, amount: true } },
@@ -191,7 +191,8 @@ export async function fetchPayslipDocument(
 		run: {
 			periodStart: entry.payrollRun.periodStart,
 			periodEnd: entry.payrollRun.periodEnd,
-			approvedAt: entry.payrollRun.approvedAt
+			approvedAt: entry.payrollRun.approvedAt,
+			releasedAt: entry.payrollRun.period?.releasedAt ?? null
 		},
 		attendance
 	}
