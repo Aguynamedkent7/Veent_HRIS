@@ -100,6 +100,37 @@ locked-but-never-approved payslips. That is due before the change ships.
 
 ---
 
+## AC-10.3 — the note for Finance
+
+**Status: written 18-08-26, not yet sent. Sending it is the owner's call.** It is due before
+this ships, not after.
+
+> **Heads-up: one date on some payslips will change.**
+>
+> **What changes.** On a payslip for a payroll that was **locked but never formally approved**,
+> the `PAYDATE:` line currently shows the date somebody locked the payroll. After this update it
+> shows the **last day of the pay period** instead.
+>
+> **A real example from our test system.** The same payslip, for the 1–15 August period:
+> before, `PAYDATE: 8/18/26` (the day it was locked). After, `PAYDATE: 8/15/26` (the period end).
+>
+> **What does NOT change.** Payslips for payrolls that *were* approved are untouched. No amount,
+> no deduction, no net pay changes anywhere. Nothing is recalculated, and no payslip already
+> issued is altered — this affects how the date is worked out from now on.
+>
+> **Why we are doing it.** That date field was being filled in by two different steps, so it
+> meant two different things depending on how the payroll was processed. It now means one thing.
+> The same fix is what lets us record who locked and who released a payroll, which we could not
+> tell apart before.
+>
+> **What we need from you.** Tell us if any external filing, remittance or report keys off that
+> date for unapproved payrolls. If it does, say so before this goes live.
+
+Evidence for the example: `d12-payslip-BEFORE.pdf` in this directory, and the AC-10.1 section
+above.
+
+---
+
 ## #298 before-state — the negative control
 
 Three facts recorded before anything changed. Each is the "before" half that makes the
