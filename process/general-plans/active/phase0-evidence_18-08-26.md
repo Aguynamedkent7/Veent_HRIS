@@ -100,6 +100,48 @@ locked-but-never-approved payslips. That is due before the change ships.
 
 ---
 
+## #298 before-state — the negative control
+
+Three facts recorded before anything changed. Each is the "before" half that makes the
+matching "after" assertion mean something.
+
+**1. `PayrollPeriod` records no actor at all.**
+
+```
+lockedAt     timestamp   ← when
+releasedAt   timestamp   ← when
+                         ← there is no lockedById, no releasedById, no actor column of any kind
+```
+
+This is the schema's only timestamp pair with no companion actor, and it is why `lock()`
+borrowed the neighbouring model's `approvedById` — it had nowhere else to write. D2 closes it.
+
+**2. A payroll void is invisible in the audit log today.**
+
+| action | entityType | rows |
+|---|---|---|
+| CREATE | PayrollPeriod | 3 |
+| UPDATE | PayrollPeriod | 26 |
+| PAYROLL_OVERRIDE | PayrollPeriod | 4 |
+| CREATE | PayrollRun | 20 |
+| **UPDATE** | **PayrollRun** | **56** |
+
+The run void fired during this Phase 0 is in that bottom row — logged as a plain `UPDATE`,
+indistinguishable from 55 other ordinary edits. A reviewer filtering the audit screen for
+overrides cannot find it, which is precisely the hole D1 exists to close.
+
+**3. The `AuditAction` enum has eight values and `PAYROLL_VOID` is not among them.**
+
+```
+CREATE  UPDATE  DELETE  VIEW  LOGIN  LOGIN_FAILED  PAYROLL_OVERRIDE  LEAVE_OVERRIDE
+```
+
+`PAYROLL_OVERRIDE` and `LEAVE_OVERRIDE` are the in-repo precedent D1 follows. Note this is an
+enum **addition**, not a rename — `db push` handles it, and the `ALTER TYPE … RENAME VALUE`
+migration dance the repo needs for renames does not apply here.
+
+---
+
 ## Housekeeping
 
 All probe data removed: 0 `ZZ-%` periods remain, and the seeded loans and cash advances are
