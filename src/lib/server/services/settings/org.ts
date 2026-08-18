@@ -2,6 +2,7 @@ import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import { requireAnyCapability } from '$lib/server/rbac'
+import { assertNotSelf } from '../employee-access'
 import type { AuditContext } from '../types'
 import { Prisma, type Role } from '@prisma/client'
 
@@ -404,9 +405,15 @@ export async function assignEmployeePosition(
 ) {
 	const employee = await db.employee.findFirst({
 		where: { id: employeeId, organizationId },
-		select: { id: true, positionId: true }
+		select: { id: true, positionId: true, userId: true }
 	})
 	if (!employee) error(404, 'Employee not found')
+
+	// A position IS an employment term, so the same separation of duties applies here as on the 201
+	// file: `updateEmployee` already refuses a self-edit of jobTitle/departmentId/employmentStatus
+	// (#298). This is the second door onto the same kind of change — without it, anyone holding
+	// MANAGE_HR could promote themselves from Settings → Org (#308).
+	assertNotSelf(ctx.actorId, employee)
 
 	// If a position is given, it must belong to the same organization.
 	if (positionId) {
