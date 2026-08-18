@@ -765,14 +765,16 @@ model Award {
 }
 
 model OffboardingChecklistItem {
-  id             String   @id @default(cuid())
+  id             String        @id @default(cuid())
   organizationId String
   label          String
-  department     String
+  area           ClearanceArea
+  // Plain nullable column, deliberately off the relation graph (cf. PostingApprover).
+  departmentId   String?
   order          Int
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  isActive       Boolean       @default(true)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id])
 
@@ -960,6 +962,16 @@ enum ClearanceStatus {
   CLEARED
 }
 
+// Who signs a clearance step off (#306). A closed vocabulary: free text made items
+// unroutable on a typo, and "Immediate Supervisor" is not a department at all.
+enum ClearanceArea {
+  IT
+  HR
+  ADMIN
+  FINANCE
+  IMMEDIATE_SUPERVISOR
+}
+
 model SeparationRecord {
   id                String           @id @default(cuid())
   organizationId    String
@@ -988,7 +1000,9 @@ model ClearanceItem {
   id           String          @id @default(cuid())
   separationId String
   label        String
-  department   String
+  area         ClearanceArea
+  // Plain nullable column, deliberately off the relation graph (cf. PostingApprover).
+  departmentId String?
   status       ClearanceStatus @default(PENDING)
   clearedById  String?
   clearedAt    DateTime?
