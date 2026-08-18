@@ -18,6 +18,8 @@
 		node.focus()
 	}
 
+	// Hand-maintained — extend it whenever `AuditAction` gains a value, or the new action cannot
+	// be filtered for at all. `PAYROLL_VOID` was added in #298.
 	const ACTIONS = [
 		'CREATE',
 		'UPDATE',
@@ -26,7 +28,8 @@
 		'LOGIN',
 		'LOGIN_FAILED',
 		'PAYROLL_OVERRIDE',
-		'LEAVE_OVERRIDE'
+		'LEAVE_OVERRIDE',
+		'PAYROLL_VOID'
 	]
 </script>
 

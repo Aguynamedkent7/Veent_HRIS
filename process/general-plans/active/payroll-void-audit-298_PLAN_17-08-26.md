@@ -80,7 +80,7 @@ for a DB-level or post-incident read. Do not invert this priority during EXECUTE
 | `AuditAction` = CREATE, UPDATE, DELETE, VIEW, LOGIN, LOGIN_FAILED, PAYROLL_OVERRIDE, LEAVE_OVERRIDE | `prisma/schema.prisma:194-203` |
 | `PAYROLL_OVERRIDE` / `LEAVE_OVERRIDE` are the in-repo precedent for a dedicated action value | same |
 | `AuditLog` model has **no `@@index` at all** | `prisma/schema.prisma:1382-1403` |
-| `PayrollPeriod` has `lockedAt` / `releasedAt` but **no actor field** | `prisma/schema.prisma:1614-1615` |
+| `PayrollPeriod` has `lockedAt` / `releasedAt` but **no actor field** | `prisma/schema.prisma:1613-1614` |
 | `PayrollRun.approvedById` / `approvedAt` | `prisma/schema.prisma:1091-1092` |
 | `lock()` — status precondition, flagged-entry note, `$transaction` | `periods.ts:138` |
 | `lockedAt` is set inside the atomic `updateMany` claim | `periods.ts:169-172` |
@@ -144,7 +144,7 @@ This is **more correct** (a run nobody approved should not claim an approval dat
 **visible change to a printed document**. It is accepted, not a bug. It must be:
 
 - called out in the EXECUTE commit message,
-- shown in the live check (step L5 below), which prints the same payslip before and after,
+- shown in the live check (step L7 below), which prints the same payslip before and after,
 - flagged to the owner in the handoff, because Finance may recognise the PAYDATE value changing.
 
 There is no separate "approval date" column anywhere in the payroll UI, so nothing else moves.
@@ -240,7 +240,7 @@ Add a one-line comment above it in house style, naming #298 and saying it exists
 findable from the audit-log action filter without revealing any payload.
 
 **2. Add the two period actor columns.** `prisma/schema.prisma`, `model PayrollPeriod`, immediately
-after `releasedAt` (line 1615):
+after `releasedAt` (line 1614):
 
 ```
   lockedById     String?

@@ -3,6 +3,7 @@ import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import { Prisma } from '@prisma/client'
 import { computePayroll } from './index'
+import { voidedOwnApproval } from './audit-markers'
 import { D, q2, sum } from './money'
 import { deriveRange, lockRange } from '../attendance'
 import { isValidStandardPeriod } from '$lib/utils/pay-periods'
@@ -168,7 +169,10 @@ export async function lock(
 		// transaction before any money moves.
 		const claimed = await tx.payrollPeriod.updateMany({
 			where: { id, status: 'GENERATED' },
-			data: { status: 'LOCKED', lockedAt: new Date() }
+			// #298: `lockedById` is written HERE, inside the claim — who and when are stamped by
+			// the single caller that wins the race. A second statement would let the loser of the
+			// race stamp its name onto a lock it did not perform.
+			data: { status: 'LOCKED', lockedAt: new Date(), lockedById: ctx.actorId }
 		})
 		if (claimed.count === 0) {
 			error(409, 'This period is already being locked or is no longer GENERATED')
@@ -243,24 +247,29 @@ export async function lock(
 			}
 		}
 
-		// Record who/when locked + any override, but DO NOT flip run.status to APPROVED —
-		// payslip visibility is gated on the PERIOD being RELEASED, and the LOCKED period
-		// already blocks re-generation. Keeping the run COMPUTED keeps the two flows distinct.
-		await tx.payrollRun.update({
-			where: { id: run.id },
-			data: {
-				approvedById: ctx.actorId,
-				approvedAt: new Date(),
-				...(overrideNote ? { hasOverride: true, overrideNote } : {})
-			}
-		})
+		// Record any override on the run. The lock records NO approver (#298) — who locked lives
+		// on `PayrollPeriod.lockedById`; writing `approvedById` here made the field mean "approver
+		// or locker, last write wins". And still DO NOT flip run.status to APPROVED — payslip
+		// visibility is gated on the PERIOD being RELEASED, and the LOCKED period already blocks
+		// re-generation. Keeping the run COMPUTED keeps the two flows distinct.
+		if (overrideNote) {
+			await tx.payrollRun.update({
+				where: { id: run.id },
+				data: { hasOverride: true, overrideNote }
+			})
+		}
 	})
 
 	await writeAuditLog(ctx, {
 		action: overrideNote ? 'PAYROLL_OVERRIDE' : 'UPDATE',
 		entityType: 'PayrollPeriod',
 		entityId: id,
-		newValue: { status: 'LOCKED', ...(overrideNote ? { overrideNote } : {}) }
+		// #298: `lockedById` is a plain FACT key, always present — a lock is not an override.
+		newValue: {
+			status: 'LOCKED',
+			lockedById: ctx.actorId,
+			...(overrideNote ? { overrideNote } : {})
+		}
 	})
 	return db.payrollPeriod.findUnique({ where: { id } })
 }
@@ -272,13 +281,16 @@ export async function release(id: string, organizationId: string, ctx: AuditCont
 
 	const updated = await db.payrollPeriod.update({
 		where: { id },
-		data: { status: 'RELEASED', releasedAt: new Date() }
+		data: { status: 'RELEASED', releasedAt: new Date(), releasedById: ctx.actorId }
 	})
 	await writeAuditLog(ctx, {
+		// #298: `releasedById` is a plain FACT key, always present — a release is not an override,
+		// so this is never a marker. It is the copy a reveal can read back if the row is later
+		// edited by hand.
 		action: 'UPDATE',
 		entityType: 'PayrollPeriod',
 		entityId: id,
-		newValue: { status: 'RELEASED' }
+		newValue: { status: 'RELEASED', releasedById: ctx.actorId }
 	})
 
 	// Notify every employee with a payslip in this period that it's now available (#169).
@@ -365,10 +377,13 @@ export async function voidPeriod(id: string, organizationId: string, ctx: AuditC
 	})
 
 	await writeAuditLog(ctx, {
-		action: 'UPDATE',
+		action: 'PAYROLL_VOID',
 		entityType: 'PayrollPeriod',
 		entityId: id,
-		newValue: { status: 'VOIDED' }
+		newValue: {
+			status: 'VOIDED',
+			...(voidedOwnApproval(ctx.actorId, run, period) && { sameActorAsApprover: true })
+		}
 	})
 	return db.payrollPeriod.findUnique({ where: { id } })
 }

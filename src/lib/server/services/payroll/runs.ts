@@ -3,6 +3,7 @@ import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import { requireAnyCapability } from '$lib/server/rbac'
 import { sum } from './money'
+import { voidedOwnApproval } from './audit-markers'
 import type { AuditContext } from '../types'
 
 /**
@@ -101,11 +102,14 @@ export async function voidRun(id: string, organizationId: string, ctx: AuditCont
 	})
 
 	await writeAuditLog(ctx, {
-		action: 'UPDATE',
+		action: 'PAYROLL_VOID',
 		entityType: 'PayrollRun',
 		entityId: id,
 		oldValue: { status: run.status },
-		newValue: { status: 'VOIDED' }
+		newValue: {
+			status: 'VOIDED',
+			...(voidedOwnApproval(ctx.actorId, run) && { sameActorAsApprover: true })
+		}
 	})
 
 	return updated

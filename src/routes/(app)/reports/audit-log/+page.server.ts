@@ -91,12 +91,15 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		canReveal: isSuperAdmin,
 		actors,
 		pagination,
+		// Hand-maintained — extend it whenever a new entityType starts being audited, or that
+		// entity's rows cannot be filtered for at all. `PayrollPeriod` was missing until #298.
 		entityTypes: [
 			'Employee',
 			'Timesheet',
 			'Request',
 			'LeaveRequest',
 			'PayrollRun',
+			'PayrollPeriod',
 			'JobPosting',
 			'Applicant',
 			'Department'
