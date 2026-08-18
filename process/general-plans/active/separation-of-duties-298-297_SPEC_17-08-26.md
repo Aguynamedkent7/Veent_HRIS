@@ -29,8 +29,12 @@ It still contains no implementation detail. It says **what** must be true and **
 know**, not how to build it.
 
 > **Read this note about the numbers.** Every user count in this document comes from the
-> **development seed database**, not from production. The shape of the problem is real. The
-> exact head counts are no longer blocking — see Decision 7 — but are still worth confirming.
+> **development seed database**. The shape of the problem is real.
+>
+> **CORRECTION 18-08-26: there is no production environment.** This system has never been
+> deployed live; anything deployed is for testing. So the seed database is not a sample of
+> something larger — it **is** the whole population, and there are no other head counts to
+> confirm. Decision 7 and Open Questions A and B below are void for that reason, not deferred.
 
 ---
 
@@ -45,7 +49,7 @@ know**, not how to build it.
 | 4 | Block a person finalizing their own separation? | **A — Yes, block it, in this work.** Mirrors the guard offboarding already has. | Yes |
 | 5 | Write separation tests first? | **APPROVED 18-08-26 — yes, characterization tests first.** | Yes |
 | 6 | File the follow-up findings as issues? | **APPROVED 18-08-26.** The follow-ups not folded in are filed as issues. | Yes — done |
-| 7 | Confirm production head counts before building? | **PROPOSED — no longer blocking.** Downgraded to "worth confirming". | Proposed |
+| 7 | ~~Confirm head counts against a live system before building?~~ | **VOID 18-08-26 — there is no production.** The seed database is the whole population. Nothing to confirm against. | No |
 | 8 | May a second person touch an item somebody else already cleared? | **No — barred in BOTH directions**, clearing and un-clearing. Confirmed by the owner 18-08-26. Added after this SPEC first locked. | Yes |
 | 9 | Fix the final-pay understatement? | **DROPPED 18-08-26 — the premise is false.** Folded in that morning, disproved by RESEARCH the same day. The guard already exists. See the D9 record below. | **No** |
 | 10 | Fix the void-run / void-period divergence? | **Yes — folded in 18-08-26.** Voiding a run leaves loan and cash-advance balances reduced for a payroll that no longer exists, and has no status precondition. | Yes |
@@ -633,7 +637,8 @@ Explicitly **not** part of this work:
 8. **Clearance checklists are frozen once a case opens.** Everything here must work for cases
    already in flight.
 9. **Head counts in this document come from development seed data.** Non-blocking under the
-   locked decisions, but not to be quoted as production fact.
+   locked decisions. **There is no production to compare them against** — see the correction
+   at the top.
 10. **Merges go to a staging branch, so `Closes #N` never fires.** #298 and #297 must be
     **closed by hand** once this ships.
 11. **No GitHub issue may be filed without explicit owner approval.** Granted once, on
@@ -653,8 +658,8 @@ Two notes remain, both downgraded to non-blocking:
 
 | # | Note | Status | Why non-blocking |
 |---|---|---|---|
-| A | Do production head counts match the development seed counts used here? | **Worth confirming, non-blocking** | D1 = A blocks nobody, so head counts cannot strand anyone on the payroll side. On the offboarding side the verified cross-organization administrator path covers the two single-holder tenants. |
-| B | Does the cross-organization administrator's access to separations hold in production as it does in development? | **Note only** | Verified live in development. Worth a production spot-check before relying on it as the small-tenant escape hatch, but AC-3.4 proves the mechanism either way. |
+| A | ~~Do head counts match a live system?~~ | **VOID 18-08-26** | There is no production. The seed database is the whole population. |
+| B | ~~Does the cross-organization administrator path hold on a live system?~~ | **VOID 18-08-26** | Same reason. It was verified live in development, which is the only environment there is. AC-3.4 proves the mechanism regardless. |
 
 **D5 and D6 were approved on 18-08-26.** One orchestrator recommendation is still **PROPOSED,
 not owner-approved**: D7 (head counts non-blocking). It does not block this SPEC.
