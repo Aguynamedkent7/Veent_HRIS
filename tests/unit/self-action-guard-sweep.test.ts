@@ -118,7 +118,11 @@ describe('grantAward: nobody decorates themselves, HR does not decorate HR (#308
 		// Positive control for the common case — HR must not lose the feature it had.
 		dbMock.employee.findFirst.mockResolvedValue(target('user-other', ['EMPLOYEE']))
 
-		await grantAward('org1', { employeeId: 'emp-t', title: 'Employee of the Month' }, ctx(['HR_ADMIN']))
+		await grantAward(
+			'org1',
+			{ employeeId: 'emp-t', title: 'Employee of the Month' },
+			ctx(['HR_ADMIN'])
+		)
 
 		expect(dbMock.award.create).toHaveBeenCalled()
 	})
