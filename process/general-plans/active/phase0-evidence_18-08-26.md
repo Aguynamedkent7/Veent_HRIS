@@ -178,3 +178,102 @@ migration dance the repo needs for renames does not apply here.
 All probe data removed: 0 `ZZ-%` periods remain, and the seeded loans and cash advances are
 back at their original balances. The `#297` live pass earlier the same day was cleaned up
 separately — 0 separation records, both HR logins re-activated, no employee left offboarded.
+
+---
+
+# AFTER-STATE PASS — 18-08-26, at `adfa1ca` + the marker fix
+
+Run after the dev server was restarted. (The server had loaded `@prisma/client` at boot, before
+the #298 schema push regenerated it, so every lock and void returned Internal Error until it was
+restarted. Not a code defect — the DB had the columns, the generated client had 39 references to
+`lockedById`, and a fresh process ran the identical `updateMany` successfully. Worth knowing:
+`pnpm test` was 1492 green throughout.)
+
+## AC-7.2 — a run void now reverses the amortization
+
+The exact scenario that proved the bug, re-run against the fix:
+
+| | after lock | **void the RUN — before the fix** | **void the RUN — after** |
+|---|---|---|---|
+| period status | LOCKED | LOCKED | LOCKED |
+| run status | COMPUTED | VOIDED | VOIDED |
+| loan balance | 750 | **750** | **1000** |
+| loan_payments | 1 | **1** | **0** |
+| cash advance | 500 | **500** | **800** |
+
+The period stays LOCKED by design — a run void is not a period void.
+
+## AC-7.3 — an already-voided run is refused
+
+`{"error":"Payroll run is already voided"}`, HTTP 400. Before the change it voided again silently,
+which would have credited the amortization back a second time.
+
+## L7 — the cash-advance over-credit, MEASURED
+
+The fence the plan chose to keep rather than fix. To make it fire, the live balance must sit below
+the frozen deduction line so `lock()` has to cap the payment:
+
+```
+frozen deduction line = 300
+CA before lock : 100.00 / ACTIVE
+CA after lock  :   0.00 / PAID      ← lock applied min(300, 100) = 100
+CA after void  : 300.00 / ACTIVE    ← void credited back the raw frozen 300
+```
+
+**Over-credit = ₱200.** The employee owed 100, repaid it in full, and the void left them owing 300.
+The loan branch does not do this — it reverses the real `loan_payments` rows. Cash advances have no
+payment ledger to reverse, which is why fixing it is a schema decision nobody has been asked for.
+
+**This commit widens the defect's reach**: it previously fired only via `voidPeriod`, which also
+flips the period to VOIDED so the payroll is visibly dead. It now also fires via `voidRun`, which
+deliberately leaves the period LOCKED. Documented, measured, not fixed.
+
+## AC-10.2 / D12 — the PAYDATE after-sample
+
+Same shape as the before-sample: locked, never approved, released.
+
+| | period | rendered `PAYDATE:` | what it is |
+|---|---|---|---|
+| BEFORE (`ZZ-D12-PROBE`) | 1–15 Aug | **8/18/26** | the lock date |
+| AFTER (`ZZ-D12-PROBE-2`) | 1–15 Nov | **11/15/26** | the period end |
+
+The after-run also shows D2 working: `lockedById` recorded, `approvedById` and `approvedAt` both
+NULL on a run that was never approved. Before this work that row carried the locker's id and the
+lock timestamp in the approver's field.
+
+## L6 — the audit-log dropdowns (M10 and M11's only gate)
+
+M10 and M11 were pre-declared as catching nothing: a DB-mocking suite cannot see a hardcoded array.
+Checked in a real browser as Super Admin at `/reports/audit-log`:
+
+- `select[name=action]` → `… PAYROLL_OVERRIDE, LEAVE_OVERRIDE, **PAYROLL_VOID**`
+- `select[name=entity]` → `… PayrollRun, **PayrollPeriod**, JobPosting, …`
+
+Filtering on `PAYROLL_VOID` returns only void rows, each naming the actor:
+
+```
+Aug 18, 2026, 11:02 | admin@veent.ph SUPER_ADMIN | PAYROLL_VOID | PayrollRun
+Aug 18, 2026, 10:56 | admin@veent.ph SUPER_ADMIN | PAYROLL_VOID | PayrollPeriod
+Aug 18, 2026, 10:55 | admin@veent.ph SUPER_ADMIN | PAYROLL_VOID | PayrollRun
+Aug 18, 2026, 10:54 | admin@veent.ph SUPER_ADMIN | PAYROLL_VOID | PayrollRun
+```
+
+That is AC-1.1 proven live: a void is now findable by someone who does not already know what to
+look for. Before this work it was a plain `UPDATE`, one of 56.
+
+## A defect this pass found — the same-actor marker missed its commonest case
+
+Voiding a run marked `sameActorAsApprover` **absent** even when the voider had locked the period
+themselves. `voidRun` called `voidedOwnApproval(ctx.actorId, run)` without the period, and since
+#298 stopped `lock()` writing `approvedById`, a locked-but-never-approved run has a null approver —
+so checking the run alone can never match. The unit tests covered the locker arm for `voidPeriod`
+and never for `voidRun`, which is precisely how it slipped through.
+
+Fixed by passing `run.period`, which was already loaded. Mutation-checked: reverting the fix
+reddens exactly the new test and nothing else. Confirmed live — the same admin locking then voiding
+now records `sameActorAsApprover = t`.
+
+## Housekeeping
+
+0 `ZZ-%` periods, 0 separation records, seeded loan and cash-advance balances back at their
+original values.

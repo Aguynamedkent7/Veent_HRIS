@@ -126,7 +126,12 @@ export async function voidRun(id: string, organizationId: string, ctx: AuditCont
 		oldValue: { status: run.status },
 		newValue: {
 			status: 'VOIDED',
-			...(voidedOwnApproval(ctx.actorId, run) && { sameActorAsApprover: true })
+			// The period is passed too: since #298 stopped `lock()` writing `approvedById`, a run
+			// that was locked but never approved has a null `approvedById`, so checking the run
+			// alone would miss the commonest same-actor void of all — the person who locked the
+			// period voiding its run. Proven live: that case marked absent until the period was
+			// passed here.
+			...(voidedOwnApproval(ctx.actorId, run, run.period) && { sameActorAsApprover: true })
 		}
 	})
 

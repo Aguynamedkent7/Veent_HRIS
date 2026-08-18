@@ -156,6 +156,39 @@ describe('#298 — the same-actor marker (AC-1.2, AC-1.3)', () => {
 		expect(lastAudit()?.newValue).toEqual({ status: 'VOIDED', sameActorAsApprover: true })
 	})
 
+	it('void-same-actor-visible — the locker arm reaches the RUN void: voider locked the period', async () => {
+		// The commonest same-actor void there is, and it was silently unmarked until the period
+		// was passed to the marker. Since #298 stopped `lock()` writing `approvedById`, a
+		// locked-but-never-approved run has a null approver, so checking the run alone can never
+		// match. Caught live: the audit row read `sameActorAsApprover = f` for exactly this case.
+		dbMock.payrollRun.findFirst.mockResolvedValue({
+			id: 'run1',
+			organizationId: 'org1',
+			status: 'COMPUTED',
+			approvedById: null,
+			period: { id: 'p1', status: 'GENERATED', lockedById: 'userB' }
+		})
+
+		await voidRun('run1', 'org1', ctx('userB'))
+
+		expect(lastAudit()?.newValue).toEqual({ status: 'VOIDED', sameActorAsApprover: true })
+	})
+
+	it('override-marker-absent-on-ordinary — a RUN void by someone who did not lock is unmarked', async () => {
+		dbMock.payrollRun.findFirst.mockResolvedValue({
+			id: 'run1',
+			organizationId: 'org1',
+			status: 'COMPUTED',
+			approvedById: null,
+			period: { id: 'p1', status: 'GENERATED', lockedById: 'userB' }
+		})
+
+		await voidRun('run1', 'org1', ctx('userC'))
+
+		expect(lastAudit()?.newValue).not.toHaveProperty('sameActorAsApprover')
+		expect(lastAudit()?.newValue).toEqual({ status: 'VOIDED' })
+	})
+
 	it('void-same-actor-visible — the locker arm: voider === period.lockedById', async () => {
 		dbMock.payrollPeriod.findFirst.mockResolvedValue(
 			period({ lockedById: 'userB', approvedById: 'userA' })
