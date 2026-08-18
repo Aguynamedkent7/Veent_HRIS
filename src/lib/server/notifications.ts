@@ -46,7 +46,8 @@ export function sendLeaveStatusEmail(email: string, status: string, reason?: str
 }
 
 import { manilaDateTime, formatDateDisplay } from '$lib/utils/dates'
-import type { InterviewMode } from '@prisma/client'
+import { CLEARANCE_AREA_LABELS } from '$lib/utils/clearance-area'
+import type { ClearanceArea, InterviewMode } from '@prisma/client'
 
 // ─── Interview scheduling (#196) ──────────────────────────────────────────────
 // When an interview is booked, both the applicant and HR get an email with the
@@ -124,8 +125,8 @@ export function buildInterviewEmail(
 export interface OffboardingNoticeDetails {
 	employeeName: string
 	effectiveDate: Date
-	/** Clearance tasks the employee must complete, each with the owning department. */
-	checklist: { label: string; department: string }[]
+	/** Clearance tasks the employee must complete, each with the owning clearance area. */
+	checklist: { label: string; area: ClearanceArea }[]
 }
 
 /** Build the subject and body for the transition-period due-diligence notice. */
@@ -135,7 +136,7 @@ export function buildOffboardingNotice(d: OffboardingNoticeDetails): {
 } {
 	const when = formatDateDisplay(d.effectiveDate)
 	const tasks = d.checklist.length
-		? d.checklist.map((c) => `  • ${c.label} (${c.department})`)
+		? d.checklist.map((c) => `  • ${c.label} (${CLEARANCE_AREA_LABELS[c.area]})`)
 		: ['  • (No clearance items configured — HR will advise.)']
 	return {
 		subject: `Transition & clearance details — effective ${when}`,

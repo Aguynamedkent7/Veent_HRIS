@@ -3,6 +3,7 @@
 	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import { formatShortDate } from '$lib/utils/format'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
+	import { CLEARANCE_AREA_LABELS } from '$lib/utils/clearance-area'
 	import type { PageData, ActionData } from './$types'
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
@@ -103,7 +104,7 @@
 				<li class="flex items-center justify-between gap-3 px-4 py-3">
 					<div>
 						<p class="text-sm font-medium">{item.label}</p>
-						<p class="text-xs text-muted-foreground">{item.department}</p>
+						<p class="text-xs text-muted-foreground">{CLEARANCE_AREA_LABELS[item.area]}</p>
 					</div>
 					{#if isFinalized}
 						<span

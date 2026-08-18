@@ -108,7 +108,7 @@ export async function getSeparation(id: string, organizationId: string) {
 					department: { select: { name: true } }
 				}
 			},
-			clearanceItems: { orderBy: { department: 'asc' } }
+			clearanceItems: { orderBy: { area: 'asc' } }
 		}
 	})
 	if (!record) error(404, 'Separation record not found')
