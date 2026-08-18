@@ -115,6 +115,53 @@ export async function getSeparation(id: string, organizationId: string) {
 	return record
 }
 
+export interface ClearanceActorRef {
+	status: string
+	clearedById: string | null
+}
+
+// #297/D3: whoever ticked any box on this case may not close it out. A PURE function on purpose —
+// approvals.ts:119 (decidedActorIds) is the same shape, and it makes the rule testable with zero
+// DB mocks. This repo's documented failure mode is exactly the vacuous mock (all-tests.md, five
+// recorded cases), so the ~10 extra lines buy a test that cannot lie.
+// Un-cleared items carry a null clearedById, so a re-opened item stops barring its clearer.
+export function clearedAnyItem(items: ClearanceActorRef[], actorId: string): boolean {
+	return items.some((i) => i.status === 'CLEARED' && i.clearedById === actorId)
+}
+
+// The ONE source of truth for both the server 403 in finalizeSeparation and the greyed-out
+// Finalize button on /separations/[id] — computed once so the guard and the button cannot drift.
+// Returns the refusal message, or null when the actor may finalize.
+//
+// Status choice (VALIDATE G4, recorded): the self refusal is 403, NOT offboardEmployee's 400.
+// Four self-action bars in this codebase already use 403 (approvals.ts:231,
+// employee-access.ts:136, action-proposals.ts:71 and :80) against offboardEmployee's single 400,
+// and 403 is what "the request is fine, the ACTOR is refused" means. AC-4.3 asks for consistent
+// wording and placement, not a matching status code; offboardEmployee's 400 is a live API
+// contract and stays as the deliberate, known outlier.
+export async function finalizeBarFor(
+	record: { employee: { id: string }; clearanceItems: ClearanceActorRef[] },
+	actorId: string
+): Promise<string | null> {
+	// SCOPED query, not a widened getSeparation select: userId is an identity column and
+	// getSeparation's result goes straight to the client. This repo has shipped a select that
+	// leaked a field it did not need twice (#111, #290). One extra indexed lookup is the cheaper bug.
+	const employee = await db.employee.findUnique({
+		where: { id: record.employee.id },
+		select: { userId: true }
+	})
+	// #297/D4: mirrors offboardEmployee (employees.ts:1216) — finalize does the same destructive
+	// thing (OFFBOARDED + isActive=false) plus writes off the actor's own loans.
+	if (employee?.userId === actorId) {
+		return 'You cannot finalize your own separation — ask another admin to do it.'
+	}
+	// #297/D3.
+	if (clearedAnyItem(record.clearanceItems, actorId)) {
+		return 'You cannot finalize a separation whose clearance items you cleared — ask another HR administrator, or your CEO, to finalize it.'
+	}
+	return null
+}
+
 export async function setClearanceItem(
 	itemId: string,
 	organizationId: string,
@@ -127,6 +174,19 @@ export async function setClearanceItem(
 	})
 	if (!item) error(404, 'Clearance item not found')
 	if (item.separation.status === 'FINALIZED') error(409, 'Separation is already finalized')
+
+	// #297/D8: an item already cleared by somebody else is theirs. Without this the D3 bar is
+	// trivially defeatable — B un-ticks A's item (which NULLs clearedById), re-ticks it, becomes
+	// the clearer, and can wipe their own bar the same way. Chosen over a full clearance history
+	// table, which the owner declined as too big for now.
+	//
+	// Covers BOTH directions (re-clear AND un-clear) — owner-confirmed 18-08-26, SPEC AC-9.1 and
+	// AC-9.2, with AC-9.4 naming the two-step defeat route this closes. The UI's only path to
+	// re-clearing is un-clear-then-clear, so barring only the re-clear would leave the defeat intact.
+	// NULL-safe: a legacy CLEARED row with no clearedById stays editable rather than frozen.
+	if (item.status === 'CLEARED' && item.clearedById && item.clearedById !== ctx.actorId) {
+		error(403, 'This clearance item was already cleared by someone else. Only they can change it.')
+	}
 
 	await db.clearanceItem.update({
 		where: { id: itemId },
@@ -228,6 +288,12 @@ export async function computeFinalPay(
 export async function finalizeSeparation(id: string, organizationId: string, ctx: AuditContext) {
 	const record = await getSeparation(id, organizationId)
 	if (record.status === 'FINALIZED') error(409, 'Separation is already finalized')
+
+	// #297/D3+D4, ABOVE the pending-items check on purpose: pending-items implicitly says "go clear
+	// the rest", but under D3 every item this actor clears deepens their own bar. Same reasoning as
+	// approvals.ts:636-639 — the specific refusal stays above the generic one.
+	const bar = await finalizeBarFor(record, ctx.actorId)
+	if (bar) error(403, bar)
 
 	const pending = record.clearanceItems.filter((i) => i.status !== 'CLEARED').length
 	if (pending > 0) error(409, `Cannot finalize — ${pending} clearance item(s) still pending`)

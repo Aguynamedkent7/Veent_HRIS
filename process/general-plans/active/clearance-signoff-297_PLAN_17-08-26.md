@@ -170,6 +170,12 @@ export async function finalizeBarFor(
 }
 ```
 
+**Status code (VALIDATE G4, N2):** the self refusal is **403, not** `offboardEmployee`'s 400 —
+four existing self-action bars already use 403 (`approvals.ts:231`, `employee-access.ts:136`,
+`action-proposals.ts:71` and `:80`) against that single 400, and AC-4.3 asks only for consistent
+wording and placement. `self-guard-consistent-with-offboard` must therefore **not** assert the
+status code. The full reasoning is in §Validate Contract → G4.
+
 **Message rules, both load-bearing:**
 
 - **No name is resolved.** `ClearanceItem.clearedById` and `SeparationRecord.finalizedById` are

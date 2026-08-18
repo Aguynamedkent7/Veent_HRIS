@@ -10,6 +10,9 @@
 	const s = $derived(data.separation)
 	const isFinalized = $derived(s.status === 'FINALIZED')
 	const pendingCount = $derived(s.clearanceItems.filter((i) => i.status !== 'CLEARED').length)
+	// #297: the reason this actor may not finalize, or null. Computed server-side by the SAME
+	// helper the service guard uses, so the button and the refusal cannot disagree.
+	const finalizeBar = $derived(data.finalizeBar)
 
 	const peso = (n: number) => n.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })
 
@@ -81,11 +84,19 @@
 
 	<!-- Clearance checklist -->
 	<div class="rounded-lg border bg-card">
-		<div class="flex items-center justify-between border-b px-4 py-3">
-			<h2 class="font-semibold">Clearance checklist</h2>
-			<span class="text-xs text-muted-foreground"
-				>{s.clearanceItems.length - pendingCount}/{s.clearanceItems.length} cleared</span
-			>
+		<div class="border-b px-4 py-3">
+			<div class="flex items-center justify-between">
+				<h2 class="font-semibold">Clearance checklist</h2>
+				<span class="text-xs text-muted-foreground"
+					>{s.clearanceItems.length - pendingCount}/{s.clearanceItems.length} cleared</span
+				>
+			</div>
+			{#if !isFinalized}
+				<p class="mt-1 text-xs text-amber-600">
+					Marking any item cleared here means you will not be able to finalize this case. Another HR
+					administrator, or your CEO, will have to finalize it.
+				</p>
+			{/if}
 		</div>
 		<ul class="divide-y">
 			{#each s.clearanceItems as item (item.id)}
@@ -166,10 +177,13 @@
 					finalizing.
 				</p>
 			{/if}
+			{#if finalizeBar}
+				<p class="mt-2 text-sm text-amber-600">{finalizeBar}</p>
+			{/if}
 			<form method="POST" action="?/finalize" use:enhance={finalize.enhance} class="mt-3">
 				<button
 					type="submit"
-					disabled={pendingCount > 0 || finalize.busy}
+					disabled={pendingCount > 0 || !!finalizeBar || finalize.busy}
 					class="rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
 					>{finalize.busy ? 'Finalizing…' : 'Finalize & offboard'}</button
 				>
