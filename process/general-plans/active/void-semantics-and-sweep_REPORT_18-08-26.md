@@ -123,6 +123,14 @@ second copy was written.
   **the Finance hand-off note, which is due before this ships**). 12a's "before" sample is already
   captured in `phase0-evidence_18-08-26.md`.
 
+  > **CLOSED later the same day.** All of D12 ran, and the outcome is not what step 12 predicted:
+  > HR ruled that **PAYDATE is the day the payslip was released**, so the shipped field reads
+  > `run.releasedAt` and is blank when there is no release date — not the period end. Verified in a
+  > rendered PDF on a period ending 15 Oct while the release happened 18 Aug, which is the one shape
+  > that tells the release date apart from both the period end and any approval date. The Finance
+  > note is `docs/finance-note-paydate-change.md`, and it is **closed, not pending** — the owner put
+  > the question to HR and got a rule back. Nothing here is outstanding.
+
 ## The cash-advance over-credit — the honest statement
 
 This change **converts a dormant defect into a live one.** The arithmetic is untouched — the block

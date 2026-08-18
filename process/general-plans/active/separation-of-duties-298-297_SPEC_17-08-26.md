@@ -317,9 +317,9 @@ Nothing here breaks a case that is already in flight.
               v
    [ Person X attempts FINALIZE ]
               |
-              +-- is X the same person as any clearer?  --> REFUSED, reason given   <-- NEW
-              |
               +-- is X the employee being separated?    --> REFUSED, reason given   <-- NEW
+              |
+              +-- is X the same person as any clearer?  --> REFUSED, reason given   <-- NEW
               |
               +-- otherwise -----------------------------> proceeds
                                                              |

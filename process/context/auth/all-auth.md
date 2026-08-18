@@ -42,7 +42,7 @@ Read this entrypoint when:
 
 ## The Two Mechanisms (and only two)
 
-#282 collapsed four auth mechanisms into two. Do not add a third.
+Issue `#282` collapsed four auth mechanisms into two. Do not add a third.
 
 1. **`CAPABILITIES` in `src/lib/rbac.ts`** — the declarative table. `can(role, cap)` and
    `canAny(roles, cap)` read it. Used by UI to decide what to render.

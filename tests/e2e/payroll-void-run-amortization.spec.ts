@@ -132,6 +132,16 @@ async function cleanup() {
 		await db.payrollRun.deleteMany({ where: { id: { in: runIds } } })
 		await db.payrollPeriod.deleteMany({ where: { name: TAG } })
 		await db.loan.deleteMany({ where: { type: TAG } })
+		// Not just `advanceId`: a run that died between creating the advance and recording its id
+		// leaves an orphan no later run can see. The amount/installment pair is this fixture's own
+		// and matches nothing in the seed, so it sweeps those too.
+		await db.cashAdvance.deleteMany({
+			where: {
+				employee: { user: { email: 'employee@veent.ph' } },
+				amount: CA_INSTALLMENT,
+				installment: CA_INSTALLMENT
+			}
+		})
 		if (advanceId) await db.cashAdvance.deleteMany({ where: { id: advanceId } })
 	} finally {
 		await db.$disconnect()

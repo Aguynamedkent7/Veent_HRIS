@@ -27,11 +27,16 @@ import type { Role } from '@prisma/client'
 
 const { dbMock, periodsMock, attendanceMock } = vi.hoisted(() => ({
 	dbMock: {
-		payrollRun: { findFirst: vi.fn(), update: vi.fn() },
+		payrollRun: {
+			findFirst: vi.fn(),
+			update: vi.fn(),
+			updateMany: vi.fn(),
+			findUniqueOrThrow: vi.fn()
+		},
 		employee: { findMany: vi.fn(), findUnique: vi.fn() },
 		// Only the first lookup each real service makes past its guard — enough to tell "refused"
 		// from "admitted" without standing up voidPeriod's amortization-reversal transaction.
-		payrollPeriod: { findFirst: vi.fn() },
+		payrollPeriod: { findFirst: vi.fn(), updateMany: vi.fn(), findUniqueOrThrow: vi.fn() },
 		attendanceDay: { updateMany: vi.fn() },
 		$transaction: async (fn: (tx: unknown) => unknown) => fn(dbMock)
 	},
@@ -121,6 +126,9 @@ beforeEach(() => {
 	vi.clearAllMocks()
 	dbMock.payrollRun.findFirst.mockResolvedValue({ id: 'x1', status: 'APPROVED' })
 	dbMock.payrollRun.update.mockResolvedValue({ id: 'x1', status: 'VOIDED' })
+	dbMock.payrollRun.updateMany.mockResolvedValue({ count: 1 })
+	dbMock.payrollRun.findUniqueOrThrow.mockResolvedValue({ id: 'x1', status: 'VOIDED' })
+	dbMock.payrollPeriod.updateMany.mockResolvedValue({ count: 1 })
 	// No such period: an admitted caller gets 404 from the lookup, which distinguishes it from the
 	// 403 a refused one never gets past.
 	dbMock.payrollPeriod.findFirst.mockResolvedValue(null)
@@ -147,7 +155,7 @@ describe('voiding a payroll run (#224)', () => {
 		await expect(voidRun('x1', 'org1', ctx('EMPLOYEE', SECONDARY))).resolves.toMatchObject({
 			status: 'VOIDED'
 		})
-		expect(dbMock.payrollRun.update).toHaveBeenCalled()
+		expect(dbMock.payrollRun.updateMany).toHaveBeenCalled()
 	})
 
 	it('refuses an actor carrying an empty role set', async () => {
@@ -159,12 +167,12 @@ describe('voiding a payroll run (#224)', () => {
 
 	it('still allows a single-role Super Admin through the v1 API twin', async () => {
 		expect((await runApi(apiEvent('SUPER_ADMIN'))).status).toBe(200)
-		expect(dbMock.payrollRun.update).toHaveBeenCalled()
+		expect(dbMock.payrollRun.updateMany).toHaveBeenCalled()
 	})
 
 	it('admits the secondary-role actor through the v1 API twin (#256)', async () => {
 		expect((await runApi(apiEvent('EMPLOYEE', SECONDARY))).status).toBe(200)
-		expect(dbMock.payrollRun.update).toHaveBeenCalled()
+		expect(dbMock.payrollRun.updateMany).toHaveBeenCalled()
 	})
 })
 

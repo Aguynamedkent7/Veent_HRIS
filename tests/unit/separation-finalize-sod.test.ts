@@ -16,7 +16,7 @@ import type { AuditContext } from '$lib/server/services/types'
 const { dbMock } = vi.hoisted(() => ({
 	dbMock: {
 		separationRecord: { findFirst: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
-		clearanceItem: { findFirst: vi.fn(), update: vi.fn(), count: vi.fn() },
+		clearanceItem: { findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), count: vi.fn() },
 		employee: { findUnique: vi.fn(), findUniqueOrThrow: vi.fn(), update: vi.fn() },
 		employeeCompensation: { findMany: vi.fn() },
 		leaveBalance: { findMany: vi.fn() },
@@ -71,6 +71,9 @@ const CLEARED_BY_A = [{ id: 'ci1', status: 'CLEARED', clearedById: 'user-a' }]
 beforeEach(() => {
 	vi.clearAllMocks()
 	dbMock.$transaction.mockImplementation(async (fn: (tx: typeof dbMock) => unknown) => fn(dbMock))
+	// #297: the in-transaction clearance re-read. Default to "no clearers" so only the tests that
+	// mean to exercise the bar do so.
+	dbMock.clearanceItem.findMany.mockResolvedValue([])
 	dbMock.separationRecord.findFirst.mockResolvedValue(separationRow(CLEARED_BY_A))
 	dbMock.separationRecord.updateMany.mockResolvedValue({ count: 1 })
 	// The separated employee's login — NOT any of the admins unless a test says so.
@@ -114,6 +117,22 @@ describe('finalizeSeparation — separation of duties', () => {
 		})
 		// Nothing mutated.
 		expect(dbMock.$transaction).not.toHaveBeenCalled()
+		expect(dbMock.separationRecord.updateMany).not.toHaveBeenCalled()
+	})
+
+	// The pre-flight bar reads the record BEFORE the transaction opens. This is the window: the
+	// actor is clean when `finalizeBarFor` runs, and has become a clearer by the time the write
+	// lands. Only the in-transaction re-read closes it, so this is the one case that proves it —
+	// `findFirst` (pre-flight) says clean, `findMany` (inside the transaction) says otherwise.
+	it('finalize-rechecks-clearers-inside-the-transaction', async () => {
+		dbMock.separationRecord.findFirst.mockResolvedValue(separationRow([]))
+		dbMock.clearanceItem.findMany.mockResolvedValue([{ status: 'CLEARED', clearedById: 'user-b' }])
+
+		await expect(finalizeSeparation('sep1', 'org1', ctxFor('user-b'))).rejects.toMatchObject({
+			status: 403,
+			body: { message: CLEARER_MESSAGE }
+		})
+		// The refusal must beat the write, not follow it.
 		expect(dbMock.separationRecord.updateMany).not.toHaveBeenCalled()
 	})
 

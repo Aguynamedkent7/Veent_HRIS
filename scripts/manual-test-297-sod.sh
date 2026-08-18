@@ -2,11 +2,18 @@
 # #297 live verification harness. Runs the SAME script on both sides of the change.
 # PASS=before  -> the holes must be OPEN   (every guarded action SUCCEEDS)
 # PASS=after   -> the holes must be CLOSED (every guarded action is refused 403)
+#
+# Deliberately NOT `set -e`: this harness must run EVERY case and print the whole table, including
+# the ones that fail. Aborting on the first non-zero curl would hide the rest of the result, which
+# is the opposite of what a before/after comparison is for. `assert_live` below is the hard stop
+# that matters — an unauthenticated actor makes every refusal a lie.
 set -uo pipefail
 
 APP=http://localhost:5173
 PASS="${1:?usage: sod297-live.sh before|after}"
-JAR=/tmp/claude-1000/-home-hyuse-Desktop-VeentApps-veent-hris/bc71614a-f1b1-47ea-bcf5-f68626201b81/scratchpad
+JAR=$(mktemp -d) || { echo "FATAL: cannot create a cookie jar directory"; exit 1; }
+trap 'rm -rf "$JAR"' EXIT
+REPO=$(git rev-parse --show-toplevel)
 PSQL() { docker exec veent-db-5434 psql -p 5434 -U veent -d veent_hris -t -A -F'|' -c "$1"; }
 
 A_MAIL=hr@veent.ph          # actor A — HR_ADMIN
@@ -57,7 +64,7 @@ mkcase() { # mkcase <jar> <employeeId> <marker> -> prints separation id
   PSQL "select id from separation_records where reason='$3' limit 1;"
 }
 
-echo "═══════════ #297 LIVE — $PASS PASS — $(git -C /home/hyuse/Desktop/VeentApps/veent_hris rev-parse --short HEAD) ═══════════"
+echo "═══════════ #297 LIVE — $PASS PASS — $(git -C "$REPO" rev-parse --short HEAD) ═══════════"
 login "$A_MAIL" A; login "$B_MAIL" B
 echo "actors: A=$A_MAIL  B=$B_MAIL"
 assert_live A "A"; assert_live B "B"

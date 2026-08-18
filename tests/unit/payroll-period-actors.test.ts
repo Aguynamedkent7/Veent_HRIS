@@ -21,12 +21,18 @@ import type { Role } from '@prisma/client'
 
 const { dbMock, notifyMock, writeAuditLog } = vi.hoisted(() => ({
 	dbMock: {
-		payrollRun: { update: vi.fn(), findFirst: vi.fn() },
+		payrollRun: {
+			update: vi.fn(),
+			updateMany: vi.fn(),
+			findUniqueOrThrow: vi.fn(),
+			findFirst: vi.fn()
+		},
 		payrollPeriod: {
 			findFirst: vi.fn(),
 			findUnique: vi.fn(),
 			update: vi.fn(),
-			updateMany: vi.fn()
+			updateMany: vi.fn(),
+			findUniqueOrThrow: vi.fn()
 		},
 		payrollEntry: { findMany: vi.fn() },
 		$transaction: vi.fn()
@@ -61,6 +67,12 @@ beforeEach(() => {
 	vi.clearAllMocks()
 	dbMock.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(dbMock))
 	dbMock.payrollEntry.findMany.mockResolvedValue([])
+	// The compare-and-set claims added for the void and release races. Default to "this caller
+	// won"; a test that means to lose the race overrides with `{ count: 0 }`.
+	dbMock.payrollPeriod.updateMany.mockResolvedValue({ count: 1 })
+	dbMock.payrollPeriod.findUniqueOrThrow.mockResolvedValue({ id: 'p1', status: 'RELEASED' })
+	dbMock.payrollRun.updateMany.mockResolvedValue({ count: 1 })
+	dbMock.payrollRun.findUniqueOrThrow.mockResolvedValue({ id: 'r1', status: 'VOIDED' })
 	dbMock.payrollPeriod.updateMany.mockResolvedValue({ count: 1 })
 	dbMock.payrollPeriod.findFirst.mockResolvedValue(generatedPeriod)
 	dbMock.payrollPeriod.findUnique.mockResolvedValue({ id: 'p1', status: 'LOCKED' })
@@ -104,12 +116,17 @@ describe('#298 — the release actor (AC-2.2)', () => {
 
 		await release('p1', 'org1', ctx('userC'))
 
-		const [call] = dbMock.payrollPeriod.update.mock.calls[0]
+		const [call] = dbMock.payrollPeriod.updateMany.mock.calls[0]
 		expect(call.data.status).toBe('RELEASED')
 		expect(call.data.releasedById).toBe('userC')
 		expect(call.data.releasedAt).toBeInstanceOf(Date)
 		// Asserted positively on both sides — "not null" alone would pass if the two collapsed.
 		expect(call.data.releasedById).not.toBe('userB')
+		// The release is CLAIMED, like the lock: the actor and the timestamp are written in the same
+		// statement that proves the period was still LOCKED. Two concurrent releases would otherwise
+		// both win and the loser's `releasedAt` would overwrite the winner's — the PAYDATE printed on
+		// every payslip in the period since #298.
+		expect(call.where).toMatchObject({ id: 'p1', status: 'LOCKED' })
 		expect(writeAuditLog.mock.calls.at(-1)?.[1].newValue).toMatchObject({
 			status: 'RELEASED',
 			releasedById: 'userC'

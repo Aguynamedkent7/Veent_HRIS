@@ -15,7 +15,7 @@ import type { AuditContext } from '$lib/server/services/types'
 const { dbMock } = vi.hoisted(() => ({
 	dbMock: {
 		separationRecord: { findFirst: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
-		clearanceItem: { findFirst: vi.fn(), update: vi.fn(), count: vi.fn() },
+		clearanceItem: { findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), count: vi.fn() },
 		employee: { findUnique: vi.fn(), findUniqueOrThrow: vi.fn(), update: vi.fn() },
 		employeeCompensation: { findMany: vi.fn() },
 		leaveBalance: { findMany: vi.fn() },
@@ -69,6 +69,9 @@ function separationRow(
 beforeEach(() => {
 	vi.clearAllMocks()
 	dbMock.$transaction.mockImplementation(async (fn: (tx: typeof dbMock) => unknown) => fn(dbMock))
+	// #297: the in-transaction clearance re-read. Default to "no clearers" so only the tests that
+	// mean to exercise the bar do so.
+	dbMock.clearanceItem.findMany.mockResolvedValue([])
 	dbMock.separationRecord.findFirst.mockResolvedValue(separationRow())
 	dbMock.separationRecord.updateMany.mockResolvedValue({ count: 1 })
 	// Not called by the unmodified code; the guards added later read it. Uninvolved user.
@@ -149,8 +152,13 @@ describe('setClearanceItem — current behaviour (baseline)', () => {
 				data: expect.objectContaining({ status: 'CLEARED', clearedById: 'user-b' })
 			})
 		)
-		expect(dbMock.separationRecord.update).toHaveBeenCalledWith(
-			expect.objectContaining({ data: { status: 'CLEARED' } })
+		// `updateMany` with a FINALIZED floor, not `update`: a finalize landing between this
+		// function's status read and this write would otherwise be rolled back to CLEARED.
+		expect(dbMock.separationRecord.updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ status: { not: 'FINALIZED' } }),
+				data: { status: 'CLEARED' }
+			})
 		)
 	})
 })

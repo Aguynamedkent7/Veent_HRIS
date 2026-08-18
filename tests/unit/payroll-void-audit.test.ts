@@ -20,12 +20,20 @@ import type { Role } from '@prisma/client'
 
 const { dbMock, notifyMock, writeAuditLog } = vi.hoisted(() => ({
 	dbMock: {
-		payrollRun: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn(), findUnique: vi.fn() },
+		payrollRun: {
+			findFirst: vi.fn(),
+			update: vi.fn(),
+			updateMany: vi.fn(),
+			findUniqueOrThrow: vi.fn(),
+			create: vi.fn(),
+			findUnique: vi.fn()
+		},
 		payrollPeriod: {
 			findFirst: vi.fn(),
 			findUnique: vi.fn(),
 			update: vi.fn(),
 			updateMany: vi.fn(),
+			findUniqueOrThrow: vi.fn(),
 			create: vi.fn()
 		},
 		payrollEntry: { findMany: vi.fn() },
@@ -57,6 +65,12 @@ beforeEach(() => {
 	vi.clearAllMocks()
 	dbMock.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(dbMock))
 	dbMock.payrollEntry.findMany.mockResolvedValue([])
+	// The compare-and-set claims added for the void and release races. Default to "this caller
+	// won"; a test that means to lose the race overrides with `{ count: 0 }`.
+	dbMock.payrollPeriod.updateMany.mockResolvedValue({ count: 1 })
+	dbMock.payrollPeriod.findUniqueOrThrow.mockResolvedValue({ id: 'p1', status: 'RELEASED' })
+	dbMock.payrollRun.updateMany.mockResolvedValue({ count: 1 })
+	dbMock.payrollRun.findUniqueOrThrow.mockResolvedValue({ id: 'r1', status: 'VOIDED' })
 	dbMock.payrollRun.update.mockResolvedValue({ id: 'run1', status: 'VOIDED' })
 	dbMock.payrollPeriod.update.mockResolvedValue({ id: 'p1', status: 'VOIDED' })
 	dbMock.payrollPeriod.updateMany.mockResolvedValue({ count: 1 })

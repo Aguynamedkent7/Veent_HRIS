@@ -100,12 +100,18 @@ All live verification is deferred to the follow-up pass, per the execute handoff
 | L6 | CEO `ceo@veent.ph` switches into `org_jojo` and `org_sweetleaf` and finalizes in each. The no-carve-out decision rests on this. |
 | Before-and-after | The whole L1–L4 + L2b–L2e "before" pass was never taken — the tree already carries the guards. To honour `verify-live-before-and-after.md`, run the "before" half from a stashed tree first. |
 
-**L2e discrepancy (raise before running it).** As written, L2e expects step (3) — B's finalize — to
-return 403. On case `SOD297-CASE-1` as built by L0–L2, A cleared every item and B cleared nothing,
-so B is *not* barred and step (3) will legitimately SUCCEED (that is exactly what L3 asserts). To
-make L2e's step (3) meaningful, either have B clear one item first, or read step (3) as "B gained
-nothing from steps 1–2" and assert the record is unchanged rather than a 403. Do not improvise this
-live — confirm which reading is wanted.
+**L2e — RESOLVED, and the resolution is a two-item case** (plan fixed in `9981781`; this paragraph
+previously carried the open question and is superseded).
+
+L2e needs a case with **two** clearance items, set up so that **A clears `ci1` and B clears `ci2`**
+_before_ B starts the ownership-laundering sequence. Only then is B a clearer in their own right, so
+B's finalize must return **403** — which is the assertion, and it stays. The earlier reading that
+would have weakened it to "assert the record is unchanged" was wrong for a one-item case and is
+moot for a two-item one: on `SOD297-CASE-1` A had cleared everything and B nothing, so B was never
+barred and the step could not have failed.
+
+This matches the unit-test state exactly — `separation-finalize-sod.test.ts` builds the same
+two-clearer shape for the D8 defeat route (AC-9.4). Nothing here is left to interpret live.
 
 ## Known gaps carried forward (unchanged from the contract)
 

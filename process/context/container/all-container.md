@@ -43,7 +43,7 @@ Read this entrypoint when:
 
 - Image: **`postgres:18`** (`start.sh:9`)
 - Host networking; port **5434 inside the container too**, so `psql` needs `-p 5434`:
-  ```
+  ```sh
   docker exec veent-db-5434 psql -U veent -d veent_hris -p 5434 -tAc "select 1"
   ```
 - Credentials veent/veent, database `veent_hris`

@@ -137,7 +137,7 @@ There are no `README.md` files inside `process/context/`. Canonical entrypoints 
 
 ## Repository Structure
 
-```
+```text
 veent_hris/
   prisma/
     schema.prisma        -- 68 models, 1972 lines; NO migrations dir (db push)

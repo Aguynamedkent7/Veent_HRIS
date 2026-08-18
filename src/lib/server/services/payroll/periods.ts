@@ -280,10 +280,15 @@ export async function release(id: string, organizationId: string, ctx: AuditCont
 	if (period.status !== 'LOCKED')
 		error(400, `Only a LOCKED period can be released (is ${period.status})`)
 
-	const updated = await db.payrollPeriod.update({
-		where: { id },
+	// Claim the release the same way `lock()` claims the lock. Two concurrent releases would
+	// otherwise both succeed, and the loser's `releasedAt` would overwrite the winner's — which
+	// since #298 is the date printed on every payslip in the period (PAYDATE).
+	const claimed = await db.payrollPeriod.updateMany({
+		where: { id, status: 'LOCKED' },
 		data: { status: 'RELEASED', releasedAt: new Date(), releasedById: ctx.actorId }
 	})
+	if (claimed.count === 0) error(409, 'The period was already released or changed — nothing done')
+	const updated = await db.payrollPeriod.findUniqueOrThrow({ where: { id } })
 	await writeAuditLog(ctx, {
 		// #298: `releasedById` is a plain FACT key, always present — a release is not an override,
 		// so this is never a marker. It is the copy a reveal can read back if the row is later
@@ -326,19 +331,32 @@ export async function voidPeriod(id: string, organizationId: string, ctx: AuditC
 	const wasLocked = period.status === 'LOCKED' || period.status === 'RELEASED'
 
 	await db.$transaction(async (tx: Prisma.TransactionClient) => {
+		// Compare-and-set, same reason as `voidRun`: the status read above is preliminary, and two
+		// concurrent voids would otherwise both reverse the amortization and credit it back twice.
+		const claimed = await tx.payrollPeriod.updateMany({
+			where: { id, status: { not: 'VOIDED' } },
+			data: { status: 'VOIDED' }
+		})
+		if (claimed.count === 0) error(400, 'Period is already voided')
+
 		if (run && wasLocked) await reverseAmortization(tx, run.id)
 		if (run) await tx.payrollRun.update({ where: { id: run.id }, data: { status: 'VOIDED' } })
-		await tx.payrollPeriod.update({ where: { id }, data: { status: 'VOIDED' } })
-	})
 
-	await writeAuditLog(ctx, {
-		action: 'PAYROLL_VOID',
-		entityType: 'PayrollPeriod',
-		entityId: id,
-		newValue: {
-			status: 'VOIDED',
-			...(voidedOwnApproval(ctx.actorId, run, period) && { sameActorAsApprover: true })
-		}
+		// Inside the transaction: a void that is not findable in the audit log is the defect #298
+		// exists to close, so the marker must never outlive — or be outlived by — the void itself.
+		await writeAuditLog(
+			ctx,
+			{
+				action: 'PAYROLL_VOID',
+				entityType: 'PayrollPeriod',
+				entityId: id,
+				newValue: {
+					status: 'VOIDED',
+					...(voidedOwnApproval(ctx.actorId, run, period) && { sameActorAsApprover: true })
+				}
+			},
+			tx
+		)
 	})
 	return db.payrollPeriod.findUnique({ where: { id } })
 }

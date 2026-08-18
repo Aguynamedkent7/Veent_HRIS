@@ -47,7 +47,7 @@ enough to be worth stating first.
 
 ## Component Layout
 
-```
+```text
 src/lib/components/
   ui/          shared primitives: ConfirmDialog, ReasonDialog, Table, Toaster,
                PageHeader, EmptyState, Skeleton, TableSkeleton, MaskedField,

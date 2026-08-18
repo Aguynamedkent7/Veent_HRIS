@@ -42,9 +42,10 @@ Three jobs, concurrency-grouped per ref with `cancel-in-progress`.
 
 **1. `quality` — Format, lint, typecheck, unit**
 
-```
+```sh
 pnpm install --frozen-lockfile
-pnpm exec prisma generate      <-- note: BEFORE the checks
+# note: prisma generate runs BEFORE the checks
+pnpm exec prisma generate
 pnpm format:check
 pnpm lint
 pnpm check
@@ -53,11 +54,12 @@ pnpm test
 
 **2. `e2e` — API / E2E (Playwright)**
 
-```
+```sh
 pnpm exec prisma generate
 pnpm exec prisma db push --skip-generate
 pnpm exec tsx prisma/seed-e2e.ts
 pnpm exec playwright install --with-deps chromium
+pnpm test:e2e
 ```
 
 **3. `schema-upgrade` — db push against a populated database**

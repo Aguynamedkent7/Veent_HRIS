@@ -1,4 +1,5 @@
 import { D, sum } from './money'
+import { error } from '@sveltejs/kit'
 import type { Prisma } from '@prisma/client'
 
 /**
@@ -49,12 +50,18 @@ export async function reverseAmortization(
 				const loan = await tx.loan.findUnique({ where: { id: d.refId } })
 				if (loan && reversal.gt(0)) {
 					const restored = D(loan.balance).plus(reversal)
-					await tx.loan.update({
-						where: { id: d.refId },
+					// Conditional on the balance we just read, mirroring the guarded decrement in
+					// `lock()` (periods.ts). A blind update would silently discard a concurrent
+					// payment against the same loan; refusing makes the caller retry instead.
+					const res = await tx.loan.updateMany({
+						where: { id: d.refId, balance: loan.balance },
 						// Only reopen a loan the reversal actually un-pays; a loan settled
 						// by some other payment stays PAID.
 						data: { balance: restored, status: restored.gt(0) ? 'ACTIVE' : loan.status }
 					})
+					if (res.count === 0) {
+						error(409, 'A loan balance changed while voiding — nothing was reversed, retry')
+					}
 				}
 				await tx.loanPayment.deleteMany({
 					where: { loanId: d.refId, payrollEntryId: entry.id }

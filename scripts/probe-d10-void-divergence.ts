@@ -131,6 +131,7 @@ async function report() {
 }
 
 async function cleanup() {
+	const caIds: string[] = []
 	const period = await db.payrollPeriod.findFirst({ where: { name: TAG }, include: { runs: true } })
 	if (period) {
 		const runIds = period.runs.map((r) => r.id)
@@ -139,6 +140,13 @@ async function cleanup() {
 			select: { id: true }
 		})
 		const entryIds = entries.map((e) => e.id)
+		// Collect the probe's own cash-advance ids while the deduction rows still exist — they are
+		// the only record linking this period to the advance it created.
+		const caDeductions = await db.payrollDeduction.findMany({
+			where: { payrollEntryId: { in: entryIds }, code: 'CASH_ADVANCE' },
+			select: { refId: true }
+		})
+		caIds.push(...caDeductions.flatMap((d) => (d.refId ? [d.refId] : [])))
 		await db.loanPayment.deleteMany({ where: { payrollEntryId: { in: entryIds } } })
 		await db.payrollDeduction.deleteMany({ where: { payrollEntryId: { in: entryIds } } })
 		await db.payrollEntry.deleteMany({ where: { id: { in: entryIds } } })
@@ -147,10 +155,12 @@ async function cleanup() {
 	}
 	await db.loanPayment.deleteMany({ where: { loan: { type: TAG } } })
 	await db.loan.deleteMany({ where: { type: TAG } })
-	await db.cashAdvance.deleteMany({
-		where: { employee: { user: { email: 'employee@veent.ph' } }, amount: CA_PRINCIPAL }
-	})
-	console.log('cleaned')
+	// Delete the advance this probe created BY ID, not by "whoever has an 800 advance". CashAdvance
+	// has no `type` column to tag (unlike Loan), so the id comes from the deduction rows the probe
+	// wrote — collected before those rows are deleted above. Matching on employee + amount would
+	// delete a real advance that happened to share the figure.
+	if (caIds.length) await db.cashAdvance.deleteMany({ where: { id: { in: caIds } } })
+	console.log(`cleaned (${caIds.length} cash advance(s) by id)`)
 }
 
 const cmd = process.argv[2]

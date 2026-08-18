@@ -87,9 +87,14 @@ PAYDATE:
 8/18/26
 ```
 
-**8/18/26 is the lock date.** After #298, `approvedAt` will be null for this run, so
-`payslip-document.ts:282` falls through to the period end and the same payslip will print
-**8/15/26**.
+**8/18/26 is the lock date.**
+
+> **Correction, later the same day.** The forecast that once stood here — "falls through to the
+> period end, so it will print 8/15/26" — describes a state that never shipped. HR then ruled that
+> **PAYDATE is the day the payslip was released**, so `assemblePayslipDocument()` reads
+> `run.releasedAt` and prints **blank** when there is none. The 8/15/26 after-sample recorded lower
+> down was taken against the interim behaviour and is history, not the contract. Do not quote
+> either number as current. Authority: `docs/finance-note-paydate-change.md`.
 
 The PDF is at `phase0-evidence/d12-payslip-BEFORE.pdf` in the session scratchpad. Re-take the
 after-sample on an identically shaped period once #298 lands (AC-10.2 also needs an *approved*
@@ -102,8 +107,12 @@ locked-but-never-approved payslips. That is due before the change ships.
 
 ## AC-10.3 — the note for Finance
 
-**Status: written 18-08-26, not yet sent. Sending it is the owner's call.** It is due before
-this ships, not after.
+> **SUPERSEDED, and it was never sent.** The draft below describes PAYDATE moving to the **period
+> end**, which is not what shipped. HR's rule — PAYDATE is the day the payslip was released —
+> replaced it hours later, and the owner took the question to HR rather than Finance, which
+> satisfied AC-10.3 by a different route. The live note of record is
+> `docs/finance-note-paydate-change.md`; **that** one is closed, not pending. The draft is kept only
+> as a record of what was believed at the time. Do not send it.
 
 > **Heads-up: one date on some payslips will change.**
 >

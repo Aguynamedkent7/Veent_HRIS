@@ -157,10 +157,15 @@ export async function finalizeBarFor(
 	}
 	// #297/D3.
 	if (clearedAnyItem(record.clearanceItems, actorId)) {
-		return 'You cannot finalize a separation whose clearance items you cleared — ask another HR administrator, or your CEO, to finalize it.'
+		return CLEARER_BAR
 	}
 	return null
 }
+
+// Shared so the pre-flight bar and the re-check inside `finalizeSeparation`'s transaction can
+// never word the same refusal two different ways.
+export const CLEARER_BAR =
+	'You cannot finalize a separation whose clearance items you cleared — ask another HR administrator, or your CEO, to finalize it.'
 
 export async function setClearanceItem(
 	itemId: string,
@@ -201,8 +206,12 @@ export async function setClearanceItem(
 	const remaining = await db.clearanceItem.count({
 		where: { separationId: item.separation.id, status: 'PENDING' }
 	})
-	await db.separationRecord.update({
-		where: { id: item.separation.id },
+	// `updateMany` with a status floor, NOT `update`: the FINALIZED check at the top of this
+	// function is a read, and a finalize landing between it and here would be silently rolled
+	// back to CLEARED/OPEN by this line — leaving a record that says OPEN while still carrying
+	// `finalizedAt` and `finalizedById`. A finalized case is closed; the roll-forward skips it.
+	await db.separationRecord.updateMany({
+		where: { id: item.separation.id, status: { not: 'FINALIZED' } },
 		data: { status: remaining === 0 ? 'CLEARED' : 'OPEN' }
 	})
 
@@ -301,6 +310,16 @@ export async function finalizeSeparation(id: string, organizationId: string, ctx
 	const finalPay = await computeFinalPay(id, organizationId)
 
 	await db.$transaction(async (tx) => {
+		// #297: re-read the clearance rows here. `finalizeBarFor` ran before this transaction
+		// opened, so a tick landing in that window would otherwise let an actor finalize a case
+		// they had just become a clearer of. The pre-flight bar still runs first — it is what
+		// produces the message the UI shows; this is the one that cannot be raced.
+		const live = await tx.clearanceItem.findMany({
+			where: { separationId: id },
+			select: { status: true, clearedById: true }
+		})
+		if (clearedAnyItem(live, ctx.actorId)) error(403, CLEARER_BAR)
+
 		// Status-guarded update: the check above is only preliminary — a concurrent
 		// finalize between it and here would otherwise double-snapshot.
 		const updated = await tx.separationRecord.updateMany({

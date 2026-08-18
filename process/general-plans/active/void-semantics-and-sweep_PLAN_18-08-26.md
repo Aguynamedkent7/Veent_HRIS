@@ -605,6 +605,13 @@ skip — do not write a second copy.
 
 **12. Capture the before/after sample and write the Finance note.** AC-10.1, AC-10.2, AC-10.3.
 
+> **SUPERSEDED 18-08-26 — read this before quoting anything below.** HR ruled after this plan was
+> written: **PAYDATE is the day the payslip was released.** `assemblePayslipDocument()` now reads
+> `run.releasedAt` and prints **blank** when there is no release date. Every "period end date" and
+> "approval date" prediction in steps 12b and 12c below is a **dead forecast** — the shipped
+> behaviour is neither. The captured samples are still valid as history; the predictions are not.
+> Authority: `docs/finance-note-paydate-change.md` and `phase0-evidence_18-08-26.md`.
+
 This is a **document sample, not a code assertion.** The chain is `payslip-document.ts:282`
 (`payDate: run.approvedAt ? shortDate(run.approvedAt) : shortDate(run.periodEnd)`) →
 `payslip-pdf.ts:156` (`labelValue(doc, 'PAYDATE:', …)`). **No Svelte component renders

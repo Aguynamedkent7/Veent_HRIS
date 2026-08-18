@@ -135,6 +135,11 @@ PDF: `payslip-pdf.ts:156` prints `labelValue(doc, 'PAYDATE:', d.period.payDate, 
 
 **What renders it: the payslip PDF `PAYDATE:` field, via `payslip-document.ts:282`.**
 
+> **SUPERSEDED 18-08-26.** HR ruled after this plan was written: **PAYDATE is the day the payslip
+> was released** (`run.releasedAt`), and **blank** when there is no release date. There is no
+> period-end fallback. The paragraph below records what step 8 alone would have done; it is not
+> what shipped. See `docs/finance-note-paydate-change.md`.
+
 Today a period that is **locked but never approved through the #134 chain** has `approvedAt` set by
 the lock, so the payslip prints the **lock date** as PAYDATE. After step 8, `approvedAt` stays
 `null` for that run and the payslip falls back to `shortDate(run.periodEnd)` — it prints the

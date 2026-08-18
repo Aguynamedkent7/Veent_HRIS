@@ -17,7 +17,11 @@ import type { Role } from '@prisma/client'
 
 const { dbMock, amortizationMock } = vi.hoisted(() => ({
 	dbMock: {
-		payrollRun: { findFirst: vi.fn(), update: vi.fn() },
+		payrollRun: {
+			findFirst: vi.fn(),
+			updateMany: vi.fn(),
+			findUniqueOrThrow: vi.fn()
+		},
 		$transaction: async (fn: (tx: unknown) => unknown) => fn(dbMock)
 	},
 	amortizationMock: { reverseAmortization: vi.fn().mockResolvedValue(undefined) }
@@ -46,7 +50,8 @@ const runRow = (status: string, periodStatus: string | null) => ({
 beforeEach(() => {
 	vi.clearAllMocks()
 	amortizationMock.reverseAmortization.mockResolvedValue(undefined)
-	dbMock.payrollRun.update.mockResolvedValue({ id: 'r1', status: 'VOIDED' })
+	dbMock.payrollRun.updateMany.mockResolvedValue({ count: 1 })
+	dbMock.payrollRun.findUniqueOrThrow.mockResolvedValue({ id: 'r1', status: 'VOIDED' })
 })
 
 describe('voiding a run reverses the amortization (AC-7.2)', () => {
@@ -76,7 +81,7 @@ describe('voiding a run reverses the amortization (AC-7.2)', () => {
 
 		// Nothing was ever applied, so nothing may be credited back.
 		expect(amortizationMock.reverseAmortization).not.toHaveBeenCalled()
-		expect(dbMock.payrollRun.update).toHaveBeenCalled()
+		expect(dbMock.payrollRun.updateMany).toHaveBeenCalled()
 	})
 
 	it('void-run-no-period — a run with a NULL periodId voids, with no reversal attempted', async () => {
@@ -99,17 +104,18 @@ describe('the status precondition (AC-7.3, AC-7.4)', () => {
 
 		// The real risk of a second void is a SECOND credit, not the duplicate status write.
 		expect(amortizationMock.reverseAmortization).not.toHaveBeenCalled()
-		expect(dbMock.payrollRun.update).not.toHaveBeenCalled()
+		expect(dbMock.payrollRun.updateMany).not.toHaveBeenCalled()
 	})
 
 	it('void-run-allows-draft-and-approved — a COMPUTED and an APPROVED run both still void', async () => {
 		for (const status of ['COMPUTED', 'APPROVED']) {
 			vi.clearAllMocks()
-			dbMock.payrollRun.update.mockResolvedValue({ id: 'r1', status: 'VOIDED' })
+			dbMock.payrollRun.updateMany.mockResolvedValue({ count: 1 })
+			dbMock.payrollRun.findUniqueOrThrow.mockResolvedValue({ id: 'r1', status: 'VOIDED' })
 			dbMock.payrollRun.findFirst.mockResolvedValue(runRow(status, 'GENERATED'))
 
 			await expect(voidRun('r1', 'org1', ctx())).resolves.toMatchObject({ status: 'VOIDED' })
-			expect(dbMock.payrollRun.update).toHaveBeenCalled()
+			expect(dbMock.payrollRun.updateMany).toHaveBeenCalled()
 		}
 	})
 
@@ -117,6 +123,21 @@ describe('the status precondition (AC-7.3, AC-7.4)', () => {
 		dbMock.payrollRun.findFirst.mockResolvedValue(runRow('DRAFT', 'GENERATED'))
 
 		await expect(voidRun('r1', 'org1', ctx())).resolves.toMatchObject({ status: 'VOIDED' })
+	})
+
+	// The precondition above is a READ. Two concurrent voids both pass it, and without the
+	// compare-and-set both would call `reverseAmortization` — crediting the instalment back TWICE,
+	// which is the exact harm the refusal exists to prevent. `count: 0` is the loser of that race.
+	it('void-run-claim-is-atomic — losing the claim refuses and reverses nothing', async () => {
+		dbMock.payrollRun.findFirst.mockResolvedValue(runRow('COMPUTED', 'LOCKED'))
+		dbMock.payrollRun.updateMany.mockResolvedValue({ count: 0 })
+
+		await expect(voidRun('r1', 'org1', ctx())).rejects.toMatchObject({
+			status: 400,
+			body: { message: 'Payroll run is already voided' }
+		})
+
+		expect(amortizationMock.reverseAmortization).not.toHaveBeenCalled()
 	})
 })
 
