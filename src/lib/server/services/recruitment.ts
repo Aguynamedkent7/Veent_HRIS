@@ -647,3 +647,62 @@ export async function convertApplicantToEmployee(
 
 	return employee
 }
+
+/**
+ * #197 — the Recruitment row mapper for the Detailed Reports section. One row per job POSTING:
+ * its funnel counts plus how long it stayed open.
+ *
+ * Only postings that were actually published appear. The range filters on `postedAt`, so DRAFT
+ * and PENDING_APPROVAL postings are out by construction — they have no `postedAt`. A posting
+ * nobody published is not recruitment activity, and including it would put blank Posted and
+ * DaysOpen cells in a CSV that is meant to be summed.
+ *
+ * TitleCase keys: the report table renders `row[column]` and the CSV export uses the keys as its
+ * headers, matching every other report generator. A renamed key is a silently broken export, not
+ * a type error.
+ */
+export async function generateRecruitmentReport(
+	organizationId: string,
+	range: { startDate: Date; endDate: Date; departmentId?: string }
+) {
+	const postings = await db.jobPosting.findMany({
+		where: {
+			organizationId,
+			postedAt: { gte: range.startDate, lte: range.endDate },
+			...(range.departmentId && { departmentId: range.departmentId })
+		},
+		orderBy: { postedAt: 'desc' },
+		include: {
+			department: { select: { name: true } },
+			applicants: { select: { currentStage: true, stageHistory: { select: { stage: true } } } }
+		}
+	})
+
+	const DAY_MS = 86_400_000
+	const now = Date.now()
+
+	return postings.map((p) => {
+		// REACHED interview, not sitting at it: someone interviewed and then rejected still counts,
+		// and `currentStage` has already moved on by then. `stageHistory` is the only record that
+		// survives the move, so the funnel has to be read from there.
+		const interviewed = p.applicants.filter((a) =>
+			a.stageHistory.some((h) => h.stage === 'INTERVIEW')
+		).length
+		// `currentStage` is right for HIRED — it is terminal, so there is nothing to move on to.
+		const hired = p.applicants.filter((a) => a.currentStage === 'HIRED').length
+		// An OPEN posting is still accruing days, so it measures against today, not against a
+		// close date it does not have yet.
+		const until = p.closedAt ? p.closedAt.getTime() : now
+		return {
+			Title: p.title,
+			Department: p.department?.name ?? '',
+			Status: p.status,
+			Posted: p.postedAt ? p.postedAt.toISOString().slice(0, 10) : '',
+			Closed: p.closedAt ? p.closedAt.toISOString().slice(0, 10) : '',
+			Applicants: p.applicants.length,
+			Interviewed: interviewed,
+			Hired: hired,
+			DaysOpen: p.postedAt ? Math.max(0, Math.round((until - p.postedAt.getTime()) / DAY_MS)) : 0
+		}
+	})
+}
