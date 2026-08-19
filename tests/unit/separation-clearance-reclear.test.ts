@@ -17,7 +17,7 @@ const { dbMock } = vi.hoisted(() => ({
 		leaveBalance: { findMany: vi.fn() },
 		loan: { findMany: vi.fn(), updateMany: vi.fn() },
 		cashAdvance: { findMany: vi.fn(), updateMany: vi.fn() },
-		user: { updateMany: vi.fn() },
+		user: { findMany: vi.fn(), updateMany: vi.fn() },
 		$transaction: vi.fn()
 	}
 }))
@@ -52,6 +52,8 @@ const item = (status: string, clearedById: string | null, id = 'ci1') => ({
 
 beforeEach(() => {
 	vi.clearAllMocks()
+	// #304: finalize's in-transaction snapshot reads the employee's logins.
+	dbMock.user.findMany.mockResolvedValue([])
 	dbMock.clearanceItem.count.mockResolvedValue(0)
 	dbMock.$transaction.mockImplementation(async (fn: (tx: typeof dbMock) => unknown) => fn(dbMock))
 	dbMock.separationRecord.updateMany.mockResolvedValue({ count: 1 })
@@ -105,6 +107,23 @@ describe('setClearanceItem — D8 ownership', () => {
 				data: expect.objectContaining({ status: 'CLEARED', clearedById: 'user-a' })
 			})
 		)
+	})
+
+	// #304/B-2 + M3.3. `previouslyClearedById` is the field that keeps the #297 bar alive after an
+	// undo's re-open, and its ENTIRE value depends on this path never touching it. The realistic
+	// mistake is a reader who sees two "cleared by" columns, one being NULLed, and "completes" the
+	// data object. Asserted as KEY ABSENCE, not as "not null": every other assertion in this file
+	// uses `objectContaining`, which permits extra keys and therefore cannot catch this at all.
+	it('un-clearing never writes or clears previouslyClearedById', async () => {
+		dbMock.clearanceItem.findFirst.mockResolvedValue(item('CLEARED', 'user-a'))
+		await setClearanceItem('ci1', 'org1', false, ctxFor('user-a'))
+
+		expect('previouslyClearedById' in dbMock.clearanceItem.update.mock.calls[0][0].data).toBe(false)
+
+		// The re-clear direction too — the same "complete the object" instinct applies there.
+		dbMock.clearanceItem.findFirst.mockResolvedValue(item('PENDING', null))
+		await setClearanceItem('ci1', 'org1', true, ctxFor('user-a'))
+		expect('previouslyClearedById' in dbMock.clearanceItem.update.mock.calls[1][0].data).toBe(false)
 	})
 
 	it('clear-pending-item-unchanged', async () => {

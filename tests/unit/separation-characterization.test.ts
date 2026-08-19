@@ -21,7 +21,7 @@ const { dbMock } = vi.hoisted(() => ({
 		leaveBalance: { findMany: vi.fn() },
 		loan: { findMany: vi.fn(), updateMany: vi.fn() },
 		cashAdvance: { findMany: vi.fn(), updateMany: vi.fn() },
-		user: { updateMany: vi.fn() },
+		user: { findMany: vi.fn(), updateMany: vi.fn() },
 		$transaction: vi.fn()
 	}
 }))
@@ -68,6 +68,8 @@ function separationRow(
 
 beforeEach(() => {
 	vi.clearAllMocks()
+	// #304: finalize's in-transaction snapshot reads the employee's logins.
+	dbMock.user.findMany.mockResolvedValue([])
 	dbMock.$transaction.mockImplementation(async (fn: (tx: typeof dbMock) => unknown) => fn(dbMock))
 	// #297: the in-transaction clearance re-read. Default to "no clearers" so only the tests that
 	// mean to exercise the bar do so.

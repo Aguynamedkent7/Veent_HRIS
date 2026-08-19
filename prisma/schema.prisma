@@ -204,6 +204,11 @@ enum AuditAction {
   // in the audit filter. Its own action makes it findable from the action dropdown without
   // revealing any payload — the #242 mask blanks oldValue/newValue on that page.
   PAYROLL_VOID
+  // #304: an undo of a finalized separation. Same argument PAYROLL_VOID made — a generic UPDATE is
+  // unfindable in the audit action filter, and a break-glass door that reverses money, offboarding
+  // and a login must be findable from the dropdown. Adding an enum value is `db push`-safe; only a
+  // RENAME drops and recreates the type, which is what would have needed a scripts/migrate-*.ts.
+  SEPARATION_UNDO
 }
 
 // ─── Time Tracking Enums ─────────────────────────────────────────────────────
@@ -985,6 +990,10 @@ model SeparationRecord {
   finalPayBreakdown Json?
   finalizedAt       DateTime?
   finalizedById     String?
+  // Everything finalize is about to overwrite, captured inside finalize's transaction so #304's
+  // undo can put it back. NULL = finalized before #304 shipped ⇒ the money cannot be restored
+  // (D-4, "partially restored").
+  preFinalizeState  Json?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
@@ -997,16 +1006,21 @@ model SeparationRecord {
 }
 
 model ClearanceItem {
-  id           String          @id @default(cuid())
-  separationId String
-  label        String
-  area         ClearanceArea
+  id                    String          @id @default(cuid())
+  separationId          String
+  label                 String
+  area                  ClearanceArea
   // Plain nullable column, deliberately off the relation graph (cf. PostingApprover).
-  departmentId String?
-  status       ClearanceStatus @default(PENDING)
-  clearedById  String?
-  clearedAt    DateTime?
-  notes        String?
+  departmentId          String?
+  status                ClearanceStatus @default(PENDING)
+  clearedById           String?
+  // #304/B-2: the #297 separation-of-duties bar, parked where the ordinary un-clear path cannot
+  // reach it. WRITTEN ONLY by undoSeparation's re-open branch. setClearanceItem must never write
+  // or clear this field — that is the entire point: clearedById is NULLable by any MANAGE_HR
+  // holder, this is not.
+  previouslyClearedById String?
+  clearedAt             DateTime?
+  notes                 String?
 
   separation SeparationRecord @relation(fields: [separationId], references: [id], onDelete: Cascade)
 
