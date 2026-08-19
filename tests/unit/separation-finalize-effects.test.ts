@@ -193,6 +193,20 @@ describe('finalizeSeparation — in-transaction effects', () => {
 		)
 	})
 
+	// #304/N-1. A PROJECTION assertion, not an outcome assertion: the mock returns whatever the
+	// test hands it regardless of the `select`, so only asserting the select itself can catch a
+	// narrowed re-check — and a narrowed re-check keeps `pnpm check` green because
+	// `previouslyClearedById` is optional on ClearanceActorRef. That is M3.4.
+	it('re-checks the clearers on a projection that includes previouslyClearedById', async () => {
+		await finalizeSeparation('sep1', 'org1', CTX)
+
+		expect(txMock.clearanceItem.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				select: expect.objectContaining({ previouslyClearedById: true })
+			})
+		)
+	})
+
 	// #304/AC-7. `toBe(txMock)` is IDENTITY, not truthiness: passing `db` explicitly (M2.3) is
 	// the realistic mistake, and only identity catches it.
 	it('writes its audit inside the transaction, with oldValue', async () => {

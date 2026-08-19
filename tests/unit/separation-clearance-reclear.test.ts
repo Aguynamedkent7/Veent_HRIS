@@ -109,6 +109,23 @@ describe('setClearanceItem — D8 ownership', () => {
 		)
 	})
 
+	// #304/B-2 + M3.3. `previouslyClearedById` is the field that keeps the #297 bar alive after an
+	// undo's re-open, and its ENTIRE value depends on this path never touching it. The realistic
+	// mistake is a reader who sees two "cleared by" columns, one being NULLed, and "completes" the
+	// data object. Asserted as KEY ABSENCE, not as "not null": every other assertion in this file
+	// uses `objectContaining`, which permits extra keys and therefore cannot catch this at all.
+	it('un-clearing never writes or clears previouslyClearedById', async () => {
+		dbMock.clearanceItem.findFirst.mockResolvedValue(item('CLEARED', 'user-a'))
+		await setClearanceItem('ci1', 'org1', false, ctxFor('user-a'))
+
+		expect('previouslyClearedById' in dbMock.clearanceItem.update.mock.calls[0][0].data).toBe(false)
+
+		// The re-clear direction too — the same "complete the object" instinct applies there.
+		dbMock.clearanceItem.findFirst.mockResolvedValue(item('PENDING', null))
+		await setClearanceItem('ci1', 'org1', true, ctxFor('user-a'))
+		expect('previouslyClearedById' in dbMock.clearanceItem.update.mock.calls[1][0].data).toBe(false)
+	})
+
 	it('clear-pending-item-unchanged', async () => {
 		// A fresh item is still clearable by anybody who could clear it before.
 		dbMock.clearanceItem.findFirst.mockResolvedValue(item('PENDING', null))

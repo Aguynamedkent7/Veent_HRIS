@@ -106,8 +106,48 @@ describe('clearedAnyItem (pure — no db)', () => {
 	it('clearedAnyItem: item un-cleared -> allowed', () => {
 		// Un-ticking NULLs clearedById, so a re-opened item stops barring whoever ticked it.
 		expect(clearedAnyItem([{ status: 'PENDING', clearedById: null }], 'user-a')).toBe(false)
-		// Defensive: a stale clearedById on a non-CLEARED row must not bar either.
-		expect(clearedAnyItem([{ status: 'PENDING', clearedById: 'user-a' }], 'user-a')).toBe(false)
+		// #304 FLIPPED THIS. The old second half of this case read:
+		//   expect(clearedAnyItem([{ status: 'PENDING', clearedById: 'user-a' }], 'user-a')).toBe(false)
+		// i.e. "a stale clearedById on a non-CLEARED row must not bar". Under D-5 that is exactly
+		// the laundering route: the undo's re-open sets every item PENDING while KEEPING
+		// clearedById, so a status-keyed bar would let one privileged call wipe every #297 bar on
+		// the case. The inverted expectation now lives in its own case below.
+	})
+
+	// ── #304/D-5 + B-2: the four cases the widened helper exists for ────────────────────────
+	it('a re-opened item still bars its original clearer', () => {
+		// The undo's re-open branch: status PENDING, clearedById KEPT. This is the expectation
+		// #304 inverted — see the note in the case above.
+		expect(clearedAnyItem([{ status: 'PENDING', clearedById: 'user-a' }], 'user-a')).toBe(true)
+	})
+
+	it('an ordinarily un-cleared item (clearedById null) still does NOT bar', () => {
+		// The negative control that stops the widening becoming "everyone is barred forever".
+		// An ordinary un-clear never sets previouslyClearedById, so the field is ABSENT here.
+		expect(clearedAnyItem([{ status: 'PENDING', clearedById: null }], 'user-a')).toBe(false)
+	})
+
+	it('a re-opened item still bars its clearer after a third actor un-clears it', () => {
+		// B-2, the whole reason previouslyClearedById exists: any MANAGE_HR holder can POST
+		// ?/toggleClearance with cleared=false and NULL clearedById on a re-opened item. The bar
+		// survives in the field setClearanceItem never touches.
+		expect(
+			clearedAnyItem(
+				[{ status: 'PENDING', clearedById: null, previouslyClearedById: 'user-a' }],
+				'user-a'
+			)
+		).toBe(true)
+	})
+
+	it('the bar on a re-opened item is permanent — a third actor re-clearing does not lift it', () => {
+		// N-2, pinned as INTENDED, not as a bug to fix. Once the undo stamps an item, its
+		// original clearer is barred on that case for the life of the case, even though the
+		// clearance that now stands is somebody else's. See the plan's Overview table ("Who may
+		// finalize after an undo-with-re-open") and the Risks row for the one-admin deadlock this
+		// costs. Do NOT "fix" this to un-bar user-a.
+		const items = [{ status: 'CLEARED', clearedById: 'user-c', previouslyClearedById: 'user-a' }]
+		expect(clearedAnyItem(items, 'user-a')).toBe(true)
+		expect(clearedAnyItem(items, 'user-c')).toBe(true)
 	})
 })
 

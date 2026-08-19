@@ -118,15 +118,30 @@ export async function getSeparation(id: string, organizationId: string) {
 export interface ClearanceActorRef {
 	status: string
 	clearedById: string | null
+	// #304/N-1: OPTIONAL on purpose. Making it required would break every caller that feeds this
+	// shape a narrower projection, including `setClearanceItem`'s — and it is exactly why the
+	// in-transaction re-check below needs a PROJECTION assertion: a narrowed `select` degrades
+	// the bar to `clearedById`-only while `pnpm check` stays green.
+	previouslyClearedById?: string | null
 }
 
 // #297/D3: whoever ticked any box on this case may not close it out. A PURE function on purpose —
 // approvals.ts:119 (decidedActorIds) is the same shape, and it makes the rule testable with zero
 // DB mocks. This repo's documented failure mode is exactly the vacuous mock (all-tests.md, five
 // recorded cases), so the ~10 extra lines buy a test that cannot lie.
-// Un-cleared items carry a null clearedById, so a re-opened item stops barring its clearer.
+//
+// #304/D-5: the bar keys on the two "cleared by" fields, NOT on status. The ordinary un-clear path
+// (`setClearanceItem`, below) still NULLs `clearedById`, so it still un-bars — that is deliberate
+// and unchanged. The undo's re-open branch KEEPS `clearedById` and only flips `status`, so a bulk
+// re-open cannot launder every #297 bar on the case in one privileged call. The re-open ALSO
+// stamps `previouslyClearedById`, which this helper reads, and which `setClearanceItem` never
+// writes or clears — that second field is what makes the bar survive an ordinary un-clear (B-2).
 export function clearedAnyItem(items: ClearanceActorRef[], actorId: string): boolean {
-	return items.some((i) => i.status === 'CLEARED' && i.clearedById === actorId)
+	// A null-vs-null match must never count, the same way `voidedOwnApproval` refuses one. Every
+	// call site passes a non-null `ctx.actorId` today; this is here so a future refactor cannot
+	// turn `undefined === undefined` into "everybody is barred".
+	if (!actorId) return false
+	return items.some((i) => i.clearedById === actorId || i.previouslyClearedById === actorId)
 }
 
 // The ONE source of truth for both the server 403 in finalizeSeparation and the greyed-out
@@ -193,6 +208,11 @@ export async function setClearanceItem(
 		error(403, 'This clearance item was already cleared by someone else. Only they can change it.')
 	}
 
+	// #304/B-2: NULLs `clearedById` on purpose — the exact opposite of the undo's re-open branch.
+	// See `clearedAnyItem`. And NEVER write or clear `previouslyClearedById` here: that field
+	// exists precisely because this path is reachable by any MANAGE_HR holder and `clearedById` is
+	// therefore not a safe place to keep the #297 bar. Adding it to this data object re-opens the
+	// laundering route.
 	await db.clearanceItem.update({
 		where: { id: itemId },
 		data: {
@@ -334,7 +354,13 @@ export async function finalizeSeparation(id: string, organizationId: string, ctx
 		// produces the message the UI shows; this is the one that cannot be raced.
 		const live = await tx.clearanceItem.findMany({
 			where: { separationId: id },
-			select: { status: true, clearedById: true }
+			// #304/N-1: `previouslyClearedById` MUST be selected. `clearedAnyItem` reads it, the
+			// field is optional on ClearanceActorRef, so dropping it here silently degrades this
+			// half of the bar to `clearedById`-only with `pnpm check` still green. The pre-flight
+			// bar is safe — it gets `getSeparation`'s bare `clearanceItems` include, which carries
+			// the whole row — but this re-check exists ONLY for the race the pre-flight cannot
+			// cover, so it is the half that must not be narrower.
+			select: { status: true, clearedById: true, previouslyClearedById: true }
 		})
 		if (clearedAnyItem(live, ctx.actorId)) error(403, CLEARER_BAR)
 
