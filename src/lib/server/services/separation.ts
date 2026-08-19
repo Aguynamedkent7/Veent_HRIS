@@ -256,6 +256,12 @@ export interface FinalPayResult {
 	total: number
 }
 
+// The two write-off line labels are the ONLY link between what `computeFinalPay` stores and what
+// `aggregateWriteOff` reads back off an old record. They are persisted in `finalPayBreakdown`, so
+// changing a value here silently zeroes the D-4 banner on every record written before the change.
+export const LOAN_WRITE_OFF_LABEL = 'Outstanding loan balances'
+export const CASH_ADVANCE_WRITE_OFF_LABEL = 'Outstanding cash advances'
+
 // Snapshot-style final pay: unused paid-leave conversion, minus outstanding loan
 // and cash-advance balances. Prorated 13th-month and tax refunds are out of scope
 // here (they need YTD payroll) and can be layered on later.
@@ -308,8 +314,8 @@ export async function computeFinalPay(
 
 	const lines: FinalPayLine[] = [
 		{ label: `Unused leave conversion (${leaveDays.toFixed(2)} days)`, amount: leaveConversion },
-		{ label: 'Outstanding loan balances', amount: -loanBalance },
-		{ label: 'Outstanding cash advances', amount: -caBalance }
+		{ label: LOAN_WRITE_OFF_LABEL, amount: -loanBalance },
+		{ label: CASH_ADVANCE_WRITE_OFF_LABEL, amount: -caBalance }
 	]
 	const total = round2(lines.reduce((sum, l) => sum + l.amount, 0))
 	return { lines, total }
@@ -485,7 +491,7 @@ export function aggregateWriteOff(breakdown: unknown): number | null {
 	// Both lines are stored NEGATIVE (they are offsets against final pay); the banner shows the
 	// absolute sum.
 	return lines.reduce((sum, line) => {
-		if (line?.label !== 'Outstanding loan balances' && line?.label !== 'Outstanding cash advances')
+		if (line?.label !== LOAN_WRITE_OFF_LABEL && line?.label !== CASH_ADVANCE_WRITE_OFF_LABEL)
 			return sum
 		return sum + (typeof line.amount === 'number' ? Math.abs(line.amount) : 0)
 	}, 0)
@@ -609,7 +615,11 @@ export async function undoSeparation(
 		// transaction, and the login would commit even if the money restore then rolled back. The
 		// cost is that no `User`-entity audit row is written, which is why the login before/after is
 		// folded into the SEPARATION_UNDO payload below.
-		if (!snapshot || snapshot.userWasActive) {
+		// One expression, read twice: the write below and the audit's `newValue.userIsActive` must
+		// never disagree. A snapshot that says the login was ALREADY disabled before finalizing
+		// leaves it disabled, and the audit has to say so.
+		const reactivateLogin = !snapshot || snapshot.userWasActive
+		if (reactivateLogin) {
 			await tx.user.updateMany({
 				where: { employee: { id: record.employeeId } },
 				data: { isActive: true }
@@ -664,7 +674,7 @@ export async function undoSeparation(
 				},
 				newValue: {
 					status: nextStatus,
-					userIsActive: true,
+					userIsActive: reactivateLogin,
 					reopenedClearance: reopenClearance,
 					partiallyRestored: partial,
 					// The employmentStatus restore on a pre-#304 record is an ASSUMPTION. Flagged so

@@ -39,7 +39,10 @@
 	const undo = createSubmitGuard((input) => {
 		if (
 			!confirm(
-				'Undo this finalization? This restores the loan and cash-advance balances, sets the employee back to active, and RE-ENABLES their login.'
+				'Undo this finalization? This restores the loan and cash-advance balances, puts the employee back to their previous employment status, and RE-ENABLES their login.' +
+					(reopenClearance
+						? '\n\nClearance will also be RE-OPENED: the case returns to OPEN and every item goes back to pending.'
+						: '')
 			)
 		)
 			input.cancel()

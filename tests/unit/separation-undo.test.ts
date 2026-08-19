@@ -50,7 +50,7 @@ const SNAPSHOT = {
 		{ id: 'l1', balance: '3000', status: 'ACTIVE' },
 		{ id: 'l2', balance: '7000', status: 'ACTIVE' }
 	],
-	cashAdvances: [],
+	cashAdvances: [{ id: 'ca1', balance: '1500', status: 'ACTIVE' }],
 	employee: { employmentStatus: 'ON_LEAVE', endDate: null },
 	userIds: ['u1'],
 	userWasActive: true
@@ -167,6 +167,30 @@ describe('undoSeparation — the restore', () => {
 		expect(String(calls[1][0].data.balance)).toBe('7000')
 	})
 
+	// U5b — the cash-advance loop is a SECOND copy of the loan loop, so it needs its own proof.
+	it('restores the cash-advance balance from the snapshot', async () => {
+		await undoSeparation('sep1', 'org1', false, ctxFor('su'))
+
+		const calls = txMock.cashAdvance.updateMany.mock.calls
+		expect(calls).toHaveLength(1)
+		expect(calls[0][0].where.id).toBe('ca1')
+		expect(String(calls[0][0].data.balance)).toBe('1500')
+		expect(calls[0][0].data.status).toBe('ACTIVE')
+	})
+
+	// U6b — same B-3 reasoning as U6: assert the `where`, not just the 409.
+	it('409s when a cash-advance balance moved since finalize', async () => {
+		txMock.cashAdvance.updateMany.mockResolvedValue({ count: 0 })
+
+		await expect(undoSeparation('sep1', 'org1', false, ctxFor('su'))).rejects.toMatchObject({
+			status: 409
+		})
+
+		expect(txMock.cashAdvance.updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({ where: expect.objectContaining({ balance: 0, status: 'PAID' }) })
+		)
+	})
+
 	// U7
 	it('re-enables the login', async () => {
 		await undoSeparation('sep1', 'org1', false, ctxFor('su'))
@@ -175,6 +199,19 @@ describe('undoSeparation — the restore', () => {
 			where: { employee: { id: 'emp1' } },
 			data: { isActive: true }
 		})
+	})
+
+	it('leaves the login disabled — and AUDITS it false — when it was already off before finalize', async () => {
+		dbMock.separationRecord.findFirst.mockResolvedValue(
+			recordRow({ preFinalizeState: { ...SNAPSHOT, userWasActive: false } })
+		)
+
+		await undoSeparation('sep1', 'org1', false, ctxFor('su'))
+
+		expect(txMock.user.updateMany).not.toHaveBeenCalled()
+		// The audit line and the write must never disagree: a hardcoded `true` here would record a
+		// login re-enable that never happened.
+		expect(auditPayload().newValue.userIsActive).toBe(false)
 	})
 
 	it('restores the employment status the snapshot recorded, not a hardcoded ACTIVE', async () => {
@@ -226,19 +263,15 @@ describe('undoSeparation — the restore', () => {
 		expect('finalPayBreakdown' in claimData()).toBe(false)
 	})
 
-	// U14b
-	it('claims OPEN when clearance is re-opened and CLEARED when it is kept', async () => {
+	// U14b — two `it`s, not one with a mid-test reset: a hand-rolled reset silently drops whatever
+	// the beforeEach grows later (it already dropped `cashAdvance.updateMany`).
+	it('claims OPEN when clearance is re-opened', async () => {
 		await undoSeparation('sep1', 'org1', true, ctxFor('su'))
 		expect(claimData().status).toBe('OPEN')
 		expect(auditPayload().newValue.status).toBe('OPEN')
+	})
 
-		vi.clearAllMocks()
-		dbMock.$transaction.mockImplementation(async (fn: (tx: typeof txMock) => unknown) => fn(txMock))
-		dbMock.separationRecord.findFirst.mockResolvedValue(recordRow())
-		txMock.separationRecord.updateMany.mockResolvedValue({ count: 1 })
-		txMock.loan.updateMany.mockResolvedValue({ count: 1 })
-		txMock.clearanceItem.findMany.mockResolvedValue([])
-
+	it('claims CLEARED when the clearance items are kept', async () => {
 		await undoSeparation('sep1', 'org1', false, ctxFor('su'))
 		expect(claimData().status).toBe('CLEARED')
 		expect(auditPayload().newValue.status).toBe('CLEARED')

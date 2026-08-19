@@ -1,5 +1,5 @@
 import { fail, isHttpError } from '@sveltejs/kit'
-import { requireAnyCapability } from '$lib/server/rbac'
+import { canAny, requireAnyCapability } from '$lib/server/rbac'
 import {
 	getSeparation,
 	computeFinalPay,
@@ -50,7 +50,7 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 
 	// Cosmetic affordance only, same house rule as `finalizeBar` above — `undoSeparation`
 	// enforces OVERRIDE_FINALIZED in the service, and that is the only enforcement.
-	const canUndo = separation.status === 'FINALIZED' && user.roles.includes('SUPER_ADMIN')
+	const canUndo = separation.status === 'FINALIZED' && canAny(user.roles, 'OVERRIDE_FINALIZED')
 
 	return { separation, finalPay, finalizeBar, canUndo, partiallyRestored, writeOff }
 }

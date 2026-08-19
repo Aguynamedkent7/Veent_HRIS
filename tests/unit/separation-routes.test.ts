@@ -119,7 +119,10 @@ describe('/separations/[id] — undo action (#304)', () => {
 	})
 
 	it('forwards reopenClearance=true, and only for the literal string', async () => {
-		await detailActions.undo!(formEvent({ reopenClearance: 'true' }))
+		const res = await detailActions.undo!(formEvent({ reopenClearance: 'true' }))
+		// The `{ undone: true, ...result }` spread IS the contract the Svelte banner reads — a
+		// bare `return result` would type-check and silently kill the banner.
+		expect(res).toEqual({ undone: true, partial: false, status: 'CLEARED', writeOff: null })
 		expect(svc.undoSeparation).toHaveBeenLastCalledWith(
 			'sep1',
 			'org1',
@@ -174,6 +177,9 @@ describe('/separations/[id] — load, #304 snapshot handling', () => {
 		const res = await runDetailLoad()
 		expect(res.partiallyRestored).toBe(true)
 		expect(res.writeOff).toBe(10000)
+		// The mock returns 10000 for ANY input, so assert the ARGUMENT too — otherwise a load that
+		// passed the wrong field (or nothing) would still show a correct-looking figure.
+		expect(svc.aggregateWriteOff).toHaveBeenCalledWith({ total: -10000, lines: [] })
 	})
 
 	it('flags partiallyRestored for a RE-OPENED pre-#304 record', async () => {

@@ -1,6 +1,6 @@
 ---
 name: spec:separation-undo-304
-description: "SPEC (scoping) for #304 — no way to undo a finalized separation. Fact base verified against staging @ 57a11ee; four decisions OPEN and owed by the owner."
+description: "SPEC (scoping) for #304 — no way to undo a finalized separation. Fact base verified against staging @ 57a11ee; all five decisions answered and LOCKED in §4."
 date: 19-08-26
 status: DECISIONS LOCKED 19-08-26 — SPEC complete, not planned, not built
 issue: 304
@@ -22,7 +22,7 @@ authorised.
 `finalizeSeparation` zeroes the money with two blanket writes and no per-row read
 (`src/lib/server/services/separation.ts:339-346`):
 
-```
+```ts
 tx.loan.updateMany({ where: { employeeId, status: 'ACTIVE' }, data: { balance: 0, status: 'PAID' } })
 tx.cashAdvance.updateMany({ … same … })
 ```
@@ -237,8 +237,8 @@ Status, offboard and login reverse normally. The money cannot: the per-loan spli
 the undo shows the aggregate written-off figure from `finalPayBreakdown` and marks the record
 **partially restored**, for a human to re-key the split.
 
-**Ruled out:** blocking undo on pre-fix records, which would leave the exact finalizes that prompted
-#304 unfixable; and silent restoration, which would look like a full undo while the write-off
+**Ruled out:** blocking undo on pre-fix records, which would leave the exact finalizes
+that prompted #304 unfixable; and silent restoration, which would look like a full undo while the write-off
 survived.
 
 **This makes the "partially restored" state a first-class thing the UI must show**, not a footnote.
