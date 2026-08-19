@@ -33,6 +33,18 @@
 			input.cancel()
 	})
 
+	// #304: the undo re-enables a login and moves money back. Same single-submit guard as
+	// finalize, with its own confirm — the guard releases `busy` when the inner handler cancels.
+	let reopenClearance = $state(false)
+	const undo = createSubmitGuard((input) => {
+		if (
+			!confirm(
+				'Undo this finalization? This restores the loan and cash-advance balances, sets the employee back to active, and RE-ENABLES their login.'
+			)
+		)
+			input.cancel()
+	})
+
 	function statusClass(st: string) {
 		if (st === 'FINALIZED') return 'bg-gray-500/15 text-gray-400'
 		if (st === 'CLEARED') return 'bg-green-500/15 text-green-400'
@@ -54,6 +66,34 @@
 			class="rounded-md border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-600 dark:text-red-400"
 		>
 			{form.error}
+		</div>
+	{/if}
+	{#if form?.undone}
+		<div
+			class="rounded-md border border-green-500/20 bg-green-500/10 px-4 py-2 text-sm text-green-600 dark:text-green-400"
+		>
+			Finalization undone. The case is back to {form.status} and the employee's login is enabled again.
+		</div>
+	{/if}
+	{#if data.partiallyRestored}
+		<div
+			class="rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400"
+		>
+			<p class="font-semibold">Partially restored</p>
+			<!-- {@const} must be an immediate child of a block tag, never inside a plain element. -->
+			{#if data.writeOff !== null}
+				<p class="mt-1">
+					Loan and cash-advance balances totalling <span class="font-mono"
+						>{peso(data.writeOff)}</span
+					> were written off when this was finalized and could not be restored automatically — re-enter
+					them manually.
+				</p>
+			{:else}
+				<p class="mt-1">
+					Loan and cash-advance balances of an unknown amount were written off when this was
+					finalized and could not be restored automatically — re-enter them manually.
+				</p>
+			{/if}
 		</div>
 	{/if}
 	{#if form?.finalized}
@@ -198,5 +238,38 @@
 			Finalized{s.finalizedAt ? ` on ${formatShortDate(s.finalizedAt)}` : ''}. Final pay settled at
 			<span class="font-mono">{peso(Number(s.finalPayAmount ?? 0))}</span>.
 		</div>
+		{#if data.canUndo}
+			<div class="rounded-lg border border-destructive/30 bg-card p-4">
+				<h2 class="font-semibold text-destructive">Undo finalization</h2>
+				<p id="undo-warning" class="mt-1 text-sm text-muted-foreground">
+					Restores the loan and cash-advance balances this finalize wrote off, sets the employee
+					back to their previous employment status, and <strong>re-enables their login</strong>.
+					Every undo is recorded in the audit log.
+				</p>
+				<form method="POST" action="?/undo" use:enhance={undo.enhance} class="mt-3 space-y-3">
+					<div class="flex items-center gap-2">
+						<input
+							id="reopenClearance"
+							name="reopenClearance"
+							type="checkbox"
+							value="true"
+							bind:checked={reopenClearance}
+							class="h-4 w-4 rounded border-input"
+						/>
+						<label for="reopenClearance" class="text-sm">
+							Re-open clearance items — the case returns to <strong>OPEN</strong> and every item goes
+							back to pending. Whoever cleared an item stays barred from finalizing this case.
+						</label>
+					</div>
+					<button
+						type="submit"
+						aria-describedby="undo-warning"
+						disabled={undo.busy}
+						class="rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:bg-destructive/90 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
+						>{undo.busy ? 'Undoing…' : 'Undo finalization'}</button
+					>
+				</form>
+			</div>
+		{/if}
 	{/if}
 </div>

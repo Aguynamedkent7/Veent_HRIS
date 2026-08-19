@@ -474,8 +474,12 @@ export async function finalizeSeparation(id: string, organizationId: string, ctx
  * `finalPayBreakdown`. Returns null — NOT 0 — when the breakdown is missing or malformed, so the
  * UI can say "amount unknown" instead of asserting a peso figure it does not have. Records
  * finalized long before #304 are trusted, not verified (plan §CANNOT-Prove #4).
+ *
+ * Exported because the D-4 banner has to survive a page reload, so `load` derives the figure from
+ * the same surviving `finalPayBreakdown` rather than from the undo action's return — and it must
+ * not duplicate these two label strings to do it.
  */
-function aggregateWriteOff(breakdown: unknown): number | null {
+export function aggregateWriteOff(breakdown: unknown): number | null {
 	const lines = (breakdown as FinalPayResult | null)?.lines
 	if (!Array.isArray(lines)) return null
 	// Both lines are stored NEGATIVE (they are offsets against final pay); the banner shows the
