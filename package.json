@@ -9,7 +9,7 @@
 		"preview": "dotenv -e .env.dev -- vite preview",
 		"test": "vitest run",
 		"test:watch": "vitest",
-		"test:e2e": "playwright test",
+		"test:e2e": "dotenv -e .env.dev -- playwright test",
 		"lint": "eslint .",
 		"format": "prettier --write .",
 		"format:check": "prettier --check .",

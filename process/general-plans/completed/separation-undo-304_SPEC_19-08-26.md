@@ -2,16 +2,16 @@
 name: spec:separation-undo-304
 description: "SPEC (scoping) for #304 — no way to undo a finalized separation. Fact base verified against staging @ 57a11ee; all five decisions answered and LOCKED in §4."
 date: 19-08-26
-status: DECISIONS LOCKED 19-08-26 — SPEC complete, not planned, not built
+status: SHIPPED — planned, built and verified live; PR #314 merged to staging and #304 closed 19-08-26
 issue: 304
 branch: spec/separation-undo-304
 ---
 
 # SPEC — #304 Undo a finalized separation
 
-**Status: SPEC complete.** All five decisions were answered by the owner on 19-08-26 and are
-locked in §4. No plan exists and nothing is built — PLAN is the next phase and has not been
-authorised.
+**Status: SHIPPED.** All five decisions were answered by the owner on 19-08-26 and are locked in
+§4. The plan that followed is `separation-undo-304_PLAN_19-08-26.md` in this same folder; it was
+built, verified live 22/22, merged as PR #314 and #304 was closed by hand on 19-08-26.
 
 ## 1. The headline finding, and it changes the issue
 
