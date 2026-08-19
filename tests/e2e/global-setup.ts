@@ -8,13 +8,13 @@ import { E2E_DISCORD_ID } from './helpers'
  * repeated runs. Relies on the seed having been applied (`pnpm db:seed:e2e`).
  */
 /**
- * Compile the hot routes once, before any test's clock is running.
+ * Prime the hot routes once, before any test's clock is running.
  *
- * The dev server compiles each route on its first request. That cost lands on whichever
- * test happens to reach the route first, and under a cold cache or a loaded runner it
- * blew the 30s per-test budget — `page.goto('/login')` timing out in a different spec on
- * every run. Paying it here makes the failure mode a slow setup instead of a random
- * red test. Best-effort: a warmup miss must never fail the suite.
+ * Written when the suite ran against `pnpm dev`, where vite compiled each route on its first
+ * request and that cost landed on whichever test reached it first. #287 moved the suite onto
+ * the production build (see `playwright.config.ts`), so there is no compilation left to pay
+ * and this is now belt-and-braces: it still primes the OS/page cache and the client bundle,
+ * and it costs a few seconds. Best-effort either way — a warmup miss must never fail the suite.
  */
 async function warmRoutes() {
 	const port = Number(process.env.E2E_PORT ?? 5173)
