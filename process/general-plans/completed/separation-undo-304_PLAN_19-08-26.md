@@ -4,17 +4,17 @@ description: "PLAN for #304 — undo a finalized separation. Payroll-void shape 
 date: 19-08-26
 issue: 304
 branch: spec/separation-undo-304
-spec: process/general-plans/active/separation-undo-304_SPEC_19-08-26.md
+spec: process/general-plans/completed/separation-undo-304_SPEC_19-08-26.md
 complexity: COMPLEX
-status: BUILT — rev 3 + the V3 B-6 correction, executed in six commits C1..C6 on 19-08-26.
+status: SHIPPED — PR #314 merged to staging and #304 closed by hand on 19-08-26. Verified live 22/22 in a driven browser; a post-merge review pass added one more commit (the undo audit vs the login write).
 ---
 
 # PLAN — #304 Undo a finalized separation
 
 **Date**: 19-08-26
-**Status**: BUILT (rev 3 + V3's B-6 correction, 19-08-26) — both owner decisions LOCKED, B-1..B-5 and N-1..N-3 closed, V3 gated CONDITIONAL-GO. Executed in six commits C1..C6.
+**Status**: SHIPPED (PR #314 merged, #304 closed 19-08-26; rev 3 + V3's B-6 correction) — both owner decisions LOCKED, B-1..B-5 and N-1..N-3 closed, V3 gated CONDITIONAL-GO. Executed in six commits C1..C6.
 **Complexity**: COMPLEX
-**Issue**: #304 · **SPEC:** `process/general-plans/active/separation-undo-304_SPEC_19-08-26.md`
+**Issue**: #304 · **SPEC:** `process/general-plans/completed/separation-undo-304_SPEC_19-08-26.md`
 **Context loaded**: `process/context/all-context.md` routing table plus the SPEC's cited source files; testing context per `process/context/tests/all-tests.md` (its recorded vacuous-mock failure mode drives every projection assertion below). Post-phase testing runs the four gates in the DONE definition.
 
 
