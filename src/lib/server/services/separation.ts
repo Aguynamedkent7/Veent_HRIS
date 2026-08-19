@@ -2,11 +2,14 @@ import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import { Prisma } from '@prisma/client'
-import type { SeparationType } from '@prisma/client'
+import type { EmploymentStatus, LoanStatus, SeparationType } from '@prisma/client'
 import type { AuditContext } from './types'
 import { clearanceTemplateForOrg } from './offboarding'
 import { currentCompensation } from './payroll/compensation'
 import { sendOffboardingNoticeEmail } from '$lib/server/notifications'
+import { requireAnyCapability } from '$lib/server/rbac'
+import { D } from './payroll/money'
+import { undidOwnFinalize } from './separation-undo-markers'
 
 // Average paid working days per month — used to convert a monthly salary to a
 // daily rate for unused-leave conversion. A deliberate, adjustable simplification;
@@ -464,6 +467,214 @@ export async function finalizeSeparation(id: string, organizationId: string, ctx
 	})
 
 	return finalPay
+}
+
+/**
+ * The aggregate that D-4's "partially restored" banner names, read back off the surviving
+ * `finalPayBreakdown`. Returns null — NOT 0 — when the breakdown is missing or malformed, so the
+ * UI can say "amount unknown" instead of asserting a peso figure it does not have. Records
+ * finalized long before #304 are trusted, not verified (plan §CANNOT-Prove #4).
+ */
+function aggregateWriteOff(breakdown: unknown): number | null {
+	const lines = (breakdown as FinalPayResult | null)?.lines
+	if (!Array.isArray(lines)) return null
+	// Both lines are stored NEGATIVE (they are offsets against final pay); the banner shows the
+	// absolute sum.
+	return lines.reduce((sum, line) => {
+		if (line?.label !== 'Outstanding loan balances' && line?.label !== 'Outstanding cash advances')
+			return sum
+		return sum + (typeof line.amount === 'number' ? Math.abs(line.amount) : 0)
+	}, 0)
+}
+
+/**
+ * #304 — undo a finalized separation. Shaped exactly like the payroll void (`payroll/runs.ts:95`):
+ * capability in the SERVICE, precondition refusal, one transaction opening with a compare-and-set
+ * claim, the reversal, and the audit entry inside it.
+ *
+ * Returns to `CLEARED` when the clearance items are kept, and to `OPEN` when they are re-opened
+ * (B-4): a re-opened case has ZERO cleared items, so calling it `CLEARED` would be a lie the list
+ * badge and the detail page both render.
+ */
+export async function undoSeparation(
+	id: string,
+	organizationId: string,
+	reopenClearance: boolean,
+	ctx: AuditContext
+) {
+	// D-2, FIRST LINE, in the service — mirroring `voidRun`. A break-glass door whose guard lives
+	// only in its route is a door the next caller walks around; that drift is a recorded failure
+	// mode in this repo.
+	requireAnyCapability(ctx.actorRoles, 'OVERRIDE_FINALIZED')
+
+	const record = await db.separationRecord.findFirst({
+		where: { id, organizationId },
+		select: {
+			id: true,
+			employeeId: true,
+			status: true,
+			finalizedAt: true,
+			finalizedById: true,
+			finalPayBreakdown: true,
+			preFinalizeState: true
+		}
+	})
+	if (!record) error(404, 'Separation record not found')
+	if (record.status !== 'FINALIZED') error(400, 'Separation is not finalized')
+
+	// D-4: the ONLY detector needed. A record finalized before #304 shipped has no snapshot, so its
+	// money cannot be restored and the UI must say so.
+	const snapshot = (record.preFinalizeState as PreFinalizeState | null) ?? null
+	const partial = snapshot === null
+	const nextStatus = reopenClearance ? 'OPEN' : 'CLEARED'
+	const writeOff = partial ? aggregateWriteOff(record.finalPayBreakdown) : null
+
+	await db.$transaction(async (tx) => {
+		// Compare-and-set. The status read above is only preliminary: two concurrent undos would
+		// both pass it and both credit the balances back.
+		const claimed = await tx.separationRecord.updateMany({
+			where: { id, status: 'FINALIZED' },
+			data: {
+				status: nextStatus,
+				finalPayAmount: null,
+				finalizedAt: null,
+				finalizedById: null
+				// `finalPayBreakdown` is deliberately KEPT: on a pre-#304 record it is the only
+				// surviving evidence of the aggregate write-off, which D-4's banner reads.
+				//
+				// `preFinalizeState` is deliberately NOT nulled (B-1). Nulling it destroyed the one
+				// thing telling a fully-restored record apart from a pre-#304 one, so the banner
+				// called every restored record "partially restored" on reload — a money lie. It also
+				// bought nothing: a later re-finalize overwrites the column anyway. Do not "tidy up"
+				// this stale-looking column.
+			}
+		})
+		if (claimed.count === 0) error(400, 'Separation is not finalized')
+
+		if (snapshot) {
+			// Conditional restore in the spirit of `amortization.ts:52-62` but deliberately
+			// STRICTER, and NOT the same idiom (I-1): amortization conditions on the balance it just
+			// read in-transaction; this conditions on the constant post-finalize state, which
+			// additionally catches a row that was never zeroed at all. Do NOT "correct" this back to
+			// the amortization form.
+			for (const loan of snapshot.loans) {
+				const res = await tx.loan.updateMany({
+					where: { id: loan.id, balance: 0, status: 'PAID' },
+					// D(), never Number(): the balance is a decimal string on purpose.
+					data: { balance: D(loan.balance), status: loan.status as LoanStatus }
+				})
+				if (res.count === 0) {
+					error(409, 'A loan balance changed since finalizing — nothing was reversed, retry')
+				}
+			}
+			for (const advance of snapshot.cashAdvances) {
+				const res = await tx.cashAdvance.updateMany({
+					where: { id: advance.id, balance: 0, status: 'PAID' },
+					data: { balance: D(advance.balance), status: advance.status as LoanStatus }
+				})
+				if (res.count === 0) {
+					error(
+						409,
+						'A cash-advance balance changed since finalizing — nothing was reversed, retry'
+					)
+				}
+			}
+		}
+
+		// I-3 — a BLIND update where the money above is compare-and-set, and that asymmetry is
+		// deliberate. Money moves through a dozen ordinary payroll paths between finalize and undo,
+		// so it must be guarded. `employmentStatus` cannot: its only two writers in src/ are this
+		// file and employees.ts, and the v1 API refuses it. Guarding it would buy a failure mode
+		// without buying safety.
+		await tx.employee.update({
+			where: { id: record.employeeId },
+			data: snapshot
+				? {
+						employmentStatus: snapshot.employee.employmentStatus as EmploymentStatus,
+						endDate: snapshot.employee.endDate ? new Date(snapshot.employee.endDate) : null
+					}
+				: // ACTIVE is the honest default for a pre-#304 record: ON_LEAVE is recoverable by a
+					// human, an OFFBOARDED ghost is not. Recorded in the audit as restoredStatusAssumed.
+					{ employmentStatus: 'ACTIVE', endDate: null }
+		})
+
+		// B-5: this is NOT the only writer that can set `isActive: true` — `setUserActive`
+		// (settings/org.ts) already is one, CEO-only behind MANAGE_USER_ROLES. The undo keeps its
+		// OWN write rather than calling it, because `setUserActive` opens its own serializable
+		// transaction and audits outside it: calling it from here would nest an independent
+		// transaction, and the login would commit even if the money restore then rolled back. The
+		// cost is that no `User`-entity audit row is written, which is why the login before/after is
+		// folded into the SEPARATION_UNDO payload below.
+		if (!snapshot || snapshot.userWasActive) {
+			await tx.user.updateMany({
+				where: { employee: { id: record.employeeId } },
+				data: { isActive: true }
+			})
+		}
+
+		// Read once, used twice: the stamp loop below needs `clearedById` per item, and the audit's
+		// oldValue needs the clearer set even when the items are being kept.
+		const items = await tx.clearanceItem.findMany({
+			where: { separationId: id },
+			select: { id: true, clearedById: true }
+		})
+
+		if (reopenClearance) {
+			// Prisma cannot copy one column into another in a single `updateMany`, so this is a
+			// small in-transaction loop. THE ONLY PLACE IN THE CODEBASE THAT WRITES
+			// `previouslyClearedById` (B-2 option (b)). It must run BEFORE the re-open below.
+			for (const item of items) {
+				if (!item.clearedById) continue
+				await tx.clearanceItem.update({
+					where: { id: item.id },
+					data: { previouslyClearedById: item.clearedById }
+				})
+			}
+			await tx.clearanceItem.updateMany({
+				where: { separationId: id },
+				// `clearedById` is NOT in this data object, and that omission IS the guard (D-5),
+				// not an oversight. Keeping it is what stops a bulk re-open laundering every #297
+				// bar on the case in one privileged call. Do not "complete" this object.
+				data: { status: 'PENDING' }
+			})
+		}
+
+		await writeAuditLog(
+			ctx,
+			{
+				action: 'SEPARATION_UNDO',
+				entityType: 'SeparationRecord',
+				entityId: id,
+				oldValue: {
+					status: 'FINALIZED',
+					finalizedAt: record.finalizedAt ? record.finalizedAt.toISOString() : null,
+					finalizedById: record.finalizedById,
+					clearedByIds: items.map((i) => i.clearedById).filter((v) => v !== null),
+					loans: snapshot?.loans ?? null,
+					cashAdvances: snapshot?.cashAdvances ?? null,
+					employmentStatus: snapshot?.employee.employmentStatus ?? null,
+					// B-5's mitigation, and it is required not optional: the undo writes no
+					// `User`-entity audit row, so anyone auditing `User.isActive` history has to
+					// search SEPARATION_UNDO rows too.
+					userIsActive: false
+				},
+				newValue: {
+					status: nextStatus,
+					userIsActive: true,
+					reopenedClearance: reopenClearance,
+					partiallyRestored: partial,
+					// The employmentStatus restore on a pre-#304 record is an ASSUMPTION. Flagged so
+					// a human can find and correct it.
+					...(partial && { restoredStatusAssumed: true }),
+					// Conditional-spread (D-3): ABSENT on an ordinary undo, never present-and-false.
+					...(undidOwnFinalize(ctx.actorId, record) && { sameActorAsFinalizer: true })
+				}
+			},
+			tx
+		)
+	})
+
+	return { partial, status: nextStatus, writeOff }
 }
 
 // Separation report rows for the Reports module / CSV export.
