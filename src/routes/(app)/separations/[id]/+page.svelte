@@ -27,7 +27,7 @@
 	const finalize = createSubmitGuard((input) => {
 		if (
 			!confirm(
-				'Finalize this separation? This snapshots final pay, offboards the employee, and disables their login. It cannot be undone.'
+				'Finalize this separation? This snapshots final pay, offboards the employee, and disables their login. Only a Super Admin can undo it.'
 			)
 		)
 			input.cancel()
@@ -210,7 +210,8 @@
 			<h2 class="font-semibold text-destructive">Finalize separation</h2>
 			<p class="mt-1 text-sm text-muted-foreground">
 				Snapshots the final pay above, sets the employee to <strong>OFFBOARDED</strong> (end date
-				{formatShortDate(s.effectiveDate)}), and disables their login. This cannot be undone.
+				{formatShortDate(s.effectiveDate)}), and disables their login. Only a Super Admin can undo
+				it (#304).
 			</p>
 			{#if pendingCount > 0}
 				<p class="mt-2 text-sm text-amber-700 dark:text-amber-400">
