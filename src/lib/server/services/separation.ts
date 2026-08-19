@@ -292,6 +292,24 @@ export async function computeFinalPay(
 	return { lines, total }
 }
 
+/**
+ * #304 — everything `finalizeSeparation` is about to overwrite, captured INSIDE its transaction so
+ * `undoSeparation` can put it back. A NULL column means the record was finalized before #304
+ * shipped, which is the only detector D-4's "partially restored" state needs.
+ *
+ * Balances are STRINGS (`Decimal.toString()`), never `Number`: JSON has no decimal type, and a
+ * float round-trip on a balance is precisely what `payroll/money.ts` exists to prevent
+ * (cf. `amortization.ts:33-35`). `endDate` is an ISO string for the same reason — a `Date` is not
+ * a valid Prisma `InputJsonValue`.
+ */
+export interface PreFinalizeState {
+	loans: { id: string; balance: string; status: string }[]
+	cashAdvances: { id: string; balance: string; status: string }[]
+	employee: { employmentStatus: string; endDate: string | null }
+	userIds: string[]
+	userWasActive: boolean
+}
+
 // Finalize: requires all clearance items CLEARED. Snapshots final pay, marks the
 // employee OFFBOARDED (endDate = effectiveDate), and deactivates their login.
 export async function finalizeSeparation(id: string, organizationId: string, ctx: AuditContext) {
@@ -320,6 +338,46 @@ export async function finalizeSeparation(id: string, organizationId: string, ctx
 		})
 		if (clearedAnyItem(live, ctx.actorId)) error(403, CLEARER_BAR)
 
+		// #304: read every row this transaction is about to overwrite, BEFORE it overwrites it.
+		// The snapshot rides in the compare-and-set claim below, so the reads have to precede the
+		// claim. A finalize that LOSES the race still reads here, but its claim comes back
+		// `count: 0` and it throws — so a loser never WRITES a snapshot, which is the property
+		// that actually matters.
+		const priorLoans = await tx.loan.findMany({
+			where: { employeeId: record.employee.id, status: 'ACTIVE' },
+			select: { id: true, balance: true, status: true }
+		})
+		const priorAdvances = await tx.cashAdvance.findMany({
+			where: { employeeId: record.employee.id, status: 'ACTIVE' },
+			select: { id: true, balance: true, status: true }
+		})
+		// `getSeparation` already carries `employmentStatus`, but not `endDate`, and widening its
+		// select would ship one more column to the client (#111, #290). One scoped read instead.
+		const priorEmployee = await tx.employee.findUniqueOrThrow({
+			where: { id: record.employee.id },
+			select: { employmentStatus: true, endDate: true }
+		})
+		const priorUsers = await tx.user.findMany({
+			where: { employee: { id: record.employee.id } },
+			select: { id: true, isActive: true }
+		})
+		const preFinalizeState: PreFinalizeState = {
+			loans: priorLoans.map((l) => ({ id: l.id, balance: l.balance.toString(), status: l.status })),
+			cashAdvances: priorAdvances.map((c) => ({
+				id: c.id,
+				balance: c.balance.toString(),
+				status: c.status
+			})),
+			employee: {
+				employmentStatus: priorEmployee.employmentStatus,
+				endDate: priorEmployee.endDate ? priorEmployee.endDate.toISOString() : null
+			},
+			userIds: priorUsers.map((u) => u.id),
+			// The login the undo may re-enable. `some`, not `[0]`: an employee with no user row at
+			// all must restore as "was not active", never as `undefined`.
+			userWasActive: priorUsers.some((u) => u.isActive)
+		}
+
 		// Status-guarded update: the check above is only preliminary — a concurrent
 		// finalize between it and here would otherwise double-snapshot.
 		const updated = await tx.separationRecord.updateMany({
@@ -329,7 +387,8 @@ export async function finalizeSeparation(id: string, organizationId: string, ctx
 				finalPayAmount: new Prisma.Decimal(finalPay.total),
 				finalPayBreakdown: finalPay as unknown as Prisma.InputJsonValue,
 				finalizedAt: new Date(),
-				finalizedById: ctx.actorId
+				finalizedById: ctx.actorId,
+				preFinalizeState: preFinalizeState as unknown as Prisma.InputJsonValue
 			}
 		})
 		if (updated.count === 0) error(409, 'Separation is already finalized')
@@ -353,13 +412,29 @@ export async function finalizeSeparation(id: string, organizationId: string, ctx
 			where: { employee: { id: record.employee.id } },
 			data: { isActive: false }
 		})
-	})
 
-	await writeAuditLog(ctx, {
-		action: 'UPDATE',
-		entityType: 'SeparationRecord',
-		entityId: id,
-		newValue: { status: 'FINALIZED', finalPayAmount: finalPay.total }
+		// #304/SPEC §3c: INSIDE the transaction, with `tx` as the third argument, so the trail
+		// commits or rolls back with the money it records. `writeAuditLog` has always taken a
+		// transaction client (`audit.ts:22-26`); finalize simply never passed one. `oldValue`
+		// names the state this call destroys, so the trail is recoverable even for a record whose
+		// snapshot column predates #304.
+		await writeAuditLog(
+			ctx,
+			{
+				action: 'UPDATE',
+				entityType: 'SeparationRecord',
+				entityId: id,
+				oldValue: {
+					status: record.status,
+					employmentStatus: preFinalizeState.employee.employmentStatus,
+					endDate: preFinalizeState.employee.endDate,
+					activeLoanCount: priorLoans.length,
+					activeAdvanceCount: priorAdvances.length
+				},
+				newValue: { status: 'FINALIZED', finalPayAmount: finalPay.total }
+			},
+			tx
+		)
 	})
 
 	return finalPay
