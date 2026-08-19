@@ -1,18 +1,18 @@
 ---
 name: plan:separation-undo-304
-description: "PLAN for #304 — undo a finalized separation. Payroll-void shape applied to separations, plus a pre-finalize state snapshot so future undos are honest. Both owner decisions LOCKED 19-08-26; VALIDATE findings B-1..B-5 closed in revision 2."
+description: "PLAN for #304 — undo a finalized separation. Payroll-void shape applied to separations, plus a pre-finalize state snapshot so future undos are honest. Both owner decisions LOCKED 19-08-26; VALIDATE findings B-1..B-5 closed in revision 2; N-1..N-3 closed in revision 3; B-6 corrected at EXECUTE."
 date: 19-08-26
 issue: 304
 branch: spec/separation-undo-304
 spec: process/general-plans/active/separation-undo-304_SPEC_19-08-26.md
 complexity: COMPLEX
-status: REVISED — B-1..B-5 closed, awaiting re-VALIDATE. Not built.
+status: BUILT — rev 3 + the V3 B-6 correction, executed in six commits C1..C6 on 19-08-26.
 ---
 
 # PLAN — #304 Undo a finalized separation
 
 **Date**: 19-08-26
-**Status**: REVISED (rev 2, 19-08-26) — both owner decisions LOCKED, VALIDATE findings B-1..B-5 closed. Awaiting re-VALIDATE. Nothing built.
+**Status**: BUILT (rev 3 + V3's B-6 correction, 19-08-26) — both owner decisions LOCKED, B-1..B-5 and N-1..N-3 closed, V3 gated CONDITIONAL-GO. Executed in six commits C1..C6.
 **Complexity**: COMPLEX
 **Issue**: #304 · **SPEC:** `process/general-plans/active/separation-undo-304_SPEC_19-08-26.md`
 **Context loaded**: `process/context/all-context.md` routing table plus the SPEC's cited source files; testing context per `process/context/tests/all-tests.md` (its recorded vacuous-mock failure mode drives every projection assertion below). Post-phase testing runs the four gates in the DONE definition.
@@ -143,7 +143,7 @@ the ordinary un-clear path. See Owner Decision 2.
 
 | SPEC §6 | Call | Answer |
 |---|---|---|
-| 6.3 | Does `SeparationStatus` gain a value? | **No.** Undo returns the record to `CLEARED`. Verified nothing else keys on a fourth value: the enum has three members (`schema.prisma:954-958`) and the only status reads are `=== 'FINALIZED'` / `{ not: 'FINALIZED' }` (`separation.ts:298`, `:326`, `:174`, `:41`; `[id]/+page.server.ts:21,28`). Adding a value would also be a Prisma enum change — additive is safe, but unnecessary is cheaper. |
+| 6.3 | Does `SeparationStatus` gain a value? | **No.** Undo returns the record to `CLEARED` when the items are kept and to `OPEN` when they are re-opened (superseded by B-4 / the D-1 amendment; the conclusion is unchanged). Verified nothing else keys on a fourth value: the enum has three members (`schema.prisma:954-958`) and the only status reads are `=== 'FINALIZED'` / `{ not: 'FINALIZED' }` (`separation.ts:298`, `:326`, `:174`, `:41`; `[id]/+page.server.ts:21,28`). Adding a value would also be a Prisma enum change — additive is safe, but unnecessary is cheaper. |
 | 6.4 | Does `AuditAction` gain a value? | **Yes — `SEPARATION_UNDO`.** Same argument #298 made for `PAYROLL_VOID` (`schema.prisma:200-206`): a generic `UPDATE` is unfindable in the audit action filter. **Adding** an enum value is safe under `db push` — only a *rename* forces a drop/recreate. No `scripts/migrate-*.ts` is needed. Stated explicitly per the repo rule. |
 | 6.5 | `docs/payroll-void-semantics.md` "No un-void" | Gets a two-line companion note (C6) saying separations DO have an undo and why the two stories differ: a payroll void is terminal because a fresh run can be re-created; a separation finalize has no re-do path because it offboards a person. |
 | 6.6 | Finalize E2E gap | `tests/e2e/separations.spec.ts` has only list access (`:16`) and an employee refusal (`:25`). C6 adds the first finalize→undo E2E to that same file, as its own header comment instructs ("future separation e2e work belongs in this file rather than a second spec"). |
@@ -328,7 +328,7 @@ first was never a substitute for the second.
   cannot introduce `undefined === undefined`.
 - **Rewrite the comment at `separation.ts:127`.** It currently reads *"Un-cleared items carry a null
   clearedById, so a re-opened item stops barring its clearer."* Under D-5 that is false. Replace
-  with: *"#304/D-5: the bar keys on `clearedById` ALONE, not on status. The ordinary un-clear path
+  with: *"#304/D-5: the bar keys on the two "cleared by" fields, not on status. The ordinary un-clear path
   (`setClearanceItem`, :199-201) still NULLs `clearedById`, so it still un-bars — that is
   deliberate and unchanged. The undo's re-open branch KEEPS `clearedById` and only flips `status`,
   so a bulk re-open cannot launder every #297 bar on the case in one privileged call. The re-open
@@ -673,11 +673,16 @@ vacuity that killed M2.1 and M4.3. Results, recorded so the check is not repeate
   `updateMany` refuses on), then click Undo. Assert **both** halves: (a) the action fails with the
   **409** ("balance changed since finalize"), and (b) **nothing moved** — the record is still
   `FINALIZED`, `users.isActive` still `false`, the employee still `OFFBOARDED`, the *other* loan
-  still `0` / `PAID`, and **no** `AuditLog` row with `action: 'SEPARATION_UNDO'` exists. Half (b) is
-  the rollback proof: the undo writes the record, the login and the employee **before** it reaches
-  the balance check, so if the transaction did not roll back, those three would have stuck. Same
-  tagged-fixture/teardown shape this commit already copies from
-  `payroll-void-run-amortization.spec.ts`.
+  and **no** `AuditLog` row with `action: 'SEPARATION_UNDO'` written since this test's own undo
+  began. **Corrected per V3/B-6:** the compare-and-set claim is the ONLY write that precedes the
+  balance check, so the record row is what proves the rollback — assert all **four** columns the
+  claim writes (`status` still `FINALIZED`, and `finalizedAt` / `finalizedById` / `finalPayAmount`
+  all still non-null), not just `status`. The login, employee and audit-row assertions are kept but
+  labelled in the test as **vacuous negative controls that pass whether or not the transaction
+  rolled back** — those three writes come after the balance check and never ran. The "other loan
+  untouched" assertion is DROPPED: the restore loop throws on the first failing loan and the
+  snapshot has no `orderBy`, so it was a flaky proof. Same tagged-fixture/teardown shape this
+  commit already copies from `payroll-void-run-amortization.spec.ts`.
 - **Docs:** two lines under the "No un-void" statement in `docs/payroll-void-semantics.md` pointing
   at `undoSeparation` and stating the asymmetry, so the two undo stories do not read as
   contradictory (SPEC §6.5).
@@ -1493,3 +1498,131 @@ closed.
 **Gate restated: CONDITIONAL.** Nothing here changes it. Rev 3 is the plan's answer to V2's three
 concerns; only a fresh VALIDATE run from V1 may move the gate. No scope grew — every change lands
 inside C3, C6 and the plan's own prose sections.
+
+---
+
+## Validate Contract — V3 (re-validate of plan rev 3)
+
+Status: CONDITIONAL — **GO to EXECUTE**, with one mandatory correction scoped to C6 (below).
+Date: 19-08-26
+date: 2026-08-19
+generated-by: outer-pvl
+supersedes: 2026-08-19 (outer-pvl) — V2 CONDITIONAL contract above; this V3 pass checks only the three rev-3 changes
+
+Scope of this pass: NARROW by instruction — spot-check N-1/N-2/N-3, check for contradictions with
+the locked decisions / AC-1..AC-10 / the six-commit ordering, and check the N-3 gate can really
+prove rollback. Owner decisions not re-opened; B-1..B-5 not re-derived.
+
+Parallel strategy: sequential. Rationale: one ordering trace through C4 step 5 that must stay in one head.
+
+### Verdicts on the three rev-3 changes
+
+| Finding | Verdict | Evidence |
+|---|---|---|
+| N-1 — widened in-tx `select` | **CLOSED, verified in source** | `separation.ts:319` is confirmed `select: { status: true, clearedById: true }` — the narrowing N-1 named. The projection assertion (not an outcome assertion) plus M3.4 is the right gate: M3.4 stays `pnpm check`-green because the new field is optional on `ClearanceActorRef`, so only a projection assertion can go red. Sweep re-spot-checked: `:91` and `:388` are `select: { status: true }` count-only; `getSeparation:111` is a bare `clearanceItems` include. `:319` is indeed the only narrowing site. |
+| N-2 — permanence documented | **CLOSED** | Documentation plus one pinning test; no behaviour change. The Overview table's "nobody may finalize right after the undo" is correct — `separation.ts:307-308` counts non-CLEARED items and refuses everyone. AC-6's qualification matches the Overview table and the Risks row. |
+| N-3 — rollback E2E | **CLOSED IN INTENT, BUT ITS JUSTIFICATION IS FALSE — see B-6** | The gate does prove rollback, but through one assertion, not five. |
+
+### B-6 (BLOCKING for C6 only) — the N-3 rollback proof rests on a false ordering claim
+
+C6's rollback E2E says: *"the undo writes the record, the login and the employee **before** it
+reaches the balance check, so if the transaction did not roll back, those three would have stuck."*
+
+**That is wrong.** C4 step 5 fixes the in-transaction order as: (1) compare-and-set claim on
+`separationRecord`, (2) **money restore + 409**, (3) employee, (4) login, (5) clearance, (6) audit.
+Only the claim precedes the balance check. Consequence for the E2E's half (b):
+
+| Assertion | Real rollback proof? |
+|---|---|
+| record still `FINALIZED` | **YES** — the claim already wrote `status`, `finalPayAmount: null`, `finalizedAt: null`, `finalizedById: null`. Deterministic. This one assertion carries the whole gate. |
+| the *other* loan still `0`/`PAID` | **Only sometimes** — the restore is a per-loan loop that throws on the first `count === 0`. If the moved loan is processed first, no other loan write ever happened. Snapshot order is a `findMany` with no `orderBy`, so this is non-deterministic, i.e. a flaky proof. |
+| `users.isActive` still `false` | **NO — vacuous.** The login write is step 4; it never ran. |
+| employee still `OFFBOARDED` | **NO — vacuous.** Step 3; never ran. |
+| no `SEPARATION_UNDO` audit row | **NO — vacuous.** Audit is step 6; never ran. |
+
+**Required correction, in C6, before the test is written** (no scope change, no return to PLAN):
+1. Delete the "record, login and employee" sentence. Replace with: *"the compare-and-set claim is
+   the only write that precedes the balance check, so the record row is what proves the rollback."*
+2. Assert the claim's **four** columns, not just `status`: `status = 'FINALIZED'` **and**
+   `finalizedAt`, `finalizedById`, `finalPayAmount` all still non-null. Four rolled-back columns on
+   one deterministic write beats five assertions of which three cannot fail.
+3. Keep the login / employee / audit-row assertions if wanted, but label them in the test as
+   **negative controls that pass vacuously on this path** — never as rollback evidence. This repo
+   has "green tests are not a working guard" recorded; an unlabelled vacuous assertion is that
+   failure mode being re-introduced by the fix for it.
+4. Make the loan half deterministic or drop it: move the balance on the loan the snapshot restores
+   **second**, or seed a single loan and drop the "other loan" assertion entirely.
+
+Everything else in C6, and all of C1–C5, is unaffected.
+
+### Cosmetic findings (do not gate EXECUTE; fix opportunistically)
+
+- **C-1** Frontmatter (`description`, `status`), the rev line at `:15`, the Resume section's
+  `@ 10aec65`, and the whole Autonomous Goal Block still describe **rev 2**. Rev 3 is `3d25f9e`.
+- **C-2** SPEC §6 answer table, row 6.3, still reads *"Undo returns the record to `CLEARED`"* —
+  superseded by B-4 / the D-1 amendment. Its conclusion (no new enum value) is still right.
+- **C-3** The C3 comment text to be pasted into `separation.ts:127` opens with *"the bar keys on
+  `clearedById` ALONE"* and then describes the second field. Self-contradictory as written; drop
+  "ALONE" before pasting it into source.
+- **C-4** C3 never names the `ClearanceActorRef` edit (`separation.ts:118`) that the widened helper
+  needs. `pnpm check` fails loudly, so it is self-correcting — the field must be added as
+  **optional**, which is what keeps M3.4 `check`-green.
+
+### Net gate derivation (V3, narrow pass)
+
+| Layer 1 dimension | Status | One-liner |
+|---|---|---|
+| Infra fit | PASS | unchanged; no new command, port or runtime surface in rev 3 |
+| Test coverage | CONCERN | B-6 — three of the N-3 gate's five assertions cannot fail; the gate survives on one |
+| Breaking changes | PASS | rev 3 added no contract change; N-1 strengthens an existing guard (NG-4 allows it) |
+| Security surface | PASS | N-1's widening closes the raced half of the #297 bar; N-2 is documentation |
+
+| Layer 2 section | Status |
+|---|---|
+| C1 — schema | PASS (unchanged in rev 3) |
+| C2 — finalize snapshot + in-tx audit | PASS (unchanged in rev 3) |
+| C3 — `clearedAnyItem` widening + `:319` select | PASS |
+| C4 — `undoSeparation` | PASS (unchanged in rev 3) |
+| C5 — route + UI | PASS (unchanged in rev 3) |
+| C6 — E2E + docs | CONCERN — B-6 |
+
+Totals: 0 FAILs / 2 CONCERNs / 8 PASSes → **Net Gate: CONDITIONAL**
+
+Dimension findings:
+- Infra fit: PASS — no infra surface moved in rev 3.
+- Test coverage: CONCERN — B-6, correctable inside C6.
+- Breaking changes: PASS — no new observable contract in rev 3.
+- Security surface: PASS — N-1 closed the one asymmetry V2 found.
+- C3 feasibility: PASS — `:319` edit target verified unique in source; C-4 is the only unnamed edit.
+- C6 feasibility: CONCERN — B-6; mechanically feasible, but the assertion set must be corrected first.
+
+Known Gaps (excluded from the gate count): none.
+
+Open gaps (V3): unchanged from V2 — concurrency isolation (C), prod `db:push` timing (C), no
+`User`-entity audit row (C), one-admin deadlock recovery (CANNOT-Prove #9, accepted by design).
+Rollback stays tier **B**, but proven by the claim row only, not by five assertions.
+
+What this coverage does NOT prove (V3, additive):
+- Rollback of the login, employee, clearance and audit writes is proven **nowhere**, at any tier.
+  The one gate that could reach them would need a throw injected after step 4, and no fault-injection
+  harness exists in this repo (already recorded in Test Infra Improvement Notes).
+- Nothing proves the per-loan restore loop's ordering, so the "other loan" assertion in C6's
+  rollback E2E is not a dependable proof.
+
+Gate (V3, 19-08-26): **CONDITIONAL — proceed to EXECUTE.** 0 FAILs, 2 CONCERNs. The three rev-3
+changes do what they claim; nothing they touch contradicts a locked owner decision, an acceptance
+criterion, or the six-commit ordering. B-6 is carried as an execute-agent instruction against C6,
+not as a return to PLAN.
+
+Execute-agent instructions:
+- **E1 (C6, mandatory)** — apply B-6's four-point correction before writing the rollback E2E. Do not
+  write an assertion that cannot fail without labelling it as such.
+- **E2 (C3)** — add `previouslyClearedById?: string | null` to `ClearanceActorRef` as **optional**;
+  a required field would make M3.4 fail `pnpm check` and destroy the mutation's whole point.
+- **E3 (C4)** — the `previouslyClearedById` stamp loop needs a read the ordered step list never
+  names. Add an explicit `tx.clearanceItem.findMany({ where: { separationId: id }, select: { id: true, clearedById: true } })`
+  before the loop, and reuse its rows for the audit `oldValue`. Do **not** write the `updateMany`
+  form shown first in that bullet — the prose rejects it two lines later.
+
+Accepted by: user / session — owner pre-authorised EXECUTE on a clean pass (19-08-26) and accepted
+the two CONCERNs (B-6 as an in-flight C6 correction; the four carried residuals unchanged).

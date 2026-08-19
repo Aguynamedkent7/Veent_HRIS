@@ -54,3 +54,9 @@ reversal — amortization is only ever applied at a period lock, so there is not
 
 No backfill of historical voids. No un-void. No notification to anyone. No re-generation or
 withdrawal of payslips already rendered.
+
+**Separations DO have an undo (#304), and that is not a contradiction.** A payroll void is
+terminal because the exit exists elsewhere: a fresh run can simply be re-created. A separation
+finalize has no such re-do path — it offboards a person, disables their login and writes off their
+debts — so `undoSeparation` (`src/lib/server/services/separation.ts`) is the exit, gated on the
+same `OVERRIDE_FINALIZED` capability and audited under its own `SEPARATION_UNDO` action.
