@@ -121,6 +121,20 @@ so the case has **zero** cleared items and calling it `CLEARED` is false — the
 Nothing about D-1's intent changes: the record leaves `FINALIZED` and becomes editable again. No new
 `SeparationStatus` value is needed — `OPEN` already exists (`schema.prisma:954-958`).
 
+**Who may finalize after an undo-with-re-open (N-2, stated because it is a real behaviour change).**
+Take an item originally cleared by A, on a case undone with `reopenClearance: true`:
+
+| Moment | Item row | Who may finalize the case |
+|---|---|---|
+| Right after the undo | `{ PENDING, clearedById: 'A', previouslyClearedById: 'A' }` | **Nobody** — items are `PENDING`, so `separation.ts:308` refuses everyone with a 409 |
+| After a third actor C re-clears it | `{ CLEARED, clearedById: 'C', previouslyClearedById: 'A' }` | **Anyone except A, C, and the leaver's own user** |
+
+A stays barred on that case **permanently**, even though the clearance that now stands is C's. That
+is intended: A did clear an item on this case, and #297's whole point is that such a person does not
+close the case out. Nothing clears `previouslyClearedById` — that is exactly what makes the bar
+survive the ordinary un-clear (Owner Decision 2). The cost is recorded as a Risk (one-admin
+deadlock) and pinned as intended by a C3 test, so nobody later "fixes" it as a bug.
+
 **D-5 extension (B-2).** The re-open keeps `clearedById` **and** stamps the new
 `previouslyClearedById`, because `clearedById` alone is NULLable by any `MANAGE_HR` holder through
 the ordinary un-clear path. See Owner Decision 2.
@@ -328,6 +342,24 @@ first was never a substitute for the second.
   route (#304/B-2)."* No behaviour change here — the comment is the guard's documentation, and M3.3
   below is its test.
 
+- **Widen the in-transaction re-check's `select` at `separation.ts:319`** to
+  `{ status: true, clearedById: true, previouslyClearedById: true }`. `clearedAnyItem` now reads a
+  field this projection omits, and because the field is **optional** on `ClearanceActorRef`,
+  `pnpm check` stays green while the second layer of the bar silently degrades to `clearedById`-only.
+  The pre-flight bar is fine — it is fed `getSeparation`'s bare `clearanceItems` include
+  (`separation.ts:111`), which carries the whole row. The re-check exists **only** for the race the
+  pre-flight cannot cover (`:313-316` says so), so it is the one half that must not be narrower
+  (N-1). Repo precedent: a widened guard with an un-widened projection, and #278's "type annotations
+  do not strip runtime properties".
+- **Projection sweep (N-1, done at plan time — result: this is the only site).** Every other
+  `ClearanceItem` / `SeparationRecord` projection was checked against the two new columns:
+  `listSeparations:388` and the report query `:91` select `{ status: true }` and only **count**
+  cleared items — neither calls `clearedAnyItem`, so neither needs the field;
+  `setClearanceItem:178` selects from `Separation`, not the item's actor fields;
+  `getSeparation:101-111` uses a bare `clearanceItems` include, so it already carries both new
+  columns (which is *why* C5 must strip `preFinalizeState` in `load`); `:151` is the scoped
+  `userId` lookup. **`:319` is the only narrowing site.**
+
 **Why:** SPEC §3b/D-5. This is the laundering guard, and it is the reason the widening is not
 optional.
 
@@ -342,6 +374,16 @@ optional.
   item `{ status: 'PENDING', clearedById: null, previouslyClearedById: 'A' }` ⇒
   `clearedAnyItem(items,'A') === true`. This is the B-2 case: `clearedById` has been NULLed by the
   ordinary path and the bar survives anyway.
+- `the bar on a re-opened item is permanent — a third actor re-clearing does not lift it` (N-2,
+  pinned as **intended**) — item `{ status: 'CLEARED', clearedById: 'C', previouslyClearedById: 'A' }`
+  ⇒ `clearedAnyItem(items,'A') === true` **and** `clearedAnyItem(items,'C') === true`. Comment it as
+  deliberate permanence with a pointer to the Overview table and the Risks row, so a future reader
+  does not "fix" it.
+- **In `separation-finalize-effects.test.ts` (or wherever the in-tx re-check is exercised): assert
+  the projection**, not just the outcome —
+  `expect(txMock.clearanceItem.findMany).toHaveBeenCalledWith(expect.objectContaining({ select: expect.objectContaining({ previouslyClearedById: true }) }))`.
+  An outcome assertion cannot catch a narrowed select, because the mock returns whatever the test
+  hands it regardless of the projection.
 - Existing D3/D4 cases must stay green untouched.
 
 **Mutations that prove these bite:**
@@ -354,6 +396,9 @@ optional.
   by" columns, one being NULLed, and "completes" the data object. With option (b) chosen this test
   **PASSES** as designed — it is a live guarantee, not a documented residual. The live half of the
   same proof is manual step 7b (a third HR actor un-clears a re-opened item; the bar holds).
+- **M3.4 — remove `previouslyClearedById` from the in-tx re-check's `select` at `separation.ts:319`.**
+  The new projection assertion must fail. `pnpm check` will stay green through this mutation — that
+  is the whole point of the mutation, and the reason an outcome-only test is not enough (N-1).
 
 ---
 
@@ -622,6 +667,17 @@ vacuity that killed M2.1 and M4.3. Results, recorded so the check is not repeate
 - **E2E negative control, same file:** log in as `hr@veent.ph` (HR_ADMIN — `MANAGE_HR` without
   `OVERRIDE_FINALIZED`), POST the undo action directly, assert the record is **still** `FINALIZED`.
   Asserting only "the button is not visible" proves nothing — this repo has that recorded.
+- **E2E rollback proof, same file (N-3):** the one path the design can be made to throw. Seed as
+  above, finalize, then move one loan's balance in SQL between finalize and undo
+  (`db.loan.update` on the tagged fixture — this is what `undoSeparation`'s conditional
+  `updateMany` refuses on), then click Undo. Assert **both** halves: (a) the action fails with the
+  **409** ("balance changed since finalize"), and (b) **nothing moved** — the record is still
+  `FINALIZED`, `users.isActive` still `false`, the employee still `OFFBOARDED`, the *other* loan
+  still `0` / `PAID`, and **no** `AuditLog` row with `action: 'SEPARATION_UNDO'` exists. Half (b) is
+  the rollback proof: the undo writes the record, the login and the employee **before** it reaches
+  the balance check, so if the transaction did not roll back, those three would have stuck. Same
+  tagged-fixture/teardown shape this commit already copies from
+  `payroll-void-run-amortization.spec.ts`.
 - **Docs:** two lines under the "No un-void" statement in `docs/payroll-void-semantics.md` pointing
   at `undoSeparation` and stating the asymmetry, so the two undo stories do not read as
   contradictory (SPEC §6.5).
@@ -641,7 +697,7 @@ deployed app**, not just in a mock — and it is the only proof that matters for
 | AC-3 | The finalizer may undo their own finalize, and the audit entry carries a `sameActorAsFinalizer` marker that is ABSENT on ordinary undos (D-3). | U10, U11, M4.5 |
 | AC-4 | A record finalized before the snapshot existed restores status/offboard/login, writes no loan rows, and shows a "partially restored" panel naming the aggregate write-off (D-4) — **and a fully restored record does NOT show it, on reload** (B-1). | U12 + M4.4 + **U14 + the three `load` derivation tests + M4.6/M5.3/M5.4** + manual step 8 |
 | AC-5 | The undo's re-open branch flips `status` to `PENDING`, KEEPS `clearedById` and STAMPS `previouslyClearedById`; `clearedAnyItem` bars on either field regardless of status, so the bar survives a later ordinary un-clear by a third actor (D-5 + B-2 option (b)). | U8 (key absence) + **U15** + M4.2 + **M4.8** + C3 suite incl. the third-actor case + M3.1 + **M3.3** + manual steps 6, 7a, 7b |
-| AC-6 | The ordinary un-clear path still NULLs `clearedById` and still un-bars. | C3 negative control + M3.2 |
+| AC-6 | The ordinary un-clear path still NULLs `clearedById` and still un-bars — **on items the undo never stamped**. On an item a re-open stamped, the bar is deliberately **permanent for the life of the case** and no un-clear or third-actor re-clear lifts it (B-2 option (b), N-2). | C3 negative control + M3.2 (un-bars), **C3 permanence test** (does not un-bar once stamped) |
 | AC-7 | The undo's audit entry is written INSIDE the transaction and carries a populated `oldValue`, **including the `User.isActive` before/after** the undo does not write a `User`-entity row for (SPEC §3c, B-5). | U13 (identity against `txMock`) + **U16** + M2.3 + E2E audit-row assertion |
 | AC-8 | Finalize captures every row it is about to overwrite, **before** overwriting it. | C2 snapshot test **with the invocation-order assertion** + M2.1 (which only bites because of it) |
 | AC-9 | Restoring a balance that moved since finalize refuses with a 409 rather than overwriting. | U6 + M4.3 |
@@ -679,6 +735,9 @@ per-commit bar is stricter than usual:
 | U6 `where` assertion + M4.3 | Fully-Automated | **B-3 closed** — AC-9's conditional restore |
 | U16 | Fully-Automated | **B-5 mitigation** — AC-7 carries the login before/after the undo writes no `User` row for |
 | C3 negative control + M3.2 | Fully-Automated | D-5 consequence 3 — the ordinary un-clear path still un-bars |
+| In-tx re-check projection assertion + **M3.4** | Fully-Automated | **N-1 closed** — the second half of the #297 bar reads `previouslyClearedById`; M3.4 stays `pnpm check`-green and must still go red |
+| C3 permanence test (`{CLEARED, clearedById:'C', previouslyClearedById:'A'}` ⇒ A barred) | Fully-Automated | **N-2 closed** — AC-6 as qualified: the bar is permanent once the undo stamps an item |
+| E2E rollback proof (balance moved mid-flight ⇒ 409 **and** nothing moved) | Hybrid (needs `veent-db-5434` + `pnpm db:seed:e2e`) | **N-3 closed** — AC-9 plus the atomicity that Owner Decision B-5 was justified by; the only gate that proves a real Postgres rollback |
 | E2E finalize→undo round trip | Hybrid (needs `veent-db-5434` + `pnpm db:seed:e2e`) | D-1 and D-4 end-to-end; the only proof the money really returns |
 | E2E HR_ADMIN refusal + M6.1 | Hybrid (same precondition) | D-2 — the capability is enforced in the deployed app |
 | Manual script step 7b | Agent-Probe (live) | **B-2 closed live** — a third `MANAGE_HR` actor un-clears a re-opened item and the #297 bar holds |
@@ -814,6 +873,13 @@ scratchpad first.
 8. **Two login-reactivation paths now exist** (`setUserActive` and the undo) and nothing proves they
    stay consistent with each other. Out of scope (NG-1); worth its own issue.
 
+9. **That an org can always recover from the permanent bar (N-2).** After an undo-with-re-open the
+   original clearer is barred on that case forever. In a one-HR-admin org that is a deadlock with no
+   in-app exit — verified by reading the code paths (no second finalize route, `createSeparation`
+   refuses a duplicate, no delete action), not by running it. Recovery is a SUPER_ADMIN DB edit. Not
+   reproducible locally because it needs a single-admin tenant; accepted and recorded rather than
+   worked around.
+
 **No longer on this list — closed, not deferred:**
 - ~~The B-2 laundering residual.~~ **Closed** by owner decision 2 (option (b)): the bar moved to
   `previouslyClearedById`, a field `setClearanceItem` never writes. Proved by the C3 third-actor
@@ -855,6 +921,8 @@ own security fix.
 | `clearedAnyItem` widening bars someone who could finalize before | High | C3's negative control + M3.2; the ordinary un-clear path is untouched and explicitly commented |
 | A bulk re-open launders the #297 bars (SPEC §3b) | High | D-5: `clearedById` never in the re-open `data`; U8 asserts key **absence**; manual step 7a proves it live |
 | A *third actor* launders the bar afterwards through the ordinary un-clear (B-2) | High | **Closed by option (b)**, not merely mitigated: the bar is duplicated into `previouslyClearedById`, which `setClearanceItem` never writes or clears. C3 third-actor test + M3.3 + U15 + M4.8 + manual step 7b |
+| A re-opened case **permanently** bars its original clearer (N-2) | Medium | **Intended, not mitigated** — it is the price of option (b). Written into the Overview table, AC-6 and the C3 permanence test. Failure shape: a one-HR-admin org whose admin cleared the items loses the old un-clear escape and the case cannot be finalized by anyone in-app (`createSeparation`'s duplicate guard blocks a fresh case; no delete action exists). Recovery is a SUPER_ADMIN DB edit. Recorded in CANNOT-Prove #9 |
+| The in-tx re-check reads a narrower projection than the pre-flight bar (N-1) | High | `select` widened at `separation.ts:319`; a projection assertion (not an outcome assertion) plus M3.4, which stays `pnpm check`-green and must still go red |
 | The undo's login write is unaudited at `User` level (B-5) | Low | Accepted with mitigation: the before/after is folded into the `SEPARATION_UNDO` payload (U16). Named in What This Plan CANNOT Prove Locally #7 rather than left silent |
 | A re-opened case renders as `CLEARED` with nothing cleared (B-4) | Medium | status derived as `reopenClearance ? 'OPEN' : 'CLEARED'`; U14b + M4.7; manual step 7a checks the row |
 | The "partially restored" banner fires on a fully restored record (B-1) | High (money lie) | `preFinalizeState` is no longer nulled by the undo; the `load` derivation carries all three terms; U14 + three route tests + M4.6/M5.3/M5.4 + manual step 8b |
@@ -879,9 +947,12 @@ own security fix.
   This plan introduces a distinct `txMock` in the files it touches; the other separation test files
   still carry the defect. Extracting a shared `makeTxMock()` and converting the rest is the obvious
   follow-up and is worth its own issue.
-- Nothing in the suite proves a **rollback**: no test throws mid-transaction and asserts the earlier
-  writes were undone, because a passthrough/`cb(txMock)` mock cannot roll anything back. Real
-  atomicity coverage needs an integration test against `veent-db-5434`. Noted, out of scope.
+- **Rollback is now gated, at hybrid tier (N-3).** No *unit* test can prove it — a
+  passthrough/`cb(txMock)` mock cannot roll anything back — so C6's third E2E carries it: move a
+  loan balance in SQL mid-flight, assert the 409 **and** that the record/login/employee writes the
+  undo already issued did not stick. That covers the one path this design can be made to throw on.
+  A *general* fault-injection harness (throw at an arbitrary point inside any `$transaction`) still
+  does not exist in this repo and is worth its own issue.
 - `tests/e2e/separations.spec.ts` had no DB-fixture teardown pattern before this plan; C6 imports
   the tagged-fixture pattern from `payroll-void-run-amortization.spec.ts`. If that pattern is used a
   third time it should be extracted into `tests/e2e/helpers`.
@@ -891,19 +962,22 @@ own security fix.
 ## Resume and Execution Handoff
 
 1. **Selected plan file:** `process/general-plans/active/separation-undo-304_PLAN_19-08-26.md`
-2. **Last completed step:** PLAN revised (rev 2) — VALIDATE ran, returned BLOCKED on B-1..B-5, and
-   this revision closes all five. Nothing built. Branch `spec/separation-undo-304` @ `aa3dd37`,
-   unpushed. `src/` untouched.
-3. **Validate-contract status:** written, was BLOCKED; every finding now marked CLOSED with its fix.
-   The gate must be **re-run from V1** — a plan does not un-block itself.
+2. **Last completed step:** PLAN revised (**rev 3**) — VALIDATE pass 2 returned CONDITIONAL with
+   B-1..B-5 confirmed closed and three new findings N-1/N-2/N-3; this revision closes all three.
+   Nothing built. Branch `spec/separation-undo-304` @ `10aec65`, unpushed. `src/` untouched.
+3. **Validate-contract status:** written twice (V1 BLOCKED, V2 CONDITIONAL); every finding now
+   marked CLOSED with its fix, see the V3 note. The gate must be **re-run from V1** — **this plan
+   does not un-block its own gate.**
 4. **Context loaded:** the SPEC (in full); `separation.ts` (110-200, 255-370); `payroll/runs.ts`
    (90-152); `payroll/amortization.ts` (1-94); `payroll/audit-markers.ts`; `src/lib/server/audit.ts`;
    `prisma/schema.prisma` (194-207, 954-1000, 1850-1915); `rbac.ts:73`;
    `(app)/separations/[id]/+page.server.ts` and `+page.svelte:175-215`; `tests/e2e/separations.spec.ts`;
    `tests/unit/separation-finalize-sod.test.ts`; `package.json` scripts.
-5. **Next step for a fresh agent:** re-run VALIDATE from V1 against this revision. Both owner
-   decisions are LOCKED (snapshot over ledger; B-2 option (b)) — do not re-open either. If VALIDATE
-   passes, start at C1, which now carries **two** additive nullable columns plus the enum value.
+5. **Next step for a fresh agent:** re-run VALIDATE from V1 against rev 3. Both owner decisions are
+   LOCKED (snapshot over ledger; B-2 option (b); `previouslyClearedById`) — do not re-open any of
+   them, and do not re-litigate B-1..B-5, which V2 confirmed closed. If VALIDATE passes, start at
+   C1, which carries **two** additive nullable columns plus the enum value. C3 now also carries the
+   `separation.ts:319` `select` widening (N-1) and C6 a third E2E (N-3).
 
 **Blocked on:** nothing external. Awaiting re-VALIDATE only.
 
@@ -1240,6 +1314,120 @@ Accepted by: n/a — the gate has not been re-run.
 
 ---
 
+## Validate Contract — V2 (re-validate of plan rev 2)
+
+Status: CONDITIONAL
+Date: 19-08-26
+date: 2026-08-19
+generated-by: outer-pvl
+supersedes: 2026-08-19 (outer-pvl) — V1 BLOCKED contract above; this V2 pass re-derives every finding against rev 2
+
+Scope of this pass: NARROW — verify B-1..B-5 are actually closed, and hunt for defects the fixes
+themselves introduced. Owner decisions (snapshot over ledger; B-2 option (b)) not re-opened.
+
+Parallel strategy: sequential
+Rationale: 4/7 signals (S2, S5, S6, S7); dominant S6. Same fit reason as V1 — the decisive work is
+one cross-file writer/select trace that must stay in one head. Fan-out would have split it.
+
+### B-1..B-5 verdicts
+
+| # | Verdict | Evidence |
+|---|---|---|
+| B-1 | **CLOSED** | `preFinalizeState: Prisma.DbNull` is gone from C4's claim; the C5 `load` detector is the three-term form computed **before** the strip (plan C5, "Persistence note (corrected, B-1)"). Walked every path in source terms: finalized-after-fix ⇒ column populated by C2 step 3 ⇒ no banner; undone ⇒ column survives ⇒ no banner; **re-finalized ⇒ finalize's own claim `data` overwrites the column ⇒ still no banner**; pre-#304 + undone ⇒ null + breakdown + not-FINALIZED ⇒ banner; pre-#304 never undone ⇒ third term false ⇒ correctly silent; never finalized ⇒ second term false ⇒ silent. The detector is right in every path including finalize→undo→re-finalize. U14 (key absence), the three `load` tests, M4.6/M5.3/M5.4 and manual 8b all bite. |
+| B-2 | **CLOSED (with N-1 attached)** | Writer trace re-run in source, not taken from the plan: `grep -rn clearedById src scripts prisma` returns exactly one writer — `separation.ts:196-202` (`setClearanceItem`). Creation at `:58` is a nested `create` that sets neither field. So no path other than the undo can write, and nothing at all can clear, `previouslyClearedById`. The bar genuinely survives an ordinary un-clear. **But see N-1: the in-tx re-check's `select` at `separation.ts:319` does not carry the new field, so the second layer of the bar is silently narrower than the first.** |
+| B-3 | **CLOSED** | Re-checked in source rather than trusting the sweep. `separation-finalize-effects.test.ts:46` is confirmed `dbMock.$transaction.mockImplementation(fn => fn(dbMock))` — the passthrough B-3 named. The distinct `txMock` fixes it for real: `computeFinalPay` reads through `db.loan.findMany` (`separation.ts:261`, `select: { balance: true }`) while the snapshot reads `tx.loan.findMany` (`select: {id,balance,status}`) — different objects, so the shared-flat-mock vacuity is gone. Sampled six of the named tests: U1 (`db.separationRecord.findFirst` never called — throws first, non-vacuous), U4 (negative on `txMock.loan`), U9 (negative on `txMock.clearanceItem`), U12 (negative, kills M4.4), U13/M2.3 (`toBe(txMock)` — `db !== txMock`, so passing `db` now fails; previously unkillable), U15 (`invocationCallOrder` across two distinct `vi.fn()`s on one object — works). M2.3, M4.6–M4.9, M5.3, M5.4 all bite as claimed. No vacuity found in the sample. |
+| B-4 | **CLOSED** | The distinction is stated plainly in three places (Overview "D-1 amendment", Public Contracts row, C4 claim bullet) — not hidden. Checked every status consumer: `setClearanceItem`'s roll-forward (`separation.ts:206-216`) computes `remaining === 0 ? 'CLEARED' : 'OPEN'` — after a re-open every item is `PENDING` ⇒ it re-derives `OPEN`, so the undo and the roll-forward now AGREE (under rev 1 they disagreed); after an undo without re-open all items are `CLEARED` ⇒ it re-derives `CLEARED`, also agreeing. List badge (`separations/+page.svelte:19-21`) maps non-CLEARED/non-FINALIZED to the yellow pending style — correct for a re-opened case. Finalize gate (`separation.ts:307`) counts items, not status — unaffected. `createSeparation`'s duplicate guard keys on `status: { not: 'FINALIZED' }` — an undone case still blocks a second case, which is the wanted behaviour. Nothing breaks. |
+| B-5 | **CLOSED — reasoning verified in source** | `org.ts:334-357`: `setUserActive` does open its **own** `db.$transaction(..., { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })`, and `org.ts:359-366` writes its `User` audit row **outside** that transaction. The self-guard is at `org.ts:332`. So the nesting/atomicity argument is TRUE, not asserted — keeping the undo's own `tx.user.updateMany` is correct, and the named cost (no `User`-entity audit row, mitigated by `userIsActive` in the `SEPARATION_UNDO` payload, U16) is the honest write-up of it. |
+
+### New findings
+
+| # | Severity | Finding | Concrete fix |
+|---|---|---|---|
+| N-1 | **CONCERN (high)** — introduced by the B-2 fix | `clearedAnyItem` will read `previouslyClearedById`, but the **in-transaction re-check** feeds it a projection that does not contain the field: `separation.ts:317-320` selects `{ status: true, clearedById: true }`. Because `ClearanceActorRef` gains the field as *optional*, `pnpm check` stays green and the second bar silently degrades to `clearedById`-only. The pre-flight `finalizeBarFor` is unaffected (it is fed `getSeparation`'s full `clearanceItems` include, `separation.ts:111`), so the UI and the ordinary refusal still hold — but the re-check exists **only** to close the race the pre-flight cannot (`separation.ts:313-316` says so in as many words), and that is exactly the half that loses the new field. No gate in the plan catches it: C3's tests are pure-function, C2 mocks the re-read as `[]`, and manual step 7b observes the pre-flight (a disabled button), not the race. This is the repo's own recorded failure mode — a guard widened while a reader still projects the old shape. | Add to C3: *"widen the in-tx re-check's `select` at `separation.ts:319` to `{ status: true, clearedById: true, previouslyClearedById: true }` — `clearedAnyItem` now reads a field this projection omits, and the optional type will not catch the omission."* Add a C2/C3 test asserting the select: `expect(txMock.clearanceItem.findMany).toHaveBeenCalledWith(expect.objectContaining({ select: expect.objectContaining({ previouslyClearedById: true }) }))`, and mutation **M3.4** — drop `previouslyClearedById` from the select; that test must fail. |
+| N-2 | **CONCERN (medium)** — introduced by the B-2 fix | The bar is now **permanent for the life of the case**, and the plan does not say so. Nothing can clear `previouslyClearedById` (that is the point of option (b)). Walked the sequence: after undo-with-re-open the item is `{PENDING, clearedById:'A', previously:'A'}` — A barred; a third actor C re-clears it (`setClearanceItem`'s ownership guard at `:192` does not fire, the row is `PENDING`) leaving `{CLEARED, clearedById:'C', previously:'A'}` — **A is still barred, forever, on that case, even though A cleared nothing that now stands**; C is barred too. Who may finalize at each step: (i) right after the undo — nobody (items `PENDING`, `separation.ts:308` refuses); (ii) after C re-clears — anyone except A, C, and the leaver's own user. Usually fine. The failure shape: a one-HR-admin org where that admin cleared the items — before #304 they could un-clear to un-bar themselves; after #304 that escape is gone and the case cannot be finalized by anyone in-app (a new case is blocked by `createSeparation`'s duplicate guard, and no delete action exists). Recovery is a DB edit only. Related: **AC-6 as worded is now too strong** — "the ordinary un-clear path still un-bars" is true only on a case that was never undone. | No scope change needed — state it. (i) Amend AC-6 to *"…still un-bars **on items the undo never stamped**; on a re-opened item the bar is deliberately permanent (B-2)."* (ii) Add a Risks row: *"a re-opened case permanently bars its original clearer — deadlock possible in a one-admin org; recovery is a SUPER_ADMIN DB edit"*. (iii) Add a C3 test pinning it as intended: item `{CLEARED, clearedById:'C', previouslyClearedById:'A'}` ⇒ `clearedAnyItem(items,'A') === true`, commented as deliberate permanence. (iv) Add the deadlock to "What This Plan CANNOT Prove Locally". |
+| N-3 | **CONCERN (medium)** — residual classification, not a defect | The four recorded residuals are stated honestly and in the right places (Test Infra Notes, CANNOT-Prove #1–#8, the contract's "What this coverage does NOT prove", and the carried-forward list). Three of them (concurrency isolation, prod `db:push` timing, no `User` audit row) are correctly accepted. The fourth — **no gate at any tier proves transaction rollback** — is *not* acceptable as a bare accept for this risk class: the blast radius is money reversal plus login re-enablement, and the whole B-5 decision was justified *by* atomicity. A hybrid gate is cheap and the pattern already exists: `tests/e2e/payroll-void-run-amortization.spec.ts` has the tagged-fixture/teardown shape C6 already copies. | Add to C6 a second E2E: finalize, then move one loan's balance in SQL, then undo ⇒ assert the 409 **and** that nothing moved — record still `FINALIZED`, `users.isActive` still false, employee still `OFFBOARDED`, the other loan still `0|PAID`, no `SEPARATION_UNDO` audit row. That is a real rollback proof on the one path the design can actually be made to throw. Re-tier the residual from `C` (accept) to `B` (gate added by this plan). Keep concurrency isolation as `C`. |
+
+### Verified in source vs taken from the plan text
+
+**Verified in source (read the file, not the plan's quote of it):** `clearedAnyItem` and its comment
+(`separation.ts:127-130`); `setClearanceItem` in full incl. the `:192` ownership guard, the `:196-202`
+write and the `:206-216` roll-forward; `finalizeSeparation` in full incl. the in-tx re-check select at
+`:317-320`, the claim at `:325-335` and the cascade at `:339-355`; `getSeparation`'s full
+`clearanceItems` include (`:111`); `computeFinalPay`'s `db.loan.findMany` at `:261`; `setUserActive`
+(`org.ts:323-368`) — own serializable `$transaction`, audit outside, self-guard at `:332`; the repo-wide
+writer trace for `clearedById` and `clearanceItem` across `src`, `scripts`, `prisma` (one writer);
+`separation-finalize-effects.test.ts:13-46` (the passthrough `$transaction` and the flat model mocks);
+`separation-finalize-sod.test.ts:103-108` (the inverting assertion — the plan named it correctly);
+`separations/+page.svelte:18-24` (the status badge); `[id]/+page.server.ts:13-30` (the load and the
+`finalizeBarFor` call); `tests/e2e/` inventory incl. `payroll-void-run-amortization.spec.ts`;
+`validate-plan-artifact.mjs` on the plan (0 failures, 0 warnings).
+
+**Taken from the plan text, not independently re-verified this pass:** the C1 schema wording; the
+`prisma/schema.prisma` line numbers for the `AuditAction` enum and `SeparationStatus`; the manual
+script's psql/curl invocations; `rbac.ts:75` `MANAGE_USER_ROLES` and the `settings/roles` exposure
+(V1 verified these — not re-run); `payroll/runs.ts:95-152` as the `voidRun` mirror (V1 verified);
+`api/v1/employees/[id]/+server.ts:136-141` (V1 verified); the "no `api/v1/separations` twin" finding
+(V1 verified); the `.prettierignore` claim (V1 verified).
+
+### Net gate derivation (V2)
+
+| Layer 1 dimension | Status | One-liner |
+|---|---|---|
+| Infra fit | PASS | unchanged from V1; both new columns additive, `db push`-safe, no runtime surface touched |
+| Test coverage | CONCERN | B-3 genuinely closed (distinct `txMock` verified against the real passthrough it replaces); remaining gaps are N-1 (no gate on the re-check select) and N-3 (rollback untiered) |
+| Breaking changes | PASS | the `SeparationStatus`-after-undo change is now listed as a Public Contract (B-4); the `ClearanceItem` shape change is listed; `clearedAnyItem`'s signature is unchanged and both callers are internal |
+| Security surface | CONCERN | B-2 and B-5 both closed and re-derived in source; N-1 leaves the in-tx half of the bar narrower than the pre-flight half; N-2's permanence is a real behaviour change that is not written down |
+
+| Layer 2 section | Status |
+|---|---|
+| C1 — schema | PASS |
+| C2 — finalize snapshot + in-tx audit | PASS — the test design defect B-3 named is actually fixed |
+| C3 — `clearedAnyItem` widening | CONCERN — N-1 (select) and N-2 (permanence/AC-6 wording) both land here |
+| C4 — `undoSeparation` | PASS — B-1 and B-4 fixed in the claim; B-5's decision verified sound |
+| C5 — route + UI | PASS — the three-term detector is correct in every path, computed before the strip |
+| C6 — E2E + docs | CONCERN — N-3: the one feasible rollback gate is not taken |
+| Owner-confirmation section | PASS — not re-opened, as instructed |
+
+Totals: 0 FAILs / 4 CONCERNs / 7 PASSes → **Net Gate: CONDITIONAL**
+
+Dimension findings:
+- Infra fit: PASS — no command, port or container surface changed since V1.
+- Test coverage: CONCERN — N-1 and N-3; B-3's own fix verified real.
+- Breaking changes: PASS — every observable contract change is now listed.
+- Security surface: CONCERN — N-1 and N-2.
+- C3 feasibility: CONCERN — edit target still unique at `separation.ts:129`; the widening is correct, but its second consumer's projection was not widened with it (N-1). Highest-risk edit: the `select` at `:319` that the plan does not currently touch.
+- C4 feasibility: PASS — the claim `data` object now carries neither B-1's nor B-4's defect.
+- C5 feasibility: PASS — highest-risk edit is still the `load` derivation; it is correct and the ordering trap is pinned by M5.4.
+- C1/C2/C6 feasibility: PASS / PASS / CONCERN (N-3).
+
+Known Gaps (excluded from the gate count): none — no `## Known Gaps (Resolved via Backlog)` section.
+
+Open gaps (V2):
+- Postgres transaction isolation under genuine concurrency — accepted residual (C), same as the payroll void.
+- `pnpm db:push` timing on a large populated production DB — accepted residual (C).
+- No `User`-entity audit row on the undo's login write — accepted with the payload mitigation (C).
+- Transaction rollback on a mid-undo throw — **re-tiered to B by N-3**, no longer an accepted residual.
+
+What this coverage does NOT prove (V2, additive to the V1 list which still stands):
+- Nothing proves the in-transaction re-check reads `previouslyClearedById` (N-1). Every B-2 gate —
+  the C3 third-actor unit test, U15/M4.8, manual step 7b — exercises the pre-flight bar or the helper
+  in isolation. A green suite here would NOT mean the raced half of the bar works.
+- Nothing proves what happens to a case after its original clearer is permanently barred (N-2). No
+  gate covers the one-admin deadlock shape.
+- With N-3 unaddressed, `pnpm test` still proves only that the undo's writes are ISSUED. A mocked
+  `$transaction` — passthrough or distinct `txMock` — cannot roll anything back.
+
+Gate (V2, 19-08-26): **CONDITIONAL** — 0 FAILs, 4 CONCERNs. B-1..B-5 are all genuinely closed and
+were re-derived in source, not accepted on the plan's word. Three new findings, all introduced by or
+adjacent to the fixes, all resolvable inside the existing blast radius with no scope growth: N-1 is a
+one-line `select` plus one assertion, N-2 is documentation plus one pinning test, N-3 is one extra E2E
+case reusing a pattern C6 already imports.
+
+Accepted by: pending — first-pass CONDITIONAL, 0 fix cycles recorded. Not accepted, not routed to
+EXECUTE. Next state: PVL supplement cycle for N-1/N-2/N-3, then re-run VALIDATE from V1.
+
+---
+
 ## Autonomous Goal Block
 
 ```
@@ -1283,3 +1471,25 @@ START COMMAND
 Re-read the plan in full, then run VALIDATE V1 with the four Layer-1 dimensions and the six
 Layer-2 commit sections.
 ```
+
+
+## Validate Contract — V3 note (revision pass 3, 19-08-26)
+
+**Answer first: N-1, N-2 and N-3 are all CLOSED in the plan text. The gate is still CONDITIONAL
+until VALIDATE re-runs — this plan does not un-block its own gate.**
+
+| Finding | Status | Note |
+|---|---|---|
+| N-1 — in-tx re-check projection | **CLOSED** | C3 now widens the `select` at `separation.ts:319` to carry `previouslyClearedById`, adds a *projection* assertion (an outcome assertion cannot catch a narrowed select) and mutation **M3.4**, which stays `pnpm check`-green and must still go red. |
+| N-1 sweep — other narrow projections | **CLOSED — none found** | Every other `ClearanceItem`/`SeparationRecord` projection was checked and recorded in C3: `:91` and `:388` select `status` only and merely count; `:178` selects from `Separation`; `getSeparation:101-111` uses a bare `include` so it already carries both new columns; `:151` is the scoped `userId` lookup. `:319` was the only narrowing site. |
+| N-2 — permanent bar undocumented | **CLOSED** | AC-6 qualified ("on items the undo never stamped"); Overview gains the who-may-finalize table for both moments of the sequence; a Risks row names the permanence and the one-admin deadlock; C3 gains a test pinning the permanence as **intended**; CANNOT-Prove #9 records the deadlock. No behaviour change — it is documentation plus one pinning test. |
+| N-3 — rollback untiered | **CLOSED (re-tiered C → B)** | C6 gains a third E2E: move a loan balance in SQL between finalize and undo, then undo ⇒ assert the 409 **and** that nothing moved (record still `FINALIZED`, login still off, employee still `OFFBOARDED`, other loan still `0`/`PAID`, no `SEPARATION_UNDO` audit row). Verification Evidence carries it as Hybrid; the Test Infra note is rewritten from "no rollback coverage, out of scope" to "gated at hybrid tier; only a *general* fault-injection harness remains out of scope". |
+
+**Residuals kept as residuals** (honest, unchanged): concurrency isolation, prod `db:push` timing,
+no `User`-entity audit row, the two login-reactivation paths — plus the newly recorded CANNOT-Prove
+#9 (no in-app recovery from the permanent bar in a one-admin org), which is accepted by design, not
+closed.
+
+**Gate restated: CONDITIONAL.** Nothing here changes it. Rev 3 is the plan's answer to V2's three
+concerns; only a fresh VALIDATE run from V1 may move the gate. No scope grew — every change lands
+inside C3, C6 and the plan's own prose sections.
