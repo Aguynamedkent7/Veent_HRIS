@@ -282,11 +282,25 @@ Two things are **not** inherited, because separations do not have them:
 ## 6. Open for PLAN — not decisions, but calls PLAN must make
 
 1. ~~All five decisions answered.~~ **Done, 19-08-26.**
-2. **How finalize captures per-row loan/advance state** so future undos are honest — a payment-ledger
-   row per written-off loan (reusing `LoanPayment` / `CashAdvancePayment`, which would let
-   `reverseAmortization` be reused nearly as-is), versus a richer `finalPayBreakdown` shape. This is
-   (A) from §1 and it gates the whole money half. **The strongest candidate is the ledger**, because
-   it makes the existing reversal code the undo.
+2. ~~**How finalize captures per-row loan/advance state**… the strongest candidate is the ledger,
+   because it makes the existing reversal code the undo.~~
+   **ANSWERED BY PLAN, 19-08-26 — and this SPEC's recommendation was WRONG. See
+   `separation-undo-304_PLAN_19-08-26.md`.** The ledger cannot make `reverseAmortization` reusable:
+   that function takes `(tx, runId)` and drives its entire loop off
+   `tx.payrollEntry.findMany({ where: { payrollRunId: runId } })` → `entry.deductions`
+   (`amortization.ts:22-31`, verified). A separation write-off has no run, no entry and no deduction
+   line, so the loop would iterate nothing. Reuse would mean rewriting the driver — a new function
+   wearing an old name.
+   Worse, `LoanPayment.payrollEntryId` is nullable and NULL rows stay distinct by design, for
+   **manual off-payroll payments** (`schema.prisma:1863-1875`). A write-off row would be
+   indistinguishable from a real payment, so the undo's cleanup could delete genuine ones. Telling
+   them apart needs a new `separationId` column on **both** ledger tables — so the ledger costs more
+   schema, not less — and a forgiven debt is not a payment, so it corrupts a ledger the payroll void
+   path trusts.
+   **PLAN chose a `SeparationRecord.preFinalizeState Json?` snapshot instead**, which is also the
+   only option that can hold `employmentStatus`, `endDate` and `User.isActive` — the ledger cannot
+   carry those at all, so the ledger would have needed the snapshot as well. `preFinalizeState IS
+   NULL` doubles as the D-4 pre-fix detector for free.
 3. Whether `SeparationStatus` gains a value or the undo returns to `CLEARED` as-is (D-1 says
    `CLEARED`; PLAN confirms nothing else keys on it).
 4. Whether `AuditAction` gains a separation-void value or the undo uses the generic `UPDATE`.
