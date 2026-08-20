@@ -14,7 +14,11 @@ import { periodOf } from '../../src/lib/utils/pay-periods'
 
 const { dbMock } = vi.hoisted(() => ({
 	dbMock: {
-		timesheet: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn() }
+		timesheet: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn() },
+		// #163: the overlap check, the duplicate check and the insert now run in ONE transaction,
+		// under an employee-month advisory lock. `tx` is the same mock, so the assertions hold.
+		$transaction: vi.fn(),
+		$executeRaw: vi.fn()
 	}
 }))
 vi.mock('$lib/server/db', () => ({ db: dbMock }))
@@ -43,6 +47,7 @@ beforeEach(() => {
 	)
 	dbMock.timesheet.findUnique.mockResolvedValue(null)
 	dbMock.timesheet.create.mockResolvedValue({ id: 'ts-new', entries: [] })
+	dbMock.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(dbMock))
 })
 
 const sheet = (employeeId: string, start: string, end: string) =>

@@ -151,42 +151,53 @@ export async function createTimesheet(
 	// a genuinely shared calendar day.
 	const from = utcMidnight(periodStart)
 	const dayAfterEnd = new Date(utcMidnight(periodEnd).getTime() + 24 * 60 * 60 * 1000)
-	const overlapping = await db.timesheet.findMany({
-		where: {
-			employeeId,
-			periodStart: { lt: dayAfterEnd },
-			periodEnd: { gte: from }
-		},
-		select: { id: true, periodStart: true, periodEnd: true }
-	})
-	const allStandard =
-		isValidStandardPeriod(periodStart, periodEnd) &&
-		overlapping.every((t) => isValidStandardPeriod(t.periodStart, t.periodEnd))
-	if (overlapping.length > 0 && !allStandard) {
-		const hit =
-			overlapping.find((t) => !isValidStandardPeriod(t.periodStart, t.periodEnd)) ?? overlapping[0]
-		error(
-			409,
-			`This range overlaps an existing timesheet (${formatShortDate(hit.periodStart)} – ${formatShortDate(hit.periodEnd)}).`
-		)
-	}
-
-	const existing = await db.timesheet.findUnique({
-		where: { employeeId_periodStart: { employeeId, periodStart } }
-	})
-	if (existing) error(409, 'Timesheet for this period already exists')
-
 	const totalHours = entries.reduce((sum, e) => sum + e.hoursWorked, 0)
 
-	const ts = await db.timesheet.create({
-		data: {
-			employeeId,
-			periodStart,
-			periodEnd,
-			totalHours,
-			entries: { create: entries.map(entryData) }
-		},
-		include: { entries: true }
+	// One transaction, under an employee-month advisory lock: on their own the two checks and the
+	// insert are check-then-act, so two concurrent saves of DIFFERENT but overlapping ranges both
+	// read an empty conflict set and both insert — and `@@unique([employeeId, periodStart])` cannot
+	// catch that, because their start days differ. The lock is transaction-scoped, so Postgres
+	// releases it on commit or rollback and there is nothing to unlock.
+	const ts = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+		const key = `timesheet:${employeeId}:${from.getUTCFullYear()}-${from.getUTCMonth()}`
+		await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key})::bigint)`
+
+		const overlapping = await tx.timesheet.findMany({
+			where: {
+				employeeId,
+				periodStart: { lt: dayAfterEnd },
+				periodEnd: { gte: from }
+			},
+			select: { id: true, periodStart: true, periodEnd: true }
+		})
+		const allStandard =
+			isValidStandardPeriod(periodStart, periodEnd) &&
+			overlapping.every((t) => isValidStandardPeriod(t.periodStart, t.periodEnd))
+		if (overlapping.length > 0 && !allStandard) {
+			const hit =
+				overlapping.find((t) => !isValidStandardPeriod(t.periodStart, t.periodEnd)) ??
+				overlapping[0]
+			error(
+				409,
+				`This range overlaps an existing timesheet (${formatShortDate(hit.periodStart)} – ${formatShortDate(hit.periodEnd)}).`
+			)
+		}
+
+		const existing = await tx.timesheet.findUnique({
+			where: { employeeId_periodStart: { employeeId, periodStart } }
+		})
+		if (existing) error(409, 'Timesheet for this period already exists')
+
+		return tx.timesheet.create({
+			data: {
+				employeeId,
+				periodStart,
+				periodEnd,
+				totalHours,
+				entries: { create: entries.map(entryData) }
+			},
+			include: { entries: true }
+		})
 	})
 
 	await writeAuditLog(ctx, {

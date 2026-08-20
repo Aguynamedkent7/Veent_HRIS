@@ -26,7 +26,9 @@ const { dbMock } = vi.hoisted(() => ({
 		timesheetEntry: { deleteMany: vi.fn() },
 		employee: { findUnique: vi.fn() },
 		attendanceDay: { findMany: vi.fn() },
-		$transaction: vi.fn()
+		$transaction: vi.fn(),
+		// #163: createTimesheet takes an advisory lock as the first statement of its transaction.
+		$executeRaw: vi.fn()
 	}
 }))
 
