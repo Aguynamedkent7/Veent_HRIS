@@ -10,6 +10,8 @@
 // service layer, and the UI. Legacy off-cycle rows with arbitrary dates stay readable —
 // `describePeriod`/`isValidStandardPeriod` simply report them as non-standard.
 
+import { manilaDayKey } from './dates'
+
 export type PeriodKind = 'FIRST_HALF' | 'SECOND_HALF' | 'WHOLE_MONTH'
 
 export const PERIOD_KINDS: readonly PeriodKind[] = ['FIRST_HALF', 'SECOND_HALF', 'WHOLE_MONTH']
@@ -117,16 +119,63 @@ export function isValidStandardPeriod(start: Date, end: Date): boolean {
 }
 
 /**
- * Fraction of a monthly figure that accrues in this period, for statutory proration (#129):
- * a WHOLE_MONTH run carries the full month (1); FIRST_HALF / SECOND_HALF carry half (0.5).
- * Non-standard legacy periods fall back to the caller-supplied default (semi-monthly 0.5),
- * preserving prior behavior.
+ * True when (start, end) is a usable custom period (#163): the end is on or after the start,
+ * and both fall in the same calendar month. Cross-month ranges are out of scope for v1 —
+ * statutory contributions are monthly, so a range spanning two months has no single basis.
+ * This is the single sanity gate shared by createPayrollRun, openPeriod, createTimesheet and
+ * the PeriodPicker's inline validation, so the client and server rules can never diverge.
  */
-export function periodShareOf(start: Date, end: Date, fallback = 0.5): number {
+export function isSameMonthRange(start: Date, end: Date): boolean {
+	const s = utcMidnight(start)
+	const e = utcMidnight(end)
+	return (
+		e.getTime() >= s.getTime() &&
+		e.getUTCFullYear() === s.getUTCFullYear() &&
+		e.getUTCMonth() === s.getUTCMonth()
+	)
+}
+
+/**
+ * Fraction of a monthly figure that accrues in this period, for statutory proration (#129/#163).
+ *
+ * The three standard shapes are FROZEN and must never move: WHOLE_MONTH carries the full month
+ * (exactly 1) and FIRST_HALF / SECOND_HALF carry exactly 0.5, for every month length. There is no
+ * single-formula simplification — May 1–15 is 15/31 = 0.4839 by day count, but the client's
+ * semi-monthly cadence pays it as half a month.
+ *
+ * A custom same-month range (#163) prorates by inclusive day count ÷ days in the month.
+ *
+ * Anything else is a legacy stored pair. `computePayroll` gates on status only, never on period
+ * shape, so a legacy cross-month or reversed row still reaches this function on Recompute — day
+ * counting one would yield >100% of a month, or a negative share. Those keep the historical flat
+ * 0.5, and the day-count branch is clamped to (0, 1].
+ */
+export function periodShareOf(start: Date, end: Date): number {
 	const kind = describePeriod(start, end).kind
 	if (kind === 'WHOLE_MONTH') return 1
 	if (kind === 'FIRST_HALF' || kind === 'SECOND_HALF') return 0.5
-	return fallback
+	if (!isSameMonthRange(start, end)) return 0.5
+	const s = utcMidnight(start)
+	const share = periodDays(s, end) / daysInMonth(s.getUTCFullYear(), s.getUTCMonth())
+	if (!(share > 0)) return 0.5
+	return Math.min(1, share)
+}
+
+/**
+ * True when two inclusive ranges share at least one PHILIPPINE calendar day (#163).
+ *
+ * Overlap must be decided on the day the range means, not on the instant it is stored. New rows
+ * are written as UTC midnight (`<input type="date">`), but legacy rows sit on PHT day boundaries —
+ * a stored `2026-08-09T16:00:00.000Z` is **August 10** in Manila. Truncating that to UTC August 9
+ * reports a range ending August 9 as overlapping when the two are merely adjacent, and refuses a
+ * legitimate save. Both conventions bucket correctly through `manilaDayKey`, and `YYYY-MM-DD`
+ * strings compare safely with `<=`.
+ *
+ * Callers keep a DB range filter as the cheap coarse pass; it must be widened by a day on each
+ * side, because a row whose UTC bounds fall outside the window can still be inside it in Manila.
+ */
+export function rangesOverlapInManila(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date): boolean {
+	return manilaDayKey(aStart) <= manilaDayKey(bEnd) && manilaDayKey(bStart) <= manilaDayKey(aEnd)
 }
 
 /** Human range for a picker preview, e.g. "May 1 – May 15, 2026 (15 days)". */

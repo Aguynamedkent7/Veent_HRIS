@@ -2,9 +2,16 @@ import { canAny } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
-import { isValidStandardPeriod } from '$lib/utils/pay-periods'
+import {
+	isSameMonthRange,
+	isValidStandardPeriod,
+	rangesOverlapInManila,
+	utcMidnight
+} from '$lib/utils/pay-periods'
+import { manilaDayKey } from '$lib/utils/dates'
 import { buildApprovalChain } from './requests/routing'
 import { canActOnStage, nextState, liveChain, timesheetSoD } from './approvals'
+import { formatShortDate } from '$lib/utils/format'
 import type { AuditContext } from './types'
 import type { Prisma } from '@prisma/client'
 
@@ -125,36 +132,97 @@ export async function assertCanModifyTimesheet(ctx: AuditContext, ts: { employee
 	error(403, 'You can only modify your own timesheet')
 }
 
+/**
+ * #163: the advisory-lock key serializing every writer of one employee's timesheets for one month.
+ *
+ * The month of the REQUESTED period, on the Manila calendar — never a bound derived from the
+ * widened `from`/`dayAfterEnd` query window. `from` is one day BEFORE the period start, so a range
+ * starting Aug 1 would key on July while an overlapping range starting Aug 2 keys on August: two
+ * different locks, no serialization, and exactly the race the lock exists to stop. `manilaDayKey`
+ * also buckets a row stored on a PHT day boundary into the month it means.
+ */
+export function timesheetLockKey(employeeId: string, periodStart: Date): string {
+	return `timesheet:${employeeId}:${manilaDayKey(periodStart).slice(0, 7)}`
+}
+
 export async function createTimesheet(
 	employeeId: string,
 	periodStart: Date,
 	periodEnd: Date,
 	entries: TimesheetEntryInput[],
-	ctx: AuditContext,
-	// Escape hatch for seeds / legacy imports only (#129). Off by default so all UI-driven
-	// creates are locked to the standard 1-15 / 16-EOM / whole-month shapes.
-	opts: { allowNonStandardPeriod?: boolean } = {}
+	ctx: AuditContext
 ) {
-	if (!opts.allowNonStandardPeriod && !isValidStandardPeriod(periodStart, periodEnd)) {
-		error(400, 'Timesheets must cover a standard pay period (1–15, 16–EOM, or the whole month)')
+	// #163: any same-month range is a legal timesheet period; the shape gate is gone.
+	if (utcMidnight(periodEnd) < utcMidnight(periodStart)) {
+		error(400, 'End date must be on or after the start date.')
+	}
+	if (!isSameMonthRange(periodStart, periodEnd)) {
+		error(400, 'A custom period must start and end in the same month.')
 	}
 
-	const existing = await db.timesheet.findUnique({
-		where: { employeeId_periodStart: { employeeId, periodStart } }
-	})
-	if (existing) error(409, 'Timesheet for this period already exists')
-
+	// #163: payroll sums an employee's timesheets by containment, so two overlapping sheets
+	// double-count the shared days' hours. Scoped to the employee, not the org. Fires only when at
+	// least one side is a custom range, so today's standard-shape behaviour is untouched; the
+	// same-start-day duplicate below stays the message for the standard case.
+	//
+	// MANILA calendar days, not raw timestamps and not UTC-truncated ones (S4): stored rows are not
+	// guaranteed UTC-midnight — a sheet written from a PHT day boundary carries 16:00 / 15:59:59.999,
+	// and 2026-08-09T16:00Z is August 10 in Manila. A raw comparison misses a genuinely shared day;
+	// a UTC truncation invents one and refuses a legitimate save. The query below is only the cheap
+	// coarse pass, widened by a day on each side; `rangesOverlapInManila` makes the decision.
+	const day = 24 * 60 * 60 * 1000
+	const from = new Date(utcMidnight(periodStart).getTime() - day)
+	const dayAfterEnd = new Date(utcMidnight(periodEnd).getTime() + 2 * day)
 	const totalHours = entries.reduce((sum, e) => sum + e.hoursWorked, 0)
 
-	const ts = await db.timesheet.create({
-		data: {
-			employeeId,
-			periodStart,
-			periodEnd,
-			totalHours,
-			entries: { create: entries.map(entryData) }
-		},
-		include: { entries: true }
+	// One transaction, under an employee-month advisory lock: on their own the two checks and the
+	// insert are check-then-act, so two concurrent saves of DIFFERENT but overlapping ranges both
+	// read an empty conflict set and both insert — and `@@unique([employeeId, periodStart])` cannot
+	// catch that, because their start days differ. The lock is transaction-scoped, so Postgres
+	// releases it on commit or rollback and there is nothing to unlock.
+	const ts = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+		const key = timesheetLockKey(employeeId, periodStart)
+		await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key})::bigint)`
+
+		const candidates = await tx.timesheet.findMany({
+			where: {
+				employeeId,
+				periodStart: { lt: dayAfterEnd },
+				periodEnd: { gte: from }
+			},
+			select: { id: true, periodStart: true, periodEnd: true }
+		})
+		const overlapping = candidates.filter((t) =>
+			rangesOverlapInManila(periodStart, periodEnd, t.periodStart, t.periodEnd)
+		)
+		const allStandard =
+			isValidStandardPeriod(periodStart, periodEnd) &&
+			overlapping.every((t) => isValidStandardPeriod(t.periodStart, t.periodEnd))
+		if (overlapping.length > 0 && !allStandard) {
+			const hit =
+				overlapping.find((t) => !isValidStandardPeriod(t.periodStart, t.periodEnd)) ??
+				overlapping[0]
+			error(
+				409,
+				`This range overlaps an existing timesheet (${formatShortDate(hit.periodStart)} – ${formatShortDate(hit.periodEnd)}).`
+			)
+		}
+
+		const existing = await tx.timesheet.findUnique({
+			where: { employeeId_periodStart: { employeeId, periodStart } }
+		})
+		if (existing) error(409, 'Timesheet for this period already exists')
+
+		return tx.timesheet.create({
+			data: {
+				employeeId,
+				periodStart,
+				periodEnd,
+				totalHours,
+				entries: { create: entries.map(entryData) }
+			},
+			include: { entries: true }
+		})
 	})
 
 	await writeAuditLog(ctx, {
