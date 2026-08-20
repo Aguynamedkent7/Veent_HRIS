@@ -142,8 +142,10 @@
 <input type="hidden" name={endName} value={endValue} />
 
 <div class="space-y-3">
-	<div class="grid gap-3 sm:grid-cols-2">
-		<div class="space-y-1.5">
+	<!-- Month, Year and Period share one line. The two selects are sized to their content
+	     rather than stretched to half the panel each; Period takes what is left. -->
+	<div class="flex flex-wrap items-start gap-3">
+		<div class="w-56 space-y-1.5">
 			<label for="pp-month" class="text-sm font-medium">Month</label>
 			<select id="pp-month" bind:value={month0} class={selectClass}>
 				{#each MONTHS as name, i (name)}
@@ -151,7 +153,7 @@
 				{/each}
 			</select>
 		</div>
-		<div class="space-y-1.5">
+		<div class="w-28 space-y-1.5">
 			<label for="pp-year" class="text-sm font-medium">Year</label>
 			<select id="pp-year" bind:value={year} class={selectClass}>
 				{#each YEARS as y (y)}
@@ -159,23 +161,23 @@
 				{/each}
 			</select>
 		</div>
-	</div>
 
-	<div class="space-y-1.5">
-		<span class="text-sm font-medium">Period</span>
-		<div class="inline-flex flex-wrap gap-1 rounded-md border bg-muted/40 p-1" role="group">
-			{#each KIND_OPTIONS as opt (opt.value)}
-				<button
-					type="button"
-					onclick={() => (kind = opt.value)}
-					aria-pressed={kind === opt.value}
-					class="rounded px-3 py-1.5 text-sm font-medium transition-colors {kind === opt.value
-						? 'bg-primary text-primary-foreground'
-						: 'hover:bg-accent'}"
-				>
-					{opt.label}
-				</button>
-			{/each}
+		<div class="min-w-0 flex-1 space-y-1.5">
+			<span class="text-sm font-medium">Period</span>
+			<div class="inline-flex flex-wrap gap-1 rounded-md border bg-muted/40 p-1" role="group">
+				{#each KIND_OPTIONS as opt (opt.value)}
+					<button
+						type="button"
+						onclick={() => (kind = opt.value)}
+						aria-pressed={kind === opt.value}
+						class="rounded px-3 py-1.5 text-sm font-medium transition-colors {kind === opt.value
+							? 'bg-primary text-primary-foreground'
+							: 'hover:bg-accent'}"
+					>
+						{opt.label}
+					</button>
+				{/each}
+			</div>
 		</div>
 	</div>
 
