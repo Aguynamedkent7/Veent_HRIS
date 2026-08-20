@@ -72,9 +72,9 @@
 			{#if form?.error}<div class="rounded bg-destructive/10 px-3 py-2 text-sm text-destructive">
 					{form.error}
 				</div>{/if}
-			<!-- #163: wide enough that the four period buttons sit on one row and the two
-			     date fields keep their two-column grid instead of stacking. -->
-			<div class="max-w-2xl">
+			<!-- #163: wide enough that Month, Year and all four period buttons sit on one row
+			     and the two date fields keep their two-column grid instead of stacking. -->
+			<div class="max-w-4xl">
 				<PeriodPicker />
 			</div>
 			<div class="flex items-center gap-2">

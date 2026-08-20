@@ -143,18 +143,19 @@
 
 <div class="space-y-3">
 	<!-- Month, Year and Period share one line. The two selects are sized to their content
-	     rather than stretched to half the panel each; Period takes what is left. -->
+	     rather than stretched to half the panel each, which leaves Period enough room to keep
+	     all four buttons on a single row (they need ~545px once the webfont has loaded). -->
 	<div class="flex flex-wrap items-start gap-3">
-		<div class="w-56 space-y-1.5">
-			<label for="pp-month" class="text-sm font-medium">Month</label>
+		<div class="w-40 space-y-1.5">
+			<label for="pp-month" class="block text-sm font-medium">Month</label>
 			<select id="pp-month" bind:value={month0} class={selectClass}>
 				{#each MONTHS as name, i (name)}
 					<option value={i}>{name}</option>
 				{/each}
 			</select>
 		</div>
-		<div class="w-28 space-y-1.5">
-			<label for="pp-year" class="text-sm font-medium">Year</label>
+		<div class="w-24 space-y-1.5">
+			<label for="pp-year" class="block text-sm font-medium">Year</label>
 			<select id="pp-year" bind:value={year} class={selectClass}>
 				{#each YEARS as y (y)}
 					<option value={y}>{y}</option>
@@ -163,14 +164,18 @@
 		</div>
 
 		<div class="min-w-0 flex-1 space-y-1.5">
-			<span class="text-sm font-medium">Period</span>
-			<div class="inline-flex flex-wrap gap-1 rounded-md border bg-muted/40 p-1" role="group">
+			<span class="block text-sm font-medium">Period</span>
+			<div
+				class="inline-flex h-9 items-center gap-1 rounded-md border bg-muted/40 px-1"
+				role="group"
+			>
 				{#each KIND_OPTIONS as opt (opt.value)}
 					<button
 						type="button"
 						onclick={() => (kind = opt.value)}
 						aria-pressed={kind === opt.value}
-						class="rounded px-3 py-1.5 text-sm font-medium transition-colors {kind === opt.value
+						class="flex h-7 items-center rounded px-3 text-sm font-medium transition-colors {kind ===
+						opt.value
 							? 'bg-primary text-primary-foreground'
 							: 'hover:bg-accent'}"
 					>
@@ -184,9 +189,11 @@
 	<!-- Revealed below the buttons, so the block only ever grows downward. -->
 	{#if isCustom}
 		<div class="space-y-1.5">
-			<div class="grid gap-3 sm:grid-cols-2">
-				<div class="space-y-1.5">
-					<label for="pp-custom-start" class="text-sm font-medium">Start date</label>
+			<!-- Sized like Month rather than stretched across the panel, so the revealed row
+			     lines up with the controls above it. -->
+			<div class="flex flex-wrap gap-3">
+				<div class="w-40 space-y-1.5">
+					<label for="pp-custom-start" class="block text-sm font-medium">Start date</label>
 					<input
 						id="pp-custom-start"
 						type="date"
@@ -198,8 +205,8 @@
 						aria-describedby={customError ? 'pp-custom-error' : undefined}
 					/>
 				</div>
-				<div class="space-y-1.5">
-					<label for="pp-custom-end" class="text-sm font-medium">End date</label>
+				<div class="w-40 space-y-1.5">
+					<label for="pp-custom-end" class="block text-sm font-medium">End date</label>
 					<input
 						id="pp-custom-end"
 						type="date"
