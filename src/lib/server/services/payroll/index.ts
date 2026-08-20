@@ -128,7 +128,6 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 
 	const [
 		employees,
-		config,
 		earningTypes,
 		loansAll,
 		advancesAll,
@@ -144,7 +143,7 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		holidays
 	] = await Promise.all([
 		db.employee.findMany({ where: { user: { organizationId }, employmentStatus: 'ACTIVE' } }),
-		db.payrollConfig.findUnique({ where: { organizationId } }),
+		// #163: payrollConfig is no longer read here — proration comes from the period shape alone.
 		db.earningType.findMany({ where: { organizationId }, select: { code: true, taxable: true } }),
 		db.loan.findMany({
 			where: { employee: { organizationId }, status: 'ACTIVE', balance: { gt: 0 } }
@@ -217,10 +216,12 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	// Requirement #5 (review) + #129: prorate monthly statutory to the run's ACTUAL period
 	// shape — WHOLE_MONTH carries the full month (1), either half carries 0.5. This replaces
 	// reading the org-wide payFrequency, which mis-prorated an org that mixes half-month and
-	// whole-month (e.g. benefits-only) runs. Legacy non-standard runs fall back to the old
-	// frequency-based share so their numbers don't shift.
-	const frequencyShare = (config?.payFrequency ?? 'SEMI_MONTHLY') === 'MONTHLY' ? 1 : 0.5
-	const periodShare = periodShareOf(run.periodStart, run.periodEnd, frequencyShare)
+	// whole-month (e.g. benefits-only) runs. A WHOLE_MONTH adjustment run alongside the two
+	// halves is a supported workflow, so the three shapes must keep their frozen shares.
+	// #163: a custom same-month range prorates by inclusive day count ÷ days in the month; the
+	// org-wide payFrequency no longer influences proration at all (it was already dead for every
+	// standard shape). Legacy stored pairs keep the historical flat 0.5 — see periodShareOf.
+	const periodShare = periodShareOf(run.periodStart, run.periodEnd)
 	// #173 (Feature E): the run's cutoff kind, computed once, drives EE-share allocation in the
 	// engine. WHOLE_MONTH/legacy periods (null) make allocation moot — the engine falls back to
 	// `× periodShare` there.
