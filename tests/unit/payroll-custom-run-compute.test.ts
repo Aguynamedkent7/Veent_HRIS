@@ -187,6 +187,112 @@ describe('computePayroll sources timesheet hours by intersection', () => {
 	})
 })
 
+/**
+ * #163 (review round 2) — the same intersection, decided on MANILA calendar days.
+ *
+ * The query is a coarse filter widened by a day on each side; a UTC-derived bound counts an entry
+ * stored as 2026-05-09T16:00Z — which is May 10 in Manila — inside a May 3–9 run, paying a day the
+ * run does not cover, and can include or exclude a whole sheet stored on a PHT boundary.
+ */
+describe('computePayroll buckets timesheet days on the Manila calendar', () => {
+	type Entry = { date: Date; hoursWorked: number }
+	type Sheet = { id: string; periodStart: Date; periodEnd: Date; entries: Entry[] }
+	type TsWhere = {
+		employeeId: string
+		status: string
+		periodStart: { lt: Date }
+		periodEnd: { gte: Date }
+	}
+	type TsInclude = { entries: { where: { date: { gte: Date; lt: Date } } } }
+
+	const mockSheets = (sheets: Sheet[]) =>
+		dbMock.timesheet.findMany.mockImplementation(
+			async ({ where, include }: { where: TsWhere; include: TsInclude }) =>
+				sheets
+					.filter(
+						(t) =>
+							where.status === 'APPROVED' &&
+							t.periodStart < where.periodStart.lt &&
+							t.periodEnd >= where.periodEnd.gte
+					)
+					.map((t) => ({
+						...t,
+						entries: t.entries.filter(
+							(e) =>
+								e.date >= include.entries.where.date.gte && e.date < include.entries.where.date.lt
+						)
+					}))
+		)
+
+	// A sheet stored on PHT day boundaries: May 1 00:00 PHT = Apr 30 16:00Z, May 15 ends at
+	// May 15 15:59:59.999Z + ... — stored here as the PHT day start of May 15.
+	const phtSheet: Sheet = {
+		id: 'ts-pht',
+		periodStart: new Date('2026-04-30T16:00:00.000Z'), // May 1 in Manila
+		periodEnd: new Date('2026-05-14T16:00:00.000Z'), // May 15 in Manila
+		entries: [
+			{ date: new Date('2026-05-09T16:00:00.000Z'), hoursWorked: 8 }, // May 10 in Manila
+			{ date: new Date('2026-05-11T16:00:00.000Z'), hoursWorked: 5 } // May 12 in Manila
+		]
+	}
+
+	it('does NOT count a May 10 (PHT) entry in a May 3–9 run', async () => {
+		mockSheets([phtSheet])
+		await computeFor(d('2026-05-03'), d('2026-05-09'))
+		// No in-range entry at all → the schedule fallback, not 8h from a day outside the run.
+		expect(entryWritten().flagReason).toBe(
+			'Hours estimated from schedule — no timesheet covers this custom period'
+		)
+	})
+
+	it('DOES count that same entry in a May 10–20 run', async () => {
+		mockSheets([phtSheet])
+		await computeFor(d('2026-05-10'), d('2026-05-20'))
+		// May 10 (8h) + May 12 (5h). The sheet ends May 15 in Manila, so both are in range.
+		expect(entryWritten().hoursWorked).toBe(13)
+	})
+
+	// The sheet-level decision: its stored periodStart is April in UTC, so a UTC comparison would
+	// still admit it here — the point is that its Manila span (May 1–15) is what decides.
+	it('keeps a PHT-boundary sheet that contributes its in-window days', async () => {
+		mockSheets([phtSheet])
+		await computeFor(d('2026-05-12'), d('2026-05-15'))
+		expect(entryWritten().hoursWorked).toBe(5) // May 12 only
+	})
+
+	// The widening earns its keep here: this sheet's UTC bounds end BEFORE the run starts, so an
+	// un-widened query drops it outright — yet in Manila it covers the run's first day.
+	it('keeps a sheet whose UTC end falls outside the run but whose Manila end does not', async () => {
+		mockSheets([
+			{
+				id: 'ts-edge',
+				periodStart: new Date('2026-04-30T16:00:00.000Z'), // May 1 PHT
+				periodEnd: new Date('2026-05-10T16:00:00.000Z'), // May 11 PHT
+				entries: [{ date: new Date('2026-05-10T16:00:00.000Z'), hoursWorked: 6 }] // May 11 PHT
+			}
+		])
+		await computeFor(d('2026-05-11'), d('2026-05-15'))
+		expect(entryWritten().hoursWorked).toBe(6)
+	})
+
+	// The negative control for the same shape: one Manila day earlier, the sheet is merely
+	// adjacent and must contribute nothing.
+	it('drops the same sheet when its Manila span ends the day before the run', async () => {
+		mockSheets([
+			{
+				id: 'ts-adjacent',
+				periodStart: new Date('2026-04-30T16:00:00.000Z'), // May 1 PHT
+				periodEnd: new Date('2026-05-09T16:00:00.000Z'), // May 10 PHT
+				entries: [{ date: new Date('2026-05-09T16:00:00.000Z'), hoursWorked: 8 }] // May 10 PHT
+			}
+		])
+		await computeFor(d('2026-05-11'), d('2026-05-15'))
+		expect(entryWritten().flagReason).toBe(
+			'Hours estimated from schedule — no timesheet covers this custom period'
+		)
+	})
+})
+
 describe('computePayroll on a standard period is unchanged', () => {
 	const may = periodOf('FIRST_HALF', 2026, 4)
 

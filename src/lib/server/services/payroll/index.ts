@@ -417,12 +417,17 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		run.periodEnd,
 		holidays.map((h) => h.date)
 	)
-	// #163: the run's calendar-day bounds, as a half-open [start, dayAfterEnd) window. Used by the
-	// timesheet INTERSECTION query below at BOTH levels — which sheets are candidates, and which of
-	// their entries fall inside the run. Day bounds, not raw timestamps: a stored row is not
-	// guaranteed to sit on UTC midnight.
-	const runStartDay = utcMidnight(run.periodStart)
-	const dayAfterRunEnd = new Date(utcMidnight(run.periodEnd).getTime() + 24 * 60 * 60 * 1000)
+	// #163: the COARSE bounds of the timesheet INTERSECTION query below, at both levels — which
+	// sheets are candidates, and which of their entries come back. Widened by a day on each side,
+	// like every other query in this file that feeds a Manila-calendar decision: a stored row is not
+	// guaranteed to sit on UTC midnight, and 2026-05-09T16:00Z is May 10 in Manila, so a row whose
+	// UTC bounds fall outside this window can still be inside the run. The real decisions are made
+	// in JS on Manila day keys — see `runStartKey` / `runEndKey`.
+	const day = 24 * 60 * 60 * 1000
+	const tsFrom = new Date(utcMidnight(run.periodStart).getTime() - day)
+	const tsUntil = new Date(utcMidnight(run.periodEnd).getTime() + 2 * day)
+	const runStartKey = manilaDayKey(run.periodStart)
+	const runEndKey = manilaDayKey(run.periodEnd)
 
 	const perEmployee: Array<{
 		entry: Prisma.PayrollEntryUncheckedCreateWithoutEarningsInput
@@ -478,17 +483,29 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		// the run, and only the ENTRIES whose date falls inside the run are summed — so a custom
 		// May 3–9 run reads exactly those days out of a standard May 1–15 sheet instead of seeing
 		// nothing and paying full scheduled hours for days no timesheet supports.
-		const timesheets = await db.timesheet.findMany({
+		//
+		// The query is only the cheap coarse pass; both decisions are made below on MANILA calendar
+		// days. A UTC-derived bound counts a May 10 (PHT) entry stored as 2026-05-09T16:00Z inside a
+		// May 3–9 run — paying a day the run does not cover — and can include or exclude a whole
+		// sheet stored on a PHT boundary for the same reason.
+		const candidateSheets = await db.timesheet.findMany({
 			where: {
 				employeeId: emp.id,
 				status: 'APPROVED',
-				periodStart: { lt: dayAfterRunEnd },
-				periodEnd: { gte: runStartDay }
+				periodStart: { lt: tsUntil },
+				periodEnd: { gte: tsFrom }
 			},
-			include: { entries: { where: { date: { gte: runStartDay, lt: dayAfterRunEnd } } } }
+			include: { entries: { where: { date: { gte: tsFrom, lt: tsUntil } } } }
 		})
-		const approvedHours = timesheets
+		const approvedHours = candidateSheets
+			.filter((ts) =>
+				rangesOverlapInManila(run.periodStart, run.periodEnd, ts.periodStart, ts.periodEnd)
+			)
 			.flatMap((ts) => ts.entries)
+			.filter((e) => {
+				const k = manilaDayKey(e.date)
+				return k >= runStartKey && k <= runEndKey
+			})
 			// Hours, not money — plain number arithmetic is correct here. Named `acc` so it does not
 			// shadow the exact-money `sum` helper imported above.
 			.reduce((acc, e) => acc + Number(e.hoursWorked), 0)
