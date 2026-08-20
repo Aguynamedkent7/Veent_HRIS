@@ -570,6 +570,252 @@ The point: a standard half still takes exactly half a month.
    unmodified tree. If `git status` is not clean, stop and reconcile first; a golden captured after
    an edit proves nothing.
 
+## Validate Supplement (applied by VALIDATE, 2026-08-20)
+
+VALIDATE verified every claim in this plan against source. These items **supersede** the plan text
+they name. Execute-agent must follow this section where it conflicts with the section above.
+
+### S1 — Keep the exact-duplicate `findUnique` 409. Do NOT delete it. (supersedes 2.2 "replace the `findUnique` 409 at `:84-87`" and checklist 15)
+
+`voidRun` (`src/lib/server/services/payroll/runs.ts:123-124`) only flips `status` to `VOIDED`; the row
+stays, and `@@unique([organizationId, periodStart, periodEnd])` (`prisma/schema.prisma:1139`) still
+covers it. The planned guard excludes `VOIDED`, so a **void-then-recreate-the-same-range** flow finds
+no conflict, reaches `db.payrollRun.create`, and raises a raw Prisma **P2002**. P2002 is not an
+`HttpError`, so `payroll/+page.server.ts:52-55` rethrows it → **500 error page** where today the user
+gets a clean 409. Same defect in `openPeriod` (`periods.ts:56-65`, inside `$transaction`).
+
+**Do:** keep both `findUnique` exact-duplicate 409s exactly as they are, and add
+`assertNoOverlappingRun` **alongside** them (guard first, then the existing duplicate check, or vice
+versa — both must run). This also satisfies criterion 13 verbatim with no message change.
+
+### S2 — The overlap guard must fetch ALL candidate conflicts. (supersedes the `findFirst` query in 2.2)
+
+2.2 requires "return early when the new range is standard **and the fetched conflicts are all
+standard**", but specifies `findFirst`. One arbitrary row cannot decide "all". Use `findMany` (select
+`periodStart`, `periodEnd`, `id` only), then:
+`if (isValidStandardPeriod(periodStart, periodEnd) && hits.every(h => isValidStandardPeriod(h.periodStart, h.periodEnd))) return`.
+Report the first **non-standard** hit in the 409 message.
+
+### S3 — Clamp the day-count share; `computePayroll` has no shape gate. (supersedes 1.2)
+
+`computePayroll` (`payroll/index.ts:121-127`) gates on **status only** — never on period shape. Every
+stored `(periodStart, periodEnd)` pair reaches `periodShareOf` on **Recompute**. Today a non-standard
+pair returns a flat `0.5`. With the planned day-count line and no clamp:
+
+- a legacy **cross-month** DRAFT/COMPUTED run (e.g. 45 days) yields `45 / 31 = 1.45` → **145% of a
+  month's statutory**, silently;
+- a legacy **reversed-date** row yields a **negative** share → negative statutory, negative
+  allowances, negative loan installment.
+
+**Do:** in `periodShareOf`, before day-counting, return `0.5` when the pair is not
+`isSameMonthRange(start, end)` (this preserves today's behaviour for any unreachable legacy row), and
+clamp the day-count result to `(0, 1]`. One line each. Do NOT rely on the create-time sanity gate —
+it does not run on recompute.
+
+### S4 — Normalize overlap comparisons to UTC-midnight day bounds. (supersedes the raw-date query in 2.2 and 2.3)
+
+Stored rows are **not** guaranteed UTC-midnight. The single timesheet in the dev DB is
+`periodStart 2026-08-09 16:00:00`, `periodEnd 2026-08-16 15:59:59.999` (PHT day boundaries stored as
+UTC). A raw `periodStart <= periodEnd AND periodEnd >= periodStart` comparison against such a row
+**misses a genuine same-day overlap**: a new UTC-midnight range ending `2026-08-09 00:00` does not
+satisfy `existing.periodStart (Aug 9 16:00) <= Aug 9 00:00`, yet Aug 9 is shared by both.
+
+**Do:** compare on day bounds — query `periodStart: { lt: endOfDay(periodEnd) }` and
+`periodEnd: { gte: utcMidnight(periodStart) }`, or normalize in JS after a day-window fetch. State in
+the test file that the fixture rows carry intraday times.
+
+### S5 — `tests/unit/timesheet-selfservice.test.ts:173-186` will BREAK. (supersedes checklist 13, which names only `:203`)
+
+That test asserts `createTimesheet(..., 2026-05-13, 2026-05-21)` → **400**. Under the new sanity gate
+that range is a **valid** custom same-month period and reaches `db.timesheet.create` — the test fails.
+
+**Do:** rewrite it as two cases against the new gate — cross-month (`2026-05-13 → 2026-06-02`) → 400,
+and reversed (`2026-05-21 → 2026-05-13`) → 400, each asserting `timesheet.create` was not called. The
+escape-hatch case at `:195-206` becomes a duplicate of "creates a timesheet for a standard period";
+delete it rather than merely dropping the third argument.
+
+### S6 — Public Contracts correction
+
+"Only caller is `payroll/index.ts:223`" is **not accurate**: `tests/unit/pay-periods.test.ts:106`
+also passes a third argument (`periodShareOf(utc(2026,5,13), utc(2026,5,21), 1)`). Section 1.5
+already replaces it; the Public Contracts line is what is wrong. Grep confirms **no other** third-arg
+caller anywhere in `src/`, `tests/`, `scripts/`, `prisma/`.
+
+### S7 — Declare the workflow consequence of the guard
+
+Once one custom run exists in a month, the guard (fires when **either** side is non-standard) refuses
+the org's normal `1–15` run for that month, because the standard-vs-standard early return does not
+apply. An off-cycle 7-day run therefore **blocks the regular payroll** until it is voided. This is a
+defensible reading of #163's double-pay requirement, but it is a behaviour change no criterion covers.
+**Do:** state it in the PR body and in the 409 copy ("void the conflicting run to proceed"), and add
+one unit case asserting it, so it is a decision on record rather than a surprise.
+
+### S8 — Criterion 17 needs a visible signal, not only a backlog note
+
+The Known-Gap wording ("reads zero hours") understates it. `payroll/index.ts:302-310` selects
+timesheets by **containment**; when nothing matches, `regularHours` falls back to
+`scheduledHours = workingDays × 8` (`:311-313`), so the run pays **full scheduled hours** — money
+moves. Exposure is limited to employees with **no** derived attendance (`buildAttendanceInput` is
+preferred), which is real for orgs not on the punch pipeline. A pre-existing standard `1–15` timesheet
+plus a new custom `May 3–9` run hits it, and this PR is what makes that reachable.
+
+**Do (in this PR, cheap):** when a run's `periodKind === null` **and** an employee falls back to
+`scheduledHours`, set `hasOverride`/`overrideNote` or surface a visible "hours estimated from schedule"
+badge on the run detail row. Still write the backlog note; the note alone is not enough for a money
+path shipped in the same PR.
+
+### S9 — Run the legacy pre-flight against every environment, not just dev
+
+Step 1.1 runs `scripts/legacy-nonstandard-runs.ts` against `.env.dev`. The dev DB has **0 payroll
+runs, 0 payroll periods, 1 timesheet** (verified 2026-08-20), so a green result there proves nothing
+about staging or production. **Do:** run it against every database this change will reach and paste
+each result in the PR body. Combined with S3, a hit is no longer a correctness emergency — but it is
+still a numbers-will-move declaration.
+
+### S10 — Additional required unit cases (append to 2.6)
+
+| File | Cases |
+|---|---|
+| `payroll-run-void-recreate.test.ts` (new) | An existing **VOIDED** run for the identical range → recreating that range still returns **409** `'Payroll run for this period already exists'`, and `payrollRun.create` is never called. Guards S1. |
+| `pay-periods.test.ts` (extend) | `periodShareOf` on a **cross-month** pair → `0.5` (not `> 1`); on a **reversed** pair → `0.5` (not negative); every result is `> 0` and `<= 1` for a table of adversarial pairs. Guards S3. |
+| `payroll-run-overlap-guard.test.ts` (extend) | A conflict row with **intraday** timestamps (`Aug 9 16:00` / `Aug 16 15:59:59.999`) vs a UTC-midnight new range sharing exactly one day → **409**. Guards S4. |
+| `payroll-run-overlap-guard.test.ts` (extend) | New range is standard, one fetched conflict is standard **and another is not** → **409** (proves `findMany`, not `findFirst`). Guards S2. |
+
+### Supplement checklist (append to the Implementation Checklist)
+
+29. S1 — keep both exact-duplicate `findUnique` 409s; add the overlap guard alongside, not instead.
+30. S2 + S4 — `assertNoOverlappingRun` uses `findMany` and UTC-midnight day-bound comparisons; same
+    normalization in the timesheet guard (2.3).
+31. S3 — `periodShareOf` returns `0.5` for a non-same-month or reversed stored pair and clamps the
+    day-count branch to `(0, 1]`.
+32. S5 — rewrite `tests/unit/timesheet-selfservice.test.ts:173-206` (two new gate cases; delete the
+    escape-hatch case).
+33. S8 + S10 — add the schedule-fallback signal for custom runs, and the four unit cases in S10.
+
+---
+
 ## Validate Contract
 
-(placeholder — vc-validate-agent writes this section before EXECUTE)
+Status: CONDITIONAL
+Date: 20-08-26
+date: 2026-08-20
+generated-by: outer-pvl
+
+Parallel strategy: sequential (single-agent two-layer fan-out; no subagent tool available in this session)
+Rationale: 4/7 signals — S2 (public API surface), S5 (depth requested), S6 (money/high-risk class), S7 (9 source files). Score says HIGH (workflow/team); read-only verification with no cross-talk was executed in-agent instead, with every claim checked against source.
+
+Test gates:
+
+| criterion id | behavior | strategy | proving test | gap-resolution |
+|---|---|---|---|---|
+| 4 / risk #1 | Standard 1–15, 16–EOM, 1–EOM produce byte-identical pesos | Fully-Automated | `pnpm test tests/unit/payroll-standard-period-golden.test.ts` (captured pre-edit, never `-u`) | B |
+| 3 | `periodShareOf` is exactly 0.5/0.5/1 for 28/29/30/31-day months | Fully-Automated | `pnpm test tests/unit/pay-periods.test.ts` month-length table | A |
+| 5, 6 | Custom range prorates statutory by day count | Fully-Automated | `pnpm test tests/unit/payroll-custom-period-statutory-proration.test.ts` | B |
+| 7, 8 | Loan/cash-advance installment prorated; 4 short runs < 1 installment | Fully-Automated | `pnpm test tests/unit/payroll-custom-period-loan-proration.test.ts tests/unit/payroll-loan-no-double-amortization.test.ts` | B |
+| 10, 12 | Overlap 409; adjacent allowed; 1–15 + 16–31 + 1–31 coexist | Fully-Automated | `pnpm test tests/unit/payroll-run-overlap-guard.test.ts` (incl. S2/S4 cases) | B |
+| 11 | `openPeriod` refuses an overlapping range, creates neither row | Fully-Automated | `pnpm test tests/unit/payroll-period-overlap-guard.test.ts` | B |
+| 13 | Exact duplicate still 409s — including against a VOIDED run | Fully-Automated | `pnpm test tests/unit/payroll-run-duplicate-409.test.ts tests/unit/payroll-run-void-recreate.test.ts` | B |
+| 14, 15, 16 | Save-as-timesheet custom range; employee-scoped overlap 409, never a 500 | Fully-Automated | `pnpm test tests/unit/timesheet-overlap-guard.test.ts` + `pnpm test:e2e tests/e2e/attendance-save-timesheet-custom-range.spec.ts` | B |
+| round-2 #1 | Same-month + `end >= start` gate on all three services | Fully-Automated | `pnpm test tests/unit/payroll-period-sanity-gate.test.ts` | B |
+| round-2 #2 | Custom run under FIRST/SECOND takes ZERO EE share; WHOLE_MONTH unchanged | Fully-Automated | `pnpm test tests/unit/payroll-custom-period-ee-share.test.ts` | B |
+| S3 | Legacy stored pair can never produce a negative or >1 share on recompute | Fully-Automated | `pnpm test tests/unit/pay-periods.test.ts` adversarial-pair table | B |
+| 1, 2 | Default stays First half; the two incumbent picker specs pass unmodified | Fully-Automated | `pnpm test:e2e` (127 specs, build+preview per #287) | A |
+| 18 | A custom run's row shows start, end and inclusive day count | Fully-Automated | `pnpm test:e2e tests/e2e/payroll-custom-range-labels.spec.ts` | B |
+| 19, 20 | RBAC and payslip/report regression | Fully-Automated | `pnpm test` (full suite; baseline 136 files / 1588 tests green, verified 2026-08-20) | A |
+| all | Real DB / GUI end-to-end confidence | Hybrid | Manual script M1–M8 — precondition: `./start.sh`, `pnpm db:push`, `pnpm db:seed`, `pnpm dev`, `.env.dev` | B |
+| — | `scripts/seed-payslip-demo.ts` edit (outside `pnpm check`) | Hybrid | `pnpm dotenv -e .env.dev -- tsx scripts/seed-payslip-demo.ts` exits 0 — precondition: DB up | B |
+| — | Design-brief conformance of the two Svelte files | Agent-Probe | `node /home/hyuse/.claude/skills/impeccable/scripts/detect.mjs --json src/lib/components/ui/PeriodPicker.svelte "src/routes/(app)/attendance/+page.svelte"` | B |
+| 17 | Timesheet hours sourced by containment for a custom range | Fully-Automated (signal only) | Schedule-fallback badge/override note asserted in a unit case (S8); the query itself is NOT fixed | D |
+
+gap-resolution legend: A — proven now; B — gate added by this plan/supplement; C — deferred to a named later plan; D — backlog test-building stub (named residual).
+
+Legacy line form (retained for existing consumers):
+- Share math: Fully-automated: `pnpm test tests/unit/pay-periods.test.ts tests/unit/payroll-calculator.test.ts tests/unit/payroll-standard-period-golden.test.ts`
+- Service gates + overlap + amortization + EE share: Fully-automated: `pnpm test`
+- UI + picker regression: Fully-automated: `pnpm test:e2e`
+- Static gates: Fully-automated: `pnpm lint`, `pnpm format:check`, `pnpm check`
+- `scripts/**` (not covered by `pnpm check`): hybrid: `pnpm dotenv -e .env.dev -- tsx scripts/seed-payslip-demo.ts` + DB up
+- GUI money path: hybrid: manual M1–M8 + `pnpm dev` + seeded DB
+- Design-brief conformance: agent-probe: impeccable `detect.mjs`
+- Criterion 17 containment sourcing: known-gap: documented — backlog note + in-PR schedule-fallback signal (S8)
+
+Dimension findings:
+- Infra fit: PASS — pnpm/vitest/Playwright commands in the plan match `package.json:10-16`; baseline `pnpm test` green (136 files, 1588 tests, 2026-08-20); DB container `veent-db-5434` up; no schema change, no migration; the plan already flags that `pnpm check` skips `scripts/**` and requires running the seed script.
+- Test coverage: CONCERN — the planned suite would go green while three real defects ship: no void-then-recreate case (S1), no adversarial legacy-pair share case (S3), no intraday-timestamp overlap case (S4); and `tests/unit/timesheet-selfservice.test.ts:173-186` will break but is not in the checklist (S5). Four cases added in S10.
+- Breaking changes: CONCERN — the signature narrowings are safe and fully enumerated (only `payroll/index.ts:223` and `tests/unit/pay-periods.test.ts:106` pass a third arg to `periodShareOf`; only `scripts/seed-payslip-demo.ts:102` and `tests/unit/timesheet-selfservice.test.ts:203` pass `allowNonStandardPeriod`; no `.svelte` consumer binds `kind`, so widening the prop type breaks no call site). The Public Contracts line claiming a single third-arg caller is wrong (S6), and the guard's effect on the normal 1–15 run in a month that already has a custom run is an undeclared workflow change (S7).
+- Security surface: PASS — no auth, secret, schema or trust-boundary change. The PayrollRun overlap query is `organizationId`-scoped; the Timesheet guard is `employeeId`-scoped and every caller authorizes the employee first (`services/attendance/index.ts:391-395`). New 409/400 messages disclose only same-org / same-employee period bounds. `src/hooks.ts` needs no change — the change moves no new `Prisma.Decimal` across the server→client boundary (`amortShare` and `periodShare` are plain numbers consumed server-side; every money value still exits through `q2n`).
+- Section 1 — Share math: CONCERN — mechanically sound and the frozen-shape claim is CONFIRMED (`pay-periods.ts:125-130` returns literal `1`/`0.5`; `describePeriod:96-107` classifies by day number against `daysInMonth`, so month length is irrelevant). But `computePayroll` (`payroll/index.ts:121-127`) gates on status only, so an unclamped day-count share is reachable on Recompute for any stored pair (S3).
+- Section 2 — Services: FAIL (RESOLVED in-supplement) — deleting the exact-duplicate `findUnique` while excluding `VOIDED` from the guard turns the re-run-after-void flow into a raw Prisma P2002 → 500 (S1); and the guard's "all conflicts standard" rule is undecidable with the specified `findFirst` (S2). Both fixed by the Validate Supplement above. `resolveEE` reorder verified safe for every standard shape (S5-claim): today's `calculator.ts:147` covers WHOLE_MONTH/null/undefined; the new order routes WHOLE_MONTH and `undefined` to `times(share)` first and leaves FIRST_HALF/SECOND_HALF outputs bit-identical under FIRST, SECOND and EVEN. The `amortShare` change cannot exceed a balance (`deductions.ts:73` caps `due` at `balance` after the scaling) and cannot produce a fractional centavo (`q2` at the call site, `q2` again in `applyAmortizations`).
+- Section 3 — UI: PASS — `#pp-month` is `PeriodPicker.svelte:74` and the only button label the e2e suite selects is `Whole month` (`PeriodPicker.svelte:54`), used at `timesheet-create-for-employee.spec.ts:105,107,196,198` and `manager-org-wide-timesheets.spec.ts:91,93`; a fourth `Custom range` button does not collide with Playwright's substring accessible-name match. Keeping Month/Year rendered in Custom mode preserves `#pp-month`. No consumer binds `kind` (`payroll/+page.svelte:76`, `payroll/periods/+page.svelte:81`, `NewTimesheetDialog.svelte:128`), so widening the prop type is safe. Empty hidden inputs are handled — `z.coerce.date()` rejects `''` and both actions return a clean 400 (`payroll/+page.server.ts:29-41`, `payroll/periods/+page.server.ts:42-53`).
+
+Open gaps:
+- Criterion 17 (timesheet containment sourcing): known-gap: documented as NEW PLAN REQUIRED — see `process/features/flexible-periods/backlog/timesheet-containment-sourcing_NOTE_20-08-26.md`. Mitigated in-PR by the schedule-fallback signal required in S8; the query itself is unchanged.
+- Legacy non-standard DRAFT/COMPUTED runs in non-dev environments: unknown. S3 removes the unbounded/negative failure mode; S9 requires the pre-flight against every target database. Numbers on any such run still move on recompute by design.
+- No component-test infrastructure for `.svelte` — `PeriodPicker` inline validation copy is reachable only through e2e. Pre-existing; not fixed here.
+
+What this coverage does NOT prove:
+- The golden snapshot proves the three standard shapes for **May 2026 (31 days)** and **Feb 2026 (28 days)** with one fixture employee. It does not prove a 29- or 30-day month, multiple employees, mid-period compensation splits (#170/#171), or an org on `MONTHLY` `payFrequency` whose share stops being read once `frequencyShare` is deleted.
+- `pnpm test` runs against a mocked `$lib/server/db`. It does not prove the actual Prisma query semantics of the overlap `findMany`/`findFirst`, the `@@unique` P2002 behaviour, or `$transaction` rollback in `openPeriod`. Only the manual script and a real DB touch those.
+- `pnpm test:e2e` runs against build+preview with a seeded DB (`prisma/seed-e2e.ts`). It does not prove behaviour against **production data shapes** — in particular stored rows with intraday period timestamps like the one in the dev DB (`2026-08-09 16:00:00` / `2026-08-16 15:59:59.999`).
+- No gate proves the **remitted** statutory amount is correct against SSS/PhilHealth/Pag-IBIG/BIR tables for a partial month. The suite proves the share arithmetic, not that a 7/31 statutory slice is what the agencies accept.
+- No gate proves what happens to a run that is **APPROVED or LOCKED** after being computed under the old flat-0.5 rule and then re-read; only recompute is covered, and recompute is refused for those statuses (`payroll/index.ts:126-127`).
+- The impeccable `detect.mjs` probe is judgment-based; it does not prove keyboard operability or screen-reader announcement of the new `aria-live` preview.
+- The manual script M1–M8 is single-operator and single-org. It does not prove concurrency — two operators creating overlapping custom runs at the same instant race between the guard's read and the `create`; only the `@@unique` constraint (exact ranges) is atomic.
+
+Gate: CONDITIONAL (1 FAIL found and resolved by the Validate Supplement applied in this same pass; 4 CONCERNs recorded with fixes in-plan; criterion 17 carried as a named residual)
+Accepted by: session (autonomous, VALIDATE pass) — accepted concerns: (1) criterion 17 timesheet containment sourcing, mitigated by the S8 in-PR schedule-fallback signal plus a backlog note; (2) legacy non-standard runs in non-dev environments, mitigated by S3 clamp + S9 multi-environment pre-flight; (3) no `.svelte` component-test infrastructure, pre-existing; (4) the S7 workflow change whereby a custom run blocks the month's standard run until voided, accepted as the correct reading of the double-pay requirement and required to be declared in the PR body.
+
+
+---
+
+## Autonomous Goal Block
+
+```
+SESSION GOAL
+Ship #163 "flexible calendar periods" on branch feat/flexible-periods-163 as ONE PR: custom
+same-month date ranges for payroll runs, payroll periods and Save-as-timesheet, with day-count
+proration of statutory contributions and loan/cash-advance installments, scoped overlap guards,
+and a fourth "Custom range" segment in PeriodPicker. The three standard shapes (1-15, 16-EOM,
+1-EOM) must produce byte-identical peso output.
+
+PLAN
+process/features/flexible-periods/active/flexible-periods-163_20-08-26/flexible-periods-163_PLAN_20-08-26.md
+Read the "## Validate Supplement (applied by VALIDATE, 2026-08-20)" section BEFORE the section
+it supersedes. S1, S2, S3, S4, S5 are correctness fixes, not suggestions.
+
+CONTRACT SUMMARY
+Gate: CONDITIONAL. One FAIL found and resolved in-plan (void-then-recreate would have raised a
+raw Prisma P2002 -> 500). Four CONCERNs recorded with fixes: unclamped legacy share on recompute
+(S3), intraday-timestamp overlap leak (S4), a breaking incumbent test (S5), and an undeclared
+workflow change where a custom run blocks the month's standard run (S7). Criterion 17 (timesheet
+containment sourcing) is a named residual: backlog note plus an in-PR schedule-fallback signal.
+
+AUTONOMY RULES
+- Work only inside the blast radius: src/lib/utils/pay-periods.ts, src/lib/server/services/payroll/
+  {index,periods,calculator}.ts, src/lib/server/services/timesheets.ts,
+  src/lib/components/ui/PeriodPicker.svelte, src/routes/(app)/attendance/+page.svelte,
+  scripts/seed-payslip-demo.ts, tests/**.
+- pnpm, never npm. No Co-Authored-By or attribution footer in any commit.
+- Sections are ordered: 1 VERIFIED before 2 starts; 2 VERIFIED before 3 starts.
+- Checklist item 1 (the golden snapshot) runs on a CLEAN tree, before any source edit, and is
+  committed alone. It is never re-run with -u afterwards.
+- Fix failing gates yourself; do not weaken a test to make it pass. If an incumbent e2e picker
+  spec breaks, the picker is wrong, not the spec.
+
+HARD STOPS
+- Any change to prisma/schema.prisma, any migration, any prisma db push. There is none in scope.
+- Pushing, opening a PR, or merging. Stop and hand back.
+- Deleting the exact-duplicate findUnique 409 checks (S1 forbids it).
+- Re-running the golden snapshot with -u.
+- Touching money paths outside the blast radius (ER share, withholding tax, the timesheet
+  containment query itself).
+
+NEXT PHASE
+EXECUTE. Start at Implementation Checklist item 1. Supplement items 29-33 are folded into the
+sections they name; do not leave them for last.
+
+EXECUTE START COMMAND
+Run vc-execute-agent against the plan path above. Gate commands:
+  pnpm lint && pnpm format:check && pnpm check && pnpm test && pnpm test:e2e
+Baseline before any edit: 136 test files / 1588 tests green (verified 2026-08-20).
+```
