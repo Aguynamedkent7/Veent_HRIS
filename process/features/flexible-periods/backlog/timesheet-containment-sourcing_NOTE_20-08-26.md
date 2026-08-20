@@ -1,13 +1,17 @@
 ---
 name: note:timesheet-containment-sourcing
-description: "Known gap carried out of #163 — computePayroll sources timesheet hours by containment, so a run shorter than an existing timesheet reads zero hours and pays full scheduled hours"
+description: "FIXED in #163 (PR #318) — computePayroll used to source timesheet hours by containment; it now sources them by intersection and sums only the entries dated inside the run"
 date: 20-08-26
 feature: flexible-periods
 ---
 
 # Known gap — payroll sources timesheet hours by CONTAINMENT (#163 criterion 17)
 
-**Status:** recorded residual. NOT fixed by #163. Mitigated in-PR by a visible signal only.
+**Status: FIXED in #163 (PR #318, review round 2).** This note is kept as the design record of
+the defect and of why option 1 was chosen. It is no longer an open residual.
+
+The query below is what the code USED to do. It now sources by intersection at both levels —
+see `## The fix that shipped` at the bottom.
 
 ## The query
 
@@ -61,11 +65,34 @@ Asserted in `tests/unit/payroll-custom-run-compute.test.ts`.
    `overlapDays ÷ timesheetDays`. Cheaper, but wrong whenever hours are unevenly distributed
    across the sheet — which is the normal case.
 
-Option 1 is the correct one. It is out of #163's blast radius because it changes how **every**
-existing run sources hours, including standard ones — a money-affecting change that needs its
-own golden-value guard and its own plan.
+Option 1 is the correct one, and it is what shipped. It changes how **every** run sources hours,
+including standard ones, so the golden-value guard
+(`tests/unit/payroll-standard-period-golden.test.ts`) is what proves no standard period moved.
 
-## Why it is not a blocker for #163
+## The fix that shipped
+
+Option 1, in the same PR. `computePayroll` now runs:
+
+```ts
+const timesheets = await db.timesheet.findMany({
+  where: {
+    employeeId: emp.id,
+    status: 'APPROVED',
+    periodStart: { lt: dayAfterRunEnd },
+    periodEnd: { gte: runStartDay }
+  },
+  include: { entries: { where: { date: { gte: runStartDay, lt: dayAfterRunEnd } } } }
+})
+```
+
+A sheet is a candidate when it shares any calendar day with the run, and only the `TimesheetEntry`
+rows dated inside the run are summed. `approvedHours` is therefore exactly the in-period days, and
+the `approvedHours > 0 ? approvedHours : scheduledHours` fallback is unchanged.
+
+The schedule-fallback flag stays, and now means what it says: no APPROVED entry falls on any day of
+the range. Asserted in `tests/unit/payroll-custom-run-compute.test.ts`.
+
+## Why it was not a blocker for #163
 
 The defect predates #163: a legacy off-cycle run created through the old
 `allowNonStandardPeriod` escape hatch hits it identically. #163 makes it *reachable through the

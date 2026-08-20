@@ -8,10 +8,11 @@ import { periodOf } from '../../src/lib/utils/pay-periods'
  *
  *  1. `amortShare` — the flat monthly loan installment is scaled to the range before it reaches
  *     the engine. A standard period still passes the whole installment.
- *  2. S8 — the schedule-fallback signal. Timesheets are sourced by CONTAINMENT, so a standard
- *     1–15 timesheet is invisible to a May 3–9 run: the employee falls back to full scheduled
- *     hours and gets PAID for them. That estimate is flagged on the entry, not shipped silently.
- *     The containment query itself is a known residual of #163 and is NOT fixed here.
+ *  2. Timesheet sourcing by INTERSECTION. A standard 1–15 sheet IS visible to a May 3–9 run, and
+ *     only the entries dated inside the run are summed — the employee is paid the days they
+ *     actually worked in range, not full scheduled hours.
+ *  3. S8 — the schedule-fallback signal, which now fires only when no APPROVED entry falls in the
+ *     range at all. That estimate is flagged on the entry, not shipped silently.
  */
 
 const { dbMock } = vi.hoisted(() => ({
@@ -46,7 +47,12 @@ const ctx = { organizationId: ORG, actorId: 'u1', actorRoles: ['SUPER_ADMIN'] as
 const d = (iso: string) => new Date(`${iso}T00:00:00Z`)
 
 type EntryData = {
-	data: { isFlagged: boolean; flagReason: string | null; deductions: { create: Deduction[] } }
+	data: {
+		hoursWorked: number
+		isFlagged: boolean
+		flagReason: string | null
+		deductions: { create: Deduction[] }
+	}
 }
 type Deduction = { code: string; amount: number }
 
@@ -105,6 +111,75 @@ describe('computePayroll on a custom range', () => {
 		const entry = entryWritten()
 		expect(entry.isFlagged).toBe(true)
 		expect(entry.flagReason).toBe(
+			'Hours estimated from schedule — no timesheet covers this custom period'
+		)
+	})
+})
+
+describe('computePayroll sources timesheet hours by intersection', () => {
+	// A standard May 1–15 sheet. Only May 5 and May 6 fall inside a May 3–9 run.
+	type Entry = { date: Date; hoursWorked: number }
+	type Sheet = { id: string; periodStart: Date; periodEnd: Date; entries: Entry[] }
+	type TsWhere = {
+		employeeId: string
+		status: string
+		periodStart: { lt: Date }
+		periodEnd: { gte: Date }
+	}
+	type TsInclude = { entries: { where: { date: { gte: Date; lt: Date } } } }
+
+	const sheet: Sheet = {
+		id: 'ts1',
+		periodStart: d('2026-05-01'),
+		periodEnd: d('2026-05-15'),
+		entries: [
+			{ date: d('2026-05-01'), hoursWorked: 8 },
+			{ date: d('2026-05-05'), hoursWorked: 8 },
+			{ date: d('2026-05-06'), hoursWorked: 4 },
+			{ date: d('2026-05-12'), hoursWorked: 8 }
+		]
+	}
+
+	beforeEach(() => {
+		// The real `where` and `include` the query builds are applied to an in-memory sheet — a
+		// canned array would prove nothing about either level of the filter.
+		dbMock.timesheet.findMany.mockImplementation(
+			async ({ where, include }: { where: TsWhere; include: TsInclude }) =>
+				[sheet]
+					.filter(
+						(t) =>
+							where.status === 'APPROVED' &&
+							t.periodStart < where.periodStart.lt &&
+							t.periodEnd >= where.periodEnd.gte
+					)
+					.map((t) => ({
+						...t,
+						entries: t.entries.filter(
+							(e) =>
+								e.date >= include.entries.where.date.gte && e.date < include.entries.where.date.lt
+						)
+					}))
+		)
+	})
+
+	it('sums only the entries dated inside the run, not the whole sheet', async () => {
+		await computeFor(d('2026-05-03'), d('2026-05-09'))
+		// May 5 (8h) + May 6 (4h). Not the sheet's 28h, and not the 40h schedule fallback.
+		expect(entryWritten().hoursWorked).toBe(12)
+	})
+
+	it('does not fall back to scheduled hours when the sheet only partially overlaps', async () => {
+		await computeFor(d('2026-05-03'), d('2026-05-09'))
+		const entry = entryWritten()
+		expect(entry.flagReason).not.toBe(
+			'Hours estimated from schedule — no timesheet covers this custom period'
+		)
+	})
+
+	it('still flags a range the sheet overlaps but has no entry in', async () => {
+		// May 3–4 is inside the sheet's span, yet it carries no entry for either day.
+		await computeFor(d('2026-05-03'), d('2026-05-04'))
+		expect(entryWritten().flagReason).toBe(
 			'Hours estimated from schedule — no timesheet covers this custom period'
 		)
 	})

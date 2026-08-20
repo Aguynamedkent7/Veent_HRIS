@@ -309,6 +309,12 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		run.periodEnd,
 		holidays.map((h) => h.date)
 	)
+	// #163: the run's calendar-day bounds, as a half-open [start, dayAfterEnd) window. Used by the
+	// timesheet INTERSECTION query below at BOTH levels — which sheets are candidates, and which of
+	// their entries fall inside the run. Day bounds, not raw timestamps: a stored row is not
+	// guaranteed to sit on UTC midnight.
+	const runStartDay = utcMidnight(run.periodStart)
+	const dayAfterRunEnd = new Date(utcMidnight(run.periodEnd).getTime() + 24 * 60 * 60 * 1000)
 
 	const perEmployee: Array<{
 		entry: Prisma.PayrollEntryUncheckedCreateWithoutEarningsInput
@@ -360,14 +366,18 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		// A flip is a Stage 2 split whose segments don't all share one rateType — flag for manual review.
 		const isFlip = stage2Split && new Set(segments.map((s) => s.rateType)).size > 1
 
+		// #163: sourced by INTERSECTION, not containment. A sheet counts when it shares any day with
+		// the run, and only the ENTRIES whose date falls inside the run are summed — so a custom
+		// May 3–9 run reads exactly those days out of a standard May 1–15 sheet instead of seeing
+		// nothing and paying full scheduled hours for days no timesheet supports.
 		const timesheets = await db.timesheet.findMany({
 			where: {
 				employeeId: emp.id,
-				periodStart: { gte: run.periodStart },
-				periodEnd: { lte: run.periodEnd },
-				status: 'APPROVED'
+				status: 'APPROVED',
+				periodStart: { lt: dayAfterRunEnd },
+				periodEnd: { gte: runStartDay }
 			},
-			include: { entries: true }
+			include: { entries: { where: { date: { gte: runStartDay, lt: dayAfterRunEnd } } } }
 		})
 		const approvedHours = timesheets
 			.flatMap((ts) => ts.entries)
@@ -465,10 +475,10 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		// look at it. Zero paid hours stays a separate, more specific reason. #171: a mid-period
 		// pay-type flip mixes bases we value approximately (premiums stay at the period-end rate), so
 		// surface it for manual review — but never block the run.
-		// #163 (S8): timesheets are sourced by CONTAINMENT above, so a standard 1–15 timesheet is
-		// invisible to a custom May 3–9 run — the employee silently falls back to full scheduled
-		// hours and gets paid for them. Flag it so the estimate is visible on the run detail row
-		// rather than shipped as fact. The containment query itself is a named residual (#163).
+		// #163 (S8): with INTERSECTION sourcing this now means what it says — no APPROVED timesheet
+		// entry falls on any day of this custom range, so the hours are the schedule's estimate and
+		// not a record of work. Flag it so the estimate is visible on the run detail row rather than
+		// shipped as fact.
 		const estimatedFromSchedule = periodKind === null && !attInput && approvedHours === 0
 		const isFlagged = paidHours === 0 || result.uncollected > 0 || isFlip || estimatedFromSchedule
 		const flagReason =
