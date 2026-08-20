@@ -17,7 +17,7 @@ import {
 import { D, q2, q2n, sum, ZERO } from './money'
 import { emptyAttendance, round2, type ComputeSegment, type EmployeeComp } from './types'
 import { buildAttendanceInput, buildSegmentAttendance } from '../attendance/input'
-import { computeWorkingDays } from '$lib/utils/dates'
+import { computeWorkingDays, manilaDayKey } from '$lib/utils/dates'
 import {
 	describePeriod,
 	firstDayOfMonth,
@@ -116,10 +116,13 @@ async function cutoffRunsInMonthOf(
  * otherwise — and `@@unique([organizationId, periodStart, periodEnd])` does not cover that, because
  * the bounds differ. A run never spans two months (`isSameMonthRange`), so the month is the
  * smallest key that covers every range the check can read.
+ *
+ * The month of the REQUESTED period start on the MANILA calendar, never a bound derived from the
+ * overlap query's widened window — that window starts a day early, so two overlapping ranges either
+ * side of a month boundary would take two different locks and serialize against nothing.
  */
 export function payrollRunLockKey(organizationId: string, periodStart: Date): string {
-	const d = utcMidnight(periodStart)
-	return `payroll-run:${organizationId}:${d.getUTCFullYear()}-${d.getUTCMonth()}`
+	return `payroll-run:${organizationId}:${manilaDayKey(periodStart).slice(0, 7)}`
 }
 
 /**

@@ -8,6 +8,7 @@ import {
 	rangesOverlapInManila,
 	utcMidnight
 } from '$lib/utils/pay-periods'
+import { manilaDayKey } from '$lib/utils/dates'
 import { buildApprovalChain } from './requests/routing'
 import { canActOnStage, nextState, liveChain, timesheetSoD } from './approvals'
 import { formatShortDate } from '$lib/utils/format'
@@ -131,6 +132,19 @@ export async function assertCanModifyTimesheet(ctx: AuditContext, ts: { employee
 	error(403, 'You can only modify your own timesheet')
 }
 
+/**
+ * #163: the advisory-lock key serializing every writer of one employee's timesheets for one month.
+ *
+ * The month of the REQUESTED period, on the Manila calendar — never a bound derived from the
+ * widened `from`/`dayAfterEnd` query window. `from` is one day BEFORE the period start, so a range
+ * starting Aug 1 would key on July while an overlapping range starting Aug 2 keys on August: two
+ * different locks, no serialization, and exactly the race the lock exists to stop. `manilaDayKey`
+ * also buckets a row stored on a PHT day boundary into the month it means.
+ */
+export function timesheetLockKey(employeeId: string, periodStart: Date): string {
+	return `timesheet:${employeeId}:${manilaDayKey(periodStart).slice(0, 7)}`
+}
+
 export async function createTimesheet(
 	employeeId: string,
 	periodStart: Date,
@@ -167,7 +181,7 @@ export async function createTimesheet(
 	// catch that, because their start days differ. The lock is transaction-scoped, so Postgres
 	// releases it on commit or rollback and there is nothing to unlock.
 	const ts = await db.$transaction(async (tx: Prisma.TransactionClient) => {
-		const key = `timesheet:${employeeId}:${from.getUTCFullYear()}-${from.getUTCMonth()}`
+		const key = timesheetLockKey(employeeId, periodStart)
 		await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key})::bigint)`
 
 		const candidates = await tx.timesheet.findMany({
