@@ -12,8 +12,10 @@ feature: flexible-periods
 Today the system only accepts three pay-period shapes: day 1 to 15, day 16 to the end of the
 month, or the whole month. If you want to pay for a different span — one week, ten days, a
 special run before a holiday — the system says no. This work removes that block. You will be
-able to pick any start day and any end day for a payroll run, for a payroll period, and for
-"Save as timesheet" on the attendance page.
+able to pick any start day and any end day INSIDE ONE CALENDAR MONTH for a payroll run, for a
+payroll period, and for "Save as timesheet" on the attendance page. A range that crosses two
+months is refused with a plain message — see "Decisions Resolved — round 2", which is the
+authoritative record for this rule and overrides any earlier wording in this document.
 
 The 15-day cutoff stays the default. If you do not change anything, every screen behaves the
 way it does now, and every number comes out the same as it does now. This is a hard rule, not
@@ -22,8 +24,9 @@ a wish.
 A custom range also changes the money math. Government deductions (SSS, PhilHealth, Pag-IBIG,
 tax) and loan payments are monthly amounts that get cut down to the size of the period. Today
 a non-standard range silently takes half a month, no matter how long it is. A 7-day run and a
-45-day run both deduct half a month. That is wrong. From now on a custom range is prorated by
-how many days it covers.
+30-day run both deduct half a month. That is wrong. From now on a custom range is prorated by
+how many days it covers, out of the days in its month. (The same-month rule caps a custom range
+at 31 days, so no separate length cap is needed.)
 
 This SPEC says WHAT must happen and WHY. It does not choose HOW. Data shapes, function names,
 and validation code belong to INNOVATE and PLAN.
@@ -45,7 +48,7 @@ and validation code belong to INNOVATE and PLAN.
 **Payroll officer**
 
 - As a payroll officer, I want to open a payroll period and run payroll for any start and end
-  date, so that off-cycle and special runs stop needing a workaround.
+  date inside one calendar month, so that off-cycle and special runs stop needing a workaround.
 - As a payroll officer, I want government deductions on a custom run to match the length of the
   run, so that a 7-day run does not deduct a half month of SSS, PhilHealth, Pag-IBIG, and tax.
 - As a payroll officer, I want a loan or cash-advance installment on a custom run to match the
@@ -85,8 +88,10 @@ and validation code belong to INNOVATE and PLAN.
 
 **Custom ranges become possible where they are blocked now.**
 
-- A payroll run can be created for any start and end date.
-- A payroll period can be opened for any start and end date.
+- A payroll run can be created for any start and end date inside one calendar month.
+- A payroll period can be opened for any start and end date inside one calendar month.
+- A range that starts and ends in different months is refused with a plain message. So is a
+  range whose end falls before its start.
 - "Save as timesheet" on `/attendance` accepts a custom range. (The CSV export on that page is
   already free-range and is untouched.)
 
@@ -136,11 +141,12 @@ User opens the period picker
         |                                        v
         |                          share = 0.5 / 0.5 / 1  (EXACTLY as today)
         |                                        |
-        +-- user chooses "custom" ---> free start date + free end date
+        +-- user chooses "custom" ---> free start + end date, SAME MONTH
+                                                 |
+                                     cross-month or reversed --> REFUSED
                                                  |
                                                  v
                                    share = period days / days in month
-                                   (cross-month: split per month)
                                                  |
         +----------------------------------------+
         v
@@ -266,7 +272,8 @@ named where the coverage already has a home; new scenarios are authored during P
    `strategy:` Fully-Automated
 
 9. Basic pay, hours worked, working-day counts, and holiday handling are correct for a custom
-   range of any length — they follow the real calendar days, not the period shape.
+   range of any length up to its whole month — they follow the real calendar days, not the
+   period shape.
    `proven by:` existing `computeWorkingDays` coverage in `tests/unit/`, extended with
    custom-range cases in new unit `payroll-custom-period-basic-pay`.
    `strategy:` Fully-Automated
@@ -353,8 +360,9 @@ explain to an employee and to an auditor.
 *Non-negotiable constraint attached to this decision:* the three standard shapes must keep
 producing exactly today's numbers. FIRST_HALF and SECOND_HALF must still resolve to 0.5;
 WHOLE_MONTH must still resolve to 1. They must NOT be recomputed as 15/31 or 16/31. Day-count
-proration applies only where the shape is non-standard. A cross-month range needs a per-month
-split, because "days in that month" is ambiguous otherwise.
+proration applies only where the shape is non-standard. A cross-month range would make "days in
+that month" ambiguous, which is why round 2 rejects cross-month ranges outright in v1 rather
+than splitting per month.
 
 **Decision 2 — `/attendance`: unlock "Save as timesheet" for custom ranges.**
 The CSV export on that page already accepts a free `from`/`to` range and needs no work; it is
@@ -383,6 +391,9 @@ do?
 *Recommendation:* use the plain day-count share (the current fall-through), and state it in the
 UI as the expected behaviour for custom ranges — the #173 half-and-half allocation is a rule
 about the two standard halves and does not have a meaning outside them.
+**ANSWERED — and this recommendation was REVERSED.** See "Decisions Resolved — round 2", item 2:
+a custom run takes ZERO under FIRST/SECOND, except when the designated cutoff run does not exist
+in that month, in which case it prorates by day count so the month is still collected.
 
 **(b) Are cross-month custom ranges in scope for v1, or should they be rejected?**
 A range spanning two months breaks the month-anchored statutory basis (`firstDayOfMonth` on the
@@ -391,6 +402,8 @@ period start), so a mid-period raise in the second month never reaches statutory
 *Recommendation:* reject cross-month ranges in v1 with a clear message, and make the per-month
 split a follow-up issue — this removes the hardest piece of the money math while still
 delivering everything #163 asks for inside a single month.
+**ANSWERED — recommendation ACCEPTED.** See "Decisions Resolved — round 2", item 1. Every
+earlier passage in this SPEC is to be read as same-month-only.
 
 **(c) Should the dead `PayrollConfig.firstCutoff` / `secondCutoff` columns become the
 configurable default cutoff, or stay dead?**
@@ -448,8 +461,9 @@ that #163 did not ask for, and doing it here widens the money-affecting blast ra
   warns, so it will not catch an overlap for us.
 - **Existing tests encode the #129 constraint and will need to change.**
   `tests/unit/pay-periods.test.ts:79-96` explicitly asserts that 1–14, a partial second half,
-  and cross-month ranges are rejected. Those assertions are the thing being changed, and they
-  must be replaced by assertions of the new rule, not deleted.
+  and cross-month ranges are rejected. The 1–14 and partial-second-half assertions are the thing
+  being changed and must be replaced by assertions of the new rule, not deleted. The cross-month
+  assertion STAYS — round 2 keeps cross-month ranges refused.
 - **E2E tests drive the period picker by handle and by button label** (`#pp-month`, segmented
   control text). Changing the picker will move those handles; the affected specs are
   `timesheet-create-for-employee.spec.ts`, `manager-org-wide-timesheets.spec.ts`, and
