@@ -2,7 +2,7 @@ import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import { Prisma } from '@prisma/client'
-import { assertNoOverlappingRun, computePayroll } from './index'
+import { assertNoOverlappingRun, computePayroll, lockPayrollMonth } from './index'
 import { voidedOwnApproval } from './audit-markers'
 import { D, q2 } from './money'
 import { reverseAmortization } from './amortization'
@@ -55,25 +55,28 @@ export async function openPeriod(
 		error(400, 'A custom period must start and end in the same month.')
 	}
 
-	// S1: kept ahead of the overlap guard — a VOIDED run keeps its row and its unique constraint,
-	// and the guard skips VOIDED, so without this the recreate would raise a raw Prisma P2002
-	// inside the transaction below and surface as a 500.
-	const existing = await db.payrollRun.findUnique({
-		where: {
-			organizationId_periodStart_periodEnd: {
-				organizationId,
-				periodStart: input.startDate,
-				periodEnd: input.endDate
-			}
-		}
-	})
-	if (existing) error(409, 'A payroll run for this period already exists')
-
-	// openPeriod creates its PayrollRun inside its own transaction, so guarding PayrollRun covers
-	// PayrollPeriod too — neither row is written when this throws.
-	await assertNoOverlappingRun(organizationId, input.startDate, input.endDate)
-
 	const period = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+		// Same org-month advisory lock `createPayrollRun` takes, keyed identically, so the two write
+		// paths serialize against each other. Both checks below now run inside it; when either
+		// throws, the transaction rolls back and NEITHER row is written.
+		await lockPayrollMonth(tx, organizationId, input.startDate)
+
+		// S1: kept ahead of the overlap guard — a VOIDED run keeps its row and its unique constraint,
+		// and the guard skips VOIDED, so without this the recreate would raise a raw Prisma P2002
+		// and surface as a 500.
+		const existing = await tx.payrollRun.findUnique({
+			where: {
+				organizationId_periodStart_periodEnd: {
+					organizationId,
+					periodStart: input.startDate,
+					periodEnd: input.endDate
+				}
+			}
+		})
+		if (existing) error(409, 'A payroll run for this period already exists')
+
+		await assertNoOverlappingRun(organizationId, input.startDate, input.endDate, tx)
+
 		const p = await tx.payrollPeriod.create({
 			data: {
 				organizationId,

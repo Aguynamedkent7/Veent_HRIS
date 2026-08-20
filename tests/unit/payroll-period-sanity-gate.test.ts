@@ -36,7 +36,10 @@ const { dbMock, writeAuditLog } = vi.hoisted(() => ({
 		employeeCompensation: { findMany: vi.fn() },
 		publicHoliday: { findMany: vi.fn() },
 		approvalStep: { findMany: vi.fn(), createMany: vi.fn(), updateMany: vi.fn() },
-		$transaction: vi.fn()
+		$transaction: vi.fn(),
+		// #163: createPayrollRun / openPeriod / createTimesheet each take an advisory lock as the
+		// first statement of their transaction.
+		$executeRaw: vi.fn()
 	},
 	writeAuditLog: vi.fn().mockResolvedValue(undefined)
 }))

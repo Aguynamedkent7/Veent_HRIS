@@ -106,6 +106,35 @@ async function cutoffRunsInMonthOf(
 }
 
 /**
+ * #163: the advisory-lock key serializing every writer of payroll runs for one org-month. Both
+ * `createPayrollRun` and `openPeriod` take it as the first statement of their transaction, so the
+ * two paths serialize against each other as well as against themselves.
+ *
+ * The month, not the exact range: the check the lock protects is "does this range intersect any
+ * other range", which two concurrent requests for DIFFERENT but overlapping ranges both pass
+ * otherwise — and `@@unique([organizationId, periodStart, periodEnd])` does not cover that, because
+ * the bounds differ. A run never spans two months (`isSameMonthRange`), so the month is the
+ * smallest key that covers every range the check can read.
+ */
+export function payrollRunLockKey(organizationId: string, periodStart: Date): string {
+	const d = utcMidnight(periodStart)
+	return `payroll-run:${organizationId}:${d.getUTCFullYear()}-${d.getUTCMonth()}`
+}
+
+/**
+ * Take the org-month lock inside `tx`. Transaction-scoped: Postgres releases it on commit OR
+ * rollback, so there is nothing to unlock and no way to leak one.
+ */
+export async function lockPayrollMonth(
+	tx: Prisma.TransactionClient,
+	organizationId: string,
+	periodStart: Date
+) {
+	const key = payrollRunLockKey(organizationId, periodStart)
+	await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key})::bigint)`
+}
+
+/**
  * #163: refuse a payroll run whose range intersects an existing (non-voided) run for the org.
  *
  * Fires only when at least one side is a CUSTOM range. A standard-vs-standard intersection is
@@ -123,11 +152,14 @@ async function cutoffRunsInMonthOf(
 export async function assertNoOverlappingRun(
 	organizationId: string,
 	periodStart: Date,
-	periodEnd: Date
+	periodEnd: Date,
+	// The caller's transaction client when there is one, so the read happens INSIDE the advisory
+	// lock. Defaults to `db` — a read on its own is still correct, just not serialized.
+	client: Prisma.TransactionClient = db
 ) {
 	const from = utcMidnight(periodStart)
 	const dayAfterEnd = new Date(utcMidnight(periodEnd).getTime() + 24 * 60 * 60 * 1000)
-	const hits = await db.payrollRun.findMany({
+	const hits = await client.payrollRun.findMany({
 		where: {
 			organizationId,
 			status: { not: 'VOIDED' },
@@ -165,19 +197,25 @@ export async function createPayrollRun(
 		error(400, 'A custom period must start and end in the same month.')
 	}
 
-	// Kept ahead of the overlap guard on purpose (S1). `voidRun` only flips status, so the row and
-	// its @@unique([organizationId, periodStart, periodEnd]) survive; the overlap guard excludes
-	// VOIDED rows, so without this a void-then-recreate would reach `create` and raise a raw Prisma
-	// P2002 — a 500 page instead of today's clean 409.
-	const existing = await db.payrollRun.findUnique({
-		where: { organizationId_periodStart_periodEnd: { organizationId, periodStart, periodEnd } }
-	})
-	if (existing) error(409, 'Payroll run for this period already exists')
+	// One transaction, under the org-month advisory lock: check-then-act is otherwise exactly what
+	// this is. Two concurrent requests for DIFFERENT but overlapping custom ranges both read an
+	// empty conflict set and both insert, and the unique constraint cannot catch it because their
+	// bounds differ. The lock is taken FIRST so both reads below are serialized with the insert.
+	const run = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+		await lockPayrollMonth(tx, organizationId, periodStart)
 
-	await assertNoOverlappingRun(organizationId, periodStart, periodEnd)
+		// Kept ahead of the overlap guard on purpose (S1). `voidRun` only flips status, so the row and
+		// its @@unique([organizationId, periodStart, periodEnd]) survive; the overlap guard excludes
+		// VOIDED rows, so without this a void-then-recreate would reach `create` and raise a raw Prisma
+		// P2002 — a 500 page instead of today's clean 409.
+		const existing = await tx.payrollRun.findUnique({
+			where: { organizationId_periodStart_periodEnd: { organizationId, periodStart, periodEnd } }
+		})
+		if (existing) error(409, 'Payroll run for this period already exists')
 
-	const run = await db.payrollRun.create({
-		data: { organizationId, periodStart, periodEnd }
+		await assertNoOverlappingRun(organizationId, periodStart, periodEnd, tx)
+
+		return tx.payrollRun.create({ data: { organizationId, periodStart, periodEnd } })
 	})
 
 	await writeAuditLog(ctx, {

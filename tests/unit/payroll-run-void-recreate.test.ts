@@ -15,7 +15,10 @@ import { periodOf } from '../../src/lib/utils/pay-periods'
 
 const { dbMock } = vi.hoisted(() => ({
 	dbMock: {
-		payrollRun: { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn() }
+		payrollRun: { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn() },
+		// #163: both checks and the insert moved inside one transaction; `tx` is this same mock.
+		$transaction: vi.fn(),
+		$executeRaw: vi.fn()
 	}
 }))
 vi.mock('$lib/server/db', () => ({ db: dbMock }))
@@ -38,6 +41,7 @@ beforeEach(() => {
 		periodEnd: CUSTOM_END
 	})
 	dbMock.payrollRun.findMany.mockResolvedValue([])
+	dbMock.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(dbMock))
 })
 
 describe('createPayrollRun — re-creating a VOIDED range', () => {

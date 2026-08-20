@@ -4,14 +4,18 @@ import type { Role } from '@prisma/client'
 /**
  * #163 criterion 11 — `openPeriod` wraps a PayrollRun inside its own transaction, so guarding the
  * PayrollRun is enough to cover the PayrollPeriod: when the guard throws, NEITHER row is written.
- * The assertion is that `$transaction` never ran at all.
+ *
+ * Review round 2: the guard now runs INSIDE that transaction, under the org-month advisory lock,
+ * so the transaction does open — and rolls back. The assertion is therefore on the rows: neither
+ * `payrollPeriod.create` nor `payrollRun.create` is ever reached.
  */
 
 const { dbMock } = vi.hoisted(() => ({
 	dbMock: {
 		payrollRun: { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn() },
 		payrollPeriod: { create: vi.fn() },
-		$transaction: vi.fn()
+		$transaction: vi.fn(),
+		$executeRaw: vi.fn()
 	}
 }))
 vi.mock('$lib/server/db', () => ({ db: dbMock }))
@@ -43,8 +47,8 @@ describe('openPeriod — overlap guard', () => {
 			status: 409,
 			body: { message: expect.stringContaining('May 3') }
 		})
-		expect(dbMock.$transaction).not.toHaveBeenCalled()
 		expect(dbMock.payrollPeriod.create).not.toHaveBeenCalled()
+		expect(dbMock.payrollRun.create).not.toHaveBeenCalled()
 	})
 
 	it('opens a custom period when nothing intersects', async () => {

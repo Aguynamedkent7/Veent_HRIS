@@ -10,7 +10,11 @@ import { periodOf } from '../../src/lib/utils/pay-periods'
 
 const { dbMock } = vi.hoisted(() => ({
 	dbMock: {
-		payrollRun: { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn() }
+		payrollRun: { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn() },
+		// #163: the duplicate check, the overlap guard and the insert now run in ONE transaction,
+		// under an org-month advisory lock. `tx` is the same mock, so the assertions are unchanged.
+		$transaction: vi.fn(),
+		$executeRaw: vi.fn()
 	}
 }))
 vi.mock('$lib/server/db', () => ({ db: dbMock }))
@@ -25,6 +29,7 @@ const may = periodOf('FIRST_HALF', 2026, 4)
 beforeEach(() => {
 	vi.clearAllMocks()
 	dbMock.payrollRun.findMany.mockResolvedValue([])
+	dbMock.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(dbMock))
 })
 
 describe('createPayrollRun — exact duplicate', () => {
