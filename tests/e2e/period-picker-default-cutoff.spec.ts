@@ -57,3 +57,40 @@ test('the create-run picker still opens on First half, with Custom range unselec
 		'Jun 3 – Jun 9, 2026 (7 days) · statutory and loans prorated to 23% of the month'
 	)
 })
+
+/**
+ * #163 follow-up — the browser's own calendar must refuse the impossible days rather than let a
+ * user pick one and only then read an error. `min`/`max` express the two rules the inline message
+ * and the server gate already enforce: the end is never before the start, and a custom period
+ * never leaves the start's month.
+ *
+ * Read-only: never submits.
+ */
+test('the custom date inputs bound each other to one month', async ({ page }) => {
+	await login(page, USERS.admin)
+	await page.goto('/payroll', { waitUntil: 'domcontentloaded' })
+	await page.getByRole('button', { name: 'New Payroll Run' }).click()
+	await page.getByRole('button', { name: 'Custom range' }).click()
+
+	const start = page.getByLabel('Start date')
+	const end = page.getByLabel('End date')
+
+	// With nothing picked yet, neither input constrains the other.
+	await expect(start).not.toHaveAttribute('max', /./)
+	await expect(end).not.toHaveAttribute('min', /./)
+
+	// A start date pins the end to that day at the earliest and that month's last day at the latest.
+	await start.fill('2026-06-03')
+	await expect(end).toHaveAttribute('min', '2026-06-03')
+	await expect(end).toHaveAttribute('max', '2026-06-30')
+
+	// February's shorter month comes from daysInMonth, not a hard-coded 30.
+	await start.fill('2026-02-10')
+	await expect(end).toHaveAttribute('max', '2026-02-28')
+
+	// The constraint runs both ways: an end date pins the start to the first of that month.
+	await start.fill('')
+	await end.fill('2026-06-09')
+	await expect(start).toHaveAttribute('min', '2026-06-01')
+	await expect(start).toHaveAttribute('max', '2026-06-09')
+})

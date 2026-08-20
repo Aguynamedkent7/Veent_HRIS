@@ -2,6 +2,7 @@
 	import {
 		periodOf,
 		periodShareOf,
+		daysInMonth,
 		isSameMonthRange,
 		formatPeriodPreview,
 		toPeriodInputValue,
@@ -89,6 +90,31 @@
 
 	const validCustom = $derived(customRange && !customError ? customRange : null)
 
+	// #163 follow-up: the same-month rule expressed as native `min`/`max` on the date inputs, so
+	// the browser's own calendar greys out the impossible days instead of letting a user pick one
+	// and only then reading an error. The inline message and the server gate both stay — this is
+	// the cheap first line, not the guard.
+	const startMonthEnd = $derived.by(() => {
+		if (!customStart) return undefined
+		const s = new Date(customStart)
+		if (Number.isNaN(s.getTime())) return undefined
+		return toPeriodInputValue(
+			new Date(
+				Date.UTC(
+					s.getUTCFullYear(),
+					s.getUTCMonth(),
+					daysInMonth(s.getUTCFullYear(), s.getUTCMonth())
+				)
+			)
+		)
+	})
+	const startMonthStart = $derived.by(() => {
+		if (!customEnd) return undefined
+		const e = new Date(customEnd)
+		if (Number.isNaN(e.getTime())) return undefined
+		return toPeriodInputValue(new Date(Date.UTC(e.getUTCFullYear(), e.getUTCMonth(), 1)))
+	})
+
 	const period = $derived(periodOf(kind as PeriodKind, year as number, month0 as number))
 
 	// An incomplete or invalid custom range emits empty strings, so the server never receives
@@ -163,6 +189,8 @@
 						id="pp-custom-start"
 						type="date"
 						bind:value={customStart}
+						min={startMonthStart}
+						max={customEnd || undefined}
 						class={selectClass}
 						aria-invalid={customError ? 'true' : undefined}
 						aria-describedby={customError ? 'pp-custom-error' : undefined}
@@ -174,6 +202,8 @@
 						id="pp-custom-end"
 						type="date"
 						bind:value={customEnd}
+						min={customStart || undefined}
+						max={startMonthEnd}
 						class={selectClass}
 						aria-invalid={customError ? 'true' : undefined}
 						aria-describedby={customError ? 'pp-custom-error' : undefined}
