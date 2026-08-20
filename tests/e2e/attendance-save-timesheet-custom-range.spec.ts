@@ -17,6 +17,16 @@ const TO = '2026-06-09'
 const OVERLAP_FROM = '2026-06-07'
 const OVERLAP_TO = '2026-06-14'
 
+// Every timesheet query in this spec is bounded by BOTH ends of the only window it writes in
+// (Jun 3 – Jun 14): the saved Jun 3–9 sheet, and the Jun 7–14 one it expects to be refused. A
+// `periodStart >= Jun 1` filter would delete unrelated fixtures and make other specs depend on
+// the order they run in.
+const ownSheets = () => ({
+	employeeId,
+	periodStart: { gte: new Date(FROM) },
+	periodEnd: { lte: new Date(OVERLAP_TO) }
+})
+
 let employeeId: string
 
 test.beforeAll(async () => {
@@ -30,9 +40,12 @@ test.beforeAll(async () => {
 		await db.attendanceDay.deleteMany({
 			where: { employeeId, date: { gte: new Date(FROM), lte: new Date('2026-06-14') } }
 		})
-		await db.timesheet.deleteMany({
-			where: { employeeId, periodStart: { gte: new Date('2026-06-01') } }
-		})
+		const stale = await db.timesheet.findMany({ where: ownSheets(), select: { id: true } })
+		const staleIds = stale.map((t) => t.id)
+		if (staleIds.length) {
+			await db.timesheetEntry.deleteMany({ where: { timesheetId: { in: staleIds } } })
+			await db.timesheet.deleteMany({ where: { id: { in: staleIds } } })
+		}
 		// Seven consecutive PRESENT days, 8h each, so the range saves as exactly 7 entries.
 		for (let i = 0; i < 7; i++) {
 			const day = new Date(`2026-06-0${3 + i}T00:00:00Z`)
@@ -56,10 +69,7 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
 	const db = new PrismaClient()
 	try {
-		const sheets = await db.timesheet.findMany({
-			where: { employeeId, periodStart: { gte: new Date('2026-06-01') } },
-			select: { id: true }
-		})
+		const sheets = await db.timesheet.findMany({ where: ownSheets(), select: { id: true } })
 		const ids = sheets.map((t) => t.id)
 		if (ids.length) {
 			await db.timesheetEntry.deleteMany({ where: { timesheetId: { in: ids } } })
@@ -92,7 +102,7 @@ test('a custom range saves as a timesheet, and a second overlapping one is refus
 	const db = new PrismaClient()
 	try {
 		const sheets = await db.timesheet.findMany({
-			where: { employeeId, periodStart: { gte: new Date('2026-06-01') } },
+			where: ownSheets(),
 			select: { periodStart: true, periodEnd: true }
 		})
 		expect(sheets).toHaveLength(1)
@@ -111,9 +121,7 @@ test('a custom range saves as a timesheet, and a second overlapping one is refus
 
 	const db2 = new PrismaClient()
 	try {
-		const count = await db2.timesheet.count({
-			where: { employeeId, periodStart: { gte: new Date('2026-06-01') } }
-		})
+		const count = await db2.timesheet.count({ where: ownSheets() })
 		expect(count).toBe(1)
 	} finally {
 		await db2.$disconnect()
