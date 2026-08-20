@@ -1,6 +1,8 @@
 <script lang="ts">
 	import {
 		periodOf,
+		periodShareOf,
+		isSameMonthRange,
 		formatPeriodPreview,
 		toPeriodInputValue,
 		type PeriodKind
@@ -12,6 +14,10 @@
 	// periodStart/periodEnd, overridable for forms that post start/end), so the surrounding
 	// <form> submits exactly the same field names it did with the old date inputs — the
 	// service layer still validates, this just constrains what a user can pick.
+	//
+	// #163 adds a fourth segment, `Custom range`, which reveals two native date inputs for any
+	// same-month span. It feeds the SAME two hidden inputs, so no consumer changes shape, and it
+	// is never pre-selected — the 15-day cutoff stays the path of least resistance.
 	let {
 		startName = 'periodStart',
 		endName = 'periodEnd',
@@ -23,7 +29,7 @@
 		endName?: string
 		year?: number
 		month0?: number
-		kind?: PeriodKind
+		kind?: PeriodKind | 'CUSTOM'
 	} = $props()
 
 	// Default to the current PHT month when the parent didn't seed a value.
@@ -48,16 +54,58 @@
 	// A small window around the current year covers routine runs and back-dated corrections.
 	const YEARS = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1]
 
-	const KIND_OPTIONS: { value: PeriodKind; label: string }[] = [
+	const KIND_OPTIONS: { value: PeriodKind | 'CUSTOM'; label: string }[] = [
 		{ value: 'FIRST_HALF', label: 'First half (1–15)' },
 		{ value: 'SECOND_HALF', label: 'Second half (16–EOM)' },
-		{ value: 'WHOLE_MONTH', label: 'Whole month' }
+		{ value: 'WHOLE_MONTH', label: 'Whole month' },
+		{ value: 'CUSTOM', label: 'Custom range' }
 	]
 
+	// YYYY-MM-DD, the `<input type="date">` convention — `new Date(v)` parses it to the same
+	// UTC midnight the rest of pay-periods.ts works in.
+	let customStart = $state('')
+	let customEnd = $state('')
+
+	const isCustom = $derived(kind === 'CUSTOM')
+
+	/** The two custom dates once BOTH are filled in and parseable; otherwise null. */
+	const customRange = $derived.by(() => {
+		if (!isCustom || !customStart || !customEnd) return null
+		const s = new Date(customStart)
+		const e = new Date(customEnd)
+		if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return null
+		return { s, e }
+	})
+
+	// Same two rules the server applies (isSameMonthRange), same copy, so the inline message and
+	// the 400 the service would return can never disagree.
+	const customError = $derived.by(() => {
+		if (!customRange) return null
+		if (customRange.e < customRange.s) return 'End date must be on or after the start date.'
+		if (!isSameMonthRange(customRange.s, customRange.e))
+			return 'A custom period must start and end in the same month.'
+		return null
+	})
+
+	const validCustom = $derived(customRange && !customError ? customRange : null)
+
 	const period = $derived(periodOf(kind as PeriodKind, year as number, month0 as number))
-	const startValue = $derived(toPeriodInputValue(period.periodStart))
-	const endValue = $derived(toPeriodInputValue(period.periodEnd))
-	const preview = $derived(formatPeriodPreview(period.periodStart, period.periodEnd))
+
+	// An incomplete or invalid custom range emits empty strings, so the server never receives
+	// half a range — the actions' `z.coerce.date()` refuses '' and returns a clean 400.
+	const startValue = $derived(
+		isCustom ? (validCustom ? customStart : '') : toPeriodInputValue(period.periodStart)
+	)
+	const endValue = $derived(
+		isCustom ? (validCustom ? customEnd : '') : toPeriodInputValue(period.periodEnd)
+	)
+
+	const preview = $derived.by(() => {
+		if (!isCustom) return formatPeriodPreview(period.periodStart, period.periodEnd)
+		if (!validCustom) return 'Pick a start and end date'
+		const share = Math.round(periodShareOf(validCustom.s, validCustom.e) * 100)
+		return `${formatPeriodPreview(validCustom.s, validCustom.e)} · statutory and loans prorated to ${share}% of the month`
+	})
 
 	const selectClass =
 		'h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -105,5 +153,38 @@
 		</div>
 	</div>
 
-	<p class="text-sm text-muted-foreground">{preview}</p>
+	<!-- Revealed below the buttons, so the block only ever grows downward. -->
+	{#if isCustom}
+		<div class="space-y-1.5">
+			<div class="grid gap-3 sm:grid-cols-2">
+				<div class="space-y-1.5">
+					<label for="pp-custom-start" class="text-sm font-medium">Start date</label>
+					<input
+						id="pp-custom-start"
+						type="date"
+						bind:value={customStart}
+						class={selectClass}
+						aria-invalid={customError ? 'true' : undefined}
+						aria-describedby={customError ? 'pp-custom-error' : undefined}
+					/>
+				</div>
+				<div class="space-y-1.5">
+					<label for="pp-custom-end" class="text-sm font-medium">End date</label>
+					<input
+						id="pp-custom-end"
+						type="date"
+						bind:value={customEnd}
+						class={selectClass}
+						aria-invalid={customError ? 'true' : undefined}
+						aria-describedby={customError ? 'pp-custom-error' : undefined}
+					/>
+				</div>
+			</div>
+			{#if customError}
+				<p id="pp-custom-error" class="text-sm text-destructive">{customError}</p>
+			{/if}
+		</div>
+	{/if}
+
+	<p class="text-sm text-muted-foreground" aria-live="polite">{preview}</p>
 </div>

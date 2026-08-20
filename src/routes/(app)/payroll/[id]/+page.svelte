@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
+	import { periodDays } from '$lib/utils/pay-periods'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
@@ -79,8 +80,13 @@
 <div class="space-y-6">
 	<div class="flex items-center gap-4">
 		<BackButton fallback="/payroll" label="Payroll" />
+		<!-- #163: a custom range is no longer self-evident from its dates, so the inclusive day
+		     count is spelled out — it is what statutory and loans are prorated against. -->
 		<h1 class="text-2xl font-bold">
 			{formatShortDate(run.periodStart)} – {formatShortDate(run.periodEnd)}
+			<span class="text-base font-normal text-muted-foreground"
+				>({periodDays(run.periodStart, run.periodEnd)} days)</span
+			>
 		</h1>
 		<span class={run.status === 'APPROVED' ? 'badge-green' : 'badge-blue'}>
 			{run.status}

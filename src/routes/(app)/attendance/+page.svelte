@@ -3,12 +3,7 @@
 	import type { SubmitFunction } from '@sveltejs/kit'
 	import Pagination from '$lib/components/Pagination.svelte'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
-	import {
-		periodOf,
-		toPeriodInputValue,
-		isValidStandardPeriod,
-		type PeriodKind
-	} from '$lib/utils/pay-periods'
+	import { periodOf, toPeriodInputValue, type PeriodKind } from '$lib/utils/pay-periods'
 	import type { PageData, ActionData } from './$types'
 
 	// Don't reset the form on success: enhance's default form.reset() clears the cross-cell
@@ -51,12 +46,9 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props()
 
-	// #129: the range stays free-form (HR browses arbitrary spans for corrections), but quick-picks
-	// snap it to a standard pay period and "Save as timesheet" only enables on a standard one — since
-	// createTimesheet now rejects non-standard shapes. from/to are YYYY-MM-DD (UTC-midnight days).
-	const rangeIsStandard = $derived(
-		!!data.from && !!data.to && isValidStandardPeriod(new Date(data.from), new Date(data.to))
-	)
+	// #163: the range stays free-form and "Save as timesheet" now accepts any same-month span —
+	// createTimesheet validates it server-side and refuses an overlap with a 409. Quick-picks still
+	// snap to a standard pay period. from/to are YYYY-MM-DD (UTC-midnight days).
 
 	// Set the From/To inputs to a range and re-run the GET filter (same path the date inputs use).
 	function applyRange(from: string, to: string) {
@@ -393,10 +385,8 @@
 				<input type="hidden" name="from" value={data.from} />
 				<input type="hidden" name="to" value={data.to} />
 				<button
-					title={rangeIsStandard
-						? 'Persist this range as a Timesheet record'
-						: 'Pick a standard pay period (1–15, 16–EOM, or whole month) to save as a timesheet'}
-					disabled={saveTimesheet.busy || !rangeIsStandard}
+					title="Persist this range as a Timesheet record"
+					disabled={saveTimesheet.busy}
 					class="inline-flex items-center gap-1.5 rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
 					>{@render icon(IC.document)}Save as timesheet</button
 				>
