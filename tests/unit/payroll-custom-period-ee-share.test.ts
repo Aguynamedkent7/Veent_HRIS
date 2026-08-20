@@ -20,6 +20,10 @@ import {
  * The guard rail: WHOLE_MONTH and `undefined` (the preview, which never supplies a kind) are
  * resolved FIRST and stay on `× share`. Neither may ever fall into the ZERO branch.
  * ER share and withholding tax always keep `× share`.
+ *
+ * Round 2: the ZERO is safe because a custom range can no longer overlap a designated cutoff
+ * window — `assertCustomRangeClearOfCutoff` refuses it with a 400, so the cutoff run that collects
+ * the month is always still creatable. See payroll-custom-range-cutoff-guard.test.ts.
  */
 
 const comp: EmployeeComp = { basicMonthlySalary: 30000, rateType: 'MONTHLY' }
@@ -103,89 +107,5 @@ describe('resolveEE for a custom range', () => {
 		expect(custom.statutory.sssEe + cutoff.statutory.sssEe + other.statutory.sssEe).toBe(
 			MONTHLY_SSS_EE
 		)
-	})
-})
-
-/**
- * #163 (review round 2) — the custom-ONLY month. `cutoffRunExists` tells the engine whether the
- * cutoff run the allocation designates actually exists. It cannot always: the overlap guard
- * refuses the month's 1–15 run once a custom run covers those days, and a month whose only runs
- * are custom would otherwise collect NOTHING from the employee.
- */
-describe('resolveEE when the designated cutoff run does not exist', () => {
-	const noCutoff = { FIRST: false, SECOND: false }
-	const bothCutoffs = { FIRST: true, SECOND: true }
-
-	it('FIRST + no 1–15 run in the month → the custom range prorates by day count', () => {
-		const r = run({
-			periodShare: CUSTOM_SHARE,
-			periodKind: null,
-			statutoryAllocations: firstAlloc,
-			cutoffRunExists: noCutoff
-		})
-		expect(r.statutory.sssEe).toBeCloseTo(MONTHLY_SSS_EE * CUSTOM_SHARE, 2)
-	})
-
-	it('FIRST + the 1–15 run exists → still zero, the cutoff run collects it', () => {
-		const r = run({
-			periodShare: CUSTOM_SHARE,
-			periodKind: null,
-			statutoryAllocations: firstAlloc,
-			cutoffRunExists: bothCutoffs
-		})
-		expect(r.statutory.sssEe).toBe(0)
-	})
-
-	// The two halves are separate rows: a May 3–9 custom run blocks 1–15 but not 16–31, so one
-	// may exist without the other and each allocation must read its own answer.
-	it('SECOND reads the 16–EOM run, not the 1–15 one', () => {
-		const secondAlloc = {
-			sss: 'SECOND' as const,
-			philhealth: 'EVEN' as const,
-			pagibig: 'EVEN' as const
-		}
-		const withFirstOnly = run({
-			periodShare: CUSTOM_SHARE,
-			periodKind: null,
-			statutoryAllocations: secondAlloc,
-			cutoffRunExists: { FIRST: true, SECOND: false }
-		})
-		expect(withFirstOnly.statutory.sssEe).toBeCloseTo(MONTHLY_SSS_EE * CUSTOM_SHARE, 2)
-		const withSecond = run({
-			periodShare: CUSTOM_SHARE,
-			periodKind: null,
-			statutoryAllocations: secondAlloc,
-			cutoffRunExists: { FIRST: false, SECOND: true }
-		})
-		expect(withSecond.statutory.sssEe).toBe(0)
-	})
-
-	// The guard rails, re-asserted with the flag present: neither may reach the ZERO branch, and
-	// neither may be diverted by it.
-	it('WHOLE_MONTH + FIRST → the full monthly amount regardless of the flag', () => {
-		const r = run({
-			periodShare: 1,
-			periodKind: 'WHOLE_MONTH',
-			statutoryAllocations: firstAlloc,
-			cutoffRunExists: noCutoff
-		})
-		expect(r.statutory.sssEe).toBe(MONTHLY_SSS_EE)
-	})
-
-	it('FIRST_HALF + FIRST → the full monthly amount regardless of the flag', () => {
-		const r = run({
-			periodShare: 0.5,
-			periodKind: 'FIRST_HALF',
-			statutoryAllocations: firstAlloc,
-			cutoffRunExists: noCutoff
-		})
-		expect(r.statutory.sssEe).toBe(MONTHLY_SSS_EE)
-	})
-
-	it('EVEN is untouched — × share either way', () => {
-		for (const flag of [noCutoff, bothCutoffs]) {
-			const r = run({ periodShare: CUSTOM_SHARE, periodKind: null, cutoffRunExists: flag })
-			expect(r.statutory.sssEe).toBeCloseTo(MONTHLY_SSS_EE * CUSTOM_SHARE, 2)
-		}
 	})
 })

@@ -71,17 +71,6 @@ export interface EmployeeComputeConfig {
 		pagibig: StatutoryAllocation
 	}
 	/**
-	 * #163: which of the month's two standard cutoff runs already exist for this organization, by
-	 * the allocation that designates them (FIRST → the 1–15 run, SECOND → the 16–EOM run). Resolved
-	 * ONCE per run — it is an org+month question, not a per-employee one — and only supplied for a
-	 * CUSTOM run. It decides whether a custom run may leave the monthly EE share to the cutoff run
-	 * (`true`) or must collect a prorated slice itself (`false`), so a month whose only runs are
-	 * custom still collects the employee's monthly SSS/PhilHealth/Pag-IBIG share. Omitted → today's
-	 * behaviour (ZERO on a custom range), which is the parity default for the preview and for
-	 * standard runs.
-	 */
-	cutoffRunExists?: { FIRST: boolean; SECOND: boolean }
-	/**
 	 * Which standard cutoff this run covers (#173, Feature E), from `describePeriod(start, end).kind`.
 	 * Drives `statutoryAllocations`; omitted/null (preview has no period) → allocation is moot and the
 	 * EE share falls back to `× periodShare`.
@@ -160,26 +149,21 @@ export interface EmployeeComputeResult {
  * kind) are checked FIRST and stay on `× share`, which is the guard rail: neither may ever fall
  * into the custom-range ZERO branch. ER share and withholding tax keep `× share` regardless.
  *
- * #163 (review round 2): "the cutoff run collects it" is only true if that run can exist. The
- * overlap guard refuses the month's standard run once a custom run covers those days, so a month
- * can end with custom runs ONLY and nobody collecting the monthly share — silent under-collection.
- * When `cutoffRunExists` says the designated cutoff run is absent, the custom range prorates by
- * day count instead of taking ZERO. Omitted (preview, standard runs, direct engine callers) keeps
- * the ZERO branch exactly as before.
+ * #163 (review round 2): the ZERO is SAFE because a custom range can no longer overlap a
+ * designated cutoff window at all — `assertCustomRangeClearOfCutoff` (services/payroll/index.ts)
+ * refuses one with a 400 in both write paths. The cutoff run the allocation hands the month to is
+ * therefore always still creatable, so this branch can never leave a month uncollected, and the
+ * outcome no longer depends on which run was created first.
  */
 function resolveEE(
 	monthlyEE: Money,
 	mode: StatutoryAllocation,
 	kind: PeriodKind | null | undefined,
-	share: Money,
-	cutoffRunExists?: { FIRST: boolean; SECOND: boolean }
+	share: Money
 ): Money {
 	if (kind === 'WHOLE_MONTH' || kind === undefined) return monthlyEE.times(share)
 	if (mode === 'FIRST' || mode === 'SECOND') {
-		if (kind === (mode === 'FIRST' ? 'FIRST_HALF' : 'SECOND_HALF')) return monthlyEE
-		// A custom range with no cutoff run to hand the month to must collect its own slice.
-		if (kind === null && cutoffRunExists && !cutoffRunExists[mode]) return monthlyEE.times(share)
-		return ZERO
+		return kind === (mode === 'FIRST' ? 'FIRST_HALF' : 'SECOND_HALF') ? monthlyEE : ZERO
 	}
 	return monthlyEE.times(share) // EVEN — the normal split (share is 0.5 on a cutoff)
 }
@@ -229,18 +213,15 @@ export function computeEmployeeResult(
 	// share and tax keep `× share` proration. Omitted → EVEN (unchanged).
 	const alloc = cfg.statutoryAllocations
 	const kind = cfg.periodKind
-	const cutoffRuns = cfg.cutoffRunExists
 	const share = D(cfg.periodShare)
 	const statutory: ProratedStatutory = {
-		sssEe: ex?.sss ? 0 : q2n(resolveEE(m.sssEe, alloc?.sss ?? 'EVEN', kind, share, cutoffRuns)),
+		sssEe: ex?.sss ? 0 : q2n(resolveEE(m.sssEe, alloc?.sss ?? 'EVEN', kind, share)),
 		sssEr: ex?.sss || ext?.sss ? 0 : q2n(m.sssEr.times(share)),
 		philhealthEe: ex?.philhealth
 			? 0
-			: q2n(resolveEE(m.philhealthEe, alloc?.philhealth ?? 'EVEN', kind, share, cutoffRuns)),
+			: q2n(resolveEE(m.philhealthEe, alloc?.philhealth ?? 'EVEN', kind, share)),
 		philhealthEr: ex?.philhealth || ext?.philhealth ? 0 : q2n(m.philhealthEr.times(share)),
-		pagibigEe: ex?.pagibig
-			? 0
-			: q2n(resolveEE(m.pagibigEe, alloc?.pagibig ?? 'EVEN', kind, share, cutoffRuns)),
+		pagibigEe: ex?.pagibig ? 0 : q2n(resolveEE(m.pagibigEe, alloc?.pagibig ?? 'EVEN', kind, share)),
 		pagibigEr: ex?.pagibig || ext?.pagibig ? 0 : q2n(m.pagibigEr.times(share)),
 		withholdingTax: q2n(m.withholdingTax.times(share))
 	}

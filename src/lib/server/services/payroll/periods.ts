@@ -2,7 +2,12 @@ import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import { Prisma } from '@prisma/client'
-import { assertNoOverlappingRun, computePayroll, lockPayrollMonth } from './index'
+import {
+	assertCustomRangeClearOfCutoff,
+	assertNoOverlappingRun,
+	computePayroll,
+	lockPayrollMonth
+} from './index'
 import { voidedOwnApproval } from './audit-markers'
 import { D, q2 } from './money'
 import { reverseAmortization } from './amortization'
@@ -76,6 +81,7 @@ export async function openPeriod(
 		if (existing) error(409, 'A payroll run for this period already exists')
 
 		await assertNoOverlappingRun(organizationId, input.startDate, input.endDate, tx)
+		await assertCustomRangeClearOfCutoff(organizationId, input.startDate, input.endDate, tx)
 
 		const p = await tx.payrollPeriod.create({
 			data: {

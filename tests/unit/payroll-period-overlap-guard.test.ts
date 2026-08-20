@@ -14,6 +14,7 @@ const { dbMock } = vi.hoisted(() => ({
 	dbMock: {
 		payrollRun: { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn() },
 		payrollPeriod: { create: vi.fn() },
+		employeeStatutoryConfig: { findMany: vi.fn() },
 		$transaction: vi.fn(),
 		$executeRaw: vi.fn()
 	}
@@ -30,6 +31,9 @@ const d = (iso: string) => new Date(`${iso}T00:00:00Z`)
 beforeEach(() => {
 	vi.clearAllMocks()
 	dbMock.payrollRun.findUnique.mockResolvedValue(null)
+	// #163 round 2: no employee designates a cutoff (every org is EVEN by default), so
+	// `assertCustomRangeClearOfCutoff` never refuses — this file is about the overlap guard.
+	dbMock.employeeStatutoryConfig.findMany.mockResolvedValue([])
 	dbMock.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(dbMock))
 	dbMock.payrollPeriod.create.mockResolvedValue({ id: 'per1' })
 	dbMock.payrollRun.create.mockResolvedValue({ id: 'run1' })

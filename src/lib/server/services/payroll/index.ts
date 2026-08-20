@@ -20,9 +20,9 @@ import { buildAttendanceInput, buildSegmentAttendance } from '../attendance/inpu
 import { computeWorkingDays, manilaDayKey } from '$lib/utils/dates'
 import {
 	describePeriod,
-	firstDayOfMonth,
 	isSameMonthRange,
 	isValidStandardPeriod,
+	periodOf,
 	periodShareOf,
 	rangesOverlapInManila,
 	utcMidnight
@@ -76,34 +76,6 @@ export async function buildComputeSegments(
 			expectedHours: wd * dailyHours
 		}
 	})
-}
-
-/**
- * #163: which of the month's two standard cutoff runs already exist for this org, keyed by the
- * statutory allocation that designates them (FIRST → the 1–15 run, SECOND → the 16–EOM run).
- *
- * A FIRST/SECOND allocation makes a CUSTOM run take ZERO employee share, on the premise that the
- * designated cutoff run collects the whole month. The overlap guard can make that premise false —
- * once a custom run covers the days of the 1–15 run, that run is refused — leaving a month whose
- * only runs are custom and whose monthly SSS/PhilHealth/Pag-IBIG share nobody collects. This is
- * the org+month question the engine needs to tell the two cases apart; resolved once per run.
- */
-async function cutoffRunsInMonthOf(
-	organizationId: string,
-	periodStart: Date
-): Promise<{ FIRST: boolean; SECOND: boolean }> {
-	const monthStart = firstDayOfMonth(periodStart)
-	const nextMonth = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1))
-	const runs = await db.payrollRun.findMany({
-		where: {
-			organizationId,
-			status: { not: 'VOIDED' },
-			periodStart: { gte: monthStart, lt: nextMonth }
-		},
-		select: { periodStart: true, periodEnd: true }
-	})
-	const kinds = new Set(runs.map((r) => describePeriod(r.periodStart, r.periodEnd).kind))
-	return { FIRST: kinds.has('FIRST_HALF'), SECOND: kinds.has('SECOND_HALF') }
 }
 
 /**
@@ -193,6 +165,62 @@ export async function assertNoOverlappingRun(
 	)
 }
 
+/**
+ * #163 (review round 2): refuse a CUSTOM range that overlaps a cutoff window some employee's
+ * statutory allocation designates.
+ *
+ * A FIRST/SECOND allocation loads the WHOLE month's employee SSS/PhilHealth/Pag-IBIG share onto one
+ * standard run — the 1–15 run for FIRST, the 16–EOM run for SECOND — and every other run in that
+ * month takes ZERO. That is only safe while the designated run can still be created. The overlap
+ * guard above refuses it once a custom run covers those days, and the month would then collect
+ * either nothing (no cutoff run) or, if the cutoff run is created first and the custom one is
+ * merely adjacent, an outcome that depends on creation order.
+ *
+ * Rather than track that ambiguity through the engine, make it impossible: a custom range may not
+ * touch a designated cutoff window at all, so the cutoff run is always creatable and `resolveEE`'s
+ * ZERO on a custom range is always correct. STANDARD periods are unrestricted — they are the
+ * cutoff runs. An org where every employee is EVEN (the default, no config row) has no designated
+ * window and is unaffected.
+ */
+export async function assertCustomRangeClearOfCutoff(
+	organizationId: string,
+	periodStart: Date,
+	periodEnd: Date,
+	// The caller's transaction client when there is one, so the read happens INSIDE the advisory
+	// lock. Defaults to `db`.
+	client: Prisma.TransactionClient = db
+) {
+	if (isValidStandardPeriod(periodStart, periodEnd)) return
+
+	const allocations = await client.employeeStatutoryConfig.findMany({
+		where: {
+			employee: { organizationId, employmentStatus: 'ACTIVE' },
+			allocation: { not: 'EVEN' }
+		},
+		distinct: ['allocation'],
+		select: { allocation: true }
+	})
+	if (allocations.length === 0) return
+
+	// The requested range's MANILA month — the same calendar the overlap comparison uses.
+	const key = manilaDayKey(periodStart)
+	const year = Number(key.slice(0, 4))
+	const month0 = Number(key.slice(5, 7)) - 1
+
+	for (const { allocation } of allocations) {
+		const kind = allocation === 'FIRST' ? 'FIRST_HALF' : 'SECOND_HALF'
+		const window = periodOf(kind, year, month0)
+		if (!rangesOverlapInManila(periodStart, periodEnd, window.periodStart, window.periodEnd))
+			continue
+		const label = allocation === 'FIRST' ? '1–15' : `16–${window.periodEnd.getUTCDate()}`
+		const standard = allocation === 'FIRST' ? 'First half' : 'Second half'
+		error(
+			400,
+			`A custom period cannot overlap the ${label} cutoff, because that run collects the whole month's employee statutory share for some employees. Use a range outside it, or run the standard ${standard} period.`
+		)
+	}
+}
+
 export async function createPayrollRun(
 	organizationId: string,
 	periodStart: Date,
@@ -226,6 +254,7 @@ export async function createPayrollRun(
 		if (existing) error(409, 'Payroll run for this period already exists')
 
 		await assertNoOverlappingRun(organizationId, periodStart, periodEnd, tx)
+		await assertCustomRangeClearOfCutoff(organizationId, periodStart, periodEnd, tx)
 
 		return tx.payrollRun.create({ data: { organizationId, periodStart, periodEnd } })
 	})
@@ -370,11 +399,6 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	// installment; a standard period keeps taking the full installment exactly as today. Four
 	// ~7-day May runs therefore collect 4 × 7/31 ≈ 0.90 of one installment — under a month's worth.
 	const amortShare = periodKind === null ? periodShare : 1
-	// #163: only a CUSTOM run can leave the monthly EE share to a cutoff run, so only a custom run
-	// needs to know whether that cutoff run exists. A standard run passes `undefined` and the engine
-	// keeps its existing branches untouched.
-	const cutoffRunExists =
-		periodKind === null ? await cutoffRunsInMonthOf(organizationId, run.periodStart) : undefined
 	const loansByEmp = groupByEmployee(loansAll)
 	const advancesByEmp = groupByEmployee(advancesAll)
 	const enrollmentsByEmp = groupByEmployee(enrollmentsAll)
@@ -539,7 +563,6 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			employerShareExternal: employerShareExternals(statutoryExternalByEmp.get(emp.id) ?? []),
 			statutoryAllocations: statutoryAllocations(statutoryAllocationByEmp.get(emp.id) ?? []),
 			periodKind,
-			cutoffRunExists,
 			loans,
 			cashAdvances,
 			recurringDeductions: [
