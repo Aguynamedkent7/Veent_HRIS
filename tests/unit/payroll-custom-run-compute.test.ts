@@ -17,7 +17,7 @@ import { periodOf } from '../../src/lib/utils/pay-periods'
 
 const { dbMock } = vi.hoisted(() => ({
 	dbMock: {
-		payrollRun: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+		payrollRun: { findFirst: vi.fn(), findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn() },
 		payrollEntry: { deleteMany: vi.fn(), create: vi.fn() },
 		employee: { findMany: vi.fn() },
 		earningType: { findMany: vi.fn() },
@@ -49,6 +49,7 @@ const d = (iso: string) => new Date(`${iso}T00:00:00Z`)
 type EntryData = {
 	data: {
 		hoursWorked: number
+		sssEe: number
 		isFlagged: boolean
 		flagReason: string | null
 		deductions: { create: Deduction[] }
@@ -85,6 +86,8 @@ beforeEach(() => {
 	dbMock.statutoryRateConfig.findUnique.mockResolvedValue(null)
 	dbMock.payrollEntry.create.mockResolvedValue({ id: 'e1' })
 	dbMock.payrollRun.findUnique.mockResolvedValue({ id: 'run1' })
+	// #163: no other run exists in the month, so a custom run collects its own prorated EE share.
+	dbMock.payrollRun.findMany.mockResolvedValue([])
 	dbMock.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(dbMock))
 })
 
@@ -182,6 +185,34 @@ describe('computePayroll sources timesheet hours by intersection', () => {
 		expect(entryWritten().flagReason).toBe(
 			'Hours estimated from schedule — no timesheet covers this custom period'
 		)
+	})
+})
+
+describe('computePayroll resolves the month’s cutoff runs for a custom range', () => {
+	const sssEeOf = () => (dbMock.payrollEntry.create.mock.calls[0][0] as EntryData).data.sssEe
+
+	// The config table is read three times (exempt / ER-external / allocation). Only the
+	// allocation read may answer, or the employee would come back exempt and every EE share zero.
+	const allocateSssToFirstHalf = () =>
+		dbMock.employeeStatutoryConfig.findMany.mockImplementation(
+			async ({ where }: { where: { allocation?: unknown } }) =>
+				where.allocation ? [{ employeeId: 'emp1', contribution: 'SSS', allocation: 'FIRST' }] : []
+		)
+
+	it('collects a prorated EE share when no 1–15 run exists in the month', async () => {
+		allocateSssToFirstHalf()
+		dbMock.payrollRun.findMany.mockResolvedValue([])
+		await computeFor(d('2026-05-03'), d('2026-05-09'))
+		expect(sssEeOf()).toBeGreaterThan(0)
+	})
+
+	it('takes zero when the month’s 1–15 run is there to collect it', async () => {
+		allocateSssToFirstHalf()
+		dbMock.payrollRun.findMany.mockResolvedValue([
+			{ periodStart: d('2026-05-01'), periodEnd: d('2026-05-15') }
+		])
+		await computeFor(d('2026-05-03'), d('2026-05-09'))
+		expect(sssEeOf()).toBe(0)
 	})
 })
 

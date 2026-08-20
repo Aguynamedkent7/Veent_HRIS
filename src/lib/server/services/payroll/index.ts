@@ -20,6 +20,7 @@ import { buildAttendanceInput, buildSegmentAttendance } from '../attendance/inpu
 import { computeWorkingDays } from '$lib/utils/dates'
 import {
 	describePeriod,
+	firstDayOfMonth,
 	isSameMonthRange,
 	isValidStandardPeriod,
 	periodShareOf,
@@ -74,6 +75,34 @@ export async function buildComputeSegments(
 			expectedHours: wd * dailyHours
 		}
 	})
+}
+
+/**
+ * #163: which of the month's two standard cutoff runs already exist for this org, keyed by the
+ * statutory allocation that designates them (FIRST → the 1–15 run, SECOND → the 16–EOM run).
+ *
+ * A FIRST/SECOND allocation makes a CUSTOM run take ZERO employee share, on the premise that the
+ * designated cutoff run collects the whole month. The overlap guard can make that premise false —
+ * once a custom run covers the days of the 1–15 run, that run is refused — leaving a month whose
+ * only runs are custom and whose monthly SSS/PhilHealth/Pag-IBIG share nobody collects. This is
+ * the org+month question the engine needs to tell the two cases apart; resolved once per run.
+ */
+async function cutoffRunsInMonthOf(
+	organizationId: string,
+	periodStart: Date
+): Promise<{ FIRST: boolean; SECOND: boolean }> {
+	const monthStart = firstDayOfMonth(periodStart)
+	const nextMonth = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1))
+	const runs = await db.payrollRun.findMany({
+		where: {
+			organizationId,
+			status: { not: 'VOIDED' },
+			periodStart: { gte: monthStart, lt: nextMonth }
+		},
+		select: { periodStart: true, periodEnd: true }
+	})
+	const kinds = new Set(runs.map((r) => describePeriod(r.periodStart, r.periodEnd).kind))
+	return { FIRST: kinds.has('FIRST_HALF'), SECOND: kinds.has('SECOND_HALF') }
 }
 
 /**
@@ -291,6 +320,11 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	// installment; a standard period keeps taking the full installment exactly as today. Four
 	// ~7-day May runs therefore collect 4 × 7/31 ≈ 0.90 of one installment — under a month's worth.
 	const amortShare = periodKind === null ? periodShare : 1
+	// #163: only a CUSTOM run can leave the monthly EE share to a cutoff run, so only a custom run
+	// needs to know whether that cutoff run exists. A standard run passes `undefined` and the engine
+	// keeps its existing branches untouched.
+	const cutoffRunExists =
+		periodKind === null ? await cutoffRunsInMonthOf(organizationId, run.periodStart) : undefined
 	const loansByEmp = groupByEmployee(loansAll)
 	const advancesByEmp = groupByEmployee(advancesAll)
 	const enrollmentsByEmp = groupByEmployee(enrollmentsAll)
@@ -455,6 +489,7 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 			employerShareExternal: employerShareExternals(statutoryExternalByEmp.get(emp.id) ?? []),
 			statutoryAllocations: statutoryAllocations(statutoryAllocationByEmp.get(emp.id) ?? []),
 			periodKind,
+			cutoffRunExists,
 			loans,
 			cashAdvances,
 			recurringDeductions: [
