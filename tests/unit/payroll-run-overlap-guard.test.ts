@@ -65,6 +65,28 @@ beforeEach(() => {
 
 const guard = (start: string, end: string) => assertNoOverlappingRun(ORG, d(start), d(end))
 
+/**
+ * The predicate above reads the `where` the guard builds, which makes every case below meaningful
+ * — but only while that `where` keeps its shape. If the guard stopped excluding VOIDED rows, or
+ * narrowed the one-day widening the Manila comparison depends on, the predicate would quietly
+ * filter on something else and the cases would pass for the wrong reason. Pin the shape here.
+ */
+describe('the query the guard issues', () => {
+	it('scopes to the org, excludes VOIDED, and widens the window by a day on each side', async () => {
+		await guard('2026-05-10', '2026-05-20')
+
+		expect(dbMock.payrollRun.findMany).toHaveBeenCalledTimes(1)
+		const { where } = dbMock.payrollRun.findMany.mock.calls[0][0]
+		expect(where.organizationId).toBe(ORG)
+		// A voided run must not block a new one — the duplicate check ahead of the guard owns that case.
+		expect(where.status).toEqual({ not: 'VOIDED' })
+		// One day before the start, two after the end (exclusive `lt`), so a row stored on a PHT
+		// boundary is still a candidate for the Manila-day comparison that makes the real decision.
+		expect(where.periodEnd.gte).toEqual(d('2026-05-09'))
+		expect(where.periodStart.lt).toEqual(d('2026-05-22'))
+	})
+})
+
 describe('assertNoOverlappingRun — a custom range may not intersect an existing run', () => {
 	it('refuses a partial overlap', async () => {
 		rows = [row('r1', '2026-05-10', '2026-05-31')]
