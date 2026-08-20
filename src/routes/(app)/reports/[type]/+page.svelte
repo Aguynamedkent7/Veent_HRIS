@@ -52,14 +52,15 @@
 		'loan-summary': 'Loan Summary',
 		'government-remittance': 'Government Remittance',
 		'bir-withholding': 'BIR Withholding Report',
-		separation: 'Separation Report'
+		separation: 'Separation Report',
+		recruitment: 'Recruitment Report'
 	}
 
 	const title = $derived(REPORT_LABELS[data.reportType] ?? 'Report')
 
 	// Show department filter only for report types that support it
 	const showDeptFilter = $derived(
-		['headcount', 'attendance', 'tardiness', 'overtime'].includes(data.reportType)
+		['headcount', 'attendance', 'tardiness', 'overtime', 'recruitment'].includes(data.reportType)
 	)
 
 	// Build CSV export URL

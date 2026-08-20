@@ -15,6 +15,7 @@ import {
 	generateBIRWithholding
 } from '$lib/server/services/reports'
 import { generateSeparationReport } from '$lib/server/services/separation'
+import { generateRecruitmentReport } from '$lib/server/services/recruitment'
 import { canAny } from '$lib/server/rbac'
 import type { PageServerLoad } from './$types'
 
@@ -29,7 +30,8 @@ const VALID_TYPES = [
 	'loan-summary',
 	'government-remittance',
 	'bir-withholding',
-	'separation'
+	'separation',
+	'recruitment'
 ] as const
 // Payroll reports are visible to Payroll Officer / Finance; the rest are HR-only.
 const PAYROLL_REPORT_TYPES = [
@@ -143,6 +145,25 @@ export const load: PageServerLoad = async ({ locals, params, url }) => {
 			'Status',
 			'Clearance',
 			'FinalPay'
+		]
+	} else if (type === 'recruitment') {
+		// departmentId is honoured here — a JobPosting carries one directly, so the page's
+		// existing department selector filters this report without any extra plumbing.
+		results = await generateRecruitmentReport(user.organizationId, {
+			startDate,
+			endDate,
+			departmentId
+		})
+		columns = [
+			'Title',
+			'Department',
+			'Status',
+			'Posted',
+			'Closed',
+			'Applicants',
+			'Interviewed',
+			'Hired',
+			'DaysOpen'
 		]
 	}
 

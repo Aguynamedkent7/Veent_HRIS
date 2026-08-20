@@ -16,6 +16,7 @@ import {
 	exportToCSV
 } from '$lib/server/services/reports'
 import { generateSeparationReport } from '$lib/server/services/separation'
+import { generateRecruitmentReport } from '$lib/server/services/recruitment'
 import type { RequestHandler } from './$types'
 
 const DAY_MS = 86_400_000
@@ -32,7 +33,8 @@ const VALID_TYPES = [
 	'loan-summary',
 	'government-remittance',
 	'bir-withholding',
-	'separation'
+	'separation',
+	'recruitment'
 ] as const
 // Payroll reports are also visible to Payroll Officer / Finance; the rest are HR-only.
 const PAYROLL_REPORT_TYPES = [
@@ -130,6 +132,8 @@ export const GET: RequestHandler = async ({ locals, params, url }) => {
 		)
 	} else if (type === 'separation') {
 		results = await generateSeparationReport(user.organizationId, { startDate, endDate })
+	} else if (type === 'recruitment') {
+		results = await generateRecruitmentReport(user.organizationId, { startDate, endDate })
 	}
 
 	if (exportCsv) {
