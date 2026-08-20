@@ -9,8 +9,9 @@ import { periodOf } from '../../src/lib/utils/pay-periods'
  * alongside the two halves is a documented, supported workflow and must keep working.
  *
  * `payrollRun.findMany` is mocked with a real predicate over an in-memory row set, applying the
- * exact `where` the guard builds. That is what makes the adjacency, VOIDED and intraday cases
- * meaningful — a mock that returned a canned array would prove nothing about the query.
+ * exact `where` the guard builds — including the one-day widening the Manila-calendar comparison
+ * needs. That is what makes the adjacency, VOIDED and PHT-boundary cases meaningful; a mock that
+ * returned a canned array would prove nothing about the query.
  */
 
 const { dbMock } = vi.hoisted(() => ({
@@ -144,33 +145,35 @@ describe('assertNoOverlappingRun — standard shapes keep coexisting', () => {
 	})
 })
 
-describe('assertNoOverlappingRun — stored rows are not always UTC midnight', () => {
-	// S4: the one real timesheet-shaped row in the dev DB is stored on PHT day boundaries
-	// (2026-08-09 16:00:00 … 2026-08-16 15:59:59.999). Comparing raw timestamps would ask
-	// "is Aug 9 16:00 <= Aug 9 00:00?" and answer no, missing a genuinely shared Aug 9.
-	it('catches a one-day overlap against a row carrying intraday times', async () => {
-		rows = [
-			{
-				id: 'intraday',
-				organizationId: ORG,
-				status: 'COMPUTED',
-				periodStart: new Date('2026-08-09T16:00:00.000Z'),
-				periodEnd: new Date('2026-08-16T15:59:59.999Z')
-			}
-		]
-		await expect(guard('2026-08-05', '2026-08-09')).rejects.toMatchObject({ status: 409 })
+describe('assertNoOverlappingRun — legacy rows sit on PHT day boundaries', () => {
+	// The one real timesheet-shaped row in the dev DB. In Manila this range is Aug 10 – Aug 16;
+	// UTC-truncating it to Aug 9 would invent a shared day with any range ending Aug 9 and refuse
+	// a legitimate save. The decision is made on Manila day keys, so it does not.
+	const legacy = {
+		id: 'intraday',
+		organizationId: ORG,
+		status: 'COMPUTED',
+		periodStart: new Date('2026-08-09T16:00:00.000Z'),
+		periodEnd: new Date('2026-08-16T15:59:59.999Z')
+	}
+
+	it('allows a range ending Aug 9 — the legacy row starts Aug 10 in Manila', async () => {
+		rows = [legacy]
+		await expect(guard('2026-08-05', '2026-08-09')).resolves.toBeUndefined()
+	})
+
+	it('still refuses a range that genuinely shares Aug 10', async () => {
+		rows = [legacy]
+		await expect(guard('2026-08-05', '2026-08-10')).rejects.toMatchObject({ status: 409 })
 	})
 
 	it('still allows a range that ends the day before such a row starts', async () => {
-		rows = [
-			{
-				id: 'intraday',
-				organizationId: ORG,
-				status: 'COMPUTED',
-				periodStart: new Date('2026-08-09T16:00:00.000Z'),
-				periodEnd: new Date('2026-08-16T15:59:59.999Z')
-			}
-		]
+		rows = [legacy]
 		await expect(guard('2026-08-03', '2026-08-08')).resolves.toBeUndefined()
+	})
+
+	it('allows a range starting the day after such a row ends', async () => {
+		rows = [legacy]
+		await expect(guard('2026-08-17', '2026-08-20')).resolves.toBeUndefined()
 	})
 })

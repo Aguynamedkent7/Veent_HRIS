@@ -2,7 +2,12 @@ import { canAny } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
-import { isSameMonthRange, isValidStandardPeriod, utcMidnight } from '$lib/utils/pay-periods'
+import {
+	isSameMonthRange,
+	isValidStandardPeriod,
+	rangesOverlapInManila,
+	utcMidnight
+} from '$lib/utils/pay-periods'
 import { buildApprovalChain } from './requests/routing'
 import { canActOnStage, nextState, liveChain, timesheetSoD } from './approvals'
 import { formatShortDate } from '$lib/utils/format'
@@ -146,11 +151,14 @@ export async function createTimesheet(
 	// least one side is a custom range, so today's standard-shape behaviour is untouched; the
 	// same-start-day duplicate below stays the message for the standard case.
 	//
-	// Day bounds, not raw timestamps (S4): stored rows are not guaranteed UTC-midnight — a sheet
-	// written from a PHT day boundary carries 16:00 / 15:59:59.999 and a raw comparison would miss
-	// a genuinely shared calendar day.
-	const from = utcMidnight(periodStart)
-	const dayAfterEnd = new Date(utcMidnight(periodEnd).getTime() + 24 * 60 * 60 * 1000)
+	// MANILA calendar days, not raw timestamps and not UTC-truncated ones (S4): stored rows are not
+	// guaranteed UTC-midnight — a sheet written from a PHT day boundary carries 16:00 / 15:59:59.999,
+	// and 2026-08-09T16:00Z is August 10 in Manila. A raw comparison misses a genuinely shared day;
+	// a UTC truncation invents one and refuses a legitimate save. The query below is only the cheap
+	// coarse pass, widened by a day on each side; `rangesOverlapInManila` makes the decision.
+	const day = 24 * 60 * 60 * 1000
+	const from = new Date(utcMidnight(periodStart).getTime() - day)
+	const dayAfterEnd = new Date(utcMidnight(periodEnd).getTime() + 2 * day)
 	const totalHours = entries.reduce((sum, e) => sum + e.hoursWorked, 0)
 
 	// One transaction, under an employee-month advisory lock: on their own the two checks and the
@@ -162,7 +170,7 @@ export async function createTimesheet(
 		const key = `timesheet:${employeeId}:${from.getUTCFullYear()}-${from.getUTCMonth()}`
 		await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key})::bigint)`
 
-		const overlapping = await tx.timesheet.findMany({
+		const candidates = await tx.timesheet.findMany({
 			where: {
 				employeeId,
 				periodStart: { lt: dayAfterEnd },
@@ -170,6 +178,9 @@ export async function createTimesheet(
 			},
 			select: { id: true, periodStart: true, periodEnd: true }
 		})
+		const overlapping = candidates.filter((t) =>
+			rangesOverlapInManila(periodStart, periodEnd, t.periodStart, t.periodEnd)
+		)
 		const allStandard =
 			isValidStandardPeriod(periodStart, periodEnd) &&
 			overlapping.every((t) => isValidStandardPeriod(t.periodStart, t.periodEnd))

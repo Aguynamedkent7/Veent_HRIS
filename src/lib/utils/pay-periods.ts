@@ -10,6 +10,8 @@
 // service layer, and the UI. Legacy off-cycle rows with arbitrary dates stay readable —
 // `describePeriod`/`isValidStandardPeriod` simply report them as non-standard.
 
+import { manilaDayKey } from './dates'
+
 export type PeriodKind = 'FIRST_HALF' | 'SECOND_HALF' | 'WHOLE_MONTH'
 
 export const PERIOD_KINDS: readonly PeriodKind[] = ['FIRST_HALF', 'SECOND_HALF', 'WHOLE_MONTH']
@@ -157,6 +159,23 @@ export function periodShareOf(start: Date, end: Date): number {
 	const share = periodDays(s, end) / daysInMonth(s.getUTCFullYear(), s.getUTCMonth())
 	if (!(share > 0)) return 0.5
 	return Math.min(1, share)
+}
+
+/**
+ * True when two inclusive ranges share at least one PHILIPPINE calendar day (#163).
+ *
+ * Overlap must be decided on the day the range means, not on the instant it is stored. New rows
+ * are written as UTC midnight (`<input type="date">`), but legacy rows sit on PHT day boundaries —
+ * a stored `2026-08-09T16:00:00.000Z` is **August 10** in Manila. Truncating that to UTC August 9
+ * reports a range ending August 9 as overlapping when the two are merely adjacent, and refuses a
+ * legitimate save. Both conventions bucket correctly through `manilaDayKey`, and `YYYY-MM-DD`
+ * strings compare safely with `<=`.
+ *
+ * Callers keep a DB range filter as the cheap coarse pass; it must be widened by a day on each
+ * side, because a row whose UTC bounds fall outside the window can still be inside it in Manila.
+ */
+export function rangesOverlapInManila(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date): boolean {
+	return manilaDayKey(aStart) <= manilaDayKey(bEnd) && manilaDayKey(bStart) <= manilaDayKey(aEnd)
 }
 
 /** Human range for a picker preview, e.g. "May 1 – May 15, 2026 (15 days)". */

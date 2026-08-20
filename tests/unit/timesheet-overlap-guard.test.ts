@@ -81,17 +81,26 @@ describe('createTimesheet — employee-scoped overlap guard', () => {
 		expect(dbMock.timesheet.create).toHaveBeenCalledTimes(1)
 	})
 
-	it('catches an overlap against a row stored on PHT day boundaries', async () => {
-		// The single real timesheet in the dev DB looks exactly like this.
-		rows = [
-			{
-				id: 't1',
-				employeeId: 'emp1',
-				periodStart: new Date('2026-08-09T16:00:00.000Z'),
-				periodEnd: new Date('2026-08-16T15:59:59.999Z')
-			}
-		]
-		await expect(sheet('emp1', '2026-08-05', '2026-08-09')).rejects.toMatchObject({ status: 409 })
+	// The single real timesheet in the dev DB looks exactly like this: in Manila it runs
+	// Aug 10 – Aug 16. UTC-truncating its start to Aug 9 would invent a shared day with a range
+	// ending Aug 9 and refuse a legitimate save.
+	const legacy = {
+		id: 't1',
+		employeeId: 'emp1',
+		periodStart: new Date('2026-08-09T16:00:00.000Z'),
+		periodEnd: new Date('2026-08-16T15:59:59.999Z')
+	}
+
+	it('allows a range ending Aug 9 against a PHT-boundary row starting Aug 10', async () => {
+		rows = [legacy]
+		await sheet('emp1', '2026-08-05', '2026-08-09')
+		expect(dbMock.timesheet.create).toHaveBeenCalledTimes(1)
+	})
+
+	it('still refuses a range that genuinely shares Aug 10 with it', async () => {
+		rows = [legacy]
+		await expect(sheet('emp1', '2026-08-05', '2026-08-10')).rejects.toMatchObject({ status: 409 })
+		expect(dbMock.timesheet.create).not.toHaveBeenCalled()
 	})
 })
 

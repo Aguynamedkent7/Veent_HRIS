@@ -24,6 +24,7 @@ import {
 	isSameMonthRange,
 	isValidStandardPeriod,
 	periodShareOf,
+	rangesOverlapInManila,
 	utcMidnight
 } from '$lib/utils/pay-periods'
 import { formatShortDate } from '$lib/utils/format'
@@ -142,9 +143,10 @@ export async function lockPayrollMonth(
  * documented, supported workflow — an unconditional guard would silently delete it. Deciding
  * "every conflict is standard" needs every candidate row, which is why this is `findMany`.
  *
- * Comparisons are on UTC-midnight DAY bounds, not raw stored timestamps: existing rows are not
- * guaranteed to sit on UTC midnight (rows written from a PHT day boundary carry 16:00/15:59:59),
- * and a raw timestamp comparison misses a genuinely shared calendar day.
+ * Comparisons are on MANILA calendar days, not raw stored timestamps and not UTC-truncated ones:
+ * existing rows are not guaranteed to sit on UTC midnight (a row written from a PHT day boundary
+ * carries 16:00/15:59:59, and 2026-08-09T16:00Z is August 10 in Manila). A raw timestamp
+ * comparison misses a genuinely shared day; a UTC truncation invents one that does not exist.
  *
  * Consequence, by design: once one custom run exists in a month, that month's normal 1–15 run is
  * refused until the custom run is voided. The 409 says so.
@@ -157,9 +159,13 @@ export async function assertNoOverlappingRun(
 	// lock. Defaults to `db` — a read on its own is still correct, just not serialized.
 	client: Prisma.TransactionClient = db
 ) {
-	const from = utcMidnight(periodStart)
-	const dayAfterEnd = new Date(utcMidnight(periodEnd).getTime() + 24 * 60 * 60 * 1000)
-	const hits = await client.payrollRun.findMany({
+	// Coarse DB filter, widened by a day on each side: a row stored on a PHT boundary can be one
+	// UTC day outside this window and still share a Manila day with the range. The real decision is
+	// the Manila-calendar comparison below.
+	const day = 24 * 60 * 60 * 1000
+	const from = new Date(utcMidnight(periodStart).getTime() - day)
+	const dayAfterEnd = new Date(utcMidnight(periodEnd).getTime() + 2 * day)
+	const candidates = await client.payrollRun.findMany({
 		where: {
 			organizationId,
 			status: { not: 'VOIDED' },
@@ -168,6 +174,9 @@ export async function assertNoOverlappingRun(
 		},
 		select: { id: true, periodStart: true, periodEnd: true }
 	})
+	const hits = candidates.filter((h) =>
+		rangesOverlapInManila(periodStart, periodEnd, h.periodStart, h.periodEnd)
+	)
 	if (hits.length === 0) return
 	if (
 		isValidStandardPeriod(periodStart, periodEnd) &&
