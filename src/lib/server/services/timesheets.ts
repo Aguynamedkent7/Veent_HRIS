@@ -2,9 +2,10 @@ import { canAny } from '$lib/server/rbac'
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
-import { isValidStandardPeriod } from '$lib/utils/pay-periods'
+import { isSameMonthRange, isValidStandardPeriod, utcMidnight } from '$lib/utils/pay-periods'
 import { buildApprovalChain } from './requests/routing'
 import { canActOnStage, nextState, liveChain, timesheetSoD } from './approvals'
+import { formatShortDate } from '$lib/utils/format'
 import type { AuditContext } from './types'
 import type { Prisma } from '@prisma/client'
 
@@ -130,13 +131,44 @@ export async function createTimesheet(
 	periodStart: Date,
 	periodEnd: Date,
 	entries: TimesheetEntryInput[],
-	ctx: AuditContext,
-	// Escape hatch for seeds / legacy imports only (#129). Off by default so all UI-driven
-	// creates are locked to the standard 1-15 / 16-EOM / whole-month shapes.
-	opts: { allowNonStandardPeriod?: boolean } = {}
+	ctx: AuditContext
 ) {
-	if (!opts.allowNonStandardPeriod && !isValidStandardPeriod(periodStart, periodEnd)) {
-		error(400, 'Timesheets must cover a standard pay period (1–15, 16–EOM, or the whole month)')
+	// #163: any same-month range is a legal timesheet period; the shape gate is gone.
+	if (utcMidnight(periodEnd) < utcMidnight(periodStart)) {
+		error(400, 'End date must be on or after the start date.')
+	}
+	if (!isSameMonthRange(periodStart, periodEnd)) {
+		error(400, 'A custom period must start and end in the same month.')
+	}
+
+	// #163: payroll sums an employee's timesheets by containment, so two overlapping sheets
+	// double-count the shared days' hours. Scoped to the employee, not the org. Fires only when at
+	// least one side is a custom range, so today's standard-shape behaviour is untouched; the
+	// same-start-day duplicate below stays the message for the standard case.
+	//
+	// Day bounds, not raw timestamps (S4): stored rows are not guaranteed UTC-midnight — a sheet
+	// written from a PHT day boundary carries 16:00 / 15:59:59.999 and a raw comparison would miss
+	// a genuinely shared calendar day.
+	const from = utcMidnight(periodStart)
+	const dayAfterEnd = new Date(utcMidnight(periodEnd).getTime() + 24 * 60 * 60 * 1000)
+	const overlapping = await db.timesheet.findMany({
+		where: {
+			employeeId,
+			periodStart: { lt: dayAfterEnd },
+			periodEnd: { gte: from }
+		},
+		select: { id: true, periodStart: true, periodEnd: true }
+	})
+	const allStandard =
+		isValidStandardPeriod(periodStart, periodEnd) &&
+		overlapping.every((t) => isValidStandardPeriod(t.periodStart, t.periodEnd))
+	if (overlapping.length > 0 && !allStandard) {
+		const hit =
+			overlapping.find((t) => !isValidStandardPeriod(t.periodStart, t.periodEnd)) ?? overlapping[0]
+		error(
+			409,
+			`This range overlaps an existing timesheet (${formatShortDate(hit.periodStart)} – ${formatShortDate(hit.periodEnd)}).`
+		)
 	}
 
 	const existing = await db.timesheet.findUnique({

@@ -138,11 +138,16 @@ export interface EmployeeComputeResult {
 }
 
 /**
- * The employee share for one contribution in this period (#173, Feature E). Outside a semi-monthly
- * cutoff (WHOLE_MONTH or a legacy/null period) allocation is moot and the monthly EE prorates by
- * `× share` exactly as before. On a cutoff: EVEN keeps the half split; FIRST loads the full monthly
- * EE onto the 1–15 cutoff (0 on the other), SECOND onto the 16–EOM cutoff. Returns a Money that the
- * caller quantizes once, exactly like the pre-existing EE line.
+ * The employee share for one contribution in this period (#173, Feature E). On a semi-monthly
+ * cutoff: EVEN keeps the half split; FIRST loads the full monthly EE onto the 1–15 cutoff (0 on the
+ * other), SECOND onto the 16–EOM cutoff. Returns a Money that the caller quantizes once, exactly
+ * like the pre-existing EE line.
+ *
+ * #163: a CUSTOM same-month range has `kind === null`, and under FIRST or SECOND it takes ZERO —
+ * the designated cutoff run still collects the whole month, so a month never exceeds 100% of the
+ * monthly EE contribution. WHOLE_MONTH and `undefined` (the preview path, which never supplies a
+ * kind) are checked FIRST and stay on `× share`, which is the guard rail: neither may ever fall
+ * into the custom-range ZERO branch. ER share and withholding tax keep `× share` regardless.
  */
 function resolveEE(
 	monthlyEE: Money,
@@ -150,10 +155,10 @@ function resolveEE(
 	kind: PeriodKind | null | undefined,
 	share: Money
 ): Money {
-	if (kind !== 'FIRST_HALF' && kind !== 'SECOND_HALF') return monthlyEE.times(share)
+	if (kind === 'WHOLE_MONTH' || kind === undefined) return monthlyEE.times(share)
 	if (mode === 'FIRST') return kind === 'FIRST_HALF' ? monthlyEE : ZERO
 	if (mode === 'SECOND') return kind === 'SECOND_HALF' ? monthlyEE : ZERO
-	return monthlyEE.times(share) // EVEN — the normal half split (share is 0.5 on a cutoff)
+	return monthlyEE.times(share) // EVEN — the normal split (share is 0.5 on a cutoff)
 }
 
 export function computeEmployeeResult(

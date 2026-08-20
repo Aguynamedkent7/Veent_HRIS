@@ -14,11 +14,18 @@ import {
 	employerShareExternals,
 	statutoryAllocations
 } from './employee-statutory'
-import { D, q2n, sum, ZERO } from './money'
+import { D, q2, q2n, sum, ZERO } from './money'
 import { emptyAttendance, round2, type ComputeSegment, type EmployeeComp } from './types'
 import { buildAttendanceInput, buildSegmentAttendance } from '../attendance/input'
 import { computeWorkingDays } from '$lib/utils/dates'
-import { describePeriod, isValidStandardPeriod, periodShareOf } from '$lib/utils/pay-periods'
+import {
+	describePeriod,
+	isSameMonthRange,
+	isValidStandardPeriod,
+	periodShareOf,
+	utcMidnight
+} from '$lib/utils/pay-periods'
+import { formatShortDate } from '$lib/utils/format'
 import { ensurePayrollApprovalChain } from '../approvals'
 import { assertCanTouchEmployee } from '../employee-access'
 import type { AuditContext } from '../types'
@@ -69,22 +76,76 @@ export async function buildComputeSegments(
 	})
 }
 
+/**
+ * #163: refuse a payroll run whose range intersects an existing (non-voided) run for the org.
+ *
+ * Fires only when at least one side is a CUSTOM range. A standard-vs-standard intersection is
+ * allowed through, because a WHOLE_MONTH adjustment run running alongside the two halves is a
+ * documented, supported workflow — an unconditional guard would silently delete it. Deciding
+ * "every conflict is standard" needs every candidate row, which is why this is `findMany`.
+ *
+ * Comparisons are on UTC-midnight DAY bounds, not raw stored timestamps: existing rows are not
+ * guaranteed to sit on UTC midnight (rows written from a PHT day boundary carry 16:00/15:59:59),
+ * and a raw timestamp comparison misses a genuinely shared calendar day.
+ *
+ * Consequence, by design: once one custom run exists in a month, that month's normal 1–15 run is
+ * refused until the custom run is voided. The 409 says so.
+ */
+export async function assertNoOverlappingRun(
+	organizationId: string,
+	periodStart: Date,
+	periodEnd: Date
+) {
+	const from = utcMidnight(periodStart)
+	const dayAfterEnd = new Date(utcMidnight(periodEnd).getTime() + 24 * 60 * 60 * 1000)
+	const hits = await db.payrollRun.findMany({
+		where: {
+			organizationId,
+			status: { not: 'VOIDED' },
+			periodStart: { lt: dayAfterEnd },
+			periodEnd: { gte: from }
+		},
+		select: { id: true, periodStart: true, periodEnd: true }
+	})
+	if (hits.length === 0) return
+	if (
+		isValidStandardPeriod(periodStart, periodEnd) &&
+		hits.every((h) => isValidStandardPeriod(h.periodStart, h.periodEnd))
+	)
+		return
+	const hit = hits.find((h) => !isValidStandardPeriod(h.periodStart, h.periodEnd)) ?? hits[0]
+	error(
+		409,
+		`This range overlaps an existing payroll run (${formatShortDate(hit.periodStart)} – ${formatShortDate(hit.periodEnd)}). Void the conflicting run to proceed.`
+	)
+}
+
 export async function createPayrollRun(
 	organizationId: string,
 	periodStart: Date,
 	periodEnd: Date,
-	ctx: AuditContext,
-	// Escape hatch for seeds / legacy imports only (#129).
-	opts: { allowNonStandardPeriod?: boolean } = {}
+	ctx: AuditContext
 ) {
-	if (!opts.allowNonStandardPeriod && !isValidStandardPeriod(periodStart, periodEnd)) {
-		error(400, 'Payroll runs must cover a standard pay period (1–15, 16–EOM, or the whole month)')
+	// #163: any same-month range is a legal period; the shape gate is gone. These two checks are
+	// what stops a reversed range (a negative day count would produce negative deductions) and a
+	// cross-month one (statutory is monthly, so a two-month span has no single basis).
+	if (utcMidnight(periodEnd) < utcMidnight(periodStart)) {
+		error(400, 'End date must be on or after the start date.')
+	}
+	if (!isSameMonthRange(periodStart, periodEnd)) {
+		error(400, 'A custom period must start and end in the same month.')
 	}
 
+	// Kept ahead of the overlap guard on purpose (S1). `voidRun` only flips status, so the row and
+	// its @@unique([organizationId, periodStart, periodEnd]) survive; the overlap guard excludes
+	// VOIDED rows, so without this a void-then-recreate would reach `create` and raise a raw Prisma
+	// P2002 — a 500 page instead of today's clean 409.
 	const existing = await db.payrollRun.findUnique({
 		where: { organizationId_periodStart_periodEnd: { organizationId, periodStart, periodEnd } }
 	})
 	if (existing) error(409, 'Payroll run for this period already exists')
+
+	await assertNoOverlappingRun(organizationId, periodStart, periodEnd)
 
 	const run = await db.payrollRun.create({
 		data: { organizationId, periodStart, periodEnd }
@@ -226,6 +287,10 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 	// engine. WHOLE_MONTH/legacy periods (null) make allocation moot — the engine falls back to
 	// `× periodShare` there.
 	const periodKind = describePeriod(run.periodStart, run.periodEnd).kind
+	// #163: a custom (non-standard) range collects a proportional slice of the flat monthly
+	// installment; a standard period keeps taking the full installment exactly as today. Four
+	// ~7-day May runs therefore collect 4 × 7/31 ≈ 0.90 of one installment — under a month's worth.
+	const amortShare = periodKind === null ? periodShare : 1
 	const loansByEmp = groupByEmployee(loansAll)
 	const advancesByEmp = groupByEmployee(advancesAll)
 	const enrollmentsByEmp = groupByEmployee(enrollmentsAll)
@@ -315,13 +380,13 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		const loans: AmortItem[] = (loansByEmp.get(emp.id) ?? []).map((l) => ({
 			refId: l.id,
 			label: l.type ?? 'Loan',
-			installment: l.installment,
+			installment: q2(D(l.installment).times(amortShare)),
 			balance: l.balance
 		}))
 		const cashAdvances: AmortItem[] = (advancesByEmp.get(emp.id) ?? []).map((a) => ({
 			refId: a.id,
 			label: 'Cash advance',
-			installment: a.installment,
+			installment: q2(D(a.installment).times(amortShare)),
 			balance: a.balance
 		}))
 
@@ -400,7 +465,12 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 		// look at it. Zero paid hours stays a separate, more specific reason. #171: a mid-period
 		// pay-type flip mixes bases we value approximately (premiums stay at the period-end rate), so
 		// surface it for manual review — but never block the run.
-		const isFlagged = paidHours === 0 || result.uncollected > 0 || isFlip
+		// #163 (S8): timesheets are sourced by CONTAINMENT above, so a standard 1–15 timesheet is
+		// invisible to a custom May 3–9 run — the employee silently falls back to full scheduled
+		// hours and gets paid for them. Flag it so the estimate is visible on the run detail row
+		// rather than shipped as fact. The containment query itself is a named residual (#163).
+		const estimatedFromSchedule = periodKind === null && !attInput && approvedHours === 0
+		const isFlagged = paidHours === 0 || result.uncollected > 0 || isFlip || estimatedFromSchedule
 		const flagReason =
 			paidHours === 0
 				? 'No hours recorded for period'
@@ -408,7 +478,9 @@ export async function computePayroll(runId: string, organizationId: string, ctx:
 					? `Deductions exceed pay — ₱${result.uncollected.toFixed(2)} uncollected`
 					: isFlip
 						? 'Mid-period pay-type change — verify manually'
-						: null
+						: estimatedFromSchedule
+							? 'Hours estimated from schedule — no timesheet covers this custom period'
+							: null
 
 		perEmployee.push({
 			entry: {

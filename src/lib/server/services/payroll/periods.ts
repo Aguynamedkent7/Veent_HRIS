@@ -2,12 +2,12 @@ import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
 import { Prisma } from '@prisma/client'
-import { computePayroll } from './index'
+import { assertNoOverlappingRun, computePayroll } from './index'
 import { voidedOwnApproval } from './audit-markers'
 import { D, q2 } from './money'
 import { reverseAmortization } from './amortization'
 import { deriveRange, lockRange } from '../attendance'
-import { isValidStandardPeriod } from '$lib/utils/pay-periods'
+import { isSameMonthRange, utcMidnight } from '$lib/utils/pay-periods'
 import { notifyMany } from '../notifications'
 import { requireAnyCapability } from '$lib/server/rbac'
 import { formatShortDate } from '$lib/utils/format'
@@ -44,15 +44,20 @@ export async function openPeriod(
 		startDate: Date
 		endDate: Date
 		cutoff?: number
-		// Escape hatch for seeds / legacy imports only (#129).
-		allowNonStandardPeriod?: boolean
 	},
 	ctx: AuditContext
 ) {
-	if (!input.allowNonStandardPeriod && !isValidStandardPeriod(input.startDate, input.endDate)) {
-		error(400, 'A payroll period must be a standard pay period (1–15, 16–EOM, or the whole month)')
+	// #163: any same-month range is a legal period; the shape gate is gone. See createPayrollRun.
+	if (utcMidnight(input.endDate) < utcMidnight(input.startDate)) {
+		error(400, 'End date must be on or after the start date.')
+	}
+	if (!isSameMonthRange(input.startDate, input.endDate)) {
+		error(400, 'A custom period must start and end in the same month.')
 	}
 
+	// S1: kept ahead of the overlap guard — a VOIDED run keeps its row and its unique constraint,
+	// and the guard skips VOIDED, so without this the recreate would raise a raw Prisma P2002
+	// inside the transaction below and surface as a 500.
 	const existing = await db.payrollRun.findUnique({
 		where: {
 			organizationId_periodStart_periodEnd: {
@@ -63,6 +68,10 @@ export async function openPeriod(
 		}
 	})
 	if (existing) error(409, 'A payroll run for this period already exists')
+
+	// openPeriod creates its PayrollRun inside its own transaction, so guarding PayrollRun covers
+	// PayrollPeriod too — neither row is written when this throws.
+	await assertNoOverlappingRun(organizationId, input.startDate, input.endDate)
 
 	const period = await db.$transaction(async (tx: Prisma.TransactionClient) => {
 		const p = await tx.payrollPeriod.create({

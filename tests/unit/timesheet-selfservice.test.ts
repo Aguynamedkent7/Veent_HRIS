@@ -17,6 +17,7 @@ const { dbMock } = vi.hoisted(() => ({
 	dbMock: {
 		timesheet: {
 			findFirst: vi.fn(),
+			findMany: vi.fn(),
 			findUnique: vi.fn(),
 			create: vi.fn(),
 			delete: vi.fn(),
@@ -167,40 +168,59 @@ describe('updateTimesheetEntries — owner sync path', () => {
 	})
 })
 
-describe('createTimesheet — standard pay period enforcement (#129)', () => {
+// #163 replaced the standard-shape gate (#129) with a same-month sanity gate: a mid-month week
+// is now a legal custom period, and only a cross-month or reversed range is refused.
+describe('createTimesheet — same-month period gate (#163)', () => {
 	const may = periodOf('FIRST_HALF', 2026, 4) // 2026-05-01 … 2026-05-15
 
-	it('rejects a non-standard period before touching the DB', async () => {
+	it('rejects a cross-month period before touching the DB', async () => {
 		await expect(
 			createTimesheet(
 				'emp-owner',
 				new Date('2026-05-13'),
-				new Date('2026-05-21'),
+				new Date('2026-06-02'),
 				[],
 				ctx('HR_ADMIN')
 			)
 		).rejects.toMatchObject({ status: 400 })
+		expect(dbMock.timesheet.findMany).not.toHaveBeenCalled()
+		expect(dbMock.timesheet.findUnique).not.toHaveBeenCalled()
+		expect(dbMock.timesheet.create).not.toHaveBeenCalled()
+	})
+
+	it('rejects a reversed period before touching the DB', async () => {
+		await expect(
+			createTimesheet(
+				'emp-owner',
+				new Date('2026-05-21'),
+				new Date('2026-05-13'),
+				[],
+				ctx('HR_ADMIN')
+			)
+		).rejects.toMatchObject({ status: 400 })
+		expect(dbMock.timesheet.findMany).not.toHaveBeenCalled()
 		expect(dbMock.timesheet.findUnique).not.toHaveBeenCalled()
 		expect(dbMock.timesheet.create).not.toHaveBeenCalled()
 	})
 
 	it('creates a timesheet for a standard period', async () => {
+		dbMock.timesheet.findMany.mockResolvedValue([])
 		dbMock.timesheet.findUnique.mockResolvedValue(null)
 		dbMock.timesheet.create.mockResolvedValue({ id: 'ts-new', entries: [] })
 		await createTimesheet('emp-owner', may.periodStart, may.periodEnd, [], ctx('HR_ADMIN'))
 		expect(dbMock.timesheet.create).toHaveBeenCalledTimes(1)
 	})
 
-	it('allows a non-standard period through the seed/import escape hatch', async () => {
+	it('creates a timesheet for a custom same-month range', async () => {
+		dbMock.timesheet.findMany.mockResolvedValue([])
 		dbMock.timesheet.findUnique.mockResolvedValue(null)
-		dbMock.timesheet.create.mockResolvedValue({ id: 'ts-legacy', entries: [] })
+		dbMock.timesheet.create.mockResolvedValue({ id: 'ts-custom', entries: [] })
 		await createTimesheet(
 			'emp-owner',
 			new Date('2026-05-13'),
 			new Date('2026-05-21'),
 			[],
-			ctx('SUPER_ADMIN'),
-			{ allowNonStandardPeriod: true }
+			ctx('HR_ADMIN')
 		)
 		expect(dbMock.timesheet.create).toHaveBeenCalledTimes(1)
 	})
