@@ -3,6 +3,7 @@
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
 	import PeriodPicker from '$lib/components/ui/PeriodPicker.svelte'
 	import TableSkeleton from '$lib/components/ui/TableSkeleton.svelte'
+	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
@@ -173,6 +174,22 @@
 												>{recomputeG.busy ? 'Computing…' : 'Recompute'}</button
 											>
 										</form>
+									{/if}
+									<!-- #319: an overlapping range is refused with "void the conflicting run to
+									     proceed", so that run needs a Void control on the screen that shows the
+									     message. Confirmed, because a locked period's amortization is credited
+									     back and the run cannot be un-voided. -->
+									{#if data.canVoid && run.organizationId === data.viewerOrg && run.status !== 'VOIDED'}
+										<ConfirmButton
+											action="?/void"
+											title="Void this payroll run?"
+											message="The run is marked VOIDED and any amortization it collected is credited back. This cannot be undone, and the same exact period cannot be created again."
+											confirmText="Void run"
+											triggerLabel="Void"
+											triggerClass="btn-row text-destructive"
+										>
+											<input type="hidden" name="id" value={run.id} />
+										</ConfirmButton>
 									{/if}
 									<!-- Sign-off (verify → approve) happens through the chain on the detail page (#134). -->
 									<a href="/payroll/{run.id}" class="btn-row"
