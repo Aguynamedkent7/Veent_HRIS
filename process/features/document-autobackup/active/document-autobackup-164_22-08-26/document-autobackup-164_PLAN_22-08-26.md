@@ -571,6 +571,8 @@ Every NEW file carries a reason it cannot be a function in an existing file.
 | `.env.dev.example` | Add the `BACKUP_*` block (§10) | Convention: env names are documented here |
 | `.env.prod.example` | Add the `BACKUP_*` block (§10, unquoted form) | Same, with the file's no-quotes rule |
 | `scripts/README.md` | Add a `## Automatic document backup — backup-documents.ts` section under "Scheduled jobs (droplet crontab)" (§11) | Crontab entries live outside the repo; this file is the only recovery record |
+| `.gitignore` | Add `/backups/` beside the existing `/uploads/` | E-01. The dev default `BACKUP_DIR="./backups"` writes real government IDs into the working tree; without this `git add -A` commits them |
+| `.dockerignore` | Add `backups` beside the existing `uploads` | E-01. Same bytes must not enter the build context |
 
 ### Explicitly NOT created
 
@@ -1106,4 +1108,171 @@ reported as `VERIFIED`.
 
 ## Validate Contract
 
-(placeholder — vc-validate-agent writes this section before EXECUTE)
+Status: CONDITIONAL
+Date: 22-08-26
+date: 2026-08-22
+generated-by: outer-pvl
+
+Parallel strategy: sequential (in-process fan-out)
+Rationale: 6/7 signals present (S1 multi-package, S2 schema+auth surface, S4 no, S6 high-risk classes, S7 19 files, S5 user requested adversarial depth). Threshold says HIGH → agent team / workflow. The Agent tool was not available in this validate session, so the 4 Layer-1 dimensions and 8 Layer-2 section probes were run in-process against the live repo with the same role prompts. Every claim below is backed by a command run against the working tree, not by inference.
+
+### Test gates (C3)
+
+| criterion id | behavior | strategy | proving test | gap-resolution |
+|---|---|---|---|---|
+| AC-1 | Every EmployeeDocument + non-evicted RequestDocument byte reaches the destination | Fully-Automated | `pnpm test tests/unit/backup-run.test.ts` (T-U-15) | B |
+| AC-1 | Bytes at the destination are byte-identical to source | Hybrid | M4 — precondition: `./start.sh` up, `pnpm db:seed`, marker uploaded; sha256 of `backups/<org>/<run>/files/<key>` equals manifest `sha256` | B |
+| AC-2 | manifest.json names employee/category/label/original filename/mime/size/uploadedAt/sha256 | Hybrid | M4 marker lookup: `grep TRIPWIRE-164-MARKER backups/*/*/manifest.json` | B |
+| AC-3 | storageKey===null RequestDocument appears in `skipped[]` with reason `bytes-evicted` | Fully-Automated | `pnpm test tests/unit/backup-run.test.ts` (T-U-15) | B |
+| AC-4 | intervalDays / retentionCount are honoured by the script | Fully-Automated | `pnpm test tests/unit/backup-plan.test.ts` (T-U-14, T-U-04) | B |
+| AC-4 | The interval and retention the UI shows are the ones the script reads | Hybrid | M3 + M6 + M7 — precondition: dev DB + `docker exec veent-db-5434 psql -p 5434 -U veent -d veent_hris` | B |
+| AC-5 | SigV4 signature matches AWS-published expectations | Fully-Automated | `pnpm test tests/unit/backup-s3-sigv4.test.ts` (T-U-07, T-U-08) | B |
+| AC-5 | S3 write against a real bucket | Agent-Probe | none possible — no bucket, no staging, no prod | D |
+| AC-6 | Unreadable file → PARTIAL, never SUCCESS; admins notified with counts only | Fully-Automated | `pnpm test tests/unit/backup-run.test.ts` (T-U-03, T-U-11) | B |
+| AC-6 | Notification renders and links correctly | Hybrid | M8 — precondition: dev app running, marker file moved to /tmp | B |
+| AC-7 | A crashed/in-flight run is never counted as a keeper by retention | Fully-Automated | `pnpm test tests/unit/backup-plan.test.ts` (T-U-04) | B |
+| AC-8 | Two concurrent runs cannot interleave; both derive the identical lock key | Fully-Automated | `pnpm test tests/unit/backup-plan.test.ts` (T-U-05, T-U-06) | B |
+| AC-8 | A second live process actually skips | Hybrid | NEW M11 (see E-11) — two `--force` runs launched concurrently against dev; second prints `another backup is already running — skipped` | B |
+| AC-9 | No run writes/moves/renames/deletes under UPLOAD_DIR | Hybrid | M10 tripwire diff: `find uploads -type f -exec sha256sum {} \; \| sort` byte-identical to `tripwire-before.txt` | B |
+| AC-9 | No write call targets UPLOAD_DIR in source | Fully-Automated | checklist step 24 grep gate: `grep -n "writeFile\|unlink\|rename\|rm(" src/lib/server/backup/ scripts/backup-documents.ts` | B |
+| AC-10 | Destination inside UPLOAD_DIR (either direction) is refused before any org runs | Fully-Automated | `pnpm test tests/unit/backup-plan.test.ts` (T-U-02) | B |
+| AC-10 | The refusal happens live | Hybrid | M9 | B |
+| AC-11 | /settings/backup + every action gated on ADMINISTER_SYSTEM | Fully-Automated | `pnpm test:e2e tests/e2e/backup-settings.spec.ts` (T-E-01, T-E-02) — precondition: `pnpm db:seed:e2e`, build+preview per #287 | B |
+| AC-12 | No credential/endpoint/bucket/absolute path in UI, BackupRun.error or notification | Fully-Automated | `pnpm test tests/unit/backup-plan.test.ts` (T-U-09) + `backup-run.test.ts` (T-U-11) | B |
+| AC-13 | Config edits audit-logged with the real actor and IP; runs are not | Agent-Probe | M3 + `select * from audit_logs where "entityType"='BackupConfig' order by "createdAt" desc limit 1;` — operator judges actorId/ipAddress/oldValue/newValue are real | B |
+| AC-14 | The pre-existing suite still passes and nothing moved | Fully-Automated | `pnpm check && pnpm lint && pnpm format:check && pnpm test` all exit 0; tripwire before/after diff | A |
+| E-01 (new) | Backup output can never be committed to git | Fully-Automated | `git check-ignore -q backups && echo ok` exits 0 | B |
+| E-05 (new) | The backup lock key cannot collide with the payroll/timesheet advisory-lock keys | Fully-Automated | new unit case in `backup-plan.test.ts` asserting the two-int lock form (or a classifier-prefixed hash) is used | B |
+
+gap-resolution legend:
+- A — proven now (gate passes in this cycle)
+- B — fixed in this plan (gate added by this plan's checklist)
+- C — deferred to a named later phase/plan
+- D — backlog test-building stub (named residual; keep-active; continue)
+
+C-4 reconciliation: the `strategy:` column carries ONLY the 3 proving strategies (Fully-Automated / Hybrid / Agent-Probe). Known-Gap is NEVER a `strategy:` value — it is a named residual carried via gap-resolution D.
+
+Legacy line form (retained so existing validate-contract consumers still parse):
+- pure core (`src/lib/server/backup/plan.ts`): Fully-automated: `pnpm test tests/unit/backup-plan.test.ts`
+- S3 signer (`src/lib/server/backup/s3.ts`): Fully-automated: `pnpm test tests/unit/backup-s3-sigv4.test.ts`
+- destination writer (`src/lib/server/backup/destination.ts`): Fully-automated: `pnpm test tests/unit/backup-destination.test.ts`
+- orchestration (`src/lib/server/backup/run.ts`): Fully-automated: `pnpm test tests/unit/backup-run.test.ts`
+- settings route: Fully-automated: `pnpm test:e2e tests/e2e/backup-settings.spec.ts` (precondition: `pnpm db:seed:e2e`, build+preview per #287)
+- cron script (`scripts/backup-documents.ts`): hybrid: `pnpm exec dotenv -e .env.dev -- tsx scripts/backup-documents.ts --dry-run` + precondition: `./start.sh` up, seeded dev DB; NOT covered by `pnpm check`
+- whole-feature live behaviour: hybrid: manual GUI script M0–M11 against dev
+- prod volume mount survives redeploy: known-gap: documented — no prod environment exists
+- S3 write against a live bucket: known-gap: documented — no bucket exists
+
+### Dimension findings
+
+- Infra fit: CONCERN — §15's compose fix is correct and verified (`docker compose run --rm app` does inherit the service's volumes; the `bot` service touches no storage and correctly needs neither; a named volume over an empty image path masks nothing and there is no prod data to migrate). But `pgdata`, `uploads` and `backups` all become named volumes on the SAME droplet filesystem, so an unpruned backup tree can fill the disk Postgres writes to. `statfs` free space is therefore shared, and `assertDestinationSafe` checks path containment only, not device.
+- Test coverage: CONCERN — the tier assignments are real and the commands exist (`pnpm test` = vitest run; `pnpm test:e2e`; no `test:unit`). Three defects: (1) ten `T-M-01…T-M-09` IDs are referenced in §7/§8 and defined nowhere — the manual tests are named M0–M10; (2) AC-7 and AC-8 both cite `M5` as proof of crash-safety and concurrency, and M5 only reloads the run-history page — it tests neither; (3) the plan has no mutation-honesty step, despite `process/context/tests/all-tests.md` naming vacuous mocks as this repo's #1 false-green mode and the `backup-run` tests being entirely DB-mocked.
+- Breaking changes: PASS — 2 new tables, 2 new enums, 2 new relations, 0 renames, 0 drops; `db push` is safe and no `scripts/migrate-*.ts` is needed (verified: the plan adds enums, it does not rename values). `storage.ts` is the only pre-existing runtime file touched and the change is a pure extraction guarded by the unmodified `tests/unit/storage.test.ts`. Verified that exactly two tables hold a `storageKey` (`prisma/schema.prisma:896`, `:937`) — no third document table is missed. `notifyMany(userIds, message, link?, kind?)` matches the plan's call. `requireAnyCapability` throws `error(403, 'Insufficient permissions')` — M1's asserted text is correct. One new external surface: `BackupRun.totalBytes BigInt` would be the first `BigInt` in the schema (verified: zero today).
+- Security surface: CONCERN — the S1–S10 table is sound and the controls are real. `resolveWithin` extraction is correct reuse. Two gaps: `./backups` is not in `.gitignore` or `.dockerignore` while `/uploads/` is, so the dev default `BACKUP_DIR="./backups"` writes government IDs and contracts into the working tree where `git add -A` commits them; and the notification recipient query hard-codes `['SUPER_ADMIN','CEO']` instead of reading `CAPABILITIES.ADMINISTER_SYSTEM`, duplicating the capability table.
+- Section §5 Schema: PASS — mechanical feasibility confirmed. The edit target `seven must INCLUDE tombstones` is uniquely matchable (1 hit, `prisma/schema.prisma:884`; the plan's cited range `875-888` is off by ~8 lines but the string is unambiguous). The seven→eight arithmetic is correct: the existing parenthetical names 5 items + "both storage scripts" = 7, and the backup collector is the 8th. `EmployeeDocument.storageKey` is non-nullable, so the collector's NOT-NULL note is vacuous but harmless. `Request.employeeId` and `Employee.userId` are both non-null, so both relation walks in the collector are safe.
+- Section AD-007 Concurrency: CONCERN — see C-4, C-5, C-6 below.
+- Section AD-008 Crash safety: CONCERN — see C-7, C-8 below.
+- Section AD-005 S3: CONCERN — see C-9, C-10, C-11 below.
+- Section ST5 Disk full: CONCERN — see C-12, C-13 below.
+- Section §15 Compose volumes: PASS with one CONCERN (C-14) — the fix as written is correct.
+- Section §13.1 UI reuse: PASS — every claimed prop signature was read from source and matches exactly. `PageHeader` `{title, description?, actions?, back?}` ✓. `Table` `{columns, rows, cell, getKey, onRowClick?, emptyTitle?, emptyDescription?, emptyVariant?, emptyAction?, caption?}` and it does render `EmptyState` itself at `rows.length === 0` ✓. `table.ts` `Column {key, label, align?, width?, hideOnMobile?}` ✓. `EmptyState {variant?, title, description?, action?}` ✓. `Toaster` takes no props and is mounted once at `src/routes/(app)/+layout.svelte:333` ✓. `addToast(message, {link?, kind?, timeout?})` ✓. `createSubmitGuard(inner?) → {busy, enhance}` ✓. The `super: true` settings-card pattern matches the existing entry at `src/routes/(app)/settings/+page.svelte:72`, and `/settings`'s load exposes `isSuperAdmin = canAny(roles,'ADMINISTER_SYSTEM')` — card and page agree. Note the two files are `submit-guard.svelte.ts` and `toast.svelte.ts` on disk; the plan's import specifiers are correct.
+- Section §13.5 Manual GUI script: CONCERN — see C-15, C-16, C-17 below.
+- Section §14 Scope: PASS — the out-of-scope list is honest and complete. No silent expansion beyond #164 was found. The two genuine additions (§15 compose volumes, the `storage.ts` extraction) are both argued as prerequisites in the plan text rather than smuggled in.
+
+### Open gaps
+
+- S3 destination against a live bucket: known-gap: documented as NEW PLAN REQUIRED — backlog stub `s3-destination-live-verification_NOTE_22-08-26.md`. Non-blocking; the LOCAL destination is fully provable.
+- Prod volume mount surviving a redeploy: known-gap: documented as NEW PLAN REQUIRED — backlog stub `prod-upload-volume-verification_NOTE_22-08-26.md`. No prod or staging environment exists (owner-stated). Verified independently: `docker-compose.yml` defines only `pgdata`, and `.env.prod.example` contains no `UPLOAD_DIR`.
+- Restore tooling: out of scope (§14) — backlog stub `document-restore-tooling_NOTE_22-08-26.md`.
+- `scripts/backup-documents.ts` is not typechecked by any gate (`pnpm check` excludes `scripts/**` and `prisma/**` — confirmed in `process/context/tests/all-tests.md`). The plan's mitigation (thin script + one manual `tsc --noEmit`) is accepted. The plan does NOT rely on the false premise anywhere — checked.
+
+### What this coverage does NOT prove
+
+- `pnpm test tests/unit/backup-run.test.ts` (T-U-03, T-U-11, T-U-15): does NOT prove the Prisma query is actually tenant-scoped or that the real DB returns the rows the fixture returns. All `backup-run` tests are DB-mocked. It also does not prove the collector reads the two tables in one pass, or that a real tombstoned row behaves as the fixture claims.
+- `pnpm test tests/unit/backup-plan.test.ts`: proves pure-function behaviour only. It does NOT prove `pg_try_advisory_lock` is actually taken, that the lock and unlock land on the same Postgres session, or that `connection_limit=1` survives a Prisma pool reconnect.
+- `pnpm test tests/unit/backup-s3-sigv4.test.ts`: proves the signature matches one published vector. It does NOT prove any real S3-compatible endpoint accepts the request, that LIST pagination works past 1000 keys, or that DELETE succeeds against a provider requiring `Content-MD5`.
+- `pnpm test tests/unit/backup-destination.test.ts`: proves the LOCAL fs path and the stubbed-`fetch` request shape. It does NOT prove real disk-full behaviour, real permission-denied behaviour, or that `0o700`/`0o600` survive the container's umask.
+- M4/M5/M7/M8/M10 (hybrid, dev only): prove behaviour against ONE dev database with a handful of documents. They do NOT prove behaviour at 400+ files, do not prove concurrency (nothing in M0–M10 runs two processes), and do not prove anything about a Docker volume, because the dev run is on the host filesystem.
+- M10 tripwire byte-identity: proves that this ONE run changed nothing under `UPLOAD_DIR`. It does not prove no code path could — that is the step-24 grep gate's job, and grep can be defeated by an aliased import.
+- `pnpm test:e2e tests/e2e/backup-settings.spec.ts`: proves the route 403s an HR_ADMIN and 422s a bad interval. It does NOT prove the form action's second guard is reached (a test that only exercises `load` passes even if the action guard is missing — read the `actions` export, per the #290 lesson).
+- `docker compose config` parsing: proves YAML validity only. It proves nothing about whether the volume is actually mounted, writable by the container user, or survives `docker compose pull && up -d`.
+
+Gate: CONDITIONAL (17 concerns; 1 of them FAIL-severity and converted to a hard pre-EXECUTE instruction E-01; 3 known-gaps documented)
+Accepted by: session — accepted concerns: C-1 backup output not gitignored (mitigated by E-01, must be done in Phase 0), C-2 hard-coded notification recipient roles, C-3 dangling T-M-* test IDs, C-4 advisory-lock namespace shared with payroll/timesheet, C-5 wedged-lock silent skip, C-6 unconditional unlock false alarm, C-7 manifest-present-but-row-RUNNING directory deleted, C-8 destination directories with no DB row never reconciled, C-9 AD-005 flip state undefined, C-10 S3 LIST pagination unspecified, C-11 `s3Request` return type cannot carry a LIST body, C-12 free-space estimate ignores retention multiplier, C-13 same-filesystem destination, C-14 backups volume shares the disk with pgdata, C-15 manual steps with negative-only assertions, C-16 `makeRunId` second-resolution collision under `--force`, C-17 fish-shell-invalid manual commands. Live S3 and the prod volume mount remain known-gaps by owner-stated environment constraint.
+
+### Execute-agent instructions (binding)
+
+| # | Instruction | Trigger |
+|---|---|---|
+| E-01 | **FAIL-severity, do this FIRST.** Add `/backups/` to `.gitignore` (next to the existing `/uploads/` entry) and `backups` to `.dockerignore` (next to the existing `uploads`), and add `.gitignore` + `.dockerignore` to §9's Modified list. Verify with `git check-ignore -q backups; echo $?` → `0`. Without this, the dev default `BACKUP_DIR="./backups"` and manual step M4 place real government IDs and contracts inside the working tree where `git add -A` commits them. | Phase 0, before any other edit |
+| E-02 | Derive notification recipients from the capability table, not from role literals: `const roles = CAPABILITIES.ADMINISTER_SYSTEM` then `roles: { hasSome: [...roles] }`. Copy the pattern at `src/lib/server/services/action-proposals.ts:105-125`. Hard-coding `['SUPER_ADMIN','CEO']` (checklist step 20) duplicates `src/lib/rbac.ts:58` and silently misses any role added there later. | Phase 6, step 20 |
+| E-03 | Renumber or resolve every `T-M-0N` reference in §7 and §8 to the matching `M0…M11` step before writing any test. Ten IDs are currently dangling. Specifically fix AC-7 and AC-8: neither is proven by M5 (M5 only reloads the run-history page). AC-7's hybrid proof is M7; AC-8's is the new M11 (E-11). | Phase 3, before writing tests |
+| E-04 | Add a mutation-honesty pass to Phase 10: for each of T-U-03, T-U-04, T-U-05, T-U-14, T-U-15, break the production code on purpose (invert the status choice, drop the `retentionCount` slice, return a constant lock key, remove the tombstone inclusion) and confirm the test goes RED. Record each mutation and its result in the phase report. `process/context/tests/all-tests.md` names vacuous mocks as this repo's #1 false-green mode, and every `backup-run` test is DB-mocked. | Phase 10 |
+| E-05 | Namespace the advisory lock away from the existing keys. `hashtext()` returns `integer` (verified live: 32-bit), and `pg_advisory_xact_lock(bigint)` at `src/lib/server/services/timesheets.ts:185` and `src/lib/server/services/payroll/index.ts:110` share that same single-argument namespace. A collision would make a minutes-long backup **block** a payroll or timesheet write (those calls are blocking, not `try`). Use the two-int form — `pg_try_advisory_lock(164, hashtext($1))` / `pg_advisory_unlock(164, hashtext($1))` — which is a separate namespace, and add a unit case asserting the two-argument form is what the script emits. | Phase 7, step 22 |
+| E-06 | The claim "a hard kill cannot wedge the org" (AD-007) is over-stated: on a container kill that severs the network without a FIN, the Postgres backend holds the session lock until TCP keepalives expire. Because acquisition uses `try` and skips silently, an org can then stop being backed up indefinitely with no alarm — and the stale-RUNNING sweep cannot fire either, because it runs *after* the lock is taken. Add: when `pg_try_advisory_lock` returns false AND the org's newest `BackupRun` is `RUNNING` and older than `STALE_RUN_HOURS`, notify the org's `ADMINISTER_SYSTEM` holders and set the process exit code to 1. | Phase 7, step 22 |
+| E-07 | Only call `pg_advisory_unlock` in `finally` when the lock was actually acquired. The plan asserts the unlock result is `true` and "logs loudly" otherwise; an unconditional unlock on a skipped org returns `false` every time and turns that alarm into noise. | Phase 7, step 22 |
+| E-08 | Close the AD-008 window: a directory that HAS `manifest.json` but whose row is still `RUNNING` is a **complete** backup whose status write was lost. The plan currently flips it to `FAILED` and lets the prune pass delete it — destroying a good backup. In the stale-run sweep, check the destination for `manifest.json` first: if present, promote the row to `SUCCESS`/`PARTIAL` from the manifest's counts; only if absent flip to `FAILED` and delete. | Phase 6, step 19 |
+| E-09 | Either wire `listRunIds` into the prune pass or delete the export. §6.3 exports it, and the §4 data flow never calls it — pruning is driven purely off `BackupRun` rows. Consequence today: after a DB reset or restore, destination directories with no matching row are never counted toward retention and never removed, so the destination grows without bound. Recommended: reconcile `listRunIds(dest, orgId)` against the run rows and delete unreferenced directories. Also make `deleteRun` idempotent (tolerate `ENOENT`) — with rows kept forever, already-pruned runs are re-selected by `runsToPrune` on every subsequent run. | Phase 5 / Phase 6 |
+| E-10 | Define the AD-005 flip state concretely before Phase 4 starts, so "S3 ships disabled" is a specification and not a wish: (a) the `BackupDestinationKind` enum keeps `S3` (schema unchanged); (b) `destinationFromEnv('S3')` throws a named, secret-free error; (c) the settings form's `destinationKind` select renders the `S3` option `disabled` with the label `S3-compatible (not implemented)`; (d) the zod enum still accepts `'S3'` but the action returns `fail(422)` for it; (e) AC-5 is rewritten as a known-gap for that cycle. **Acceptable vector sources** (network reachability from this box verified: `docs.aws.amazon.com` → 200): AWS's published SigV4 worked example (`AKIDEXAMPLE` / `20150830T123600Z` / region `us-east-1` / service `service`) in the AWS General Reference, or the `aws-samples/sigv4-signing-examples` repository. The retired `aws-sig-v4-test-suite.zip` download is NOT required. Copy the expected hex verbatim; a value produced by our own signer and pasted back proves only determinism. | Phase 4, step 11 |
+| E-11 | Add manual step **M11 (concurrency)**: with a marker file present, run `env BACKUP_DIR=$PWD/backups pnpm exec dotenv -e .env.dev -- tsx scripts/backup-documents.ts --force &` twice in the same second. **Assert positively:** exactly one process prints `N file(s) copied`, the other prints `another backup is already running — skipped`; `ls backups/org_veent/ \| wc -l` increases by exactly `1`; and `select count(*) from backup_runs where status='RUNNING';` returns `0` after both exit. Nothing in M0–M10 tests concurrency today, yet AC-8 claims a hybrid proof. | Phase 10, step 34 |
+| E-12 | Make `makeRunId` collision-safe. It is second-resolution (`2026-08-22T023000Z`), and M7 runs `--force` four times back-to-back — two runs completing inside one second produce the same `runId` and write into the same directory, which breaks M7's own `ls \| wc -l == 3` assertion and silently merges two backups. Either append milliseconds plus a 4-char random suffix, or have the LOCAL/S3 writer refuse to write into an existing run prefix. | Phase 3, step 9 |
+| E-13 | Fix the free-space pre-flight. Three corrections: (a) sum `size` across **both** `EmployeeDocument` and `RequestDocument`, not just one; (b) `EmployeeDocument.size`/`RequestDocument.size` are stored `Int`s that can disagree with the file on disk, so state in a comment that the estimate is advisory and that the mid-copy `ENOSPC` path (ST5's second half) is the real guard; (c) the estimate must account for the fact that pruning happens **after** the run — at peak the destination holds `retentionCount + 1` full copies, so with the default `retentionCount: 7` the volume needs roughly 8× a full copy, not 1.1×. Either check `(K+1) × sum(size)` on the first run of a fresh destination, or prune to `K-1` before copying and document the trade. | Phase 5 / Phase 6 |
+| E-14 | Add a device check to `assertDestinationSafe`, or log it loudly at start: `statfs`/`stat().dev` for `BACKUP_DIR` and `UPLOAD_DIR`. Path containment is not the only hazard — in the §15 compose fix, `pgdata`, `uploads` and `backups` are all named volumes under `/var/lib/docker/volumes` on one droplet filesystem, so a backup tree that fills the disk takes Postgres down with it. At minimum print `WARNING: BACKUP_DIR shares a filesystem with UPLOAD_DIR` and record it in `scripts/README.md`'s §11 section. | Phase 7 + Phase 9 |
+| E-15 | Convert `BackupRun.totalBytes` to a plain `number` at the service boundary (`src/lib/server/services/settings/backup.ts`) before it reaches `load`. This would be the **first** `BigInt` in the schema (verified: zero today, and `src/hooks.ts` only transports `Decimal`). `devalue@5.8.1` does serialize it (verified round-trip → `bigint` on the client), but any client-side formatting — `totalBytes / 1024`, `.toLocaleString()` mixed with a number — throws `TypeError: Cannot mix BigInt and other types`. Keep `BigInt` in the column; convert at the read. | Phase 8, step 25 |
+| E-16 | Fix the manual-test commands for the user's shell. `BACKUP_DIR=$PWD/backups pnpm exec …` (M4) and `BACKUP_DIR=$PWD/uploads/bk pnpm exec …` (M9) are bash syntax and are **invalid in fish**, which is this operator's shell. Rewrite both as `env BACKUP_DIR=$PWD/backups pnpm exec dotenv -e .env.dev -- tsx scripts/backup-documents.ts`. Also give M3's psql assertion in full: `docker exec veent-db-5434 psql -p 5434 -U veent -d veent_hris -c 'select enabled, "intervalDays", "retentionCount" from backup_configs;'`. Note that `dotenv-cli` does not override already-set environment variables, so the `env` prefix does win over a `BACKUP_DIR` line in `.env.dev` — this is load-bearing for M9. | Phase 10, step 34 |
+| E-17 | Raise the two negative-only manual assertions to the repo bar (`process/context/tests/all-tests.md`: "The card is absent proves nothing"). **M1:** alongside "no tile titled Document Backup", assert a positive control — that a tile the HR Admin *does* hold is present (e.g. `Company Information`) — so a mistyped selector cannot pass as a missing tile. **M9:** alongside "no `bk` directory", assert positively that the process printed `backup destination must not be inside UPLOAD_DIR`, that its exit status is non-zero (`echo $status` in fish), and that `find uploads -type f \| wc -l` prints the same number recorded before the step. | Phase 10, step 34 |
+| E-18 | `resolveWithin` must reject the root itself. The current `resolveKey` check at `src/lib/server/storage.ts:63-67` allows `abs === UPLOAD_DIR` (so `''` or `'.'` resolves to the directory). Preserve the behaviour for `resolveKey` if `tests/unit/storage.test.ts` depends on it, but have the destination writer reject an empty or `.`-resolving `relPath` outright, and add that case to T-U-01. This is the plan's single security check for path containment; it should not return a directory. | Phase 2, step 6 |
+| E-19 | Add a Phase 5 test case for S3 LIST pagination. `listRunIds` must follow `IsTruncated`/`NextContinuationToken`; with per-file objects at hundreds-to-thousands of keys, a single unpaginated `ListObjectsV2` silently caps at 1000 and prunes only part of a run. Also: use per-object `DELETE` rather than the batch `DeleteObjects` POST (which several S3-compatible providers require a `Content-MD5` for), and widen `s3Request`'s declared return type from `Promise<void>` — as declared in §6.3 it cannot carry the XML body `listRunIds` needs. | Phase 4 / Phase 5 |
+
+### Backlog artifacts (write during EXECUTE)
+
+| Artifact | Location | What it tracks |
+|---|---|---|
+| `s3-destination-live-verification_NOTE_22-08-26.md` | `process/features/document-autobackup/backlog/` | The S3 path is CONDITIONAL, not verified. Smoke-test the first time a bucket exists. |
+| `prod-upload-volume-verification_NOTE_22-08-26.md` | `process/features/document-autobackup/backlog/` | The `uploads`/`backups` volume mounts are unproven until a prod environment exists. |
+| `document-restore-tooling_NOTE_22-08-26.md` | `process/features/document-autobackup/backlog/` | Restore is out of scope; the interim procedure lives in `scripts/README.md`. |
+| `typecheck-scripts-and-prisma_NOTE_22-08-26.md` | `process/features/development-process/backlog/` | No gate typechecks `scripts/**` or `prisma/**`; one site has already shipped broken on that gap (#282). |
+
+## Autonomous Goal Block
+
+```
+SESSION GOAL
+Implement issue #164 (automatic document backup) on branch feat/document-autobackup-164 in
+/home/hyuse/Desktop/VeentApps/veent_hris, following
+process/features/document-autobackup/active/document-autobackup-164_22-08-26/document-autobackup-164_PLAN_22-08-26.md
+checklist Phases 0-10 in order, subject to the 19 binding execute-agent instructions (E-01 .. E-19)
+in that plan's ## Validate Contract section.
+
+CONTRACT SUMMARY
+Gate: CONDITIONAL. 17 accepted concerns, all closed by E-01..E-19. Three known-gaps stand and are
+non-blocking: live S3 write, prod volume mount, restore tooling. There is NO prod and NO staging
+environment - dev is the only running database. Any verification step that needs prod or staging is
+invalid; do not invent one.
+
+AUTONOMY RULES
+- Follow the checklist order. Phase 0 is the tripwire snapshot; E-01 (.gitignore/.dockerignore for
+  backups) runs FIRST, before any other edit.
+- TDD: write the failing test before the implementation in Phases 3-6.
+- pnpm check does NOT cover prisma/** or scripts/**. Never treat a green `pnpm check` as proof that
+  scripts/backup-documents.ts or prisma/schema.prisma compiles. Run
+  `pnpm exec tsc --noEmit scripts/backup-documents.ts` by hand in Phase 10.
+- A green suite is not a working guard. Run the E-04 mutation pass and record every mutation result.
+- Prefer reuse over reinvention: CAPABILITIES from src/lib/rbac.ts, resolveWithin from storage.ts,
+  the existing ui/ components with the signatures verified in plan section 13.1.
+- Commit in logical chunks on the feature branch. Do not push and do not open a PR unless asked.
+- Blocked on something out of scope: write a backlog NOTE and continue with the remaining phases.
+
+HARD STOPS (ask before proceeding)
+- Any git push, PR creation, or anything reaching an audience outside this machine.
+- Any change to prod configuration or any action requiring a prod/staging environment.
+- Phase 4: if AWS-published SigV4 vectors cannot be obtained, apply the AD-005 flip exactly as
+  specified in E-10 (ship S3 disabled) - do not ship a self-verified signer.
+- Any destructive operation against uploads/ or the dev database beyond `pnpm db:push`.
+
+NEXT PHASE
+EXECUTE - checklist step 1 (tripwire snapshot), with E-01 applied first.
+
+EXECUTE START COMMAND
+Read the plan file above end to end, then start at Phase 0 step 1. Report CODE DONE vs VERIFIED
+separately per the Phase Completion Rules table; never report CODE DONE as VERIFIED.
+```
