@@ -80,8 +80,14 @@ export function runsToPrune<T extends { id: string; status: string; startedAt: D
  *
  * Second resolution alone is not enough (#164/E-12): `--force` run twice inside one second
  * would produce the same id, and the second run would write into the first's directory and
- * silently merge two backups. The random suffix makes the collision impossible rather than
- * unlikely, and the leading timestamp keeps the directories sorting chronologically.
+ * silently merge two backups. The random suffix rules that out, and the leading timestamp
+ * keeps the directories sorting chronologically.
+ *
+ * The suffix is EIGHT bytes, not two. Two bytes is a 16-bit space, and by the birthday
+ * bound 200 ids drawn in the same second collide about 26% of the time — the uniqueness
+ * test caught it failing roughly every other run. That was the implementation being wrong,
+ * not the test being flaky: a collision here silently merges two backups into one
+ * directory. At 64 bits the same 200 draws collide with probability ~1e-15.
  */
 export function makeRunId(now: Date): string {
 	const stamp = now
@@ -89,7 +95,7 @@ export function makeRunId(now: Date): string {
 		.replace(/[-:]/g, '')
 		.replace(/\.\d+Z$/, 'Z')
 	const iso = `${stamp.slice(0, 4)}-${stamp.slice(4, 6)}-${stamp.slice(6, 11)}${stamp.slice(11)}`
-	return `${iso}-${randomBytes(2).toString('hex')}`
+	return `${iso}-${randomBytes(8).toString('hex')}`
 }
 
 /**
