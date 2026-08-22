@@ -184,13 +184,12 @@ describe('s3Request (T-U-13)', () => {
 	const BODY_SHA = '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824'
 
 	it('signs the real payload hash and never UNSIGNED-PAYLOAD', async () => {
-		const fetchMock = vi.fn(async () => new Response('', { status: 200 }))
+		const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => new Response('', { status: 200 }))
 		vi.stubGlobal('fetch', fetchMock)
 
 		await s3Request(dest, 'PUT', '/veent-backups/org_a/run/manifest.json', {}, BODY)
 
-		const init = fetchMock.mock.calls[0][1] as RequestInit
-		const headers = init.headers as Record<string, string>
+		const headers = fetchMock.mock.calls[0][1].headers as Record<string, string>
 		expect(headers['x-amz-content-sha256']).toBe(BODY_SHA)
 		expect(JSON.stringify(headers)).not.toContain('UNSIGNED-PAYLOAD')
 		expect(headers.authorization).toMatch(/^AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE\//)

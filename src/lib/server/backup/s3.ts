@@ -178,7 +178,8 @@ export async function s3Request(
 	const res = await fetch(`${url.origin}${path}${qs ? `?${qs}` : ''}`, {
 		method,
 		headers,
-		body: body ?? undefined
+		// Buffer is a Uint8Array at runtime; the DOM lib's BodyInit does not name Buffer.
+		body: body ? new Uint8Array(body) : undefined
 	})
 	const text = await res.text()
 	if (!res.ok) {
