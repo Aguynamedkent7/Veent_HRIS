@@ -35,7 +35,11 @@ afterEach(() => {
 describe('writeObject LOCAL (T-U-10)', () => {
 	it("places an org's object under <root>/<orgId>/ and nowhere else", async () => {
 		const dest: Destination = { kind: 'LOCAL', root }
-		await writeObject(dest, 'org_a/2026-08-22T023000Z-a1b2/files/employees/e1/x.pdf', Buffer.from('pdf'))
+		await writeObject(
+			dest,
+			'org_a/2026-08-22T023000Z-a1b2/files/employees/e1/x.pdf',
+			Buffer.from('pdf')
+		)
 		const abs = path.join(root, 'org_a/2026-08-22T023000Z-a1b2/files/employees/e1/x.pdf')
 		expect((await readFile(abs)).toString()).toBe('pdf')
 	})
@@ -99,9 +103,9 @@ describe('listRunIds / deleteRun LOCAL (E-09)', () => {
 // round. Two impossible-to-be-wrong real values prove both.
 describe('checkFreeSpace (T-U-12)', () => {
 	it('throws when the run needs more space than the destination has', async () => {
-		await expect(
-			checkFreeSpace({ kind: 'LOCAL', root }, Number.MAX_SAFE_INTEGER)
-		).rejects.toThrow(/insufficient free space at the backup destination/)
+		await expect(checkFreeSpace({ kind: 'LOCAL', root }, Number.MAX_SAFE_INTEGER)).rejects.toThrow(
+			/insufficient free space at the backup destination/
+		)
 	})
 
 	it('passes when the run needs one byte', async () => {
@@ -154,9 +158,7 @@ describe('listRunIds S3 pagination (E-19)', () => {
 					status: 200
 				})
 			)
-			.mockResolvedValueOnce(
-				new Response(page(['veent-hris/org_a/run3/']), { status: 200 })
-			)
+			.mockResolvedValueOnce(new Response(page(['veent-hris/org_a/run3/']), { status: 200 }))
 		vi.stubGlobal('fetch', fetchMock)
 
 		expect(await listRunIds(S3_DEST, 'org_a')).toEqual(['run1', 'run2', 'run3'])

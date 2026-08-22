@@ -84,7 +84,10 @@ export function runsToPrune<T extends { id: string; status: string; startedAt: D
  * unlikely, and the leading timestamp keeps the directories sorting chronologically.
  */
 export function makeRunId(now: Date): string {
-	const stamp = now.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')
+	const stamp = now
+		.toISOString()
+		.replace(/[-:]/g, '')
+		.replace(/\.\d+Z$/, 'Z')
 	const iso = `${stamp.slice(0, 4)}-${stamp.slice(4, 6)}-${stamp.slice(6, 11)}${stamp.slice(11)}`
 	return `${iso}-${randomBytes(2).toString('hex')}`
 }

@@ -76,19 +76,27 @@ describe('runsToPrune (T-U-04)', () => {
 	]
 
 	it('keeps the K newest COMPLETED runs and prunes the rest', () => {
-		const pruned = runsToPrune(runs, 2).map((r) => r.id).sort()
+		const pruned = runsToPrune(runs, 2)
+			.map((r) => r.id)
+			.sort()
 		// keeps r5 (PARTIAL) and r4 (SUCCESS); r1 is the third-newest completed run.
 		expect(pruned).toEqual(['r1', 'r2', 'r3'])
 	})
 
 	it('returns incomplete runs regardless of age, so they never occupy a retention slot', () => {
-		const pruned = runsToPrune(runs, 99).map((r) => r.id).sort()
+		const pruned = runsToPrune(runs, 99)
+			.map((r) => r.id)
+			.sort()
 		expect(pruned).toEqual(['r2', 'r3'])
 	})
 
 	it('does not depend on the input being pre-sorted', () => {
 		const shuffled = [runs[2], runs[0], runs[4], runs[3], runs[1]]
-		expect(runsToPrune(shuffled, 2).map((r) => r.id).sort()).toEqual(['r1', 'r2', 'r3'])
+		expect(
+			runsToPrune(shuffled, 2)
+				.map((r) => r.id)
+				.sort()
+		).toEqual(['r1', 'r2', 'r3'])
 	})
 
 	it('never prunes when retention exceeds the completed count', () => {
@@ -141,10 +149,10 @@ describe('withSingleConnection (T-U-06)', () => {
 // T-U-09 — nothing secret can reach BackupRun.error or the UI (S4).
 describe('sanitizeError (T-U-09)', () => {
 	it('redacts every secret it is given', () => {
-		const out = sanitizeError(
-			'PUT https://k.s3.example/x failed: AKIAEXAMPLE denied',
-			['AKIAEXAMPLE', 'https://k.s3.example']
-		)
+		const out = sanitizeError('PUT https://k.s3.example/x failed: AKIAEXAMPLE denied', [
+			'AKIAEXAMPLE',
+			'https://k.s3.example'
+		])
 		expect(out).not.toContain('AKIAEXAMPLE')
 		expect(out).not.toContain('https://k.s3.example')
 		expect(out).toContain('[redacted]')

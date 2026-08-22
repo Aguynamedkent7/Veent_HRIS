@@ -81,7 +81,10 @@ export function stringToSign(canonical: string, amzDate: string, scope: string):
 
 /** `20150830T123600Z` — basic-format ISO 8601, which is what SigV4 requires. */
 export function amzDateOf(now: Date): string {
-	return now.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+	return now
+		.toISOString()
+		.replace(/[-:]/g, '')
+		.replace(/\.\d{3}/, '')
 }
 
 function hmac(key: Buffer | string, data: string): Buffer {

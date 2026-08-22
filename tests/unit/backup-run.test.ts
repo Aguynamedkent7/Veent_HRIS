@@ -70,7 +70,12 @@ describe('copyAll (T-U-03)', () => {
 		const result = await copyAll(
 			files.slice(0, 1),
 			'org_a/run1',
-			io({ writeObject: async () => void (() => { throw new Error('403') })() })
+			io({
+				writeObject: async () =>
+					void (() => {
+						throw new Error('403')
+					})()
+			})
 		)
 		expect(result.failed[0].reason).toBe('write-error')
 	})
@@ -137,10 +142,12 @@ describe('sweepStaleRuns (E-08)', () => {
 			db: {
 				backupRun: {
 					findMany: vi.fn(async () => runs),
-					update: vi.fn(async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
-						updates.push({ id: where.id, data })
-						return {}
-					})
+					update: vi.fn(
+						async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+							updates.push({ id: where.id, data })
+							return {}
+						}
+					)
 				}
 			}
 		}
@@ -178,7 +185,9 @@ describe('sweepStaleRuns (E-08)', () => {
 			'org_a',
 			io({
 				readObject: async () =>
-					Buffer.from(JSON.stringify({ counts: { files: 3, skipped: 0, failed: 2, totalBytes: 7 } }))
+					Buffer.from(
+						JSON.stringify({ counts: { files: 3, skipped: 0, failed: 2, totalBytes: 7 } })
+					)
 			}),
 			now
 		)

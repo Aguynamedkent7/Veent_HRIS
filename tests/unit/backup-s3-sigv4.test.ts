@@ -113,9 +113,9 @@ describe('canonicalRequest + stringToSign against official AWS vectors (T-U-07)'
 
 	it('sorts query parameters by key (get-vanilla-query-order-key-case)', () => {
 		// Deliberately supplied in the wrong order — the signer must sort them.
-		expect(
-			canonicalRequest({ ...VANILLA, query: { Param2: 'value2', Param1: 'value1' } })
-		).toBe(QUERY_ORDER_CANONICAL)
+		expect(canonicalRequest({ ...VANILLA, query: { Param2: 'value2', Param1: 'value1' } })).toBe(
+			QUERY_ORDER_CANONICAL
+		)
 	})
 
 	it('leaves RFC 3986 unreserved characters unencoded (get-unreserved)', () => {
@@ -184,7 +184,9 @@ describe('s3Request (T-U-13)', () => {
 	const BODY_SHA = '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824'
 
 	it('signs the real payload hash and never UNSIGNED-PAYLOAD', async () => {
-		const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => new Response('', { status: 200 }))
+		const fetchMock = vi.fn(
+			async (_url: string, _init: RequestInit) => new Response('', { status: 200 })
+		)
 		vi.stubGlobal('fetch', fetchMock)
 
 		await s3Request(dest, 'PUT', '/veent-backups/org_a/run/manifest.json', {}, BODY)
