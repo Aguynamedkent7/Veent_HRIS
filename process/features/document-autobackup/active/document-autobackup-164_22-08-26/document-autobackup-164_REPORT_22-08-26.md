@@ -95,3 +95,77 @@ had no automated proof at all.
 - **Blast radius changes:** `storage.ts` gained one export; `docker-compose.yml` gained two volumes; schema gained two tables.
 - **Commands to stay green:** `pnpm test`, `pnpm check`, `pnpm lint`, `pnpm format:check`, plus the scripts tsconfig command.
 - **Dependency changes:** none. No new npm package.
+
+---
+
+# Post-EXECUTE fix round — adversarial review findings C-1, C-2, H-1
+
+Both C-1 and C-2 were confirmed against the source before any code was written. Neither
+had any test coverage: every existing mock stubbed success, which is why a green 1801-test
+suite said nothing about either.
+
+## Failing-before / passing-after
+
+Six tests added. Run against the UNFIXED code first:
+
+```
+× promotes a RUNNING row that HAS a manifest, however young, and never deletes it
+× records a FAILED row and notifies when the free-space pre-flight refuses (ST5)
+× records a FAILED row when the collector itself throws
+× aborts the copy after 5 consecutive write failures instead of trying every file
+  Tests  4 failed | 21 passed (25)
+```
+
+The two control tests passed from the start, by design — they guard against
+over-correcting (a young `RUNNING` row with NO manifest must still be left alone, and
+scattered failures must still produce `PARTIAL`, not an abort).
+
+After the fixes: **25/25**. Each fix was then reverted in isolation to prove it is
+load-bearing rather than incidentally covered:
+
+| Reverted | Result |
+|---|---|
+| C-1 — age gate restored on the promotion query | 1 failed |
+| C-2 — pre-flight throw allowed to propagate | 2 failed |
+| H-1 — abort disabled | 1 failed |
+
+**The fake DB honours its `where` clause.** This is the crux: a stub returning its fixture
+regardless of the filter passes against the broken code, because the defect *is* the
+filter. That would have been a textbook vacuous green.
+
+## What changed
+
+- **C-1** — fixed at the root, not with a second check in `pruneRuns`. `sweepStaleRuns` now
+  reads every `RUNNING` row for the org; manifest present → promote at **any age**;
+  manifest absent → keep the 12h gate. Safe because the per-org advisory lock is held
+  around the whole run, so a `RUNNING` row seen here cannot belong to a live process. One
+  code path owns the decision, and by the time `pruneRuns` runs no manifest-bearing row is
+  still `RUNNING`.
+- **C-2** — the pre-row section (stale sweep, collector, `listRunIds`, `checkFreeSpace`) is
+  wrapped; any failure persists a `FAILED` row with a sanitized reason, notifies, and
+  returns a FAILED outcome.
+- **H-1** — `copyAll` aborts after 5 consecutive write failures and returns `aborted`;
+  `runBackupForOrg` throws **before** the manifest write, so the existing catch records
+  FAILED and removes the partial directory.
+
+## Gates
+
+`pnpm test` **1807 passed / 156 files** (was 1801; +6, zero regressions) · `pnpm check` 0
+errors · `pnpm lint` 0 errors · `pnpm format:check` clean · `scripts/**` typecheck clean.
+
+## Plan text updated to match the code
+
+§8 ST2 (asymmetric sweep gate), ST5 (pre-row failures are visible; `freeSpaceNeeded`
+rather than `× 1.1`), ST7 (rewritten to describe the consecutive-failure abort as built),
+and a new `E-08 (as built)` row recording that the original instruction was implemented
+with an age gate that reopened the window it was meant to close.
+
+## Disagreement
+
+One, on ST7's original wording rather than on the fix. "First `writeObject` failure that is
+not per-file … aborts" cannot be implemented honestly: distinguishing "the destination is
+gone" from "this one object was rejected" means classifying provider error codes, and no
+two S3-compatible providers agree. The consecutive-failure threshold is the weaker but
+truthful signal, so I amended ST7 to describe it rather than leaving the document claiming
+a classifier that does not exist. The threshold of 5 is arbitrary; it is safe because a
+real outage fails on the first file and never recovers.
