@@ -102,6 +102,20 @@ function ioFor(dest: Destination): BackupIo {
 async function main() {
 	let failures = 0
 
+	// S2 — BEFORE any organization is touched. A backup written inside UPLOAD_DIR means
+	// each night copies the previous night's backup, the orphan sweep sees the whole tree
+	// as garbage, and the growth is unbounded. A misconfigured box must write nothing at
+	// all, not "nothing for the orgs it had not reached yet".
+	if (process.env.BACKUP_DIR) {
+		assertDestinationSafe(uploadDir, process.env.BACKUP_DIR)
+		// E-14: containment is not the only hazard. On the droplet, uploads, backups and
+		// pgdata are named volumes on ONE filesystem, so an unpruned backup tree can fill the
+		// disk Postgres writes to. Warn — a single-volume box has no other option.
+		if (await sharesFilesystem(uploadDir, process.env.BACKUP_DIR)) {
+			console.warn('WARNING: BACKUP_DIR shares a filesystem with UPLOAD_DIR')
+		}
+	}
+
 	const orgs = await db.organization.findMany({
 		select: { id: true, name: true },
 		orderBy: { id: 'asc' }
@@ -126,18 +140,6 @@ async function main() {
 			console.error(`  org ${org.id}: ${(e as Error).message}`)
 			failures++
 			continue
-		}
-
-		// S2, and before ANY org is processed for a given destination: a backup written
-		// inside UPLOAD_DIR means each night copies the previous night's backup.
-		if (dest.kind === 'LOCAL') {
-			assertDestinationSafe(uploadDir, dest.root)
-			// E-14: containment is not the only hazard. On the droplet, uploads, backups and
-			// pgdata are named volumes on one filesystem, so an unpruned backup tree can fill
-			// the disk Postgres writes to. Warn — a single-volume box has no other option.
-			if (await sharesFilesystem(uploadDir, dest.root)) {
-				console.warn('  WARNING: BACKUP_DIR shares a filesystem with UPLOAD_DIR')
-			}
 		}
 
 		const lockKey = backupLockKey(org.id)
@@ -197,7 +199,14 @@ async function main() {
 				continue
 			}
 
-			const outcome = await runBackupForOrg(db, org, config, ioFor(dest), new Date(), secretsOf(dest))
+			const outcome = await runBackupForOrg(
+				db,
+				org,
+				config,
+				ioFor(dest),
+				new Date(),
+				secretsOf(dest)
+			)
 			console.log(
 				`  org ${org.id}: ${outcome.fileCount} file(s) copied, ${outcome.failedCount} failed` +
 					(outcome.error ? ` — ${outcome.error}` : '')
