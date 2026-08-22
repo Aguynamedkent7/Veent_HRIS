@@ -34,6 +34,13 @@ export interface BackupIo {
 	checkFreeSpace(neededBytes: number): Promise<void>
 }
 
+/**
+ * Consecutive failed writes that mean "the destination is gone", not "one file is bad".
+ * Five is arbitrary but safe: a real outage fails on the first file and never recovers,
+ * while genuinely scattered per-file failures do not line up five deep by chance.
+ */
+const MAX_CONSECUTIVE_WRITE_FAILURES = 5
+
 /** A document that is about to be copied. Everything but the bytes and their hash. */
 export type PendingFile = Omit<ManifestFile, 'sha256'>
 
@@ -153,10 +160,16 @@ export async function copyAll(
 	files: PendingFile[],
 	runPrefix: string,
 	io: BackupIo
-): Promise<{ copied: ManifestFile[]; failed: ManifestFailed[]; totalBytes: number }> {
+): Promise<{
+	copied: ManifestFile[]
+	failed: ManifestFailed[]
+	totalBytes: number
+	aborted: boolean
+}> {
 	const copied: ManifestFile[] = []
 	const failed: ManifestFailed[] = []
 	let totalBytes = 0
+	let consecutiveWriteFailures = 0
 
 	for (const file of files) {
 		let bytes: Buffer
@@ -173,6 +186,7 @@ export async function copyAll(
 		}
 		try {
 			await io.writeObject(`${runPrefix}/files/${file.storageKey}`, bytes)
+			consecutiveWriteFailures = 0
 		} catch {
 			failed.push({
 				source: file.source,
@@ -180,6 +194,14 @@ export async function copyAll(
 				storageKey: file.storageKey,
 				reason: 'write-error'
 			})
+			// ST7: a destination that is simply gone (bucket unreachable, volume unmounted,
+			// credentials rejected) fails on every single file. Recording 400 identical
+			// write-errors and calling the result PARTIAL is both slow and a lie — the run
+			// captured nothing. A consecutive-failure threshold is the honest signal without
+			// pretending to classify error types, which no two S3 providers agree on.
+			if (++consecutiveWriteFailures >= MAX_CONSECUTIVE_WRITE_FAILURES) {
+				return { copied, failed, totalBytes, aborted: true }
+			}
 			continue
 		}
 		// Hash and size come from the buffer that was written, not from the `size` column,
@@ -192,7 +214,7 @@ export async function copyAll(
 		totalBytes += bytes.byteLength
 	}
 
-	return { copied, failed, totalBytes }
+	return { copied, failed, totalBytes, aborted: false }
 }
 
 /**
@@ -232,8 +254,26 @@ export async function notifyAdmins(
  * E-08: a directory that HAS manifest.json is a COMPLETE backup whose status write was
  * lost — the manifest is written last precisely so this distinction exists (AD-008).
  * Flipping it to FAILED and letting the prune pass delete it would destroy a good backup,
- * so the manifest's own counts are used to promote the row instead. Only a run with no
- * manifest is debris, and only that one is removed.
+ * so the manifest's own counts are used to promote the row instead.
+ *
+ * The two branches are gated DIFFERENTLY, and that asymmetry is the fix for a defect that
+ * shipped: the promotion branch has NO age gate.
+ *
+ * Why that is safe: the caller holds the per-organization advisory lock around this entire
+ * run, so any RUNNING row this org has AT THIS MOMENT necessarily belongs to a process
+ * that is no longer alive — there cannot be a live concurrent run to race. Age tells us
+ * nothing the lock has not already told us.
+ *
+ * Why it is necessary: with an age gate on the promotion branch, a crash in the window
+ * between the manifest write and the status update leaves a RUNNING row younger than
+ * STALE_RUN_HOURS sitting on a COMPLETE backup. The documented `--force` retry then
+ * acquires the lock freely (the dead process's session dropped it), this sweep skips the
+ * row as "too young", and `pruneRuns` — which has no age concept at all — sees RUNNING,
+ * calls it debris, and deletes a good backup. One code path must own that decision, and
+ * it is this one: by the time `pruneRuns` runs, no manifest-bearing row is still RUNNING.
+ *
+ * The no-manifest branch KEEPS the age gate. That directory is incomplete either way, and
+ * waiting costs nothing.
  */
 export async function sweepStaleRuns(
 	db: PrismaClient,
@@ -242,12 +282,13 @@ export async function sweepStaleRuns(
 	now: Date
 ): Promise<void> {
 	const cutoff = new Date(now.getTime() - STALE_RUN_HOURS * 60 * 60 * 1000)
-	const stale = await db.backupRun.findMany({
-		where: { organizationId, status: 'RUNNING', startedAt: { lt: cutoff } },
+	// EVERY running row, at any age — see the asymmetry note above.
+	const running = await db.backupRun.findMany({
+		where: { organizationId, status: 'RUNNING' },
 		select: { id: true, runId: true, startedAt: true }
 	})
 
-	for (const run of stale) {
+	for (const run of running) {
 		const raw = await io.readObject(`${organizationId}/${run.runId}/manifest.json`)
 		if (raw) {
 			const counts = (JSON.parse(raw.toString()) as { counts: Record<string, number> }).counts
@@ -265,6 +306,9 @@ export async function sweepStaleRuns(
 			})
 			continue
 		}
+		// No manifest: incomplete. Wait out STALE_RUN_HOURS before calling it dead — nothing
+		// is at risk in the meantime, because there is no good backup here to lose.
+		if (run.startedAt >= cutoff) continue
 		await db.backupRun.update({
 			where: { id: run.id },
 			data: {
@@ -303,15 +347,53 @@ export async function runBackupForOrg(
 	now: Date,
 	secrets: string[] = []
 ): Promise<RunOutcome> {
-	await sweepStaleRuns(db, org.id, io, now)
-
-	const { files, skipped } = await collectDocuments(db, org.id)
 	const runId = makeRunId(now)
 	const runPrefix = `${org.id}/${runId}`
 
-	const estimate = files.reduce((sum, f) => sum + f.size, 0)
-	const existingRuns = await io.listRunIds(org.id)
-	await io.checkFreeSpace(freeSpaceNeeded(estimate, config.retentionCount, existingRuns.length))
+	// Everything before the RUNNING row exists still has to be VISIBLE when it fails.
+	// ST5 promises a refused run is "recorded as FAILED … and admins notified", and G5
+	// promises a failed run is visible without reading a log file. Letting the free-space
+	// refusal (or a collector/LIST failure) propagate leaves no row and no notification at
+	// all, so /settings/backup shows nothing and backups stop silently — the one failure
+	// mode this whole feature exists to prevent.
+	let files: PendingFile[]
+	let skipped: ManifestSkipped[]
+	try {
+		await sweepStaleRuns(db, org.id, io, now)
+		const collected = await collectDocuments(db, org.id)
+		files = collected.files
+		skipped = collected.skipped
+		const estimate = files.reduce((sum, f) => sum + f.size, 0)
+		const existingRuns = await io.listRunIds(org.id)
+		await io.checkFreeSpace(freeSpaceNeeded(estimate, config.retentionCount, existingRuns.length))
+	} catch (e: unknown) {
+		const message = sanitizeError((e as Error)?.message ?? 'unknown error', secrets)
+		await db.backupRun.create({
+			data: {
+				organizationId: org.id,
+				runId,
+				status: 'FAILED',
+				destinationKind: config.destinationKind,
+				finishedAt: now,
+				error: message
+			},
+			select: { id: true }
+		})
+		await notifyAdmins(
+			db,
+			org.id,
+			'Nightly document backup could not start. Open Settings → Document Backup.'
+		)
+		return {
+			runId,
+			status: 'FAILED',
+			fileCount: 0,
+			skippedCount: 0,
+			failedCount: 0,
+			totalBytes: 0,
+			error: message
+		}
+	}
 
 	const row = await db.backupRun.create({
 		data: {
@@ -324,7 +406,15 @@ export async function runBackupForOrg(
 	})
 
 	try {
-		const { copied, failed, totalBytes } = await copyAll(files, runPrefix, io)
+		const { copied, failed, totalBytes, aborted } = await copyAll(files, runPrefix, io)
+		if (aborted) {
+			// Deliberately BEFORE the manifest write. Writing one here would mark an empty
+			// directory as a complete backup, which is exactly the lie AD-008 exists to
+			// prevent. The catch below records FAILED and removes the partial directory.
+			throw new Error(
+				`backup destination is unreachable (${MAX_CONSECUTIVE_WRITE_FAILURES} consecutive write failures)`
+			)
+		}
 
 		const manifest = buildManifest({
 			runId,

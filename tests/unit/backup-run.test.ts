@@ -481,3 +481,224 @@ describe('runBackupForOrg status derivation (AC-6, E-04 gap)', () => {
 		expect(stored).toContain('[redacted]')
 	})
 })
+
+// ─── Adversarial-review findings C-1, C-2 and H-1 ────────────────────────────────────
+//
+// The fake below HONOURS the `where` clause it is given. That is the whole point: a stub
+// that returns its fixture regardless of the filter would pass against the broken code,
+// because the defect IS the filter. `process/context/tests/all-tests.md` names vacuous
+// mocks as this repo's #1 false-green mode, and both of these shipped past a green suite.
+describe('runBackupForOrg — crash-recovery and refusal paths', () => {
+	const now = new Date('2026-08-22T02:30:00.000Z')
+	const org = { id: 'org_a', name: 'Veent' }
+	const config = { retentionCount: 3, destinationKind: 'LOCAL' as const }
+	const employee = { id: 'e1', employeeNumber: 'EMP-015', lastName: 'A', firstName: 'B' }
+
+	type Row = { id: string; runId: string; status: string; startedAt: Date }
+
+	function fakeDb(rows: Row[], docCount = 1) {
+		const updates: { id: string; data: Record<string, unknown> }[] = []
+		const created: Record<string, unknown>[] = []
+		const store = [...rows]
+		return {
+			updates,
+			created,
+			db: {
+				employeeDocument: {
+					findMany: async () =>
+						Array.from({ length: docCount }, (_, i) => ({
+							id: `ed${i}`,
+							storageKey: `employees/e1/${i}.pdf`,
+							category: 'OTHER',
+							label: 'L',
+							fileName: 'f.pdf',
+							mimeType: 'application/pdf',
+							size: 3,
+							uploadedAt,
+							employee
+						}))
+				},
+				requestDocument: { findMany: async () => [] },
+				backupRun: {
+					// Applies status and the startedAt < cutoff filter, exactly as Postgres would.
+					findMany: async (a?: { where?: { status?: string; startedAt?: { lt: Date } } }) => {
+						const w = a?.where ?? {}
+						return store.filter(
+							(r) =>
+								(w.status === undefined || r.status === w.status) &&
+								(w.startedAt?.lt === undefined || r.startedAt < w.startedAt.lt)
+						)
+					},
+					findFirst: async () => null,
+					create: async ({ data }: { data: Record<string, unknown> }) => {
+						created.push(data)
+						store.push({
+							id: 'new-row',
+							runId: String(data.runId),
+							status: 'RUNNING',
+							startedAt: now
+						})
+						return { id: 'new-row' }
+					},
+					update: async ({
+						where,
+						data
+					}: {
+						where: { id: string }
+						data: Record<string, unknown>
+					}) => {
+						updates.push({ id: where.id, data })
+						const r = store.find((x) => x.id === where.id)
+						if (r && typeof data.status === 'string') r.status = data.status
+						return {}
+					}
+				},
+				user: { findMany: async () => [{ id: 'u1' }] }
+			}
+		}
+	}
+
+	// C-1 — the crash window between the manifest write and the status update.
+	it('promotes a RUNNING row that HAS a manifest, however young, and never deletes it', async () => {
+		// One minute old: far inside STALE_RUN_HOURS, so an age-gated sweep skips it. The
+		// advisory lock is held per-org around this whole call, so a RUNNING row that exists
+		// here CANNOT belong to a live run — it is a dead process, whatever its age.
+		const crashed: Row = {
+			id: 'crashed',
+			runId: 'run-crashed',
+			status: 'RUNNING',
+			startedAt: new Date(now.getTime() - 60_000)
+		}
+		const { db, updates } = fakeDb([crashed])
+		const deleted: string[] = []
+
+		await runBackupForOrg(
+			db as never,
+			org,
+			config,
+			io({
+				readObject: async (relPath) =>
+					relPath === 'org_a/run-crashed/manifest.json'
+						? Buffer.from(
+								JSON.stringify({ counts: { files: 9, skipped: 0, failed: 0, totalBytes: 500 } })
+							)
+						: null,
+				listRunIds: async () => ['run-crashed'],
+				deleteRun: async (_o, id) => void deleted.push(id)
+			}),
+			now
+		)
+
+		expect(updates.find((u) => u.id === 'crashed')?.data).toMatchObject({
+			status: 'SUCCESS',
+			fileCount: 9
+		})
+		// The complete backup must survive the prune pass that follows.
+		expect(deleted).not.toContain('run-crashed')
+	})
+
+	it('still FAILS and removes a young RUNNING row with no manifest only once it is stale', async () => {
+		const fresh: Row = {
+			id: 'fresh',
+			runId: 'run-fresh',
+			status: 'RUNNING',
+			startedAt: new Date(now.getTime() - 60_000)
+		}
+		const { db, updates } = fakeDb([fresh])
+		const deleted: string[] = []
+		await runBackupForOrg(
+			db as never,
+			org,
+			config,
+			io({ readObject: async () => null, deleteRun: async (_o, id) => void deleted.push(id) }),
+			now
+		)
+		// No manifest and only a minute old — it may still be a run in flight from this very
+		// process's perspective, so the STALE_RUN_HOURS gate is kept on THIS branch.
+		expect(updates.find((u) => u.id === 'fresh')).toBeUndefined()
+	})
+
+	// C-2 — a refused run must not be invisible.
+	it('records a FAILED row and notifies when the free-space pre-flight refuses (ST5)', async () => {
+		const { db, created, updates } = fakeDb([])
+		const { notifyMany } = await import('$lib/server/services/notifications')
+		vi.mocked(notifyMany).mockClear()
+
+		const out = await runBackupForOrg(
+			db as never,
+			org,
+			config,
+			io({
+				checkFreeSpace: async () => {
+					throw new Error('insufficient free space at the backup destination')
+				}
+			}),
+			now,
+			['/srv/backups', 'veent-backups', 'AKIASECRET']
+		)
+
+		expect(out.status).toBe('FAILED')
+		// G5: visible in the app, not only in a log file nobody reads.
+		expect(created).toHaveLength(1)
+		const stored = String((updates.at(-1)?.data.error ?? created[0].error) as string)
+		expect(stored).toContain('insufficient free space')
+		expect(vi.mocked(notifyMany)).toHaveBeenCalledTimes(1)
+		const message = String(vi.mocked(notifyMany).mock.calls[0][1])
+		for (const secret of ['/srv/backups', 'veent-backups', 'AKIASECRET']) {
+			expect(message).not.toContain(secret)
+		}
+	})
+
+	it('records a FAILED row when the collector itself throws', async () => {
+		const { db, created } = fakeDb([])
+		db.employeeDocument.findMany = async () => {
+			throw new Error('connection terminated')
+		}
+		const out = await runBackupForOrg(db as never, org, config, io(), now)
+		expect(out.status).toBe('FAILED')
+		expect(created).toHaveLength(1)
+	})
+
+	// H-1 — ST7: an unreachable destination must abort, not grind through 400 files.
+	it('aborts the copy after 5 consecutive write failures instead of trying every file', async () => {
+		const { db, updates } = fakeDb([], 40)
+		let attempts = 0
+		const out = await runBackupForOrg(
+			db as never,
+			org,
+			config,
+			io({
+				writeObject: async () => {
+					attempts++
+					throw new Error('connect ECONNREFUSED')
+				}
+			}),
+			now
+		)
+		expect(out.status).toBe('FAILED')
+		// 5 file attempts, then stop. Without the abort this is 40 + the manifest.
+		expect(attempts).toBeLessThanOrEqual(5)
+		expect(String(updates.at(-1)?.data.error)).toMatch(/destination is unreachable/)
+	})
+
+	it('does not abort when failures are scattered rather than consecutive', async () => {
+		const { db } = fakeDb([], 12)
+		let n = 0
+		const out = await runBackupForOrg(
+			db as never,
+			org,
+			config,
+			io({
+				writeObject: async () => {
+					n++
+					// Every third file fails: never 5 in a row, so this is a PARTIAL, not an outage.
+					if (n % 3 === 0) throw new Error('transient')
+				}
+			}),
+			now
+		)
+		expect(out.status).toBe('PARTIAL')
+		expect(out.fileCount).toBe(8)
+		expect(out.failedCount).toBe(4)
+	})
+})
