@@ -72,6 +72,12 @@
 			super: true
 		},
 		{
+			href: '/settings/backup',
+			title: 'Document Backup',
+			desc: 'Automatic 201-file and attachment backups',
+			super: true
+		},
+		{
 			href: '/payroll/statutory-rates',
 			title: 'Statutory Rates',
 			desc: 'SSS, PhilHealth, Pag-IBIG, BIR tax',
