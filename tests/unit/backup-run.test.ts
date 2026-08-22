@@ -4,6 +4,7 @@ import {
 	collectDocuments,
 	copyAll,
 	backupNotificationMessage,
+	runBackupForOrg,
 	sweepStaleRuns,
 	type BackupIo,
 	type PendingFile
@@ -349,5 +350,134 @@ describe('collectDocuments (T-U-15)', () => {
 		})
 		// requestDocument entries have no category and do carry the request id.
 		expect(out.files[2]).toMatchObject({ category: null, requestId: 'req1' })
+	})
+})
+
+// The E-04 mutation pass found this hole: forcing `status = 'SUCCESS'` inside
+// runBackupForOrg left every test above green, because they all exercise copyAll and
+// nothing asserted what the ORCHESTRATOR does with a non-empty failed[]. AC-6's claim is
+// "PARTIAL, never SUCCESS" — this is the test that makes it true.
+vi.mock('$lib/server/services/notifications', () => ({ notifyMany: vi.fn(async () => {}) }))
+
+describe('runBackupForOrg status derivation (AC-6, E-04 gap)', () => {
+	const now = new Date('2026-08-22T02:30:00.000Z')
+	const org = { id: 'org_a', name: 'Veent' }
+	const config = { retentionCount: 3, destinationKind: 'LOCAL' as const }
+
+	function fakeDb(docCount: number) {
+		const updates: Record<string, unknown>[] = []
+		const employee = { id: 'e1', employeeNumber: 'EMP-015', lastName: 'A', firstName: 'B' }
+		return {
+			updates,
+			db: {
+				employeeDocument: {
+					findMany: async () =>
+						Array.from({ length: docCount }, (_, i) => ({
+							id: `ed${i}`,
+							storageKey: `employees/e1/${i}.pdf`,
+							category: 'OTHER',
+							label: 'L',
+							fileName: 'f.pdf',
+							mimeType: 'application/pdf',
+							size: 3,
+							uploadedAt,
+							employee
+						}))
+				},
+				requestDocument: { findMany: async () => [] },
+				backupRun: {
+					findMany: async () => [],
+					findFirst: async () => null,
+					create: async () => ({ id: 'row1' }),
+					update: async ({ data }: { data: Record<string, unknown> }) => {
+						updates.push(data)
+						return {}
+					}
+				},
+				user: { findMany: async () => [{ id: 'u1' }] }
+			}
+		}
+	}
+
+	it('is PARTIAL — never SUCCESS — when any file failed', async () => {
+		const { db, updates } = fakeDb(3)
+		const out = await runBackupForOrg(
+			db as never,
+			org,
+			config,
+			io({
+				readStoredFile: async (key) => {
+					if (key === 'employees/e1/1.pdf') throw new Error('ENOENT')
+					return Buffer.from('pdf')
+				}
+			}),
+			now
+		)
+		expect(out.status).toBe('PARTIAL')
+		expect(updates.at(-1)).toMatchObject({ status: 'PARTIAL', fileCount: 2, failedCount: 1 })
+	})
+
+	it('is SUCCESS only when nothing failed', async () => {
+		const { db } = fakeDb(3)
+		const out = await runBackupForOrg(db as never, org, config, io(), now)
+		expect(out.status).toBe('SUCCESS')
+		expect(out.fileCount).toBe(3)
+	})
+
+	it('writes manifest.json LAST — a directory without one is incomplete (AD-008)', async () => {
+		const { db } = fakeDb(2)
+		const written: string[] = []
+		await runBackupForOrg(
+			db as never,
+			org,
+			config,
+			io({ writeObject: async (p) => void written.push(p) }),
+			now
+		)
+		expect(written.at(-1)).toMatch(/manifest\.json$/)
+		expect(written.filter((p) => p.endsWith('manifest.json'))).toHaveLength(1)
+	})
+
+	it('records FAILED and removes the partial directory when the destination breaks', async () => {
+		const { db, updates } = fakeDb(2)
+		const deleted: string[] = []
+		const out = await runBackupForOrg(
+			db as never,
+			org,
+			config,
+			io({
+				checkFreeSpace: async () => {},
+				writeObject: async () => {
+					throw new Error('connect ECONNREFUSED https://sgp1.example.com')
+				},
+				deleteRun: async (_o, id) => void deleted.push(id)
+			}),
+			now
+		)
+		// copyAll turns per-file write errors into failed[], so the run still completes as
+		// PARTIAL; the manifest write is what fails outright here.
+		expect(out.status).toBe('FAILED')
+		expect(deleted).toHaveLength(1)
+		expect(updates.at(-1)).toMatchObject({ status: 'FAILED' })
+	})
+
+	it('sanitizes the destination out of the stored error (S4)', async () => {
+		const { db, updates } = fakeDb(1)
+		await runBackupForOrg(
+			db as never,
+			org,
+			config,
+			io({
+				writeObject: async () => {
+					throw new Error('PUT https://sgp1.example.com failed: AKIASECRET denied')
+				}
+			}),
+			now,
+			['https://sgp1.example.com', 'AKIASECRET']
+		)
+		const stored = String((updates.at(-1) as { error: string }).error)
+		expect(stored).not.toContain('AKIASECRET')
+		expect(stored).not.toContain('sgp1.example.com')
+		expect(stored).toContain('[redacted]')
 	})
 })
