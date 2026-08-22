@@ -6,12 +6,27 @@
 	import type { Column } from '$lib/components/ui/table'
 	import { addToast } from '$lib/stores/toast.svelte'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
-	import type { PageData, ActionData } from './$types'
+	import type { PageData } from './$types'
 
-	let { data, form }: { data: PageData; form: ActionData } = $props()
+	// No `form` prop: the save result is handled in the submit callback below, so nothing on
+	// this page reads `ActionData`.
+	let { data }: { data: PageData } = $props()
 
 	// #108: a double-click would fire two redundant writes of the config row.
-	const save = createSubmitGuard()
+	//
+	// The result is announced from the submit callback, NOT from an `$effect` watching `form`.
+	// `addToast` pushes onto a `$state` array, and `Array.prototype.push` reads the array as
+	// well as writing it — inside an effect that is a read-write cycle, and Svelte 5 aborts the
+	// page with `effect_update_depth_exceeded`. Written that way the save succeeded (HTTP 200,
+	// row committed) while the toast never rendered and the console filled with errors.
+	const save = createSubmitGuard(() => async ({ update, result }) => {
+		await update()
+		if (result.type === 'success') addToast('Backup schedule saved.', { kind: 'success' })
+		else if (result.type === 'failure') {
+			const d = result.data as { error?: string } | undefined
+			addToast(d?.error ?? 'That schedule could not be saved.', { kind: 'error' })
+		}
+	})
 
 	// svelte-ignore state_referenced_locally
 	let enabled = $state(data.config.enabled)
@@ -28,13 +43,6 @@
 		intervalDays = data.config.intervalDays
 		retentionCount = data.config.retentionCount
 		destinationKind = data.config.destinationKind
-	})
-
-	// The result of a save is reported once, through the toast the layout already mounts —
-	// not as a banner this page invents for itself.
-	$effect(() => {
-		if (form?.success) addToast('Backup schedule saved.', { kind: 'success' })
-		else if (form?.error) addToast(form.error, { kind: 'error' })
 	})
 
 	const dateTime = new Intl.DateTimeFormat('en-PH', {
