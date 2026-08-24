@@ -57,8 +57,9 @@
 			<p class="mt-1 text-sm text-muted-foreground">
 				{CATEGORY_LABELS[complaint.category] ?? complaint.category}
 				· For {complaint.employee.firstName}
-				{complaint.employee.lastName} ({complaint.employee.employeeNumber})
-				· Opened {formatShortDate(complaint.createdAt)}
+				{complaint.employee.lastName} ({complaint.employee.employeeNumber}) · Opened {formatShortDate(
+					complaint.createdAt
+				)}
 			</p>
 		</div>
 		<span class="rounded-full px-3 py-1 text-xs font-medium {statusClass(complaint.status)}">

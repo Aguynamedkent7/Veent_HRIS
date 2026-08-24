@@ -11,8 +11,7 @@ import type { Actions, PageServerLoad } from './$types'
 
 export const load: PageServerLoad = async ({ locals, params }) => {
 	const user = locals.user!
-	const roles = user.roles?.length ? user.roles : [user.role]
-	const isHr = canAny(roles, 'MANAGE_HR')
+	const isHr = canAny(user.roles, 'MANAGE_HR')
 
 	const complaint = await getComplaint(params.id, user.organizationId)
 
@@ -31,8 +30,7 @@ const replySchema = z.object({ body: z.string().trim().min(1) })
 export const actions: Actions = {
 	reply: async ({ request, locals, getClientAddress, params }) => {
 		const user = locals.user!
-		const roles = user.roles?.length ? user.roles : [user.role]
-		const isHr = canAny(roles, 'MANAGE_HR')
+		const isHr = canAny(user.roles, 'MANAGE_HR')
 
 		const myEmployee = await db.employee.findFirst({
 			where: { userId: user.id, organizationId: user.organizationId },
@@ -50,7 +48,7 @@ export const actions: Actions = {
 		const ctx = {
 			organizationId: user.organizationId,
 			actorId: user.id,
-			actorRole: user.role,
+			actorRoles: user.roles,
 			ipAddress: getClientAddress()
 		}
 		try {
@@ -64,13 +62,12 @@ export const actions: Actions = {
 
 	resolve: async ({ locals, getClientAddress, params }) => {
 		const user = locals.user!
-		const roles = user.roles?.length ? user.roles : [user.role]
-		if (!canAny(roles, 'MANAGE_HR')) return fail(403, { error: 'Insufficient permissions.' })
+		if (!canAny(user.roles, 'MANAGE_HR')) return fail(403, { error: 'Insufficient permissions.' })
 
 		const ctx = {
 			organizationId: user.organizationId,
 			actorId: user.id,
-			actorRole: user.role,
+			actorRoles: user.roles,
 			ipAddress: getClientAddress()
 		}
 		try {

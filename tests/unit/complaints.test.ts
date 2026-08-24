@@ -25,7 +25,7 @@ vi.mock('$lib/server/services/notifications', () => ({ notify: notifyMock }))
 const { openComplaint, postComplaintMessage, resolveComplaint } =
 	await import('$lib/server/services/complaints')
 
-const CTX: AuditContext = { organizationId: 'org1', actorId: 'u-hr', actorRole: 'HR_ADMIN' }
+const CTX: AuditContext = { organizationId: 'org1', actorId: 'u-hr', actorRoles: ['HR_ADMIN'] }
 
 function mockComplaint(overrides: Record<string, unknown> = {}) {
 	dbMock.hrComplaint.findFirst.mockResolvedValue({
