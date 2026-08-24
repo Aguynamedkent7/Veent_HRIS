@@ -11,6 +11,7 @@ import {
 	listComplaintsForEmployee,
 	COMPLAINT_CATEGORIES
 } from '$lib/server/services/complaints'
+import { listVisibleEmployeeIds } from '$lib/server/services/employee-access'
 import type { Actions, PageServerLoad } from './$types'
 
 const STATUSES: ComplaintStatus[] = ['OPEN', 'RESPONDED', 'RESOLVED']
@@ -24,7 +25,10 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		const status = STATUSES.includes(statusParam as ComplaintStatus)
 			? (statusParam as ComplaintStatus)
 			: undefined
-		const filters = { status }
+		// `null` for HR/CEO/Super-Admin (unrestricted); an id list for a manager, possibly empty.
+		// `[]` is truthy, so the filter is still emitted and matches nothing — fail-closed.
+		const visibleIds = await listVisibleEmployeeIds(user)
+		const filters = { status, ...(visibleIds && { employeeIds: visibleIds }) }
 
 		const total = await countComplaintsForOrg(user.organizationId, filters)
 		const pagination = paginate(url, total)
@@ -34,7 +38,13 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 				take: pagination.take
 			}),
 			db.employee.findMany({
-				where: { user: { organizationId: user.organizationId }, employmentStatus: 'ACTIVE' },
+				where: {
+					user: { organizationId: user.organizationId },
+					employmentStatus: 'ACTIVE',
+					// Scoped too, not just the list: an unscoped dropdown reads the whole roster out
+					// to a manager before the 403 on submit ever fires.
+					...(visibleIds && { id: { in: visibleIds } })
+				},
 				select: { id: true, firstName: true, lastName: true, employeeNumber: true },
 				orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }]
 			})

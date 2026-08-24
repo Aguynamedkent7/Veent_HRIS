@@ -17,10 +17,18 @@ const { dbMock } = vi.hoisted(() => ({
 	}
 }))
 const { notifyMock } = vi.hoisted(() => ({ notifyMock: vi.fn().mockResolvedValue(undefined) }))
+// The service admits per employee now (#112), so the object-level scope check has to be mocked
+// or every transition test below 403s. Scoping itself is proven in `complaints-scoping.test.ts`.
+const { assertCanTouchEmployeeMock } = vi.hoisted(() => ({
+	assertCanTouchEmployeeMock: vi.fn().mockResolvedValue(undefined)
+}))
 
 vi.mock('$lib/server/db', () => ({ db: dbMock }))
 vi.mock('$lib/server/audit', () => ({ writeAuditLog: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('$lib/server/services/notifications', () => ({ notify: notifyMock }))
+vi.mock('$lib/server/services/employee-access', () => ({
+	assertCanTouchEmployee: assertCanTouchEmployeeMock
+}))
 
 const { openComplaint, postComplaintMessage, resolveComplaint } =
 	await import('$lib/server/services/complaints')

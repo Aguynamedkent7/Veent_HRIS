@@ -1,8 +1,10 @@
 import { error } from '@sveltejs/kit'
 import type { ComplaintCategory, ComplaintStatus } from '@prisma/client'
 import { db } from '$lib/server/db'
+import { canAny } from '$lib/rbac'
 import { writeAuditLog } from '$lib/server/audit'
 import { notify } from '$lib/server/services/notifications'
+import { assertCanTouchEmployee } from '$lib/server/services/employee-access'
 import type { AuditContext } from '$lib/server/services/types'
 
 // HR complaints / inquiries (#112): a two-way thread HR opens against an employee. HR opens
@@ -37,6 +39,39 @@ export interface OpenComplaintInput {
 interface ComplaintFilters {
 	status?: ComplaintStatus
 	employeeId?: string
+	/** The actor's visible-employee allow-list. `null` from `listVisibleEmployeeIds` means
+	 * unrestricted, so the caller simply omits the field. */
+	employeeIds?: string[]
+}
+
+/**
+ * Object-level admission for one inquiry thread (#112, #228).
+ *
+ * Two arms on purpose. A `MANAGE_HR` holder goes through the shared employee-scope rule, which
+ * keeps a MANAGER pinned to their own team or branch while `ADMINISTER_HR_ORGWIDE` holders
+ * short-circuit to org-wide reach inside `canTouchEmployee`. Everyone else must BE the subject.
+ *
+ * Collapsing the two arms into `assertCanTouchEmployee` alone would WIDEN access, not simplify it:
+ * `canTouchEmployee` admits an actor's reports regardless of role, so a plain EMPLOYEE who happens
+ * to be someone's `reportsToId` would reach their report's thread. `rbac.ts:29-36` says the same
+ * thing from the other side — never use `MANAGE_HR` to decide "may reach any employee record".
+ *
+ * Lives in the service, not the route: `getComplaint` is called from two places in the `[id]`
+ * route, and `resolveComplaint` never loads the row in the route at all.
+ */
+export async function assertCanReachComplaint(
+	ctx: AuditContext,
+	complaintEmployeeId: string,
+	actorEmployeeId: string | null
+): Promise<void> {
+	if (canAny(ctx.actorRoles, 'MANAGE_HR')) {
+		await assertCanTouchEmployee(
+			{ id: ctx.actorId, roles: ctx.actorRoles, organizationId: ctx.organizationId },
+			complaintEmployeeId
+		)
+		return
+	}
+	if (actorEmployeeId !== complaintEmployeeId) error(403, 'You do not have access to this inquiry.')
 }
 
 // HR opens an inquiry against an employee, seeding the thread with the first message.
@@ -46,6 +81,10 @@ export async function openComplaint(input: OpenComplaintInput, ctx: AuditContext
 		select: { id: true, user: { select: { id: true } } }
 	})
 	if (!employee) error(404, 'Employee not found')
+	// Order matters: the org 404 first, so an out-of-org id stays 404 rather than leaking
+	// existence as a 403. `null` for the actor's own employee id — opening is HR-only, so the
+	// subject arm must never admit here.
+	await assertCanReachComplaint(ctx, employee.id, null)
 
 	const complaint = await db.hrComplaint.create({
 		data: {
@@ -94,6 +133,7 @@ export async function postComplaintMessage(
 	if (!complaint) error(404, 'Inquiry not found')
 	if (complaint.status === 'RESOLVED')
 		error(400, 'This inquiry is resolved and can no longer be replied to.')
+	await assertCanReachComplaint(ctx, complaint.employeeId, actorEmployeeId)
 
 	const fromEmployee = actorEmployeeId != null && actorEmployeeId === complaint.employeeId
 	const status: ComplaintStatus = fromEmployee ? 'RESPONDED' : 'OPEN'
@@ -133,6 +173,9 @@ export async function resolveComplaint(complaintId: string, ctx: AuditContext) {
 		include: { employee: { select: { user: { select: { id: true } } } } }
 	})
 	if (!complaint) error(404, 'Inquiry not found')
+	// Above the already-resolved early return: otherwise an out-of-scope actor re-resolving a
+	// resolved thread gets a silent 200 that confirms the thread exists.
+	await assertCanReachComplaint(ctx, complaint.employeeId, null)
 	if (complaint.status === 'RESOLVED') return complaint
 
 	const updated = await db.hrComplaint.update({
@@ -190,9 +233,9 @@ export function listComplaintsForEmployee(employeeId: string, organizationId: st
 	})
 }
 
-export async function getComplaint(id: string, organizationId: string) {
+export async function getComplaint(id: string, ctx: AuditContext, actorEmployeeId: string | null) {
 	const complaint = await db.hrComplaint.findFirst({
-		where: { id, organizationId },
+		where: { id, organizationId: ctx.organizationId },
 		include: {
 			employee: {
 				select: {
@@ -211,6 +254,7 @@ export async function getComplaint(id: string, organizationId: string) {
 		}
 	})
 	if (!complaint) error(404, 'Inquiry not found')
+	await assertCanReachComplaint(ctx, complaint.employeeId, actorEmployeeId)
 	return complaint
 }
 
@@ -218,6 +262,11 @@ function complaintWhere(organizationId: string, filters: ComplaintFilters) {
 	return {
 		organizationId,
 		...(filters.status && { status: filters.status }),
-		...(filters.employeeId && { employeeId: filters.employeeId })
+		// `employeeId` NARROWS to one employee; `employeeIds` is a CEILING (the actor's whole
+		// visible set). They must intersect, so the allow-list goes in a separate `AND` key —
+		// writing both into `employeeId` would let the ceiling overwrite the narrower filter and
+		// the query would return MORE rows than asked for. A scoping filter must never widen.
+		...(filters.employeeId && { employeeId: filters.employeeId }),
+		...(filters.employeeIds && { AND: [{ employeeId: { in: filters.employeeIds } }] })
 	}
 }
