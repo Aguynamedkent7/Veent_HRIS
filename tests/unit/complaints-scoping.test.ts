@@ -45,7 +45,7 @@ vi.mock('$lib/server/services/employee-access', () => ({
 	listVisibleEmployeeIds: listVisibleEmployeeIdsMock
 }))
 
-const { listComplaintsForEmployee, listComplaintsForOrg, resolveComplaint } =
+const { listComplaintsForEmployee, listComplaintsForOrg, resolveComplaint, countWaitingInquiries } =
 	await import('$lib/server/services/complaints')
 const { load: listLoad, actions: listActions } =
 	await import('../../src/routes/(app)/complaints/+page.server')
@@ -92,6 +92,9 @@ const openEvent = (roles: Role[], employeeId: string) => {
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	} as any
 }
+
+/** The `EmployeeAccessActor` shape the sidebar count takes. */
+const actor = (roles: Role[]) => ({ id: ACTOR_USER, roles, organizationId: ORG })
 
 const listLoadEvent = (roles: Role[]) =>
 	({
@@ -342,5 +345,72 @@ describe('complaints audit actorRoles carry-through (#112)', () => {
 		writeAuditLogMock.mockClear()
 		await threadActions.resolve(threadEvent(roles))
 		expect(writeAuditLogMock.mock.calls[0][0].actorRoles).toEqual(roles)
+	})
+})
+
+/**
+ * The sidebar "Inquiries" count badge (#112, scope addition). The status already encodes whose
+ * turn it is — RESPONDED is owed by HR, OPEN is owed by the subject — so the count needs no new
+ * state. It must be scoped exactly like the list it links to, or the badge promises a thread the
+ * page then 403s.
+ */
+describe('complaints sidebar waiting count (#112)', () => {
+	it('N18 — the HR arm counts only RESPONDED, behind the visible-employee allow-list', async () => {
+		listVisibleEmployeeIdsMock.mockResolvedValue([VISIBLE])
+
+		await countWaitingInquiries(actor(['MANAGER']))
+
+		expect(dbMock.hrComplaint.count.mock.calls[0][0].where).toEqual({
+			organizationId: ORG,
+			status: 'RESPONDED',
+			employeeId: { in: [VISIBLE] }
+		})
+	})
+
+	// One actor can be owed on both arms — a manager who is also the subject of a thread. The two
+	// can never double-count one row, because a row holds exactly one status.
+	it('N19 — the subject arm counts the actor’s own OPEN threads, and the two arms sum', async () => {
+		listVisibleEmployeeIdsMock.mockResolvedValue([VISIBLE])
+		dbMock.hrComplaint.count.mockResolvedValueOnce(2).mockResolvedValueOnce(3)
+
+		const total = await countWaitingInquiries(actor(['MANAGER']))
+
+		expect(dbMock.hrComplaint.count.mock.calls[1][0].where).toEqual({
+			organizationId: ORG,
+			status: 'OPEN',
+			employeeId: SELF
+		})
+		expect(total).toBe(5)
+	})
+
+	// `[]` is truthy, so the predicate stays present and matches nothing. `?.length &&` would drop
+	// it and count the whole org.
+	it('N20 — a MANAGE_HR actor who sees nobody stays fail-closed', async () => {
+		listVisibleEmployeeIdsMock.mockResolvedValue([])
+
+		await countWaitingInquiries(actor(['MANAGER']))
+
+		expect(dbMock.hrComplaint.count.mock.calls[0][0].where.employeeId).toEqual({ in: [] })
+	})
+
+	it('N21 — a non-MANAGE_HR actor runs the subject arm only', async () => {
+		await countWaitingInquiries(actor(['EMPLOYEE']))
+
+		expect(dbMock.hrComplaint.count).toHaveBeenCalledTimes(1)
+		expect(dbMock.hrComplaint.count.mock.calls[0][0].where).toEqual({
+			organizationId: ORG,
+			status: 'OPEN',
+			employeeId: SELF
+		})
+		expect(listVisibleEmployeeIdsMock).not.toHaveBeenCalled()
+	})
+
+	it('N22 — an actor with no employee row counts no subject arm', async () => {
+		selfEmployee = null
+
+		const total = await countWaitingInquiries(actor(['EMPLOYEE']))
+
+		expect(total).toBe(0)
+		expect(dbMock.hrComplaint.count).not.toHaveBeenCalled()
 	})
 })

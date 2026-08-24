@@ -590,3 +590,231 @@ pnpm format:check   # clean
 
 ### Dependency Changes
 None. No package added, no schema touched, no `db:push` run, `prisma/schema.prisma` untouched.
+
+---
+
+# EXECUTE — Section G: Inquiries sidebar count badge (scope addition, 24-08-26)
+
+**Status:** COMPLETE_WITH_GAPS — all four gates green, 6/6 mutations RED; the badge *rendering* has
+no automated test (no component harness exists for `+layout.svelte`).
+
+## What Was Done
+
+A **user-requested scope addition** after Gate E passed live. The SPEC listed "an unread-count badge
+on the Inquiries nav tab" as **Out Of Scope**; the user then asked for it directly. Recorded in the
+plan as `## ADDENDUM — Section G` (touchpoints T31–T33, tests N18–N22) rather than folded into the
+original sections, so the record stays honest about when the requirement arrived.
+
+### Files changed (4)
+
+| File | Change |
+|---|---|
+| `src/lib/server/services/complaints/index.ts` | **T31** — new export `countWaitingInquiries`; import block extended with `listVisibleEmployeeIds` and the `EmployeeAccessActor` type. |
+| `src/routes/(app)/+layout.server.ts` | **T32** — the call added to the existing `Promise.all` (position 3, not serialised after it) and returned as `waitingInquiries`. |
+| `src/routes/(app)/+layout.svelte` | **T33** — `badge: data.waitingInquiries` on the Inquiries nav entry; label wrapped in `<span class="flex-1">` and a badge slot added in the FLAT item branch. The collapsible branch was **not** touched. |
+| `tests/unit/complaints-scoping.test.ts` | **N18–N22** plus an `actor()` factory and `countWaitingInquiries` added to the existing `await import(...)` destructure. The complaints service stays unmocked, per the file's load-bearing G1 rule. |
+
+### The count function's final shape
+
+```ts
+export async function countWaitingInquiries(actor: EmployeeAccessActor): Promise<number> {
+	const self = await db.employee.findFirst({
+		where: { userId: actor.id, organizationId: actor.organizationId },
+		select: { id: true }
+	})
+
+	let total = 0
+	if (canAny(actor.roles, 'MANAGE_HR')) {
+		const visibleIds = await listVisibleEmployeeIds(actor)
+		total += await db.hrComplaint.count({
+			where: {
+				organizationId: actor.organizationId,
+				status: 'RESPONDED',
+				...(visibleIds && { employeeId: { in: visibleIds } })
+			}
+		})
+	}
+	if (self) {
+		total += await db.hrComplaint.count({
+			where: { organizationId: actor.organizationId, status: 'OPEN', employeeId: self.id }
+		})
+	}
+	return total
+}
+```
+
+Design notes, all carried in the doc-comment on the function:
+
+- **No new state.** The status already says whose turn it is — `RESPONDED` is owed by HR, `OPEN` is
+  owed by the subject.
+- **The two arms cannot double-count.** A row holds exactly one status, and the arms match on
+  different statuses. They are summed because one actor can be owed on both at once (a manager who
+  is also the subject of a thread) — N19 pins the sum with `2 + 3 = 5`.
+- **Scoped through the same helper as the list** (`listVisibleEmployeeIds`), so the badge can never
+  promise a thread the page then 403s. `null` unrestricted, `[]` fail-closed (`in: []` emitted, not
+  dropped) — never `?.length &&`. N20 pins it.
+- **The subject arm runs for everyone**, so a non-`MANAGE_HR` actor issues that one count and
+  nothing org-wide. N21 pins it (one count call, `listVisibleEmployeeIds` never called).
+- **`findFirst` with `{ userId, organizationId }`**, matching the complaints route's own
+  `myEmployee` lookup — `Employee.userId` is globally unique, not per-org, so the org predicate is
+  load-bearing.
+
+### The badge markup
+
+```svelte
+<span class="flex-1">{item.label}</span>
+{#if item.badge}
+	<span
+		class="shrink-0 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-primary-foreground"
+		aria-label="{item.badge} waiting on you"
+	>
+		{item.badge}
+	</span>
+{/if}
+```
+
+Numeric pill (not a red dot — the dot means "hidden inside a collapsed group", and a flat item
+hides nothing), `bg-primary` (red is reserved for the collapsed-group alert), existing child-badge
+classes verbatim plus `shrink-0 tabular-nums`, rendered only when the count is above zero.
+
+**`aria-label` placement, verified rather than assumed.** The pill sits inside an `<a>`, whose
+accessible name is computed from content — and the accname traversal uses a descendant's own
+`aria-label`. So the link announces "Inquiries 3 waiting on you" instead of "Inquiries 3". No
+`role` attribute was needed and none was added.
+
+**The label carries no noun — deliberately.** A first pass wrote
+`aria-label="{item.badge} inquiries waiting on you"`, which was wrong twice: it announced
+"1 **inquiries** waiting on you" at a count of one, and it hard-coded "inquiries" into a badge slot
+that is **generic** — the slot lives in the flat-item branch, so any future flat nav item that gets
+a `badge` would inherit the wrong noun. Dropping the noun fixes both at once, because the link's own
+accessible name already supplies the subject: "Inquiries 1 waiting on you", "Inquiries 3 waiting on
+you", and correct for whatever item is badged next. No pluralisation helper and no extra field on
+the nav entry — the fix is the absence of a word.
+
+**The `flex-1` label wrap — claim verified, not assumed.** Container is
+`flex items-center gap-3`; the label was previously a bare text node, i.e. an anonymous flex item
+at `flex: 0 1 auto`. Wrapping it as `flex-1` (`flex: 1 1 0%`) makes it stretch to the remaining
+width, but text is left-aligned by default in an `<a>`, so the glyphs start at the same x and the
+badge-less items are pixel-identical. The only theoretical risk of `flex-basis: 0` is eager
+shrinking — checked against the real geometry: the sidebar is `w-60` (240px, `+layout.svelte:395`)
+and the longest flat label is "Recruitment"; every flat label fits with room to spare. Verified
+further by `pnpm check` (0 errors) and the full suite staying green.
+
+### Type note (no plan deviation, worth recording)
+
+`badge` was added to **one** entry in the 20-element `navItems` array literal. TypeScript normalises
+array-literal object unions by making the missing property optional, so `item.badge` type-checks on
+the other 19 entries with **no** `badge: 0` filler needed — confirmed by `pnpm check` reporting 0
+errors. The collapsible `requestsChildren` array still carries `badge` on every entry; that
+precedent was deliberately not copied here.
+
+## Test Gate Outcomes — Section G
+
+Five new tests (N18–N22). `pnpm vitest run tests/unit/complaints-scoping.test.ts` → **23 passed**
+(18 pre-existing + 5 new).
+
+### Mutations — all run, one at a time, all RED
+
+Backups taken with `cp` to the scratchpad and restored with `cp` after every run. **`git checkout`
+/ `git restore` were never used** — this repo has lost uncommitted work that way.
+
+| Mutation | Change made to `services/complaints/index.ts` | Literal result |
+|---|---|---|
+| **M-N18** | Deleted `...(visibleIds && { employeeId: { in: visibleIds } })` from the HR arm's `where`. | **RED** — `Tests 2 failed \| 21 passed (23)`; `× N18 — the HR arm counts only RESPONDED, behind the visible-employee allow-list`, `× N20 — a MANAGE_HR actor who sees nobody stays fail-closed`. |
+| **M-N19** | Subject arm `status: 'OPEN'` → `status: 'RESPONDED'`. | **RED** — `Tests 2 failed \| 21 passed (23)`; `× N19 — the subject arm counts the actor's own OPEN threads, and the two arms sum`, `× N21 — a non-MANAGE_HR actor runs the subject arm only`. |
+| **M-N19b** | Subject arm `total += await …` → `total = await …`. | **RED** — `Tests 1 failed \| 22 passed (23)`; `× N19 — the subject arm counts the actor's own OPEN threads, and the two arms sum`. |
+| **M-N20** | Allow-list guard `visibleIds &&` → `visibleIds?.length &&`. | **RED** — `Tests 1 failed \| 22 passed (23)`; `× N20 — a MANAGE_HR actor who sees nobody stays fail-closed`. |
+| **M-N21** | `if (canAny(actor.roles, 'MANAGE_HR'))` → `if (true)` — the HR arm runs for everyone. | **RED** — `Tests 2 failed \| 21 passed (23)`; `× N21 — a non-MANAGE_HR actor runs the subject arm only`, `× N22 — an actor with no employee row counts no subject arm`. |
+| **M-N22** | Deleted the `if (self)` guard; subject arm runs unconditionally with `employeeId: self?.id`. | **RED** — `Tests 1 failed \| 22 passed (23)`; `× N22 — an actor with no employee row counts no subject arm`. |
+
+**6/6 RED. No mutation stayed green**, so no test in this section is vacuous. Restoration confirmed
+by `git diff --stat` showing exactly the four intended files after the last restore.
+
+The three mutations that turned **two** tests red each (M-N18, M-N19, M-N21) are the useful signal
+that the arms are genuinely coupled: dropping the allow-list also breaks the `[]` fail-closed case,
+and running the HR arm unconditionally also breaks the no-employee-row case.
+
+### Four gates
+
+| Gate | Command | Result |
+|---|---|---|
+| Typecheck | `pnpm check` | **0 errors**, 1 warning, 985 files. The one warning is pre-existing and untouched: `src/lib/components/payroll/CalculatorWindow.svelte:82` — `<div>` with a pointerdown handler must have an ARIA role. |
+| Tests | `pnpm test` | **154 files / 1737 tests, all passed** (37.96s). Was 154 / 1732 — +5, exactly N18–N22. |
+| Lint | `pnpm lint` | **0 errors**, 1 warning — the same pre-existing `CalculatorWindow.svelte:82` a11y warning. |
+| Format | `pnpm format:check` | **Clean** after prettier-write. First run flagged two files, **both of them files I touched** — `src/routes/(app)/+layout.server.ts` and `tests/unit/complaints-scoping.test.ts`. Ran `pnpm prettier --write` on exactly those two paths (never a blanket `pnpm format`) and re-ran: *"All matched files use Prettier code style!"*. `pnpm check` and the scoping suite were re-run after the reformat and stayed green. |
+
+## Plan Deviations — Section G
+
+**None.** Every item of the requested scope addition was implemented as specified: numeric pill not
+a dot, `bg-primary` not red, existing child-badge classes verbatim plus `shrink-0` and
+`tabular-nums`, `aria-label`, `<span class="flex-1">` label wrap with the inertness claim verified
+rather than assumed, render only above zero, count scoped through `listVisibleEmployeeIds` with the
+`[]` case fail-closed, both arms summed, service function taking the `EmployeeAccessActor` shape,
+added to the existing `Promise.all`, badge slot in the FLAT branch only, and all five named tests
+with mutations run and recorded.
+
+Two things worth flagging as *records*, not deviations:
+
+1. The SPEC's "Out Of Scope" list and the plan's Non-Goals line still say "unread badge". They were
+   deliberately **left as written** and the change is recorded in `## ADDENDUM — Section G`, so the
+   history shows the requirement arrived after Gate E rather than pretending it was always planned.
+2. `aria-label` on a bare `<span>` is normally ignored (generic role has no accessible name). It
+   works here **only** because the pill is inside an `<a>`, whose name is computed from content and
+   whose accname traversal reads descendant `aria-label`s. Anyone moving this pill outside a
+   name-from-content ancestor must switch to `sr-only` text or an explicit role.
+
+## Test Infra Gaps Found — Section G
+
+- **The badge rendering is not automated.** N18–N22 prove the **number**; the `{#if item.badge}`
+  block, the classes, and the `aria-label` are eyeball-verified only. There is no component-test
+  harness for `+layout.svelte` in this repo, and `grep -rn "Inquiries\|complaints" tests/e2e/`
+  returns **zero hits**, so no e2e spec covers the nav item either. Recorded as the Section G known
+  gap in the plan. Not a blocker; it is the same class of gap the whole sidebar already carries.
+- **The DB is still mocked.** Like every other test in this file, N18–N22 prove what the count
+  queries **asked for**, never what Postgres **returned** (`all-tests.md:108`). No live check was
+  run for the badge — the container is down and the user runs the dev server themselves.
+- **No e2e name collision introduced**, checked rather than assumed: with a non-zero count the
+  Inquiries link's accessible name becomes `"Inquiries 3 inquiries waiting on you"`, but no e2e
+  spec asserts on that link at all.
+
+## Closeout Packet — Section G
+
+- **Selected plan:** `process/general-plans/active/hr-complaints-112_24-08-26/hr-complaints-112_PLAN_24-08-26.md` (now carrying `## ADDENDUM — Section G`)
+- **Finished:** T31, T32, T33 and tests N18–N22, all four gates green, 6/6 mutations RED.
+- **Verified:** `pnpm check` 0 errors; `pnpm test` 154 files / 1737 tests; `pnpm lint` 0 errors;
+  `pnpm format:check` clean; every mutation run and recorded.
+- **Still unverified:** the badge in a browser — no dev server was started (the user runs it) and
+  the Postgres container stays down. Gate E for Sections A–F already passed live and is unaffected;
+  nothing in Section G changes an admission guard, only a read count.
+- **Not committed** — the orchestrator commits.
+- **Next valid state:** `Keep in active/testing` — the pill wants one eyeball pass in the running
+  app, then this plan is ready for UPDATE PROCESS archival.
+
+## Forward Preview — Section G
+
+### Test Infra Found
+`tests/unit/complaints-scoping.test.ts` is now 23 tests. Its `beforeEach` already resolves
+`dbMock.hrComplaint.count` to `0` and routes `dbMock.employee.findFirst` on `where.userId` to the
+mutable `selfEmployee` — both are what the count tests lean on, so a future count test needs no new
+scaffold. The employee-access mock must keep exporting **both** `assertCanTouchEmployee` and
+`listVisibleEmployeeIds`. Pre-mutation backup lives at
+`…/scratchpad/bak/complaints-index.ts`.
+
+### Blast Radius Changes
+Two files entered the blast radius that the original plan explicitly listed under **Not touched**:
+`src/routes/(app)/+layout.svelte` and `src/routes/(app)/+layout.server.ts`. That is the scope
+addition, recorded in the addendum. The plan's "Nav array … not modified" bullet under Blast Radius
+is now stale for the Inquiries entry — its conclusion still holds, since no e2e spec asserts on
+that link.
+
+### Commands to Stay Green
+```bash
+pnpm check          # 0 errors
+pnpm test           # 154 files / 1737 tests
+pnpm lint           # 0 errors
+pnpm format:check   # clean
+```
+
+### Dependency Changes
+None. No package added, no schema touched, no migration, no `db:push`. `prisma/schema.prisma`
+untouched.

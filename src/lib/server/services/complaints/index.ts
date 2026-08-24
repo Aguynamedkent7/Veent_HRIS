@@ -4,7 +4,11 @@ import { db } from '$lib/server/db'
 import { canAny } from '$lib/rbac'
 import { writeAuditLog } from '$lib/server/audit'
 import { notify } from '$lib/server/services/notifications'
-import { assertCanTouchEmployee } from '$lib/server/services/employee-access'
+import {
+	assertCanTouchEmployee,
+	listVisibleEmployeeIds,
+	type EmployeeAccessActor
+} from '$lib/server/services/employee-access'
 import type { AuditContext } from '$lib/server/services/types'
 
 // HR complaints / inquiries (#112): a two-way thread HR opens against an employee. HR opens
@@ -231,6 +235,45 @@ export function listComplaintsForEmployee(employeeId: string, organizationId: st
 		},
 		orderBy: { updatedAt: 'desc' }
 	})
+}
+
+/**
+ * How many inquiry threads are waiting on this actor — the sidebar badge count (#112).
+ *
+ * The status already says whose turn it is, so the badge needs no new state: RESPONDED means the
+ * employee answered and HR owes the reply; OPEN means HR spoke last and the subject owes it. Both
+ * arms are summed because one actor can be owed on both at once — a manager who is also the
+ * subject of a thread. They can never double-count a single row: a row holds exactly one status,
+ * and the two arms match on different statuses.
+ *
+ * Scoped through `listVisibleEmployeeIds`, the same helper the Inquiries list filters on, so the
+ * count can never promise a thread the page then 403s. `null` is unrestricted; `[]` is truthy, so
+ * the `in: []` predicate is still emitted and matches nothing — fail-closed, never `?.length &&`.
+ * The subject arm runs for everyone, so a non-`MANAGE_HR` actor issues that count and nothing else.
+ */
+export async function countWaitingInquiries(actor: EmployeeAccessActor): Promise<number> {
+	const self = await db.employee.findFirst({
+		where: { userId: actor.id, organizationId: actor.organizationId },
+		select: { id: true }
+	})
+
+	let total = 0
+	if (canAny(actor.roles, 'MANAGE_HR')) {
+		const visibleIds = await listVisibleEmployeeIds(actor)
+		total += await db.hrComplaint.count({
+			where: {
+				organizationId: actor.organizationId,
+				status: 'RESPONDED',
+				...(visibleIds && { employeeId: { in: visibleIds } })
+			}
+		})
+	}
+	if (self) {
+		total += await db.hrComplaint.count({
+			where: { organizationId: actor.organizationId, status: 'OPEN', employeeId: self.id }
+		})
+	}
+	return total
 }
 
 export async function getComplaint(id: string, ctx: AuditContext, actorEmployeeId: string | null) {

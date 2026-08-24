@@ -387,6 +387,83 @@ Execute in this order. Sections 1-4 each end in a test gate.
 
 ---
 
+## ADDENDUM — Section G: Inquiries sidebar count badge (scope addition, 24-08-26)
+
+**This was NOT in the original plan.** The SPEC lists *"an unread-count badge on the Inquiries nav
+tab"* under **Out Of Scope**, and the Non-Goals section above still says "unread badge". After Gate
+E passed live, the user asked for it directly — *"the inquiries of the sidebar should have
+indicators that there are new messages."* It is therefore in scope from 24-08-26 onward. Recorded
+as an addendum rather than folded into the sections above, so the record stays honest about when
+the requirement arrived.
+
+Touchpoints continue the existing numbering at **T31**; tests continue at **N18**.
+
+### Semantics — the status already encodes whose turn it is
+
+No new state is needed. `RESPONDED` = the employee answered and HR owes a reply, so it counts for
+an HR-side actor. `OPEN` = HR spoke last, so it counts for the subject employee. Both arms are
+summed because one actor can be owed on both at once (a manager who is also the subject of a
+thread); they can never double-count one row, because a row holds exactly one status and the two
+arms match on different statuses.
+
+**The count is scoped exactly like the list it links to** — `listVisibleEmployeeIds` for the HR
+arm, the actor's own employee id for the subject arm, always org-scoped. A count that promises a
+thread the page then 403s is the failure this scoping exists to prevent. `null` is unrestricted;
+`[]` matches nothing and stays fail-closed — never `?.length &&`.
+
+### Design decision (settled via the project's UI skill — implement, do not redesign)
+
+- **A numeric pill, not a red dot.** The red dot on the collapsible *Requests/Approvals* parent
+  means "something is hidden inside this collapsed group". Inquiries is a **flat** item, so nothing
+  is hidden and the honest signal is *how many*.
+- **Reuses the existing child-badge classes verbatim** (`+layout.svelte:560-565`) so the sidebar
+  keeps one badge language, plus `shrink-0` and `tabular-nums`.
+- **`bg-primary`, not red.** Red is reserved here for the collapsed-group alert; a waiting count is
+  not an error.
+- **Accessible name required.** The existing pills have none — a screen reader announces just "3".
+  This one carries an `aria-label` naming what the number means.
+- Flat nav items render `{item.label}` bare, so the label is wrapped in `<span class="flex-1">` to
+  push the badge right. That wrap must be **verified** visually inert for the badge-less items, not
+  assumed.
+- Render only when the count is greater than zero.
+
+### Touchpoints
+
+| # | Location | Change |
+|---|---|---|
+| T31 | `src/lib/server/services/complaints/index.ts` — new export, placed above `getComplaint` | `countWaitingInquiries(actor: EmployeeAccessActor): Promise<number>` — the two arms above, summed. Imports `listVisibleEmployeeIds` and the `EmployeeAccessActor` type from `$lib/server/services/employee-access`. Doc-comment must state why the two arms cannot double-count and why it is scoped through the same helper as the list. |
+| T32 | `src/routes/(app)/+layout.server.ts` | Add the call to the existing `Promise.all` (**not** serialised after the other awaits) and return it as `waitingInquiries`. |
+| T33 | `src/routes/(app)/+layout.svelte` | `badge: data.waitingInquiries` on the Inquiries nav entry (nav array, ~line 178), plus the badge slot in the **FLAT** item branch (~line 594). The collapsible branch already has its own badge slot and must not be touched. |
+
+### Test matrix — Section G
+
+All in `tests/unit/complaints-scoping.test.ts`. The complaints service stays **unmocked** in that
+file (`vi.mock` is file-scoped and the other tests need the real one), so these assert on
+`dbMock.hrComplaint.count.mock.calls[n][0].where`.
+
+| id | Tier | Test | Mutation that MUST turn it red |
+|---|---|---|---|
+| N18 | Fully-Automated | The HR arm counts only `RESPONDED` and carries `employeeId: { in: visibleIds }`. | **M-N18:** delete the `...(visibleIds && …)` spread from the HR arm's `where`. |
+| N19 | Fully-Automated | The subject arm counts the actor's own `OPEN` threads, org-scoped, and the two arms **sum**. | **M-N19:** change the subject arm's status to `'RESPONDED'`. **M-N19b:** change `total +=` to `total =` in the subject arm. |
+| N20 | Fully-Automated | A `MANAGE_HR` actor with `[]` visible ids stays fail-closed — `in: []` present, not absent. | **M-N20:** change the guard to `...(visibleIds?.length && …)`. |
+| N21 | Fully-Automated | A non-`MANAGE_HR` actor runs the subject arm **only** — exactly one count, and `listVisibleEmployeeIds` is never called. | **M-N21:** run the HR arm unconditionally (drop the `canAny(actor.roles, 'MANAGE_HR')` guard). |
+| N22 | Fully-Automated | An actor with no employee row does not crash and counts no subject arm (returns 0, zero count queries). | **M-N22:** delete the `if (self)` guard on the subject arm. |
+
+### Gates — Section G
+
+Same four as Gate F: `pnpm check` (0 errors), `pnpm test` (all green), `pnpm lint` (0 errors),
+`pnpm format:check` (clean). A flagged file **you touched** → prettier-write it and re-run; a file
+**you did not touch** → stop and report. Never blanket-run `pnpm format`.
+
+### Known gap — Section G
+
+The badge **rendering** (the `{#if item.badge}` block and its `aria-label`) has no automated test:
+this repo has no component-test harness for `+layout.svelte`, and the e2e suite asserts no nav
+contents for this item (`grep -rn "Inquiries\|complaints" tests/e2e/` → zero hits). N18–N22 prove
+the **number**; the pill itself is eyeball-verified only.
+
+---
+
 ## Test Matrix — every test with its falsifying mutation
 
 Tier assignments follow `vc-test-coverage-plan`; the mutation column is the anti-vacuity
