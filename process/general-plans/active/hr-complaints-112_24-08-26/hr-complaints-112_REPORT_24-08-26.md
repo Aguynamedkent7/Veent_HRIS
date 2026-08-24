@@ -338,3 +338,255 @@ pnpm format:check   # clean
 
 ### Dependency Changes
 None. No package added, no schema touched, no `db:push` run, `prisma/schema.prisma` untouched.
+
+---
+
+# EXECUTE report — Section D (#112)
+
+Scope of this run: Implementation Checklist steps 21b–24 only, ending at **Gate D**. Gate E
+preconditions (`./start.sh`, `pnpm db:push`, seed, `pnpm dev`) and Gate F were **not** run, by
+instruction. No commit made (orchestrator owns the commit).
+
+## What Was Done
+
+| Step | File | Change |
+|---|---|---|
+| 21b | `src/routes/(app)/reports/audit-log/+page.server.ts` | Added `'HrComplaint'` to the hand-maintained `entityTypes` array (one line, appended after `'Department'`). **[T29]** |
+| 22 | `tests/unit/complaints-scoping.test.ts` | Wrote **N2–N14, N13-empty, N14-empty, N17** (N1 was already there from Section B). |
+| 23 | `tests/unit/complaints-scoping.test.ts` | Wrote the route-level **N15**. T28's mock-block change to `tests/unit/complaints.test.ts` was already applied in Section C — no further edit needed there. |
+| 23b | `tests/unit/audit-log-reveal.test.ts` | Wrote **N16** as one added assertion in the existing load suite (`expect(data.entityTypes).toContain('HrComplaint')`). |
+
+**Files changed this run: 3.** `reports/audit-log/+page.server.ts`, `tests/unit/audit-log-reveal.test.ts`,
+`tests/unit/complaints-scoping.test.ts`. Confirmed by `git diff --stat` after the last restore —
+nothing else is modified.
+
+### Mock strategy actually used (E2 / E3, and it held)
+
+`$lib/server/services/complaints` is **never** mocked in `complaints-scoping.test.ts`. The file
+mocks exactly four modules: `$lib/server/db`, `$lib/server/audit` (hoisted `writeAuditLogMock`,
+consumed by N15), `$lib/server/services/notifications`, and
+`$lib/server/services/employee-access`. The **fallback** `importOriginal` partial-mock
+(`payroll-read-scoping.test.ts:47-48`) was **not** needed and was not used.
+
+One detail the plan did not name: the employee-access mock must export **both**
+`assertCanTouchEmployee` (the service calls it) **and** `listVisibleEmployeeIds` (the list route
+calls it). `vi.mock` replaces the whole module, so exporting only the first leaves the route with
+`listVisibleEmployeeIds is not a function`.
+
+N13/N13-empty/N14/N14-empty assert on `dbMock.hrComplaint.count.mock.calls[0][0].where`,
+`dbMock.hrComplaint.findMany.mock.calls[0][0].where` and
+`dbMock.employee.findMany.mock.calls[0][0].where` — the db mock, never a service mock, exactly as
+E2 requires. `hrComplaint.count` is `mockResolvedValue(0)`-ed in `beforeEach`, so
+`paginate(url, total)` never receives `undefined`.
+
+**Mock-discipline decision recorded (plan §"Mock discipline"):** every where-clause test asserts on
+`mock.calls[0][0]` — the arguments the query was **built** with — never on returned rows. The
+`project()` helper from `approval-queues.test.ts` is a returned-shape tool; none of these tests
+needs it and reaching for it here would be cargo-culting.
+
+Templates used, as the plan specified: `requests-read-scoping.test.ts:45` for the `load`-invoking
+cases (N6, N10, N11, N12, N13, N13-empty, N14, N14-empty), and `employee-reveal-access.test.ts` for
+the action cases (N2–N5, N7, N8, N15) — including its rule that `error()` is thrown from
+`mockImplementation`, never handed to `mockRejectedValue`.
+
+## Test Gate Outcomes
+
+### Gate D — all 20 mutations, one at a time
+
+Method: the five mutation targets were backed up with `cp` to the scratchpad
+(`…/scratchpad/bak/`) before the first mutation. Each mutation restored **every** target from those
+backups first, applied exactly one textual change (with an assertion that the pattern occurred
+exactly once), ran the owning test file, then restored from the backups again.
+**`git checkout` / `git restore` were never used at any point.**
+
+| id | Mutation applied | Test | Result |
+|---|---|---|---|
+| M-N1 | `index.ts` — drop `organizationId` from `listComplaintsForEmployee`'s `where` | N1 | **RED** |
+| M-N2 | test mock — `assertCanTouchEmployee` throws 403 for every actor incl. HR_ADMIN | N2 | **RED** |
+| M-N3 | list route — `open` gate becomes `canAny(user.roles, 'ADMINISTER_HR_ORGWIDE')`, refusing MANAGER | N3 | **RED** |
+| M-N4 | `index.ts` — delete `assertCanReachComplaint` from `openComplaint` (T4) | N4 | **RED** |
+| M-N5 | `index.ts` — move the T4 call to **after** `db.hrComplaint.create` | N5 | **RED** |
+| M-N6 | `index.ts` — delete `assertCanReachComplaint` from `getComplaint` (T7) | N6 | **RED** |
+| M-N7 | `[id]` route — restore the swallowing `.catch(() => null)` + `fail(404, …)` in `reply` | N7 | **RED** |
+| M-N8 | `index.ts` — delete `assertCanReachComplaint` from `resolveComplaint` (T6) | N8 | **RED** |
+| M-N9 | `index.ts` — move the T6 call **below** `if (complaint.status === 'RESOLVED') return complaint` | N9 | **RED** |
+| M-N10 | `index.ts` — the `else` arm always `error(403)` | N10 | **RED** |
+| M-N11 | `index.ts` — the `else` arm becomes `if (actorEmployeeId == null) error(403, …)` | N11 | **RED** |
+| M-N12 | `index.ts` — collapse `assertCanReachComplaint` to a single `assertCanTouchEmployee`, no `MANAGE_HR` arm | N12 | **RED** |
+| M-N13a | list route — `const filters = { status }` (drop the allow-list spread, T13) | N13 | **RED** |
+| M-N13b | list route — `countComplaintsForOrg(user.organizationId)` (drop `filters` from the counter half only) | N13 | **RED** |
+| M-N13c | list route — `...(visibleIds?.length && { employeeIds: visibleIds })` | N13-empty | **RED** |
+| M-N14a | list route — remove `...(visibleIds && { id: { in: visibleIds } })` from the dropdown `where` (T14) | N14 | **RED** |
+| M-N14b | list route — `...(visibleIds?.length && { id: { in: visibleIds } })` | N14-empty | **RED** |
+| M-N15 | list route — `open` ctx narrowed to `actorRoles: [user.roles[0]]` | N15 | **RED** (paired — see below) |
+| M-N16 | `reports/audit-log/+page.server.ts` — remove `'HrComplaint'` from `entityTypes` (T29) | N16 | **RED** |
+| M-N17 | `index.ts` — write the allow-list straight into `employeeId`, dropping the `AND` wrapper (the original T9 shape) | N17 | **RED** |
+
+**20 / 20 RED. Zero GREEN mutations. No test had to be rewritten.**
+
+#### M-N15 — both halves of the pair, recorded
+
+Mutation: the list route's `open` ctx literal, `actorRoles: user.roles` → `actorRoles: [user.roles[0]]`.
+The field is **narrowed, not deleted** — that is the point.
+
+Half 1, the test — **RED**:
+```
+ × tests/unit/complaints-scoping.test.ts > complaints audit actorRoles carry-through (#112) >
+   N15 — carries the actor’s full role set into every audit write from the route ctx
+```
+
+Half 2, the typecheck under the same mutation — **GREEN**:
+```
+1787539836777 COMPLETED 985 FILES 0 ERRORS 1 WARNINGS 1 FILES_WITH_PROBLEMS
+```
+**0 errors.** This is the whole point of the pairing: `pnpm check` proves `actorRoles` is
+**present**, never that it is **complete**. A narrowed role set type-checks perfectly clean, and
+only N15's two-role fixture catches it.
+
+#### One mutation-harness correction (not a code or test change)
+
+M-N15's first scripted attempt reported `APPLY-FAILED — pattern occurs 0x`: the driver's search
+string carried four tabs of indentation and the list route's `open` ctx literal is indented with
+three. That is a defect in my mutation script, not in the source or the test. Corrected and re-run
+by hand; the result above is the corrected run. Recording it because a silently-skipped mutation is
+exactly the failure mode Gate D exists to prevent.
+
+### Post-restore gates (literal output)
+
+`git diff --stat` — only the three intended files:
+```
+ src/routes/(app)/reports/audit-log/+page.server.ts |   3 +-
+ tests/unit/audit-log-reveal.test.ts                |  11 +
+ tests/unit/complaints-scoping.test.ts              | 298 ++++++++++++++++++++-
+ 3 files changed, 310 insertions(+), 2 deletions(-)
+```
+
+`pnpm check`:
+```
+1787539891142 WARNING "src/lib/components/payroll/CalculatorWindow.svelte" 82:2 "`<div>` with a pointerdown, pointermove or pointerup handler must have an ARIA role"
+1787539891144 COMPLETED 985 FILES 0 ERRORS 1 WARNINGS 1 FILES_WITH_PROBLEMS
+```
+**0 errors.** The single warning is the pre-existing a11y warning on `CalculatorWindow.svelte:82`,
+present in the baseline.
+
+`pnpm test`:
+```
+ Test Files  154 passed (154)
+      Tests  1732 passed (1732)
+   Duration  32.39s
+```
+1714 before this run + 17 new in `complaints-scoping.test.ts` + 1 new in `audit-log-reveal.test.ts`
+= 1732. File count stays 154 because no new test **file** was created this run.
+
+`pnpm format:check`:
+```
+Checking formatting...
+All matched files use Prettier code style!
+```
+
+**Gate D: GREEN.**
+
+#### format:check intermediate run (E7 procedure, recorded)
+
+The first `pnpm format:check` after writing the tests flagged exactly one file:
+```
+[warn] tests/unit/complaints-scoping.test.ts
+```
+That is a file **I touched**, so per **E7** I ran
+`pnpm prettier --write tests/unit/complaints-scoping.test.ts` — that one file only, never a blanket
+`pnpm format` — refreshed its scratchpad backup, and re-ran. Prettier's only change was joining the
+`const { … } = await import(…)` destructures onto fewer lines. **No untouched file was ever
+flagged.**
+
+## What Was Skipped or Deferred
+
+- **Gate E preconditions (step 24b)** — `./start.sh`, `pnpm db:push`, `pnpm prisma generate`,
+  `pnpm db:seed:e2e`, `pnpm dev`: none run, by instruction. Gate D needs none of it; the unit suite
+  mocks Prisma.
+- **Gate E** — the live hybrid check for SPEC criterion 3. Not run. **This is still mandatory** and
+  may not be downgraded to "the unit tests cover it" (plan hard rule; SPEC criterion 3 is tagged
+  Hybrid on purpose).
+- **Gate F** — not run as a gate, though three of its four commands are green above.
+  **`pnpm lint` was not run this session** (green at baseline; no lint-relevant construct
+  introduced, but that is an assumption, not evidence).
+- No commit, no push, no PR.
+
+## Plan Deviations
+
+None material. Two mechanical notes:
+
+1. **The employee-access mock needed a second export.** The plan's §5 mock list names
+   `$lib/server/services/employee-access` but the touchpoints only ever discuss
+   `assertCanTouchEmployee`. Because `vi.mock` replaces the whole module and the list route imports
+   `listVisibleEmployeeIds` from it, the mock factory has to export both. Inside the blast radius,
+   no design change.
+2. **N14 covers both of its halves in one test.** The plan describes N14 as asserting the scoped
+   case *and* the `null` case; written as a single `it` with two sequential `load` calls, reading
+   `employee.findMany.mock.calls[0]` and `[1]`. Keeping it as one test is what makes M-N14a redden
+   "N14" rather than an unnamed sibling.
+
+Things the plan warned about and that were **not** done: no guard was weakened to make a test pass;
+no source file outside the plan's 7 was touched; the dead `filters.employeeId` field was not deleted
+(E9); the cherry-picked Svelte UI was not touched (E10); the stale comment at
+`prisma/seed-core.ts:676` was left alone (E10).
+
+## Test Infra Gaps Found
+
+None new. Carried forward, unchanged:
+
+- **G6 (E9) — the `AND: [...]` residual.** N17 now proves the `where` object is **built** with both
+  predicates intersecting. It does **not** prove Postgres executes it: `complaintWhere` is the first
+  use of `AND: [...]` in this repo, `filters.employeeId` still has zero callers, so the intersecting
+  path is unreachable at runtime and no SQL is ever emitted for it. Type-verified, object-verified,
+  never SQL-verified. Accepted residual — backlog note
+  `complaint-filter-intersection-sql_NOTE_24-08-26.md`. The dead `filters.employeeId` field is
+  **left in place**; deleting it is a scope change needing its own decision.
+- **The DB is mocked throughout** (`all-tests.md:108`). Every one of the 19 new tests proves what a
+  query **asked for**, never what Postgres **returned**. Nothing in Sections A–D is live-verified.
+  Gate E is the only thing that closes this, and it has not run.
+- **N16 proves `'HrComplaint'` is in the dropdown list**, not that the resulting filtered query
+  returns complaint audit rows — that `load` is db-mocked too.
+- **N4/N6/N7/N8 prove the status code** an action or `load` returns; they do not prove the `[id]`
+  page renders a readable 403 rather than a blank one.
+- **No e2e spec** for the complaints surface (backlog note `complaints-e2e-spec_NOTE_24-08-26.md`);
+  the **branch-manager arm** of `canTouchEmployee` is not exercised here (stays pinned by
+  `employee-access.test.ts`); `writeAuditLog`/`notify` remain outside the `$transaction` (SPEC
+  out-of-scope).
+
+## Closeout Packet
+
+- **Selected plan:** `process/general-plans/active/hr-complaints-112_24-08-26/hr-complaints-112_PLAN_24-08-26.md`
+- **Finished:** Section D (steps 21b–24) `CODE DONE` and `VERIFIED` against Gate D — all 20
+  mutations run one at a time and every one recorded RED, M-N15 with both halves of its pair.
+- **Verified:** `pnpm check` 0 errors; `pnpm test` 154 files / 1732 tests; `pnpm format:check`
+  clean; 20/20 mutations RED.
+- **Still unverified:** the live path. **Gate E has not run** — no container, no `db:push`, no seed,
+  no dev server. `pnpm lint` also unrun this session. Until Gate E passes, the guards are proven
+  only against a mocked Prisma, which is precisely the shape of green suite this repo has shipped a
+  live-broken guard under before.
+- **Cleanup remaining:** none in the working tree. Scratchpad holds the five pre-mutation backups
+  and `mutate.py`; both are disposable.
+- **Next valid state:** `Keep in active/testing` — Sections E and F remain.
+
+## Forward Preview
+
+### Test Infra Found
+`tests/unit/complaints-scoping.test.ts` is complete at 18 tests (N1–N15, N17 plus the two `-empty`
+cases) and needs no further scaffold. Its employee-access mock exports **both**
+`assertCanTouchEmployee` and `listVisibleEmployeeIds` — a future test added there must keep both.
+`tests/unit/audit-log-reveal.test.ts` is at 19 tests. The mutation driver
+(`…/scratchpad/mutate.py`) plus the five `bak/` copies still exist if any mutation needs re-running.
+
+### Blast Radius Changes
+All 7 planned files plus the 1 new test file are now touched across Sections A–D. Nothing outside
+the plan's blast radius was modified in this run.
+
+### Commands to Stay Green
+```bash
+pnpm check          # 0 errors
+pnpm test           # 154 files / 1732 tests
+pnpm format:check   # clean
+```
+
+### Dependency Changes
+None. No package added, no schema touched, no `db:push` run, `prisma/schema.prisma` untouched.
