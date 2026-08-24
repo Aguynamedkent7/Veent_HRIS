@@ -17,8 +17,7 @@ const STATUSES: ComplaintStatus[] = ['OPEN', 'RESPONDED', 'RESOLVED']
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	const user = locals.user!
-	const roles = user.roles?.length ? user.roles : [user.role]
-	const isHr = canAny(roles, 'MANAGE_HR')
+	const isHr = canAny(user.roles, 'MANAGE_HR')
 
 	if (isHr) {
 		const statusParam = url.searchParams.get('status') ?? ''
@@ -55,7 +54,9 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		where: { userId: user.id, organizationId: user.organizationId },
 		select: { id: true }
 	})
-	const complaints = myEmployee ? await listComplaintsForEmployee(myEmployee.id) : []
+	const complaints = myEmployee
+		? await listComplaintsForEmployee(myEmployee.id, user.organizationId)
+		: []
 	return { isHr: false, complaints, hasEmployee: Boolean(myEmployee) }
 }
 
@@ -69,8 +70,7 @@ const openSchema = z.object({
 export const actions: Actions = {
 	open: async ({ request, locals, getClientAddress }) => {
 		const user = locals.user!
-		const roles = user.roles?.length ? user.roles : [user.role]
-		if (!canAny(roles, 'MANAGE_HR')) return fail(403, { error: 'Insufficient permissions.' })
+		if (!canAny(user.roles, 'MANAGE_HR')) return fail(403, { error: 'Insufficient permissions.' })
 
 		const raw = Object.fromEntries(await request.formData()) as Record<string, string>
 		const parsed = openSchema.safeParse(raw)
@@ -85,7 +85,7 @@ export const actions: Actions = {
 		const ctx = {
 			organizationId: user.organizationId,
 			actorId: user.id,
-			actorRole: user.role,
+			actorRoles: user.roles,
 			ipAddress: getClientAddress()
 		}
 		try {

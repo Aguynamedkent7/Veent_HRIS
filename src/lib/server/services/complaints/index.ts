@@ -177,9 +177,9 @@ export function countComplaintsForOrg(organizationId: string, filters: Complaint
 }
 
 // Employee-side list (only the inquiries raised against them).
-export function listComplaintsForEmployee(employeeId: string) {
+export function listComplaintsForEmployee(employeeId: string, organizationId: string) {
 	return db.hrComplaint.findMany({
-		where: { employeeId },
+		where: { employeeId, organizationId },
 		// employee is included (though the subject already knows who they are) to keep the row
 		// shape identical to the HR list, so the shared table component needs no per-branch cast.
 		include: {
