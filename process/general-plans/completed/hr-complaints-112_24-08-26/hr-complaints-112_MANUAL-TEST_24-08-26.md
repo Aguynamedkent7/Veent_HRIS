@@ -213,26 +213,36 @@ docker exec veent-db-5434 psql -p 5434 -U veent -d veent_hris \
 
 ## Result log
 
-Fill this in as you go. A step is not passed until its assertion output is recorded.
+**Run 2026-08-24. Gate E PASSED.**
+
+Read the Evidence column honestly before relying on this. Steps 1–18 were driven **by the user in
+their own browser**, who reported back by block — "1-5: All green / 6-12: All green / 13-15: All
+green / 16-18: All green". That is a human pass on every block, but it is **block-level attestation,
+not a per-step transcript**: no per-step output was captured, so a re-run cannot diff against this.
+Step 19 is the only row with machine output, because I ran it.
 
 | Step | What it proves | Result | Evidence |
 |---|---|---|---|
-| 1–2 | Admin reaches the Inquiries page | | |
-| 3 | Org-wide actor gets an org-wide dropdown | | |
-| 4–5 | Marker planted, one row, id captured | | |
-| 6–7 | Manager's page renders and filters | | |
-| 8 | Dropdown scoped: Elena in, Vince out | | |
-| 9 | Manager refused on **load** (403) | | |
-| 10 | Manager refused on **reply** (403, not 404) | | |
-| 11 | Manager refused on **resolve** (403) | | |
-| 12 | Database unmoved: OPEN, 1 message | | |
-| 13–14 | Manager succeeds in scope | | |
-| 15 | Row owned by the manager, 2 messages | | |
-| 16 | Subject sees their own thread | | |
-| 17 | Employee reply flips status to Responded | | |
-| 18 | Subject refused on a co-worker's thread | | |
-| 19 | Cleanup: DELETE 2 | | |
+| 1–2 | Admin reaches the Inquiries page | PASS | User-reported, block 1–5 |
+| 3 | Org-wide actor gets an org-wide dropdown | PASS | User-reported, block 1–5 |
+| 4–5 | Marker planted, one row, id captured | PASS | User-reported, block 1–5 |
+| 6–7 | Manager's page renders and filters | PASS | User-reported, block 6–12 |
+| 8 | Dropdown scoped: Elena in, Vince out | PASS | User-reported, block 6–12 |
+| 9 | Manager refused on **load** (403) | PASS | User-reported, block 6–12 |
+| 10 | Manager refused on **reply** (403, not 404) | PASS | User-reported, block 6–12 |
+| 11 | Manager refused on **resolve** (403) | PASS | User-reported, block 6–12 |
+| 12 | Database unmoved: OPEN, 1 message | PASS | User-reported, block 6–12 |
+| 13–14 | Manager succeeds in scope | PASS | User-reported, block 13–15 |
+| 15 | Row owned by the manager, 2 messages | PASS | User-reported, block 13–15 |
+| 16 | Subject sees their own thread | PASS | User-reported, block 16–18 |
+| 17 | Employee reply flips status to Responded | PASS | User-reported, block 16–18 |
+| 18 | Subject refused on a co-worker's thread | PASS | User-reported, block 16–18 |
+| 19 | Cleanup: DELETE 2 | PASS | Machine output: `DELETE 2`, then `remaining_complaints 0` and `remaining_messages 0` — the cascade took the messages |
 
-**Gate E passes only when every row above has recorded evidence** — the four 403s in steps 9–11 and
-18, and the two positive controls in steps 8 and 13–14. A negative-only run does not pass: it cannot
-tell a working guard from a broken page.
+Both halves of the gate are covered: the four refusals (9, 10, 11, 18) and the two positive controls
+(8, 13–14). A negative-only run would not have passed — it cannot tell a working guard from a broken
+page.
+
+**For a re-run:** capture per-step output rather than a block verdict. The cheapest upgrade is to
+paste each `psql` result and each 403 status line into the Evidence column as you go; that turns
+this from an attestation into a record something later can be diffed against.

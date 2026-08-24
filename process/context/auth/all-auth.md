@@ -3,7 +3,7 @@ name: context:all-auth
 description: "Lucia sessions, the multi-role capability table, tenant scoping, and the separation-of-duties precedents — the auth group entrypoint/router"
 keywords: auth, lucia, session, rbac, capability, role, permission, guard, separation of duties, maker checker, two-person, multi-role, tenant, organizationId, audit, propose confirm, carve-out, 403
 related: [context:all-database]
-date: 17-08-26
+date: 24-08-26
 ---
 
 # Auth Context
@@ -170,3 +170,13 @@ Update this group when:
   mock the DB, so they cannot prove a query-level hole.
 - Read the `actions` export, not just the handler body — a #290 review called an auth hole that
   did not exist because the guard was on the export.
+- **`pnpm check` proves `actorRoles` is PRESENT on an `AuditContext`, never that it is COMPLETE.**
+  `actorRoles: [user.roles[0]]` type-checks perfectly clean — it is a valid `Role[]`. Only a test
+  with a genuinely multi-role fixture (e.g. a `['HR_ADMIN','MANAGER']` actor) catches a narrowed
+  role set. This is the #247/#272/#275/#112 failure class and applies to **every** `AuditContext`
+  writer in the codebase, not just the one it was most recently found in.
+- **The audit-log report's `entityTypes` array is hand-maintained and nothing type-checks it.**
+  (`src/routes/(app)/reports/audit-log/+page.server.ts`.) A feature can write correct
+  `AuditLog` rows for a new entity and still have those rows be unfilterable in the report because
+  no one added the entity's name to this array. Missed twice now — `PayrollPeriod` until #298,
+  `HrComplaint` until #112. Any new entity type that starts being audited must add itself here.
