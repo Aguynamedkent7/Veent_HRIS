@@ -55,6 +55,14 @@ services:
     # (prisma + tsx ship in the image) so CI can run the exact same file against a populated
     # database — see the `schema-upgrade` job in .github/workflows/ci.yml (#236).
     command: sh -c "sh scripts/prestart.sh && node build"
+    # Document bytes and their backups MUST outlive the container. Without these two,
+    # UPLOAD_DIR is written inside the container layer and `docker compose pull && up -d`
+    # — the documented deploy — destroys every 201 file (#164 §15). `docker compose run
+    # --rm app` inherits this service's volumes, which is the only reason the nightly
+    # backup invocation can write anywhere durable.
+    volumes:
+      - uploads:/app/uploads
+      - backups:/app/backups
 
   # Discord time-tracking bot — a separate long-running process, not part of `node build`.
   # Reuses the app image (tsx + scripts/ are baked in). Requires DISCORD_BOT_TOKEN in
@@ -71,3 +79,8 @@ services:
 
 volumes:
   pgdata:
+  uploads:
+  # NOTE: this shares the droplet filesystem with pgdata and uploads, so an unpruned
+  # backup tree can fill the disk Postgres writes to. The script warns when it detects
+  # this; keep retentionCount low until backups live on separate storage.
+  backups:

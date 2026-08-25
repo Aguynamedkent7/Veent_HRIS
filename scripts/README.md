@@ -207,7 +207,7 @@ promotion would (so it shows in the 201 file's Employment History), and notifies
 Since #222 it goes through `promoteEmployee`, effective on the day probation actually ended —
 so a cron that missed a few nights backdates correctly instead of dating the change to the sweep.
 
-```
+```text
 0 1 * * *  cd ~/repos/Veent_HRIS && docker compose run --rm app pnpm exec tsx scripts/promote-probationary.ts >> /var/log/veent-regularize.log 2>&1
 ```
 
@@ -223,3 +223,91 @@ docker compose run --rm app pnpm exec tsx scripts/promote-probationary.ts --dry-
 Idempotent — the query only matches `PROBATIONARY`, so re-running the same night is a no-op.
 It requires the seeded `system@veent.ph` user (`AuditLog.actorId` is a non-nullable FK, so an
 automated actor is mandatory); the script exits 1 with a clear message if it is missing.
+
+## Automatic document backup — `backup-documents.ts`
+
+Document **bytes** live only on local disk under `UPLOAD_DIR` — never in Postgres — so
+`pg_dump` backs up every document row and none of the files (#164). This copies every
+`EmployeeDocument` and `RequestDocument` file to a second destination, writes a
+`manifest.json` describing each one (employee, category, label, original filename, MIME,
+size, upload date, SHA-256), records the outcome as a `BackupRun`, prunes to the org's
+retention setting, and notifies that org's `ADMINISTER_SYSTEM` holders when a run is not
+clean.
+
+Schedule and retention are per organization and edited in the app at **Settings → Document
+Backup**. This cron entry only _offers_ the script a chance to run each night; the script
+exits doing nothing when the org's interval has not elapsed.
+
+```text
+30 2 * * *  cd ~/repos/Veent_HRIS && docker compose run --rm app pnpm exec tsx scripts/backup-documents.ts >> /var/log/veent-backup.log 2>&1
+```
+
+Runs 02:30 droplet time — after the 01:00 regularization sweep, so the two never contend for
+the 512MB box. `docker compose run --rm` costs no idle RAM.
+
+**`BACKUP_DIR` and `UPLOAD_DIR` must both be mounted volumes** (see `docker-compose.yml`).
+A `--rm` container's own filesystem is discarded when it exits, so a backup written to an
+unmounted path is deleted the moment the script finishes.
+
+Dry run first when testing (lists what _would_ be copied, writes nothing anywhere):
+
+```bash
+docker compose run --rm app pnpm exec tsx scripts/backup-documents.ts --dry-run
+```
+
+Force a run outside the configured interval (still honours the lock and retention):
+
+```bash
+docker compose run --rm app pnpm exec tsx scripts/backup-documents.ts --force
+```
+
+Locally, in **fish** — `VAR=value cmd` is bash-only syntax and fails in fish, so prefix with
+`env`. `dotenv-cli` does not override an already-set variable, so the `env` prefix wins over
+any `BACKUP_DIR` line in `.env.dev`:
+
+```
+env BACKUP_DIR=$PWD/backups pnpm exec dotenv -e .env.dev -- tsx scripts/backup-documents.ts --dry-run
+```
+
+Concurrency-safe: each org is held under a session-level advisory lock for the duration, so a
+run that overruns into the next night makes the next invocation skip that org rather than copy
+the same files twice. The lock uses the two-argument form
+`pg_try_advisory_lock(164, hashtext(key))`, which is a **different namespace** from the
+single-`bigint` form `timesheets.ts` and `payroll/index.ts` block on — sharing it would let a
+minutes-long backup stall a payroll write on a hash collision.
+
+Refuses to start at all if `BACKUP_DIR` is inside `UPLOAD_DIR` (or vice versa) — that
+configuration makes each night's backup include the previous night's. The refusal happens
+before the first organization is touched, so a misconfigured box writes nothing at all.
+
+It warns when `BACKUP_DIR` and `UPLOAD_DIR` share a filesystem. On the droplet `pgdata`,
+`uploads` and `backups` are all named volumes on one disk, so an unpruned backup tree can fill
+the disk Postgres writes to. Keep `retentionCount` low until backups live on separate storage.
+
+Unlike `promote-probationary.ts`, this writes **no** `AuditLog` entry and therefore does **not**
+need the seeded `system@veent.ph` user. The `BackupRun` row is the durable record and is richer
+than an audit entry (counts, bytes, manifest checksum, sanitized reason). Editing the backup
+config in the app _is_ audited, with the real actor.
+
+Exits 1 if any org's run failed, so a failure is visible in `/var/log/veent-backup.log` and in
+cron mail even before anyone opens the app.
+
+**Restore is not implemented** (out of scope for #164). Until it is, restoring means: copy
+`files/` back under `UPLOAD_DIR` preserving relative paths, and reconcile the rows using
+`manifest.json`, whose `path` field is always `files/` + the row's `storageKey`.
+
+### Type-checking scripts
+
+`pnpm check` does **not** cover `scripts/**` or `prisma/**` — one site has already shipped
+broken on that assumption (#282). Nothing in this directory is typechecked by the standard
+gate. To check it by hand:
+
+```bash
+printf '%s' '{"extends":"./.svelte-kit/tsconfig.json","compilerOptions":{"allowJs":true,"checkJs":true,"esModuleInterop":true,"resolveJsonModule":true,"skipLibCheck":true,"strict":true,"moduleResolution":"bundler"},"include":["scripts/**/*.ts","src/**/*.ts"]}' > tsconfig.scripts.json
+pnpm exec svelte-kit sync && pnpm exec tsc --noEmit -p tsconfig.scripts.json
+rm tsconfig.scripts.json
+```
+
+`pnpm exec tsc --noEmit scripts/<file>.ts` on its own does **not** work: passing a file
+directly makes tsc ignore `tsconfig.json`, so every `$lib/...` import fails to resolve and the
+errors are noise. The config above is required.
