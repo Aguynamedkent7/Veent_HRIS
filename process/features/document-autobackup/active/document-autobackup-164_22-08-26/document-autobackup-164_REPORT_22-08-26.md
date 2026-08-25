@@ -108,7 +108,7 @@ suite said nothing about either.
 
 Six tests added. Run against the UNFIXED code first:
 
-```
+```text
 × promotes a RUNNING row that HAS a manifest, however young, and never deletes it
 × records a FAILED row and notifies when the free-space pre-flight refuses (ST5)
 × records a FAILED row when the collector itself throws

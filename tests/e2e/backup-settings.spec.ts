@@ -32,8 +32,11 @@ test.describe('Document Backup settings', () => {
 		await expect(interval).toHaveValue('9')
 		await expect(retention).toHaveValue('4')
 
-		// The status card must agree with the form it sits above.
-		await expect(page.getByText('On', { exact: true })).toBeVisible()
+		// The status card must agree with the form it sits above. Scoped to the Status item's own
+		// badge: a bare getByText('On') would also match the word anywhere else on the page — and
+		// the run-history table has a Status column of its own.
+		const statusBadge = page.locator('dl div:has(dt:text-is("Status")) dd span')
+		await expect(statusBadge).toHaveText('On')
 
 		// Put it back so the spec leaves no schedule switched on behind it.
 		await enabled.uncheck()

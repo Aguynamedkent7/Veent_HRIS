@@ -249,6 +249,34 @@ export async function notifyAdmins(
 }
 
 /**
+ * Counts from a manifest, or null if the file is not a trustworthy complete one.
+ *
+ * writeObject is a plain writeFile for LOCAL — no tmp+rename — so the very crash this sweep
+ * exists for can leave manifest.json truncated. An unguarded JSON.parse here throws out of
+ * sweepStaleRuns, which runs first inside runBackupForOrg's pre-flight try; that catch
+ * records a FAILED row and returns WITHOUT resolving the RUNNING row, so the next night hits
+ * the same bad file and the organization never backs up again. Returning null instead routes
+ * the row to the age-gated FAILED branch, which reclaims the directory.
+ */
+function parseManifestCounts(
+	raw: Buffer
+): { files: number; skipped: number; failed: number; totalBytes: number } | null {
+	try {
+		const counts = (
+			JSON.parse(raw.toString()) as {
+				counts?: { files: number; skipped: number; failed: number; totalBytes: number }
+			}
+		).counts
+		if (!counts) return null
+		const values = [counts.files, counts.skipped, counts.failed, counts.totalBytes]
+		if (!values.every((n) => Number.isInteger(n) && n >= 0)) return null
+		return counts
+	} catch {
+		return null
+	}
+}
+
+/**
  * Resolve rows left RUNNING by a dead process.
  *
  * E-08: a directory that HAS manifest.json is a COMPLETE backup whose status write was
@@ -290,8 +318,8 @@ export async function sweepStaleRuns(
 
 	for (const run of running) {
 		const raw = await io.readObject(`${organizationId}/${run.runId}/manifest.json`)
-		if (raw) {
-			const counts = (JSON.parse(raw.toString()) as { counts: Record<string, number> }).counts
+		const counts = raw ? parseManifestCounts(raw) : null
+		if (counts) {
 			await db.backupRun.update({
 				where: { id: run.id },
 				data: {

@@ -195,6 +195,39 @@ describe('sweepStaleRuns (E-08)', () => {
 		expect(updates[0].data).toMatchObject({ status: 'PARTIAL', failedCount: 2 })
 	})
 
+	// A manifest that is truncated, or missing/garbage counts, is NOT a complete backup.
+	// It must be treated as "no manifest" — an unguarded JSON.parse throws out of the sweep,
+	// and because the sweep runs first inside runBackupForOrg's pre-flight try, that catch
+	// records a FAILED row and returns WITHOUT resolving the RUNNING row. Every later night
+	// hits the same file and wedges: the organization never backs up again.
+	it.each([
+		['truncated mid-write', '{"counts": {"files": 4, "skipp'],
+		['no counts key at all', '{"startedAt":"2026-08-21T00:00:00.000Z"}'],
+		[
+			'counts present but not numbers',
+			'{"counts":{"files":null,"skipped":1,"failed":0,"totalBytes":9}}'
+		],
+		['empty file', '']
+	])('reclaims a run whose manifest is %s instead of throwing', async (_label, body) => {
+		const { db, updates } = fakeDb([{ id: 'r1', runId: 'run1', startedAt: old }])
+		const deleted: string[] = []
+		await expect(
+			sweepStaleRuns(
+				db as never,
+				'org_a',
+				io({
+					readObject: async () => Buffer.from(body),
+					deleteRun: async (_o, id) => void deleted.push(id)
+				}),
+				now
+			)
+		).resolves.toBeUndefined()
+
+		// Positive assertions: the row IS resolved and the bad directory IS removed.
+		expect(updates[0].data).toMatchObject({ status: 'FAILED' })
+		expect(deleted).toEqual(['run1'])
+	})
+
 	it('fails and removes a stale run with no manifest — that one really is debris', async () => {
 		const { db, updates } = fakeDb([{ id: 'r1', runId: 'run1', startedAt: old }])
 		const deleted: string[] = []

@@ -207,7 +207,7 @@ promotion would (so it shows in the 201 file's Employment History), and notifies
 Since #222 it goes through `promoteEmployee`, effective on the day probation actually ended —
 so a cron that missed a few nights backdates correctly instead of dating the change to the sweep.
 
-```
+```text
 0 1 * * *  cd ~/repos/Veent_HRIS && docker compose run --rm app pnpm exec tsx scripts/promote-probationary.ts >> /var/log/veent-regularize.log 2>&1
 ```
 
@@ -238,7 +238,7 @@ Schedule and retention are per organization and edited in the app at **Settings 
 Backup**. This cron entry only _offers_ the script a chance to run each night; the script
 exits doing nothing when the org's interval has not elapsed.
 
-```
+```text
 30 2 * * *  cd ~/repos/Veent_HRIS && docker compose run --rm app pnpm exec tsx scripts/backup-documents.ts >> /var/log/veent-backup.log 2>&1
 ```
 

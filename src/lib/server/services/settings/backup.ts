@@ -74,8 +74,10 @@ export async function getBackupSettings(organizationId: string) {
 		filesRetained: !goneIds.has(r.id)
 	}))
 
-	// The last run that actually completed — the same rule `isRunDue` schedules from, so the
-	// date shown is the date the script will compute, not a second interpretation of it.
+	// The last run that actually completed. `nextDueAt` counts from startedAt because that is
+	// what `isRunDue` schedules from — the date shown must be the date the script will compute,
+	// not a second interpretation of it. The "Last completed" label is a different question and
+	// answers it with finishedAt: a run that began 23:00 and ended 01:00 completed at 01:00.
 	const lastCompleted = runs.find((r) => r.status === 'SUCCESS' || r.status === 'PARTIAL') ?? null
 	const nextDueAt =
 		cfg.enabled && lastCompleted
@@ -86,7 +88,7 @@ export async function getBackupSettings(organizationId: string) {
 		config: { ...cfg, configured: config !== null },
 		history,
 		nextDueAt,
-		lastCompletedAt: lastCompleted?.startedAt ?? null
+		lastCompletedAt: lastCompleted?.finishedAt ?? null
 	}
 }
 
