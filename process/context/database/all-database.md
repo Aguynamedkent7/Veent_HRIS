@@ -3,7 +3,7 @@ name: context:all-database
 description: "Prisma schema conventions, enum traps, db push workflow, and the money/decimal rules — the database group entrypoint/router"
 keywords: prisma, schema, model, enum, migration, db push, postgres, decimal, seed, relation, index, dedupKey, tenant, organizationId
 related: [context:all-auth]
-date: 17-08-26
+date: 24-08-26
 ---
 
 # Database Context
@@ -94,6 +94,8 @@ querying with `psql` directly, map the name — `select … from "user"` fails; 
   `ActionProposal`, `StatutoryRateProposal`
 - **Separation:** `SeparationRecord`, `ClearanceItem`, `OffboardingChecklistItem`
 - **Audit:** `AuditLog` — every privileged action is expected to stamp one
+- **HR inquiries:** `HrComplaint`, `HrComplaintMessage` (#112) — `organizationId` is a bare scalar,
+  not a relation (deliberate, see Update Triggers)
 
 ## Source Paths
 
@@ -119,3 +121,10 @@ Update this group when:
   a real regression at least three times.
 - `pnpm check` does **not** cover `prisma/**` or `scripts/**`. Code there can ship broken while
   `check` is green.
+- **`pnpm db:seed` runs `seedProd` only.** It does NOT create the standard dev/test accounts
+  (`manager@veent.ph`, `employee@veent.ph`, `verifier@veent.ph`, etc.) — those live in
+  `seedE2E` (`prisma/seed-core.ts`), which `pnpm db:seed:e2e` calls. A local DB seeded with
+  `pnpm db:seed` will be missing every account a manual verification script expects.
+- **The audit-log report's `entityTypes` allow-list is hand-maintained and untyped** — see
+  `process/context/auth/all-auth.md` Canonical Notes. Any new audited Prisma model must be added
+  there manually; nothing in the schema or the type system enforces it.

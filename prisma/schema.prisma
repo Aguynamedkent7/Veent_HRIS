@@ -415,6 +415,8 @@ model User {
   verifiedRequestDocuments RequestDocument[]  @relation("RequestDocumentVerifier")
   notifications            Notification[]
   announcements            Announcement[]     @relation("AnnouncementAuthor")
+  complaintsOpened         HrComplaint[]        @relation("ComplaintOpenedBy")
+  complaintMessages        HrComplaintMessage[] @relation("ComplaintMessageAuthor")
 
   @@map("users")
 }
@@ -501,6 +503,7 @@ model Employee {
   attendanceDays        AttendanceDay[]
   separations           SeparationRecord[]
   emergencyContacts     EmergencyContact[]
+  complaints            HrComplaint[]
   onboardingCompletions OnboardingCompletion[]
   assignedInventory     InventoryItem[]
   branch                Branch?                   @relation("BranchRoster", fields: [branchId], references: [id], onDelete: SetNull)
@@ -2133,4 +2136,58 @@ model AttendanceDay {
   @@unique([employeeId, date])
   @@index([employeeId, date])
   @@map("attendance_days")
+}
+
+// ─── HR Complaints / Inquiries (#112) ────────────────────────────────────────
+// A two-way thread HR opens against an employee to ask about an issue (e.g. a
+// classification query). HR opens it, the employee responds, HR can reply again,
+// and HR marks it resolved. Separate from the approval-based Requests flow.
+
+enum ComplaintStatus {
+  OPEN // awaiting the employee's response (freshly opened, or HR replied)
+  RESPONDED // the employee has replied; awaiting HR
+  RESOLVED // HR closed the thread
+}
+
+enum ComplaintCategory {
+  CLASSIFICATION // employment classification (hourly/daily/part-time) — a first-class case (#112)
+  ATTENDANCE
+  CONDUCT
+  PERFORMANCE
+  OTHER
+}
+
+model HrComplaint {
+  id             String            @id @default(cuid())
+  organizationId String
+  employeeId     String // the employee being asked
+  openedById     String // the HR user who opened the inquiry
+  subject        String
+  category       ComplaintCategory @default(OTHER)
+  status         ComplaintStatus   @default(OPEN)
+  resolvedAt     DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  employee Employee             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  openedBy User                 @relation("ComplaintOpenedBy", fields: [openedById], references: [id])
+  messages HrComplaintMessage[]
+
+  @@index([organizationId, status])
+  @@index([employeeId, status])
+  @@map("hr_complaints")
+}
+
+model HrComplaintMessage {
+  id          String   @id @default(cuid())
+  complaintId String
+  authorId    String // the User who wrote this message (HR or the employee)
+  body        String
+  createdAt   DateTime @default(now())
+
+  complaint HrComplaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  author    User        @relation("ComplaintMessageAuthor", fields: [authorId], references: [id])
+
+  @@index([complaintId, createdAt])
+  @@map("hr_complaint_messages")
 }

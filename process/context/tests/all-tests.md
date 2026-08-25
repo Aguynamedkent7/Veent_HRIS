@@ -3,12 +3,12 @@ name: context:all-tests
 description: "Vitest/Playwright commands, the gate order, and the five ways a green suite has hidden a real hole here — the tests group entrypoint/router"
 keywords: test, testing, vitest, playwright, e2e, unit, verification, mutation, gate, coverage, flaky, mock, live verification, negative control, regression
 related: [context:all-cicd]
-date: 17-08-26
+date: 24-08-26
 ---
 
 # Veent HRIS - All Tests
 
-Last updated: 2026-08-17
+Last updated: 2026-08-24
 
 Attach this file first when the task involves testing, verification, or test debugging.
 
@@ -35,7 +35,7 @@ It does not cover CI pipeline shape — that is `process/context/cicd/all-cicd.m
 ### Use `vitest` (`pnpm test`) when
 
 - the change is in a service, utility, guard, or pure logic
-- 120 unit files, ~1446 tests, runs in ~15s
+- 154 unit files, ~1737 tests, runs in ~35s
 
 ### Use Playwright (`pnpm test:e2e`) when
 
@@ -100,6 +100,12 @@ suite coexisted with a real defect:
 - **After adding a production dependency, load an affected page in a real browser** before calling
   the work done.
 - **Look at a screenshot.** Assertions do not see layout.
+- **`vi.mock` is file-scoped, not test-scoped.** Mocking a service in one test file replaces it for
+  every test in that file. If some tests need the real implementation and others need it mocked
+  (e.g. proving a guard both integrates the real service AND that the route wires a mocked one
+  correctly), that split needs two files, not one `vi.mock` call — mocking the service to satisfy
+  one test can silently break every other test in the same file that depended on the real behavior
+  (#112 VALIDATE caught this before EXECUTE started, not after).
 
 ## Known Gaps
 
@@ -116,7 +122,7 @@ suite coexisted with a real defect:
 
 ## Source Paths
 
-- `tests/unit/` — 120 files
+- `tests/unit/` — 154 files
 - `tests/e2e/` — 36 specs
 - `tests/fixtures/`
 - `playwright.config.ts`

@@ -192,6 +192,17 @@ describe('/reports/audit-log load — the list never carries the payload (#242)'
 		expect((await loadData(['HR_ADMIN'])).canReveal).toBe(false)
 	})
 
+	/**
+	 * N16 (#112) — the `entityTypes` filter list is hand-maintained and no type-checker validates
+	 * it, so an entity can be audited while being unfilterable in the report. `PayrollPeriod` was
+	 * missing until #298; the complaints service writes three `HrComplaint` rows.
+	 */
+	it('lists HrComplaint among the filterable entity types', async () => {
+		const data = await loadData(['SUPER_ADMIN'])
+
+		expect(data.entityTypes).toContain('HrComplaint')
+	})
+
 	it('still refuses the page to a caller without MANAGE_HR', async () => {
 		await expect(load(loadEvent(['EMPLOYEE']))).rejects.toMatchObject({ status: 403 })
 	})

@@ -102,7 +102,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			'PayrollPeriod',
 			'JobPosting',
 			'Applicant',
-			'Department'
+			'Department',
+			'HrComplaint'
 		]
 	}
 }
