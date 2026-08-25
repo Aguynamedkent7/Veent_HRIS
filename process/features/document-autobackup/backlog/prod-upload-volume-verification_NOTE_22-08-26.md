@@ -45,6 +45,33 @@ There is no prod or staging environment, so none of this can be exercised.
 On the first real deploy: `docker compose up -d`, upload one document through the UI,
 `docker compose pull && docker compose up -d`, then confirm the document still downloads.
 
+## Pre-cutover step — DO THIS BEFORE the first volume-backed `up -d` (PR #322 review)
+
+Adding `uploads:/app/uploads` **hides** anything already sitting at that path in the container
+layer. The mount shadows it; the old bytes are not copied, and they are gone for good once the
+old container is removed. On a box that has already run a deploy, copy them out first:
+
+```bash
+# 1. Is there anything to save? Run against the OLD (pre-mount) container.
+docker compose exec app sh -c 'find /app/uploads -type f | wc -l'
+
+# 2. If that count is non-zero, copy the tree to the host BEFORE changing docker-compose.yml.
+docker compose cp app:/app/uploads ./uploads-preserved
+
+# 3. Bring up the new compose file, then copy the tree into the named volume.
+docker compose up -d
+docker compose cp ./uploads-preserved/. app:/app/uploads
+
+# 4. Prove it, positively — the count must match step 1, not merely be non-zero.
+docker compose exec app sh -c 'find /app/uploads -type f | wc -l'
+```
+
+Then the post-redeploy check: open a document that existed **before** the cutover in the UI and
+confirm it downloads and opens. A 200 with zero bytes is the failure this catches; asserting the
+page merely renders proves nothing.
+
+If step 1 returns `0`, there is nothing to migrate and the mount is safe to add directly.
+
 ## Related concern (do not lose)
 
 `pgdata`, `uploads` and `backups` are all named volumes on ONE droplet filesystem. An
