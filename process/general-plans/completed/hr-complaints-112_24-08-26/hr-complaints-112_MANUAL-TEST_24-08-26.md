@@ -35,7 +35,7 @@ On a machine where they are missing, run `pnpm db:seed:e2e` — **never** `pnpm 
 
 ## Cast — verified against the live database, not assumed
 
-```
+```text
 EMP-001  System Admin      admin@veent.ph        SUPER_ADMIN
 EMP-002  Hannah HR         hr@veent.ph           HR_ADMIN
 EMP-003  Maria Manager     manager@veent.ph      MANAGER          <- the scoped actor
@@ -202,7 +202,9 @@ docker exec veent-db-5434 psql -p 5434 -U veent -d veent_hris \
 
 ## Cleanup
 
-**19.** ```bash
+**19.**
+
+```bash
 docker exec veent-db-5434 psql -p 5434 -U veent -d veent_hris \
   -c "delete from hr_complaints where subject like 'SCOPE-PROBE-112%';"
 ```

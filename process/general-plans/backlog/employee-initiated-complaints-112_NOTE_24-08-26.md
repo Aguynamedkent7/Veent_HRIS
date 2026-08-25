@@ -16,10 +16,9 @@ Today the complaints/inquiries flow only goes one way: HR (or a scoped MANAGER) 
 thread **about** an employee, and that employee can only **reply** to a thread already
 opened about them. The `open` action is gated on `MANAGE_HR`
 (`src/routes/(app)/complaints/+page.server.ts:69`), and a non-HR actor's list shows only
-threads where `employeeId` equals their own employee id. This is not an oversight — issue
-#112 asked for exactly this direction ("HR raising a question or concern to a specific
-employee"), and the #112 SPEC listed employee-initiated threads as explicitly out of scope on
-that basis:
+threads where `employeeId` equals their own employee id. This is not an oversight — issue #112
+asked for exactly this direction ("HR raising a question or concern to a specific employee"),
+and the #112 SPEC listed employee-initiated threads as explicitly out of scope on that basis:
 
 > Employee-initiated complaints (employees can only reply to a thread HR opened; they cannot
 > open a new one against themselves or anyone else). The issue describes HR raising a

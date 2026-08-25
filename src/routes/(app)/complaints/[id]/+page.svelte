@@ -111,16 +111,14 @@
 		<!-- Reply and Resolve are separate (sibling) forms — never nest one form in another. -->
 		<form method="POST" action="?/reply" use:enhance={reply.enhance} class="space-y-3">
 			<label for="body" class="text-sm font-medium">
-				{data.isSubject && !data.isHr ? 'Your response' : 'Reply'}
+				{data.isSubject ? 'Your response' : 'Reply'}
 			</label>
 			<textarea
 				id="body"
 				name="body"
 				required
 				rows="3"
-				placeholder={data.isSubject && !data.isHr
-					? 'Write your response to HR…'
-					: 'Reply to the employee…'}
+				placeholder={data.isSubject ? 'Write your response to HR…' : 'Reply to the employee…'}
 				class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 			></textarea>
 			<div class="flex justify-end">

@@ -81,7 +81,7 @@ export async function assertCanReachComplaint(
 // HR opens an inquiry against an employee, seeding the thread with the first message.
 export async function openComplaint(input: OpenComplaintInput, ctx: AuditContext) {
 	const employee = await db.employee.findFirst({
-		where: { id: input.employeeId, user: { organizationId: ctx.organizationId } },
+		where: { id: input.employeeId, organizationId: ctx.organizationId },
 		select: { id: true, user: { select: { id: true } } }
 	})
 	if (!employee) error(404, 'Employee not found')

@@ -47,15 +47,6 @@ export const actions: Actions = {
 			actorRoles: user.roles,
 			ipAddress: getClientAddress()
 		}
-		// NOT `.catch(() => null)`: that swallowed the service's 403 into a 404 and handed an
-		// out-of-scope actor the wrong answer. Preserve the status the service threw.
-		try {
-			await getComplaint(params.id, ctx, myEmployee?.id ?? null)
-		} catch (e) {
-			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
-			throw e
-		}
-
 		const parsed = replySchema.safeParse({ body: (await request.formData()).get('body') })
 		if (!parsed.success) return fail(422, { error: 'Message cannot be empty.' })
 

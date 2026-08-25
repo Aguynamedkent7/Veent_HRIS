@@ -1,6 +1,6 @@
 import { fail, isHttpError } from '@sveltejs/kit'
 import { z } from 'zod'
-import type { ComplaintStatus } from '@prisma/client'
+import type { ComplaintCategory, ComplaintStatus } from '@prisma/client'
 import { db } from '$lib/server/db'
 import { canAny } from '$lib/rbac'
 import { paginate } from '$lib/server/pagination'
@@ -39,7 +39,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			}),
 			db.employee.findMany({
 				where: {
-					user: { organizationId: user.organizationId },
+					organizationId: user.organizationId,
 					employmentStatus: 'ACTIVE',
 					// Scoped too, not just the list: an unscoped dropdown reads the whole roster out
 					// to a manager before the 403 on submit ever fires.
@@ -73,7 +73,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 const openSchema = z.object({
 	employeeId: z.string().min(1),
 	subject: z.string().trim().min(1).max(200),
-	category: z.enum(['CLASSIFICATION', 'ATTENDANCE', 'CONDUCT', 'PERFORMANCE', 'OTHER']),
+	category: z.enum(COMPLAINT_CATEGORIES as [ComplaintCategory, ...ComplaintCategory[]]),
 	message: z.string().trim().min(1)
 })
 
