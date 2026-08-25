@@ -164,6 +164,16 @@ export async function s3Request(
 	const url = new URL(target.endpoint)
 	const payloadHash = sha256Hex(body ?? '')
 
+	// `host` and `content-length` are signed (SigV4 needs host, and AWS's own vectors sign
+	// content-length) but they are FORBIDDEN request headers for fetch: undici discards what
+	// is passed here and recomputes both from the URL and the body. Verified — a hand-set
+	// host never reaches the wire. That is fine ONLY because the signed values are derived
+	// from the same two sources undici uses, so the two can never disagree.
+	//
+	// Keep it that way. If a future change signs a content-length that is not exactly
+	// `body.byteLength`, or a host that is not `url.host`, the request will be signed one way
+	// and sent another and every call will fail with SignatureDoesNotMatch — silently, because
+	// nothing here can observe what undici substituted.
 	const headers = signV4(
 		{
 			method,

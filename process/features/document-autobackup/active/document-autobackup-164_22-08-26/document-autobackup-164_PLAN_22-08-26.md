@@ -13,7 +13,16 @@ metadata:
 **Date**: 22-08-26
 **Branch**: `feat/document-autobackup-164` (off `staging`)
 **Complexity**: COMPLEX — new schema, new script, new settings surface, new security boundary
-**Status**: ⏳ PLANNED
+**Status**: ✅ EXECUTED — shipped on PR #322, awaiting merge to `staging`
+
+> **This plan is a design record, not a work queue.** Every phase below is done. The paired
+> `document-autobackup-164_REPORT_22-08-26.md` is the record of what was actually built and
+> verified, and it takes precedence wherever the two disagree. Do NOT start at Phase 0.
+>
+> Remaining work is the three known gaps only, all owner/environment-blocked and filed under
+> `process/features/document-autobackup/backlog/`: live S3 destination write, prod
+> upload-volume verification (including the pre-cutover migration), and restore tooling.
+> The validate gate stands at CONDITIONAL because the S3 path has never been written to live.
 
 ---
 
@@ -1055,17 +1064,23 @@ renamed, no column is dropped.
 
 1. **Selected plan file:**
    `process/features/document-autobackup/active/document-autobackup-164_22-08-26/PLAN.md`
-2. **Last completed phase or step:** PLAN written. No code written. Branch
-   `feat/document-autobackup-164` is at `staging` with no feature commits.
-3. **Validate-contract status:** pending — §23 is a placeholder; VALIDATE must write it.
-   Per repo convention, this plan file must be **committed** before VALIDATE runs.
+2. **Last completed phase or step:** ALL phases complete. `feat/document-autobackup-164` is
+   merged with `staging` and open as PR #322. Gates: `pnpm check` 0, `pnpm lint` 0,
+   `format:check` clean, `pnpm test` 1845 passed / 158 files; CI E2E, unit and the
+   populated-DB `db push` all green. Manual gates M1–M11 all run live on dev — the CLI half
+   on 22-08-26, the GUI half (M1–M3) on 25-08-26.
+3. **Validate-contract status:** written, standing at **CONDITIONAL** — the S3 destination
+   has never been written to live. It ships labelled unverified.
 4. **Supporting context loaded:** `process/context/all-context.md`,
    `process/context/tests/all-tests.md`, `process/context/planning/all-planning.md`;
    sources listed in §17.
-5. **Next step for a fresh agent:** commit this plan, run VALIDATE, then start at
-   checklist step 1 (the tripwire snapshot) — **before** any edit. Do not begin at the
-   schema. Two hard gates to respect while executing: step 11 (official SigV4 vectors or
-   AD-005 flips) and step 24 (grep gate proving nothing writes to `UPLOAD_DIR`).
+5. **Next step for a fresh agent:** nothing in this plan. Read the `_REPORT_` file first.
+   The only open work is the three backlog notes, and each is blocked on an environment
+   this machine does not have — do not attempt them by writing code against an
+   unreachable destination. If you are here to change backup behaviour, read §E-01
+   (`/backups/` gitignore), §E-05 (the two-int advisory lock) and §E-08 (the asymmetric
+   stale-run sweep) before touching anything: all three encode defects that already shipped
+   once.
 
 
 ## Acceptance Criteria
@@ -1272,9 +1287,10 @@ HARD STOPS (ask before proceeding)
 - Any destructive operation against uploads/ or the dev database beyond `pnpm db:push`.
 
 NEXT PHASE
-EXECUTE - checklist step 1 (tripwire snapshot), with E-01 applied first.
+None. EXECUTE completed 22-08-26; the GUI manual gates closed 25-08-26. PR #322 is open
+against `staging`.
 
 EXECUTE START COMMAND
-Read the plan file above end to end, then start at Phase 0 step 1. Report CODE DONE vs VERIFIED
-separately per the Phase Completion Rules table; never report CODE DONE as VERIFIED.
+Superseded — do not run. This block is kept only so the record of what was asked for stays
+intact. See the `_REPORT_` file for what was built, and the `backlog/` notes for what was not.
 ```
