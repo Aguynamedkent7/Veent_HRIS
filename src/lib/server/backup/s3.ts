@@ -48,6 +48,9 @@ function canonicalUri(path: string): string {
 	return path.split('/').map(uriEncode).join('/')
 }
 
+/** Total deadline per S3 call. A backup is not latency-sensitive; a stuck socket is the risk. */
+const S3_REQUEST_TIMEOUT_MS = 60_000
+
 function canonicalQuery(query: Record<string, string>): string {
 	return Object.keys(query)
 		.sort()
@@ -177,12 +180,18 @@ export async function s3Request(
 		now
 	)
 
-	const qs = new URLSearchParams(query).toString()
+	// Signed with uriEncode, so send the SAME string. URLSearchParams is form-urlencoded and
+	// differs on space, `*` and `~` — a continuation token holding one of those would be signed
+	// one way and sent another, and the request would fail on a signature mismatch.
+	const qs = canonicalQuery(query)
 	const res = await fetch(`${url.origin}${path}${qs ? `?${qs}` : ''}`, {
 		method,
 		headers,
 		// Buffer is a Uint8Array at runtime; the DOM lib's BodyInit does not name Buffer.
-		body: body ? new Uint8Array(body) : undefined
+		body: body ? new Uint8Array(body) : undefined,
+		// Undici's default is a 300s *idle* interval, not a total deadline. Without this a
+		// stalled S3 call holds the per-org advisory lock for as long as the socket dribbles.
+		signal: AbortSignal.timeout(S3_REQUEST_TIMEOUT_MS)
 	})
 	const text = await res.text()
 	if (!res.ok) {

@@ -100,34 +100,43 @@ export async function updateBackupConfig(
 	},
 	ctx: AuditContext
 ) {
-	const before = await db.backupConfig.findUnique({
-		where: { organizationId },
-		select: { enabled: true, intervalDays: true, retentionCount: true, destinationKind: true }
-	})
+	// One transaction: a failed audit write must not leave the config change standing
+	// unrecorded, and reading `before` outside it lets two concurrent saves log the same
+	// oldValue.
+	return await db.$transaction(async (tx) => {
+		const before = await tx.backupConfig.findUnique({
+			where: { organizationId },
+			select: { enabled: true, intervalDays: true, retentionCount: true, destinationKind: true }
+		})
 
-	const config = await db.backupConfig.upsert({
-		where: { organizationId },
-		create: { organizationId, ...input },
-		update: input,
-		select: {
-			id: true,
-			enabled: true,
-			intervalDays: true,
-			retentionCount: true,
-			destinationKind: true
-		}
-	})
+		const config = await tx.backupConfig.upsert({
+			where: { organizationId },
+			create: { organizationId, ...input },
+			update: input,
+			select: {
+				id: true,
+				enabled: true,
+				intervalDays: true,
+				retentionCount: true,
+				destinationKind: true
+			}
+		})
 
-	// Turning backups off, or stretching the interval to 90 days, is exactly the change
-	// someone needs to find later — so this is audited with the real actor, unlike the
-	// nightly run, whose BackupRun row is its own durable record.
-	await writeAuditLog(ctx, {
-		action: 'UPDATE',
-		entityType: 'BackupConfig',
-		entityId: config.id,
-		oldValue: before ?? undefined,
-		newValue: input
-	})
+		// Turning backups off, or stretching the interval to 90 days, is exactly the change
+		// someone needs to find later — so this is audited with the real actor, unlike the
+		// nightly run, whose BackupRun row is its own durable record.
+		await writeAuditLog(
+			ctx,
+			{
+				action: 'UPDATE',
+				entityType: 'BackupConfig',
+				entityId: config.id,
+				oldValue: before ?? undefined,
+				newValue: input
+			},
+			tx
+		)
 
-	return config
+		return config
+	})
 }

@@ -210,6 +210,41 @@ describe('s3Request (T-U-13)', () => {
 		await expect(s3Request(dest, 'PUT', '/veent-backups/x', {}, BODY)).rejects.toThrow(/403/)
 	})
 
+	// The wire query must be byte-identical to the query that was signed. URLSearchParams is
+	// form-urlencoded and diverges from RFC 3986 on space, `*` and `~`, so a continuation token
+	// carrying one of those used to be signed one way and sent another -> SignatureDoesNotMatch.
+	it.each(['tok~en', 'tok*en', 'tok en'])(
+		'sends the signed canonical query verbatim for a token containing %j',
+		async (token) => {
+			const fetchMock = vi.fn(
+				async (_url: string, _init: RequestInit) => new Response('<ok/>', { status: 200 })
+			)
+			vi.stubGlobal('fetch', fetchMock)
+
+			await s3Request(dest, 'GET', '/veent-backups', { 'continuation-token': token }, null)
+
+			const sent = new URL(fetchMock.mock.calls[0][0] as string).search.slice(1)
+			// canonicalQuery's own rules: RFC 3986, so `~` survives and space and `*` are hex.
+			const expected = `continuation-token=${encodeURIComponent(token).replace(
+				/[!'()*]/g,
+				(c) => '%' + c.charCodeAt(0).toString(16).toUpperCase()
+			)}`
+			expect(sent).toBe(expected)
+			// The exact form-urlencoded output that used to go out instead.
+			expect(sent).not.toBe(new URLSearchParams({ 'continuation-token': token }).toString())
+		}
+	)
+
+	it('aborts rather than hanging when the socket stalls', async () => {
+		vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+			expect(init.signal).toBeInstanceOf(AbortSignal)
+			return new Response('<ok/>', { status: 200 })
+		})
+		await expect(s3Request(dest, 'GET', '/veent-backups', {}, null)).resolves.toMatchObject({
+			status: 200
+		})
+	})
+
 	it('never puts the secret key in the thrown message', async () => {
 		vi.stubGlobal('fetch', async () => new Response('AccessDenied', { status: 403 }))
 		await expect(s3Request(dest, 'PUT', '/veent-backups/x', {}, BODY)).rejects.toThrow(
