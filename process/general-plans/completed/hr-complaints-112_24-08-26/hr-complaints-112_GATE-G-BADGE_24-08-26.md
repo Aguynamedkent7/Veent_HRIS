@@ -148,15 +148,27 @@ docker exec veent-db-5434 psql -p 5434 -U veent -d veent_hris \
 
 ## Result log
 
-*(to be filled in on the run — record the pill text seen at steps 1, 4, 5, 7, 8 and 9, and the
-`DELETE` output at step 10)*
+**Run 25-08-26, driven through Playwright against `pnpm dev` on :5173, HEAD `09178b4`.** All seven
+steps PASS. Preconditions: container up, `db push` applied by `start.sh`, both tables present, both
+accounts present, `hr_complaints` empty at baseline (a real zero, so no offset was needed).
+
+Account switching used `POST /api/v1/_dev/login-as`, and every assertion read the live DOM — the
+`<a href="/complaints">` element's own text plus its inner `[aria-label]` — so "no pill" means the
+node is genuinely absent, not merely invisible.
 
 | Step | What it proves | Result | Evidence |
 |---|---|---|---|
-| 1 | Inquiries tab renders; zero draws no pill | | |
-| 4 | An `OPEN` thread is not counted by its opener | | |
-| 5 | Subject arm counts `OPEN`; pill and `aria-label` render | | |
-| 7 | Subject arm stops counting at `RESPONDED` | | |
-| 8 | `MANAGE_HR` arm counts `RESPONDED` | | |
-| 9 | `RESOLVED` is counted by nobody | | |
-| 10 | Cleanup, cascade took the messages | | |
+| 1 | Inquiries tab renders; zero draws no pill | PASS | Admin: label `Inquiries`, no badge node — the `{#if}` rendered as `<!--[-1-->` |
+| 4 | An `OPEN` thread is not counted by its opener | PASS | Admin after opening `BADGE-PROBE-112`: label present, still no badge node |
+| 5 | Subject arm counts `OPEN`; pill and `aria-label` render | PASS | Elena: `Inquiries 1`, `aria-label="1 waiting on you"` |
+| 7 | Subject arm stops counting at `RESPONDED` | PASS | Elena after replying (status `Awaiting HR`): label present, badge node gone |
+| 8 | `MANAGE_HR` arm counts `RESPONDED` | PASS | Admin: `Inquiries 1`, `aria-label="1 waiting on you"` |
+| 9 | `RESOLVED` is counted by nobody | PASS | `status = RESOLVED` in the DB; Admin: label present, badge node gone |
+| 10 | Cleanup, cascade took the messages | PASS | `DELETE 1`; `hr_complaint_messages` 0 rows, `hr_complaints` 0 rows |
+
+Steps 5 → 7 → 8 → 9 read **1 / 0 / 1 / 0** on one single thread, which is the sequence only two
+non-overlapping arms can produce. One arm serving both sides would have read `1 / 1 / 1`, and both
+arms firing at once `1 / 0 / 2`.
+
+The `Requests/Approvals` pill was live on the same sidebar throughout (`1 awaiting your decision`),
+so the badge slot itself was demonstrably capable of drawing at every step that asserted an absence.
