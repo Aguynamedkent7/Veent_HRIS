@@ -3,7 +3,7 @@ name: context:all-planning
 description: "Plan naming, storage routing, SIMPLE vs COMPLEX calibration, and the plan conventions this repo actually follows — the planning group entrypoint/router"
 keywords: plan, planning, prd, spec, riper, plan file, naming, slug, archive, active, backlog, completed, feature folder, phase program, umbrella, validate contract
 related: [context:all-tests]
-date: 17-08-26
+date: 24-08-26
 ---
 
 # Planning Context
@@ -84,6 +84,15 @@ Rules of thumb from this repo's history:
   with opposite answers; #298's issue text carries its own deferral reasoning.
 - **Merges go to `staging`, so `Closes #N` never fires.** Plans should say the issue is closed by
   hand.
+- **A VALIDATE BLOCKED verdict is usually an environment-baseline miss, not a reasoning error.**
+  #112's first VALIDATE pass returned BLOCKED on three findings and every one was a surface the
+  plan had never opened at all: `pnpm format:check` already failing on a file the plan listed as
+  "not touched", the DB container stopped for days with the schema never pushed, and a
+  hand-maintained allow-list array (see `process/context/auth/all-auth.md`) missing the new
+  entity. (#283 hit the same shape.) Before locking a plan's Gate definitions, confirm: the repo's
+  baseline gates (`format:check`, `lint`, `check`) are actually green on the current tree; any
+  service the plan depends on (DB container, dev server) is actually running; and any
+  hand-maintained allow-list the change's output must appear in has been checked, not assumed.
 
 ## Source Paths
 
