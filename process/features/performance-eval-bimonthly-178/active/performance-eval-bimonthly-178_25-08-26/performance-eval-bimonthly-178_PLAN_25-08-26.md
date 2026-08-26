@@ -10,7 +10,7 @@ feature: performance-eval-bimonthly-178
 | | |
 |---|---|
 | **Date** | 25-08-26 |
-| **Status** | PLANNED — not started; VALIDATE pending |
+| **Status** | VALIDATED CONDITIONAL (2026-08-26), §20 fixes applied — not started; O-1 still gates item 43 |
 | **Complexity** | COMPLEX (9 phases) |
 | **Feature** | performance-eval-bimonthly-178 |
 | **Issue** | #178 |
@@ -798,8 +798,15 @@ Page component `src/routes/(app)/performance/+page.svelte`:
 27. `:29-36` — delete `goalStatusClass`.
 28. `:53-58` — delete the "New Goal" button.
 29. `:61-64` — delete the two stale comment lines about the create-goal form.
-    **KEEP `:65-69` — the top-level `role="alert"` banner.** `tests/e2e/form-errors.spec.ts:37`
-    pins exactly this element, and item 71 rewrites that spec to keep pinning it.
+    **KEEP `:65-69` — the top-level `role="alert"` banner** *in this phase*. The cycle form still
+    lives on this page through Phase 1, so the banner still has an action that can populate it and
+    `tests/e2e/form-errors.spec.ts:37` still pins it.
+    **Be clear about what happens later:** Phase 5 (items 103, 110–112) deletes *every* action on
+    this page — `createCycle`, `setCycleStatus`, `openReviews` — so from Phase 5 onward nothing can
+    populate this banner and it becomes unexercised markup. That is why the #106 regression guard
+    **moves to a different surface** rather than staying here. The replacement contract is
+    **item 117** (the `/settings/performance` cadence form), *not* item 71 — item 71 is the
+    templates list page and has nothing to do with this.
 30. `:71-130` — delete the entire create-goal `{#if showGoal}` form.
 31. `:132-220` — delete the entire "My Goals" `<section>`.
 32. `:397-429` — delete the entire "Team Goals" `<section>`.
@@ -831,11 +838,20 @@ Migration + push:
     needs `veent-db-5434`.)
 
 Tests:
-44. Rewrite `tests/e2e/form-errors.spec.ts:37-60`. See item 71 for the replacement's contract —
-    but the goal-form half of its premise dies here. Minimum change in this phase: delete the
-    stale "without the goal form being open" phrasing from the test name and the comment block
-    at `:39-41`; the assertions themselves still pass because the cycle form survives Phase 1.
-    **The full replacement lands in Phase 5**, when the cycle form is removed.
+44. Rewrite `tests/e2e/form-errors.spec.ts:37-60`. The goal-form half of its premise dies here.
+    Minimum change in this phase: delete the stale "without the goal form being open" phrasing
+    from the test name and the comment block at `:39-41`; the assertions themselves still pass
+    because the cycle form survives Phase 1. **The full replacement lands in Phase 5 — its contract
+    is item 117**, which re-points the #106 guard at the `/settings/performance` cadence form
+    because Phase 5 leaves this page with no action to fail. (Earlier drafts of this plan cited
+    "item 71" here; that was wrong — item 71 is the templates list page.)
+44a. **AC17's route half — add the assertion the grep cannot make.** SPEC AC17 claims "hitting the
+    old route returns 404", but item 48's `rg` only proves the *source file* is gone; nothing
+    exercises the route. In the same spec touched above, add one request to
+    `/api/v1/performance/goals` and assert the response status is **404**. Use Playwright's
+    `request` fixture, not a page navigation, so the assertion reads the status directly.
+    **This must be a positive assertion on the status code**, not "the page looks empty" —
+    absence proves nothing on its own.
 45. `pnpm test` — green.
 46. `pnpm check` — green. Run `pnpm prisma generate` first; a stale client produces phantom
     errors (all-tests.md).
@@ -1667,6 +1683,13 @@ test("nextSignatorySlot rejects an out-of-turn signatory", () => {
 2. swap the release guard the same way; the MANAGER case must go red.
 3. remove `.map(redactHrAuthored)` from the API route; `performance-api-redaction.test.ts` must go red.
 4. remove the out-of-turn check from `attestSignoff`; `performance-signoff-order.test.ts` must go red.
+5. **the no-scoring gate (item 134) — the highest-stakes guard in this plan, and the one most
+   likely to be quietly defeated.** Temporarily add an exported `computeScore` stub in
+   `src/lib/server/performance/`, run the suite, and confirm `performance-no-scoring.test.ts` goes
+   red; then revert, temporarily add a `.reduce(` in `reviews/[id]/+page.svelte`, and confirm it
+   goes red again. **Both halves**, because the test has two independent detection paths (the
+   identifier regex over `src/` and the `.reduce(` check on one file) and one can rot while the
+   other still fires. Revert both stubs before the phase closes.
 If any stays green, that test is vacuous and must be rewritten before the phase closes.
 
 ### 11.3 Area: routes and UI
@@ -1747,10 +1770,10 @@ every org-wide surface and by mutation-checking two of those guards (§11.2).
 
 | # | Risk | Evidence that would settle it |
 |---|---|---|
-| **O-1** | **No database was inspected by RESEARCH** (digest §5 item 8). Row counts in `goals`, `review_cycles`, `performance_reviews` on staging and prod are unknown, and whether any row holds `MANAGER_REVIEW` is unknown. The `DROP TABLE goals` is irreversible | Run, against staging **and** prod: `select count(*) from goals;`, `select status,count(*) from performance_reviews group by 1;`, and the duplicate-cycle query from item 62. Three numbers. Until they exist, item 43 must not run on any shared database |
+| **O-1** | **No database was inspected by RESEARCH** (digest §5 item 8). Row counts in `goals`, `review_cycles`, `performance_reviews` on staging and prod are unknown, and whether any row holds `MANAGER_REVIEW` is unknown. The `DROP TABLE goals` is irreversible | Run, against staging **and** prod: `select count(*) from goals;`, `select status,count(*) from performance_reviews group by 1;`, and the duplicate-cycle query from item 62. Three numbers. Until they exist, item 43 must not run on any shared database. **Partially closed 2026-08-26:** the local dev DB counted clean — `goals` 0, `review_cycles` 1, `performance_reviews` 0, zero `MANAGER_REVIEW` rows. **Staging and prod are still uncounted** (no credentials on the dev machine; prod Postgres lives inside the droplet's compose stack), so this risk stays OPEN and item 43 stays blocked for those two |
 | **O-2** | **Duplicate `review_cycles` rows would fail the Phase 2 push.** Nothing prevents them today (digest §1: no `@@unique`) | Item 62's `group by … having count(*)>1`. Zero rows = safe. Any rows = a data decision for the user, not the agent |
 | **O-3** | **Nothing in-repo calls `/api/v1/performance/goals`, but external consumers are unverifiable** (digest §5 item 9) | The droplet's access log filtered to that path over the last 30 days. Zero hits = safe to 404 it |
-| **O-4** | **`HR_REPRESENTATIVE` is a role-class slot, so ANY `ADMINISTER_HR_RECORDS` holder may attest it.** In a small org that could be the same human as the department head — one person signing two of four slots. The SPEC neither permits nor forbids it | Ask the owner directly: "may one person attest two different signatory slots on the same review?" A one-line answer. If no, the fix is one check in `attestSignoff` comparing `attestedByUserId` against existing rows |
+| **O-4** | ~~May one person attest two different signatory slots on the same review?~~ **RESOLVED 2026-08-26 — YES.** The owner confirmed one person may hold several signatory slots (e.g. the immediate supervisor is also the department head); each slot still produces its own `ReviewSignoff` row with its own order, typed name and timestamp | **No code change needed — the design was already correct for "yes".** VALIDATE confirmed `ReviewSignoff` carries `@@unique([reviewId, slotId])` only (§4.1), never `@@unique([reviewId, attestedByUserId])`, and `attestSignoff` (item 141) tests `resolveSlotHolders(slot, review)` membership without cross-referencing any other row's `attestedByUserId`. **Do NOT add the same-signer check this row used to propose** — it would break small orgs |
 | **O-5** | **The e2e suite is flaky (#287)** and Phase 6 adds a spec that SPEC AC1 and AC6 both depend on | Run the new spec 10 times consecutively. 10/10 green = gate on it. Anything less = downgrade to agent-probe and file a backlog stub |
 | **O-6** | **Real SMTP deliverability cannot be verified in this session** | One successful send to a real inbox with the droplet's `SMTP_*` set. Until then the email gate is CONDITIONAL and the backlog stub in §11.4 stands |
 | **O-7** | **The "one reminder per review per run" rule is my choice, not the owner's.** A review that is both overdue and awaiting-acknowledgement sends only the more urgent one | Ask the owner, or accept: the de-duplication columns make reversing it a one-line change in the pure planner |
@@ -1901,7 +1924,7 @@ plan's own reads, at branch tip `db04eb6`; re-verify each one.**
 | new production dependency + secrets | `nodemailer` + six `SMTP_*` credentials |
 
 Consequences of the classification, all already reflected above: hybrid is the minimum tier for
-every high-risk area (§11), two mutation checks are mandatory on the guards (§11.2), live
+every high-risk area (§11), five mutation checks are mandatory on the guards (§11.2), live
 before-and-after verification with negative controls is required for the redaction gate (item 158),
 and a browser load is required after adding the dependency (item 171).
 
@@ -1927,7 +1950,7 @@ and a browser load is required after adding the dependency (item 171).
 | `tests/unit/performance-cycle-plan.test.ts` — default, changed, retroactivity negative | Fully-Automated | **AC14** |
 | `tests/unit/performance-cycle-plan.test.ts` idempotency + the live DB-level `@@unique` double-create case | Hybrid | **AC15** |
 | `tests/unit/performance-reminders.test.ts` — one case per trigger, asserting channels | Fully-Automated | **AC16** |
-| Replaced `tests/e2e/form-errors.spec.ts` + `rg -in "\bgoal" src/ prisma/ scripts/ tests/` returning zero | Hybrid | **AC17** |
+| Replaced `tests/e2e/form-errors.spec.ts` + `rg -in "\bgoal" src/ prisma/ scripts/ tests/` returning zero + **item 44a's request to `/api/v1/performance/goals` asserting status 404** (the grep proves the source file is gone; only 44a exercises the route AC17 actually names) | Hybrid | **AC17** |
 | Migration dry-run against a **disposable** DB + audit-row count unchanged pre/post | Agent-Probe | **AC18** |
 | `tests/e2e/global-setup.ts:22` route smoke, unmodified | Fully-Automated | **AC19** |
 | `tests/unit/performance-template-versioning.test.ts` — snapshot not refreshed by a template edit or a reassignment | Fully-Automated | **AC20** |
@@ -1961,7 +1984,10 @@ carries a backlog stub and keeps its gate CONDITIONAL.
 
 1. **Selected plan file:** `process/features/performance-eval-bimonthly-178/active/performance-eval-bimonthly-178_25-08-26/performance-eval-bimonthly-178_PLAN_25-08-26.md`
 2. **Last completed phase/step:** PLAN complete. No code written. No phase started.
-3. **Validate-contract status:** *pending* — VALIDATE has not run. §20 is a placeholder.
+3. **Validate-contract status:** **CONDITIONAL, fixes applied** — VALIDATE ran 2026-08-26, four
+   validators, three PASS and one CONDITIONAL. No design defect. §20 holds the contract and all
+   four findings (V-1 to V-4) are already applied to this plan. The only remaining precondition is
+   O-1 for staging and prod.
 4. **Supporting context files loaded:**
    - `process/features/performance-eval-bimonthly-178/active/performance-eval-bimonthly-178_25-08-26/performance-eval-bimonthly-178_SPEC_25-08-26.md` (LOCKED, Open Questions empty)
    - `process/features/performance-eval-bimonthly-178/active/performance-eval-bimonthly-178_25-08-26/research-findings_REF_25-08-26.md`
@@ -1969,10 +1995,13 @@ carries a backlog stub and keeps its gate CONDITIONAL.
    - `docs/references/Copy of Veent Tix Performance Evaluation_Admin Staff.md`
    - `process/context/tests/all-tests.md` (full routing chain; no deeper docs exist)
    - `CLAUDE.md`
-5. **Next step for a fresh agent:** run VALIDATE against this plan. Do **not** start EXECUTE.
-   When EXECUTE does begin, it begins at **item 1** (Phase 1). Before item 43 (`db push`), open
-   risk **O-1** must be closed — three SQL counts against staging and prod. **The user starts the
-   database and the dev server; never run `./start.sh`, `veent-db-5434`, or `vite`.**
+5. **Next step for a fresh agent:** VALIDATE is done and its fixes are applied (§20). Next is a UI
+   design pass through `impeccable` on the template builder — a standing rule, and the builder is
+   the whole product from HR's point of view. Then EXECUTE, beginning at **item 1** (Phase 1).
+   Before item 43 (`db push`), open risk **O-1** must be closed for the target database — the SQL
+   counts against staging and prod, which VALIDATE could not run.
+   **The user starts the database and the dev server; never run `./start.sh`, `veent-db-5434`,
+   or `vite`.**
 6. **Branch:** `feat/performance-eval-bimonthly-178`, tip `db04eb6`, 0 commits ahead of
    `origin/staging`. Only untracked docs so far.
 7. **Commit discipline:** one issue, one PR, many commits. Phase 1 is its own commit series ahead
@@ -1984,7 +2013,122 @@ carries a backlog stub and keeps its gate CONDITIONAL.
 
 ## Validate Contract
 
-(placeholder — vc-validate-agent writes this section before EXECUTE)
+**Run 2026-08-26. Net gate: CONDITIONAL.** Four validators, non-overlapping scopes, each briefed to
+break the plan and to say PASS plainly if it held.
+
+| Validator | Scope | Verdict |
+|---|---|---|
+| (a) | Prisma schema diff + migration ordering | PASS |
+| (b) | RBAC + the whole-document redaction release gate | PASS |
+| (c) | Test matrix vs the 20 acceptance criteria | **CONDITIONAL** |
+| (d) | Goals-removal blast radius vs live code | PASS |
+
+**No design defect was found.** Every CONDITIONAL item below is a correction to plan text or to the
+test matrix. The schema, the service design, the RBAC gates and the redaction model all survived.
+
+> **ALL FOUR FINDINGS WERE APPLIED TO THIS PLAN ON 2026-08-26.** V-1 → items 29 and 44 rewritten to
+> point at item 117 and to state that Phase 5 leaves the banner unexercised. V-2 → new **item 44a**
+> adds the 404 assertion, and AC17's row in the test matrix now names it. V-3 → **mutation check 5**
+> added to §11.2, with both detection paths exercised separately; the "two mutation checks" claim in
+> §14 corrected to five. V-4 → the O-4 row in §12.2 marked RESOLVED-YES with an explicit warning not
+> to add the same-signer check it used to propose. The findings are kept below as the record of what
+> was wrong and why.
+
+### V-1 — Stale cross-reference: the `form-errors.spec.ts` replacement (must fix before EXECUTE)
+
+Items 29 and 44 both direct the reader to "item 71" for the replacement contract. **Item 71 is the
+templates list page.** The real replacement is **item 117**, and it does something different from
+what items 29/44 promise: it moves the assertion target to the `/settings/performance` cadence
+form, not the `/performance` page's `:65-69` `role="alert"` banner.
+
+This is not cosmetic. By Phase 5 (items 103, 110–112) **every action on
+`src/routes/(app)/performance/+page.server.ts` is deleted** — `createCycle`, `setCycleStatus`,
+`openReviews`, with the Goals actions already gone in Phase 1. So the banner that items 29/44
+promise stays "pinned" has no action left that can populate it. Item 117's choice is the correct
+engineering call; the plan's narrative is wrong about it.
+
+**Fix:** rewrite items 29 and 44 to point at item 117 and to state plainly that the `:65-69` banner
+becomes unexercised markup once Phase 5 lands. An EXECUTE agent following 29/44 literally would
+hunt for a nonexistent contract and could conclude the old banner is still covered when it is not.
+
+### V-2 — AC17's route-404 claim is unproven (must fix before EXECUTE)
+
+SPEC AC17 states "hitting the old route returns 404." The plan proves it with the structural grep
+(item 48) plus the replaced e2e spec — but per V-1 that spec now tests an unrelated cadence form.
+**No test makes an HTTP request to `/api/v1/performance/goals` and asserts the status.** The grep
+proves the source file is gone; it does not exercise the route. True in SvelteKit by construction,
+but the inference is never run.
+
+**Fix:** add one assertion to the Phase 1 test set that requests the deleted route and expects 404.
+Cheap, and it converts AC17 from WEAK to YES.
+
+### V-3 — The no-scoring structural gate has no mutation-check (must fix before EXECUTE)
+
+§0 names the no-arithmetic rule as the most important constraint in the document, and item 134 is
+the gate that enforces it. **§11.2 lists four mutation-checks and item 134 is not among them** —
+the four are: swap the template guard, swap the release guard, remove `.map(redactHrAuthored)`,
+remove the out-of-turn check.
+
+By the plan's own §11.2 standard, an unmutated check is a hypothesis, not a proven guard.
+
+**Fix:** add a fifth mutation-check — temporarily add a `computeScore`-shaped export, or a
+`.reduce(` in the review svelte file, and confirm `performance-no-scoring.test.ts` goes red.
+
+### V-4 — O-4 is answered; the plan text is stale (docs only)
+
+`:1753` still lists O-4 as open. **The owner answered it on 2026-08-26: yes, one person may attest
+several different signatory slots on the same review**, each slot still producing its own
+`ReviewSignoff` row, order, typed name and timestamp.
+
+Validator (b) checked whether the design silently assumed the opposite and **it does not**:
+`ReviewSignoff` carries `@@unique([reviewId, slotId])` only (`:298`) — never
+`@@unique([reviewId, attestedByUserId])` — and `attestSignoff` (item 141, `:1234-1244`) tests
+`resolveSlotHolders(slot, review)` membership without cross-referencing any other row's
+`attestedByUserId`. The design was already correct for "yes". **Text update only, no code change.**
+
+### Claims that were attacked and held
+
+- **Nothing writes `ReviewStatus.MANAGER_REVIEW`.** Verified across `src/`, `scripts/`, `prisma/`,
+  `tests/` — only the enum declaration at `schema.prisma:257`. The `ALTER TYPE … RENAME VALUE` is safe.
+- **The Goals blast radius is exactly the 30 listed sites.** Validator (d) ran an independent
+  repo-wide sweep and found **8 files, all already listed. There is no site 31.**
+- **`scripts/prod-delete.ts` positional coupling.** Verified live: 22 names, 22 queries, `goals` and
+  `db.goal.count` both at index 10. Items 37/38 correctly treat it as one coupled edit.
+- **Phase 1 is independently shippable.** All 49 of its items checked for `redact`, `Template`,
+  `Signoff`, `PerformanceConfig` — zero hits. `redactHrAuthored` is untouched by Phase 1.
+- **Redaction reduces to `answers = null`.** Every field in the SPEC's protected set lands inside
+  `answers`; `employeeComments` is its own column and stays visible. No field-picking list exists to
+  forget an entry from.
+- **The API route cannot diverge from the page load.** Confirmed live that
+  `src/routes/api/v1/performance/reviews/+server.ts:14-18` returns `asSubject` unredacted today.
+  Item 127 closes it in that exact file and item 136 carries the mutation-check.
+- **Sequential sign-off is race-safe.** The out-of-turn rejection tests holder-set membership
+  against one specific target slot, not timing, so a stale pre-transaction read cannot let a wrong
+  signatory through; the genuine race — two valid holders of the same slot — is caught by the
+  DB-level `@@unique([reviewId, slotId])` P2002 → 409. No TOCTOU gap was constructible.
+- **MANAGER cannot release.** `src/lib/rbac.ts:26,36` confirms `MANAGE_HR` includes `MANAGER` while
+  `ADMINISTER_HR_ORGWIDE` excludes it. Release is gated on the latter, and item 154's mutation-check
+  swaps to `MANAGE_HR` specifically to prove the 403 test would go red if someone widened it later.
+- **AC12 is testable.** Item 147 is a mocked-Prisma unit test, so it is structurally forced to build
+  its own fixture and cannot inherit a department head from seed data.
+- **No `Decimal` enters the diff.** Subtotals and totals live inside the `answers` Json column, so
+  `src/hooks.ts` stays out of this feature.
+
+### Open gates that VALIDATE did not close
+
+- **O-1 remains OPEN and still blocks item 43.** Local dev DB counted clean on 2026-08-26 — `goals`
+  0, `review_cycles` 1, `performance_reviews` 0, no `MANAGER_REVIEW` rows. **Staging and prod were
+  not counted; there are no credentials on this machine.** `DROP TABLE goals` has no undo. Run the
+  counts on the droplet before item 43.
+- **O-5 stands.** AC1's e2e leg keeps its named flakiness downgrade path.
+- Cosmetic nit, not gating: the `NotificationKind` citation reads `:1155-1160`; actual is `:1153-1160`.
+
+### Verdict
+
+**CONDITIONAL — cleared to EXECUTE.** V-1, V-2, V-3 and V-4 are **applied**. The one remaining
+precondition is **O-1 for the target database**: the local dev DB is counted and clean, but staging
+and prod are not, and item 43's `DROP TABLE goals` must not run on either until they are. Everything
+before item 43 is unblocked.
 
 ---
 
