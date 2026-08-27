@@ -45,9 +45,35 @@ export async function listTemplates(organizationId: string) {
 	const rows = await db.performanceTemplate.findMany({
 		where: { organizationId },
 		orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
-		select: { id: true, name: true, isActive: true, structure: true }
+		select: {
+			id: true,
+			name: true,
+			isActive: true,
+			structure: true,
+			// Deleting a template SET NULLs this FK (see `deleteTemplate`), so the list has to be
+			// able to say how many employees a delete would unassign before HR confirms it.
+			_count: { select: { assignedEmployees: true } }
+		}
 	})
-	return rows.map(({ structure, ...t }) => ({ ...t, sectionCount: sectionCountOf(structure) }))
+	if (rows.length === 0) return []
+
+	// `PerformanceReview.templateId` is a plain column, not a Prisma relation — the snapshot is the
+	// record of the form, so the schema deliberately keeps no back-relation to edit through. That
+	// puts the review tally out of `_count`'s reach, so it is ONE grouped query for the whole list
+	// rather than a count per row.
+	const reviewCounts = await db.performanceReview.groupBy({
+		by: ['templateId'],
+		where: { templateId: { in: rows.map((r) => r.id) } },
+		_count: { _all: true }
+	})
+	const used = new Map(reviewCounts.map((g) => [g.templateId, g._count._all]))
+
+	return rows.map(({ structure, _count, ...t }) => ({
+		...t,
+		sectionCount: sectionCountOf(structure),
+		assignedCount: _count.assignedEmployees,
+		reviewCount: used.get(t.id) ?? 0
+	}))
 }
 
 export async function getTemplate(id: string, organizationId: string) {
@@ -156,6 +182,59 @@ export async function setTemplateActive(
 			tx
 		)
 		return template
+	})
+}
+
+/**
+ * Permanently remove a template, allowed ONLY while no review has ever referenced it.
+ *
+ * A template a review has touched is undeletable forever, by design. `templateId` is the review's
+ * provenance record for a snapshot it already holds, and there is no FK to stop the row going
+ * away — deleting the template would leave that provenance pointing at nothing, silently. HR's
+ * answer for a template that has been used is `setTemplateActive(false)`, which retires it from
+ * new assignments and leaves every opened review untouched.
+ *
+ * The count runs INSIDE the delete's own transaction and against the tx client, so the two
+ * statements see one snapshot and the delete rolls back with the refusal. Residual, stated
+ * plainly: under Postgres READ COMMITTED this does not lock out a review inserted concurrently
+ * between the count and the commit. Closing that would need row locks the rest of this feature
+ * does not take; the exposure is one HR-initiated click racing a cycle being opened in the same
+ * second, and the loser is a provenance id, not a snapshot.
+ *
+ * The employees assigned to this template are NOT blocked, and are NOT silently ignored either:
+ * `employees.assignedTemplateId` is ON DELETE SET NULL, so they are simply unassigned. The list
+ * page shows that count in the confirmation before HR agrees to it.
+ */
+export async function deleteTemplate(id: string, organizationId: string, ctx: AuditContext) {
+	// Same org scoping as every other mutation here (#323): the row is resolved by id AND
+	// organizationId first, and the write below can only ever name that proven row.
+	const before = await getTemplate(id, organizationId)
+	await db.$transaction(async (tx) => {
+		const used = await tx.performanceReview.count({ where: { templateId: before.id } })
+		if (used > 0)
+			error(
+				409,
+				`${used} review${used === 1 ? ' uses' : 's use'} this template, so it cannot be deleted. Deactivate it instead — that retires it from new assignments and leaves those reviews untouched.`
+			)
+
+		await tx.performanceTemplate.delete({ where: { id: before.id } })
+
+		// Inside the transaction, on the tx client (#324): the audit row commits with the delete
+		// it records, or neither happens.
+		await writeAuditLog(
+			ctx,
+			{
+				action: 'DELETE',
+				entityType: ENTITY,
+				entityId: before.id,
+				oldValue: {
+					name: before.name,
+					isActive: before.isActive,
+					sectionCount: sectionCountOf(before.structure)
+				}
+			},
+			tx
+		)
 	})
 }
 

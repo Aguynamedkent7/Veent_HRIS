@@ -9,6 +9,7 @@ import {
 	listTemplates,
 	createTemplate,
 	setTemplateActive,
+	deleteTemplate,
 	countEmployeesWithoutTemplate
 } from '$lib/server/services/performance-templates'
 import type { Actions, PageServerLoad } from './$types'
@@ -108,5 +109,27 @@ export const actions: Actions = {
 			throw e
 		}
 		return { updated: true }
+	},
+
+	/**
+	 * Permanent removal, for a template no review has ever used. Same `ADMINISTER_HR_ORGWIDE`
+	 * literal-first-statement guard as `setActive` above — this is the more destructive of the two
+	 * and may not be the weaker-guarded one.
+	 *
+	 * The service, not this action, decides whether the template is deletable: it counts the
+	 * referencing reviews inside the delete's own transaction, so a template that became used
+	 * between the page render and this POST is refused with a 409 the banner shows.
+	 */
+	deleteTemplate: async ({ request, locals, getClientAddress }) => {
+		requireAnyCapability(locals.user!.roles, 'ADMINISTER_HR_ORGWIDE')
+		const id = (await request.formData()).get('id')
+		if (typeof id !== 'string' || !id) return fail(400, { error: 'Missing template id' })
+		try {
+			await deleteTemplate(id, locals.user!.organizationId, ctxOf(locals, getClientAddress()))
+		} catch (e: unknown) {
+			if (isHttpError(e)) return fail(e.status, { error: String(e.body.message) })
+			throw e
+		}
+		return { deleted: true }
 	}
 }

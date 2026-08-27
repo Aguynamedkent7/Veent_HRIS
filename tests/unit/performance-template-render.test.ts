@@ -15,7 +15,9 @@ import { accountExecutive, adminStaff } from '../../prisma/seed-performance-temp
 const { dbMock } = vi.hoisted(() => ({
 	dbMock: {
 		performanceTemplate: { findMany: vi.fn(), findFirst: vi.fn() },
-		performanceReview: { count: vi.fn() },
+		// `listTemplates` tallies reviews per template with ONE grouped query — there is no
+		// PerformanceTemplate→PerformanceReview relation for `_count` to walk.
+		performanceReview: { count: vi.fn(), groupBy: vi.fn() },
 		employee: { count: vi.fn() },
 		$transaction: vi.fn()
 	}
@@ -39,18 +41,41 @@ const row = (id: string, name: string, structure: unknown) => ({
 	updatedAt: new Date('2026-08-01')
 })
 
-beforeEach(() => vi.clearAllMocks())
+beforeEach(() => {
+	vi.clearAllMocks()
+	dbMock.performanceReview.groupBy.mockResolvedValue([])
+})
 
 describe('two templates render as two different forms (AC1)', () => {
 	it('reports each template’s own category count, not a shared default', async () => {
 		dbMock.performanceTemplate.findMany.mockResolvedValue([
-			{ id: 't_ae', name: 'Account Executive', isActive: true, structure: AE },
-			{ id: 't_admin', name: 'Admin Staff', isActive: true, structure: ADMIN }
+			{
+				id: 't_ae',
+				name: 'Account Executive',
+				isActive: true,
+				structure: AE,
+				_count: { assignedEmployees: 3 }
+			},
+			{
+				id: 't_admin',
+				name: 'Admin Staff',
+				isActive: true,
+				structure: ADMIN,
+				_count: { assignedEmployees: 0 }
+			}
+		])
+		dbMock.performanceReview.groupBy.mockResolvedValue([
+			{ templateId: 't_ae', _count: { _all: 2 } }
 		])
 		const list = await listTemplates(ORG)
 		expect(list.map((t) => t.sectionCount)).toEqual([6, 5])
+		// Each row carries its OWN delete-affordance counts — the used template is the one that
+		// reports reviews, and the untallied one reports 0 rather than inheriting its neighbour's.
+		expect(list.map((t) => t.reviewCount)).toEqual([2, 0])
+		expect(list.map((t) => t.assignedCount)).toEqual([3, 0])
 		// The list page must never receive the whole document.
 		expect(list[0]).not.toHaveProperty('structure')
+		expect(list[0]).not.toHaveProperty('_count')
 	})
 
 	it('hands back each template’s own categories and criteria', async () => {
