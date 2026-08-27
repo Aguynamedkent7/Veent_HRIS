@@ -137,10 +137,16 @@ async function main() {
 			}
 
 			// Every review in a cycle created moments ago is new, so this notifies exactly the
-			// employees this run affected and nobody twice.
+			// employees this run affected and nobody twice. BOTH sides are told at open: without
+			// the reviewer nudge the evaluator first hears at the `due-soon` reminder, which is
+			// `dueDays - 3` days later (scripts/send-review-reminders.ts).
 			const reviews = await db.performanceReview.findMany({
 				where: { cycleId: opened.cycle.id },
-				select: { id: true, employee: { select: { userId: true } } }
+				select: {
+					id: true,
+					employee: { select: { userId: true, firstName: true, lastName: true } },
+					reviewer: { select: { userId: true } }
+				}
 			})
 			for (const review of reviews) {
 				await notify(
@@ -149,6 +155,17 @@ async function main() {
 					`/performance/reviews/${review.id}`,
 					'PERFORMANCE'
 				)
+				// Self-review: one person can hold both roles in a small org, and two notifications
+				// about the same review would be noise.
+				if (review.reviewer.userId !== review.employee.userId) {
+					await notify(
+						review.reviewer.userId,
+						`Performance review for ${review.employee.firstName} ${review.employee.lastName} ` +
+							`(${period.name}) is open for you to complete.`,
+						`/performance/reviews/${review.id}`,
+						'PERFORMANCE'
+					)
+				}
 			}
 
 			console.log(
