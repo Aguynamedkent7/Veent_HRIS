@@ -1070,6 +1070,13 @@ Service:
     Recompute on read by re-running `planReviewsForCycle` against the current roster and the
     cycle's existing reviews. It is one query and always current — a stored list would go stale
     the moment HR assigns a template. Comment this choice at the function.
+**OWNER RULING 2026-08-27 — `enabled` defaults to TRUE, and that is deliberate.**
+An organization that has never opened `/settings/performance` has no `PerformanceConfig` row, so
+`getPerformanceConfig` returns the defaults and **the cron generates cycles for it from the first
+run**. The owner was asked directly whether to flip this to off-by-default and said no: *"Orgs might
+ignore the setting and blame us devs for not creating a backup."* Silence must mean the reviews
+happen, not that they silently never do. **Do not change this default to `false`.**
+
 96. `src/lib/server/services/performance.ts` — add `getPerformanceConfig(organizationId)`
     returning the row **or the defaults** when absent, mirroring how `backup-documents.ts:130`
     treats a missing `BackupConfig` (the cron never creates config as a side effect).
