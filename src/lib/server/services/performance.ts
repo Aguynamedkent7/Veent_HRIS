@@ -89,7 +89,7 @@ export async function getReview(id: string, organizationId: string) {
 			employee: { select: { id: true, firstName: true, lastName: true } },
 			reviewer: { select: { id: true, firstName: true, lastName: true } },
 			// #178 item 153 — who released it, for the "released by X on Y" line. Names only; the
-			// row already carries `releasedAt` and `releasedByUserId`.
+			// row already carries `releasedAt` and `releasedByEmployeeId`.
 			releasedBy: { select: { firstName: true, lastName: true } }
 		}
 	})
@@ -226,17 +226,16 @@ export async function saveEmployeeComments(
  * `organizationId` column of its own. Same scoping as `getReview` and `attestSignoff`.
  *
  * IDEMPOTENT. A second Release is a no-op: it must not restamp `releasedAt` or overwrite
- * `releasedByUserId`. The first release is the moment the employee became entitled to see the
+ * `releasedByEmployeeId`. The first release is the moment the employee became entitled to see the
  * evaluation, and re-stamping it would falsify that record. No audit row and no notification
  * either — nothing changed, so nothing is claimed to have.
  *
- * `userId` is the ACTOR'S USER ID, as every other action in this feature passes. The column is
- * named `releasedByUserId` but its foreign key points at `employees(id)` (schema.prisma:1716) —
- * a naming defect inherited from the plan's §3.4 diff, NOT something to paper over by writing a
- * user id into an employee column. It is resolved to the actor's employee row here. An HR user
- * with no employee record still releases; the attribution column is left null (the FK is already
- * `ON DELETE SET NULL`, so absent attribution is a state the schema allows) and the audit row
- * still names the actor in its own `actorId`.
+ * `userId` is the ACTOR'S USER ID, as every other action in this feature passes.
+ * `releasedByEmployeeId` stores an EMPLOYEE id — the UI renders the releaser's name through the
+ * `releasedBy` relation and `User` carries no name fields — so the user id is RESOLVED to the
+ * actor's employee row here. An HR user with no employee record still releases; the attribution
+ * column is left null (the FK is `ON DELETE SET NULL`, so absent attribution is a state the
+ * schema allows) and the audit row still names the actor in its own `actorId`.
  */
 export async function releaseReview(
 	id: string,
@@ -256,7 +255,7 @@ export async function releaseReview(
 		const releaser = await tx.employee.findUnique({ where: { userId }, select: { id: true } })
 		const updated = await tx.performanceReview.update({
 			where: { id },
-			data: { releasedAt: new Date(), releasedByUserId: releaser?.id ?? null }
+			data: { releasedAt: new Date(), releasedByEmployeeId: releaser?.id ?? null }
 		})
 
 		// #324 — `tx` as the third argument, so the audit row shares the fate of the release it
@@ -269,7 +268,7 @@ export async function releaseReview(
 				entityId: id,
 				newValue: {
 					releasedAt: updated.releasedAt,
-					releasedByUserId: updated.releasedByUserId
+					releasedByEmployeeId: updated.releasedByEmployeeId
 				}
 			},
 			tx

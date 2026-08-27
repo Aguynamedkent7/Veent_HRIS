@@ -1672,48 +1672,55 @@ model ReviewCycle {
 }
 
 model PerformanceReview {
-  id               String       @id @default(cuid())
-  cycleId          String
-  employeeId       String
-  reviewerId       String
-  status           ReviewStatus @default(PENDING)
-  selfAssessment   String?      @db.Text
-  managerComments  String?      @db.Text
-  overallRating    Int?
-  submittedAt      DateTime?
-  completedAt      DateTime?
-  acknowledgedAt   DateTime?
+  id                   String       @id @default(cuid())
+  cycleId              String
+  employeeId           String
+  reviewerId           String
+  status               ReviewStatus @default(PENDING)
+  selfAssessment       String?      @db.Text
+  managerComments      String?      @db.Text
+  overallRating        Int?
+  submittedAt          DateTime?
+  completedAt          DateTime?
+  acknowledgedAt       DateTime?
   // #178: the template's `structure`, copied verbatim inside the SAME transaction that creates
   // this review, and NEVER re-read from PerformanceTemplate afterwards. Editing a template, or
   // reassigning the employee, must not change what a resolved review shows. Precedent:
   // SeparationRecord.preFinalizeState, also captured inside its own transaction.
-  templateSnapshot Json?
+  templateSnapshot     Json?
   // Kept alongside the snapshot for provenance/reporting only. NEVER read to render the form —
   // reading it would defeat the snapshot.
-  templateId       String?
+  templateId           String?
   // Everything the EVALUATOR types or picks, keyed by the snapshot's criterion/section/band ids.
   // Every value here is stored verbatim; none is derived. Nulled wholesale by the redaction gate
   // — which is exactly why no employee-authored content may ever live in here.
-  answers          Json?
+  answers              Json?
   // Employee-authored, its OWN column, never inside `answers`. This is the paper form's
   // "Employee Comments" field and it is ALWAYS visible to the employee. Distinct from
   // `selfAssessment`, which is the app-only pre-scoring stage.
-  employeeComments String?      @db.Text
+  employeeComments     String?      @db.Text
   // The explicit HR RELEASE. Null = the employee's view is redacted. Set = released.
   // Attribution is on the row so the audit trail and the gate cannot disagree.
-  releasedAt       DateTime?
-  releasedByUserId String?
+  //
+  // The attribution is the releasing HR user's EMPLOYEE row, not their User row — the FK below
+  // points at `employees(id)`. It is an Employee because the UI renders "Released by
+  // {firstName} {lastName}" through the `releasedBy` relation, and `User` carries no name
+  // fields. Callers pass a User id and MUST resolve it to that user's employee row first
+  // (see `releaseReview` in src/lib/server/services/performance.ts). An HR user with no
+  // employee record releases with null attribution; the audit row still names the actor.
+  releasedAt           DateTime?
+  releasedByEmployeeId String?
   // Reminder de-duplication. The reminder job runs several times a day; without these it would
   // send the same nudge every run.
-  lastReminderAt   DateTime?
-  lastReminderKind String?      @db.VarChar(40)
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  lastReminderAt       DateTime?
+  lastReminderKind     String?      @db.VarChar(40)
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
 
   cycle      ReviewCycle     @relation(fields: [cycleId], references: [id])
   employee   Employee        @relation("ReviewSubject", fields: [employeeId], references: [id])
   reviewer   Employee        @relation("Reviewer", fields: [reviewerId], references: [id])
-  releasedBy Employee?       @relation("ReviewReleasedBy", fields: [releasedByUserId], references: [id])
+  releasedBy Employee?       @relation("ReviewReleasedBy", fields: [releasedByEmployeeId], references: [id])
   signoffs   ReviewSignoff[]
 
   @@unique([cycleId, employeeId])

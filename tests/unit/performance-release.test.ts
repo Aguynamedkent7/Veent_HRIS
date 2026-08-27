@@ -61,7 +61,7 @@ const release = (roles: Role[]) => (actions.release as any)(event(roles))
 const UNRELEASED = {
 	id: REVIEW,
 	releasedAt: null,
-	releasedByUserId: null,
+	releasedByEmployeeId: null,
 	employee: { userId: SUBJECT_USER }
 }
 
@@ -70,7 +70,7 @@ beforeEach(() => {
 	txMock.performanceReview.findFirst.mockResolvedValue(UNRELEASED)
 	txMock.employee.findUnique.mockResolvedValue({ id: HR_EMPLOYEE })
 	txMock.performanceReview.update.mockImplementation(
-		async ({ data }: { data: { releasedAt: Date; releasedByUserId: string | null } }) => ({
+		async ({ data }: { data: { releasedAt: Date; releasedByEmployeeId: string | null } }) => ({
 			...UNRELEASED,
 			...data
 		})
@@ -101,7 +101,7 @@ describe('releaseReview writes the release and its attribution', () => {
 		const { where, data } = txMock.performanceReview.update.mock.calls[0][0]
 		expect(where).toEqual({ id: REVIEW })
 		expect(data.releasedAt).toBeInstanceOf(Date)
-		expect(data.releasedByUserId).toBe(HR_EMPLOYEE)
+		expect(data.releasedByEmployeeId).toBe(HR_EMPLOYEE)
 	})
 
 	it('org-scopes the read through cycle.organizationId — the only path on this model', async () => {
@@ -129,7 +129,7 @@ describe('releaseReview writes the release and its attribution', () => {
 			entityId: REVIEW
 		})
 		expect(payload.newValue.releasedAt).toBeInstanceOf(Date)
-		expect(payload.newValue.releasedByUserId).toBe(HR_EMPLOYEE)
+		expect(payload.newValue.releasedByEmployeeId).toBe(HR_EMPLOYEE)
 		// The tx client, not the shared db — a release standing unrecorded is the gap #324 closes.
 		expect(client).toBe(txMock)
 	})
@@ -147,7 +147,7 @@ describe('releaseReview writes the release and its attribution', () => {
 		// audit row still names the actor. Refusing the release instead would strand the employee.
 		txMock.employee.findUnique.mockResolvedValue(null)
 		await release(['HR_ADMIN'])
-		expect(txMock.performanceReview.update.mock.calls[0][0].data.releasedByUserId).toBeNull()
+		expect(txMock.performanceReview.update.mock.calls[0][0].data.releasedByEmployeeId).toBeNull()
 	})
 })
 
@@ -156,7 +156,7 @@ describe('a second release is a no-op (idempotent)', () => {
 	const ALREADY = {
 		id: REVIEW,
 		releasedAt: FIRST_AT,
-		releasedByUserId: 'emp-first-releaser',
+		releasedByEmployeeId: 'emp-first-releaser',
 		employee: { userId: SUBJECT_USER }
 	}
 
@@ -167,7 +167,7 @@ describe('a second release is a no-op (idempotent)', () => {
 	it('does not write again — the first attribution and timestamp stand', async () => {
 		await expect(release(['HR_ADMIN'])).resolves.toMatchObject({ success: true })
 		expect(txMock.performanceReview.update).not.toHaveBeenCalled()
-		expect(ALREADY.releasedByUserId).toBe('emp-first-releaser')
+		expect(ALREADY.releasedByEmployeeId).toBe('emp-first-releaser')
 		expect(ALREADY.releasedAt).toBe(FIRST_AT)
 	})
 
