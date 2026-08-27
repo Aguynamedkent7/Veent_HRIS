@@ -13,6 +13,7 @@ import {
 } from '$lib/server/performance/cycle-plan'
 import { answersSchemaFor, templateStructureSchema } from '$lib/server/performance/schemas'
 import { isFullySigned, nextSignatorySlot } from '$lib/server/performance/signoff-plan'
+import type { ReminderKind } from '$lib/server/performance/reminder-plan'
 import type { SignatorySlot } from '$lib/server/performance/types'
 import { notify } from './notifications'
 import type { AuditContext } from './types'
@@ -406,7 +407,12 @@ function reviewRows(
 				snapshotAt,
 				structure: t.structure as Prisma.InputJsonValue
 			},
-			status: 'PENDING' as const
+			status: 'PENDING' as const,
+			// Pre-stamped so the reminder cron's `opened` kind does not fire a SECOND notice for
+			// an event the cycle generator already announced. `lastReminderAt` stays null because
+			// no reminder was actually sent — the generator's own notification stands in for the
+			// `opened` nudge. Escalation is untouched: `due-soon`/`overdue` are different kinds.
+			lastReminderKind: 'opened' satisfies ReminderKind
 		}
 	})
 }
