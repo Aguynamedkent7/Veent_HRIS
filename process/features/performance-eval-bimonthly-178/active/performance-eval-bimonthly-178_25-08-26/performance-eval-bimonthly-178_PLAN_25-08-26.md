@@ -776,7 +776,8 @@ Page server `src/routes/(app)/performance/+page.server.ts`:
 15. `:32` — delete `myGoals: []` from the no-employee early-return object.
 16. `:35` — delete `teamGoals: []` from the same object.
 17. `:24` — **verify whether `isManager` is now orphaned.** It is still returned at `:36`/`:56`
-    and read by `+page.svelte:398` (Team Goals) — which item 27 deletes. After item 27, grep
+    and read by `+page.svelte:398` (Team Goals) — which item **32** deletes (earlier drafts said
+    item 27; item 27 is `goalStatusClass`). After item 27, grep
     `isManager` in `+page.svelte`; if it has no remaining reader, delete `:24`, `:36` and `:56`
     too. If Phase 5 will reuse it, keep it and say so in the commit message.
 18. `:42-47` — reduce the `Promise.all` from four entries to two: drop
@@ -835,7 +836,8 @@ Scripts — **order-coupled, read §7.0 below before editing:**
 Migration + push:
 42. Create `scripts/migrate-drop-goals.ts` per §3.6 Script A.
 43. Run it, then `pnpm db:push`. (**The user starts the DB.** Ask before running anything that
-    needs `veent-db-5434`.)
+    needs `veent-db-5434`.) **Unblocked 2026-08-27** — O-1 is closed; no staging/prod counts are
+    needed. The only remaining precondition is that the local DB is running.
 
 Tests:
 44. Rewrite `tests/e2e/form-errors.spec.ts:37-60`. The goal-form half of its premise dies here.
@@ -856,7 +858,13 @@ Tests:
 46. `pnpm check` — green. Run `pnpm prisma generate` first; a stale client produces phantom
     errors (all-tests.md).
 47. `pnpm lint` and `pnpm format:check` — green.
-48. Structural gate: `rg -in "\bgoal" src/ prisma/ scripts/ tests/` returns **zero** hits.
+48. Structural gate: `rg -in "\bgoal" src/ prisma/` returns **zero** hits.
+    **Corrected 2026-08-27 during EXECUTE — the original wording was unsatisfiable.** It also
+    covered `scripts/` and `tests/`, but items 42 and 44a *mandate* files there that must name
+    `goals`: `scripts/migrate-drop-goals.ts` (the `DROP TABLE goals` SQL) and
+    `tests/e2e/form-errors.spec.ts` (the literal URL `/api/v1/performance/goals`). The gate over
+    those two directories is therefore `rg -in "\bgoal" scripts/ tests/` with exactly those two
+    files excluded → **zero**. Both forms verified clean.
     Exclusions are false positives already enumerated in digest §2 and are not under `src/`,
     `prisma/`, `scripts/` or `tests/`.
 49. Live check with the user's running DB:
@@ -1770,9 +1778,9 @@ every org-wide surface and by mutation-checking two of those guards (§11.2).
 
 | # | Risk | Evidence that would settle it |
 |---|---|---|
-| **O-1** | **No database was inspected by RESEARCH** (digest §5 item 8). Row counts in `goals`, `review_cycles`, `performance_reviews` on staging and prod are unknown, and whether any row holds `MANAGER_REVIEW` is unknown. The `DROP TABLE goals` is irreversible | Run, against staging **and** prod: `select count(*) from goals;`, `select status,count(*) from performance_reviews group by 1;`, and the duplicate-cycle query from item 62. Three numbers. Until they exist, item 43 must not run on any shared database. **Partially closed 2026-08-26:** the local dev DB counted clean — `goals` 0, `review_cycles` 1, `performance_reviews` 0, zero `MANAGER_REVIEW` rows. **Staging and prod are still uncounted** (no credentials on the dev machine; prod Postgres lives inside the droplet's compose stack), so this risk stays OPEN and item 43 stays blocked for those two |
+| **O-1** | **No database was inspected by RESEARCH** (digest §5 item 8). Row counts in `goals`, `review_cycles`, `performance_reviews` on staging and prod are unknown, and whether any row holds `MANAGER_REVIEW` is unknown. The `DROP TABLE goals` is irreversible | Run, against staging **and** prod: `select count(*) from goals;`, `select status,count(*) from performance_reviews group by 1;`, and the duplicate-cycle query from item 62. Three numbers. Until they exist, item 43 must not run on any shared database. **Partially closed 2026-08-26:** the local dev DB counted clean — `goals` 0, `review_cycles` 1, `performance_reviews` 0, zero `MANAGER_REVIEW` rows. **CLOSED 2026-08-27 by the owner.** The droplet is a throwaway test deploy, 100+ commits behind and not in real use — it holds no data worth preserving and its schema is replaced by the next deploy. Staging and prod counts are therefore **not required**. **Item 43 is unblocked on every database.** |
 | **O-2** | **Duplicate `review_cycles` rows would fail the Phase 2 push.** Nothing prevents them today (digest §1: no `@@unique`) | Item 62's `group by … having count(*)>1`. Zero rows = safe. Any rows = a data decision for the user, not the agent |
-| **O-3** | **Nothing in-repo calls `/api/v1/performance/goals`, but external consumers are unverifiable** (digest §5 item 9) | The droplet's access log filtered to that path over the last 30 days. Zero hits = safe to 404 it |
+| **O-3** | ~~**Nothing in-repo calls `/api/v1/performance/goals`, but external consumers are unverifiable**~~ (digest §5 item 9) | **CLOSED 2026-08-27 by the owner.** The only deploy is the throwaway test droplet, so there is no external consumer to break. Safe to 404 it |
 | **O-4** | ~~May one person attest two different signatory slots on the same review?~~ **RESOLVED 2026-08-26 — YES.** The owner confirmed one person may hold several signatory slots (e.g. the immediate supervisor is also the department head); each slot still produces its own `ReviewSignoff` row with its own order, typed name and timestamp | **No code change needed — the design was already correct for "yes".** VALIDATE confirmed `ReviewSignoff` carries `@@unique([reviewId, slotId])` only (§4.1), never `@@unique([reviewId, attestedByUserId])`, and `attestSignoff` (item 141) tests `resolveSlotHolders(slot, review)` membership without cross-referencing any other row's `attestedByUserId`. **Do NOT add the same-signer check this row used to propose** — it would break small orgs |
 | **O-5** | **The e2e suite is flaky (#287)** and Phase 6 adds a spec that SPEC AC1 and AC6 both depend on | Run the new spec 10 times consecutively. 10/10 green = gate on it. Anything less = downgrade to agent-probe and file a backlog stub |
 | **O-6** | **Real SMTP deliverability cannot be verified in this session** | One successful send to a real inbox with the droplet's `SMTP_*` set. Until then the email gate is CONDITIONAL and the backlog stub in §11.4 stands |

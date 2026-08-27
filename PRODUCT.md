@@ -15,7 +15,7 @@ Staff of a Philippine SME using Veent HRIS, reached through one multi-tenant web
   performance for the whole organization. Most administrative surfaces are built for this person.
 - **MANAGER** — a team lead. Holds `MANAGE_HR` but not `ADMINISTER_HR_ORGWIDE`, so they act on
   their own branch, not the whole org. (Recorded because it has repeatedly been the source of
-  scoping mistakes: capabilities say *what*, never *whose*.)
+  scoping mistakes: capabilities say _what_, never _whose_.)
 - **EMPLOYEE** — sees their own records: payslips, leave balance, 201 file, their own reviews.
 - **CEO** and **SUPER_ADMIN** — org-wide oversight; CEO cannot self-serve their own compensation.
 
@@ -95,7 +95,7 @@ reconciled, documents filed — without leaving the app or keeping a parallel sp
    a redesign of their process.
 2. **Configuration over code.** A new form, a new cadence, a new signatory order must be data.
 3. **The app does not do the human's arithmetic here** — and where it validates, it says so plainly.
-4. **Scoping is part of correctness.** Every surface answers *whose* records, not only *what* action.
+4. **Scoping is part of correctness.** Every surface answers _whose_ records, not only _what_ action.
 5. **Withheld by default.** Evaluator-authored content stays invisible to its subject until released.
 
 ## Accessibility & Inclusion
