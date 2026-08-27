@@ -360,6 +360,95 @@ recomputed on demand in the app.
 Exits 1 if any org failed, so a failure is visible in `/var/log/veent-review-cycles.log` and in
 cron mail before anyone opens the app.
 
+## Review reminders — `send-review-reminders.ts`
+
+Nudges the people who still owe something on an open performance review (#178). It never
+creates a cycle — `generate-review-cycles.ts` does that — it only looks at reviews that are
+already open and asks the pure planner
+(`src/lib/server/performance/reminder-plan.ts`) which of four kinds applies:
+
+| Kind           | When                                            | Who is nudged              | Channels           |
+| -------------- | ----------------------------------------------- | -------------------------- | ------------------ |
+| `opened`       | the review is open and not yet near its due day | employee                   | in-app + **email** |
+| `due-soon`     | within 3 days of the due day                    | evaluator                  | in-app only        |
+| `overdue`      | past the due day                                | employee **and** evaluator | in-app + **email** |
+| `awaiting-ack` | completed, employee has not acknowledged        | employee                   | in-app only        |
+
+The due day is the org's `dueDays` (Settings → Performance, default 14) counted from the day
+the review opened, compared on the **Manila** calendar — a wall-clock business question, so a
+UTC comparison would be up to 8 hours wrong. All of that lives in the planner; the script
+itself does no date arithmetic.
+
+**At most one reminder per review per run**, the most urgent, and never the same kind twice in
+a row: `PerformanceReview.lastReminderKind` is compared before sending. Escalation still
+fires — `due-soon` followed by `overdue` is a different kind.
+
+```text
+0 */6 * * *  cd ~/repos/Veent_HRIS && docker compose run --rm app pnpm exec tsx scripts/send-review-reminders.ts >> /var/log/veent-review-reminders.log 2>&1
+```
+
+> **`deploy.yml` does NOT create this crontab entry.** As stated for this file as a whole, the
+> deploy does `git reset --hard origin/main` and never touches the droplet's crontab. This
+> line must be installed once, by hand, with `crontab -e`. If it is missing, no reminder is
+> ever sent and nothing in the app complains — the only symptom is a review nobody chases.
+
+Runs every six hours, unlike the once-nightly jobs: "due soon" and "overdue" are questions
+about real time, so the answer changes during the day.
+
+Dry run first when testing (prints every reminder it _would_ send, writes nothing and sends
+nothing):
+
+```bash
+docker compose run --rm app pnpm exec tsx scripts/send-review-reminders.ts --dry-run
+```
+
+Locally:
+
+```bash
+pnpm exec dotenv -e .env.dev -- tsx scripts/send-review-reminders.ts --dry-run
+```
+
+Unlike `promote-probationary.ts` and `generate-review-cycles.ts`, it writes **no** `AuditLog`
+entry and therefore does **not** need the seeded `system@veent.ph` user. A reminder is not a
+domain mutation, and the `lastReminderAt` / `lastReminderKind` columns are the durable record.
+
+There is deliberately **no advisory lock**. Overlap needs two runs alive at once, and the
+de-duplication columns turn a genuine overlap into at worst one duplicate notification —
+harmless, versus the connection-pinning trap a session lock would add
+(`src/lib/server/backup/plan.ts`). Revisit if the job ever runs longer than a minute.
+
+Exits 1 if any org failed, so a failure is visible in `/var/log/veent-review-reminders.log`
+and in cron mail before anyone opens the app.
+
+## Outbound email — the six `SMTP_*` variables
+
+Every `send*` in `src/lib/server/notifications.ts` — welcome, Discord invite, timesheet
+status, leave status, interview scheduled, offboarding notice, review reminder — delivers
+through the single seam in `src/lib/server/mailer.ts`.
+
+| Variable      | Default     | Meaning                                                        |
+| ------------- | ----------- | -------------------------------------------------------------- |
+| `SMTP_HOST`   | _none_      | Mail host. **Absent = unconfigured**; nothing else is read.    |
+| `SMTP_PORT`   | `587`       | `587` = STARTTLS, `465` = implicit TLS.                        |
+| `SMTP_SECURE` | `false`     | Set `true` only with port 465.                                 |
+| `SMTP_USER`   | _none_      | Auth user. Omit with `SMTP_PASS` for an unauthenticated relay. |
+| `SMTP_PASS`   | _none_      | Auth password. **Never commit a real value.**                  |
+| `SMTP_FROM`   | `SMTP_USER` | Envelope/From address.                                         |
+
+Locally they live in `.env.dev` (**there is no `.env`**), which is git-ignored; the committed
+placeholders are in `.env.dev.example` and `.env.prod.example`. On the droplet they go in the
+production env file the compose stack reads.
+
+**Unconfigured is the normal case, not an error.** With no `SMTP_HOST` every send logs
+
+```text
+[NOTIFY] (no SMTP_HOST — not sent) <someone@example.com>: Performance review open — Aug–Sep 2026
+```
+
+and returns. `deliver` is a synchronous `void` function and **never throws**: delivery is
+fire-and-forget, so a mail outage can never fail the HTTP request that triggered it. A real
+send that fails is logged as `[NOTIFY] delivery failed: <reason>` and nothing else happens.
+
 ### Type-checking scripts
 
 `pnpm check` does **not** cover `scripts/**` or `prisma/**` — one site has already shipped

@@ -2233,3 +2233,65 @@ before item 43 is unblocked.
 
 Plan complete. Review carefully. Say **"ENTER VALIDATE MODE"** when ready to proceed to plan
 validation (required before implementation).
+
+---
+
+## 21. EXECUTE CLOSEOUT — 27-08-26
+
+All nine phases are built and committed on `feat/performance-eval-bimonthly-178`.
+`pnpm test` 175 files / 2042 tests, `pnpm check` 0 errors (1 pre-existing a11y warning at
+`CalculatorWindow.svelte:82`).
+
+### Defects the plan carried, found only by building it
+
+1. **Item 146's path did not exist.** `src/routes/(app)/settings/departments` is not a route. The
+   real surface is `src/routes/(app)/departments`. The item's own "grep before writing this" hedge
+   is what saved it.
+2. **Item 141's "recompute `isFullySigned`"** reads naturally as "on the list you already loaded",
+   which would mean the last signatory never flips a review to `COMPLETED`. It must be recomputed
+   from rows re-read INSIDE the transaction, after the insert.
+3. **`releasedByUserId` was named for a User and foreign-keyed to `employees(id)`** — a defect
+   introduced by the plan's own §3.4 diff in Phase 2. Renamed to `releasedByEmployeeId`
+   (commit `455e84a`) while the column existed only on this branch and held 0 non-null values.
+   After merge this would have needed a rename migration.
+4. **Item 150's call-site list was short** — the third time in this issue. `performance-api-redaction.test.ts`
+   names the redaction function twice and was not listed.
+5. **Item 164 contradicts itself**: it declares a return type of `{reviewId, kind}[]` with no
+   channels, then requires the channel decision to live in that module and item 165 requires tests
+   asserting which channels fire. `remindersDue` returns `channels` as well.
+6. **Item 164 never defines the `due-soon` window.** `DUE_SOON_DAYS = 3`, an exported constant,
+   not a new HR setting.
+7. **Item 172 is self-contradictory** — a dry run cannot print `[NOTIFY]` lines without sending.
+   The unconfigured path was proven three other ways instead (a real run, a repeat run showing
+   live de-duplication, and a direct `deliver` probe against an unreachable host).
+
+### Item 158 — verified live, 27-08-26
+
+Same probe both sides of the release, with a positive control, as the employee (`carla@jojo.ph`):
+
+| | evaluator marker | own-comment control |
+|---|---|---|
+| before, `GET /api/v1/performance/reviews` | absent | present |
+| before, `GET /performance/reviews/{id}` | absent | present |
+| after | present | present |
+
+`manager@jojo.ph` POSTing `?/release` → **403**, with MANAGER holding `MANAGE_HR` — the #133 trap
+failing closed for real. The renamed FK accepted a live write and rendered "Released by Cielo
+Executive". All planted data reverted; `releasedAt IS NOT NULL` count back to 0.
+
+**A 401 initially made the markers look absent and would have passed a naive check.** The control
+going to 0 at the same time is the only thing that exposed it.
+
+### Open, deliberately not decided
+
+- **The `opened` reminder duplicates the cycle generator's in-app notification.** Built as the
+  SPEC's REMINDERS table specifies. If too noisy, the one-line fix is to have the generator stamp
+  `lastReminderKind = 'opened'` on the reviews it creates; the existing de-dup guard then swallows it.
+- **Reminder recipients per kind** are specified nowhere in SPEC beyond "evaluator and/or employee"
+  for overdue. A documented `RECIPIENTS` table in the shell holds the current choice.
+- **Real SMTP deliverability is unproven** (needs credentials — known gap O-6).
+- **A real-browser pass** — item 171 was done with curl. The `impeccable` audit of the builder is
+  also still owed.
+- **`tests/e2e/form-errors.spec.ts` "performance surfaces cycle errors in the page-level banner"
+  fails.** Phase 5 deleted every action on `/performance`, so nothing populates that banner any
+  more. Almost certainly ours; unexamined.
