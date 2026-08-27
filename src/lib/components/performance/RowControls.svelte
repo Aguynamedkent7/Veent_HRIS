@@ -27,7 +27,7 @@
 	} = $props()
 
 	const btn =
-		'rounded border px-1.5 py-0.5 text-xs leading-none hover:bg-accent disabled:pointer-events-none disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+		'inline-flex h-8 w-8 items-center justify-center rounded border text-xs leading-none hover:bg-accent disabled:pointer-events-none disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 </script>
 
 <div class="flex shrink-0 items-center gap-1">
@@ -50,7 +50,7 @@
 		disabled={!canRemove}
 		aria-label="Remove {label}"
 		onclick={remove}
-		class="rounded border border-destructive/30 px-1.5 py-0.5 text-xs leading-none text-destructive hover:bg-destructive/10 disabled:pointer-events-none disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+		class="inline-flex h-8 w-8 items-center justify-center rounded border border-destructive/30 text-xs leading-none text-destructive hover:bg-destructive/10 disabled:pointer-events-none disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 		>✕</button
 	>
 </div>
