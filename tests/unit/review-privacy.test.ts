@@ -30,7 +30,8 @@ vi.mock('$lib/server/services/performance', () => ({
 	getReview,
 	redactHrAuthored,
 	saveSelfAssessment: vi.fn(),
-	submitManagerReview: vi.fn(),
+	submitScores: vi.fn(),
+	saveEmployeeComments: vi.fn(),
 	acknowledgeReview: vi.fn()
 }))
 

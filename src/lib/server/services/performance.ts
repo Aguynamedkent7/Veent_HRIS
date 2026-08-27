@@ -8,7 +8,7 @@ import {
 	type CyclePeriod,
 	type UnreviewableEmployee
 } from '$lib/server/performance/cycle-plan'
-import { templateStructureSchema } from '$lib/server/performance/schemas'
+import { answersSchemaFor, templateStructureSchema } from '$lib/server/performance/schemas'
 import type { AuditContext } from './types'
 
 // ── Review Cycles (org-scoped) ──────────────────────────────────────────────
@@ -22,13 +22,22 @@ export async function listReviewCycles(organizationId: string) {
 
 // ── Performance Reviews (scoped by employee / reviewer) ──────────────────────
 
-// #179: the HR-authored parts of a review (manager comments + overall rating) are confidential
-// to the reviewer and HR. The reviewed employee must never receive them, so strip them before a
-// review is returned to a subject-only view (their list row or their detail page).
+// #178 (was #179): the evaluator/HR-authored parts of a review are confidential to the reviewer
+// and HR. The reviewed employee must never receive them, so strip them before a review is
+// returned to a subject-only view (their list row or their detail page).
+//
+// `answers` holds EVERY evaluator-authored value — ratings, subtotals, total, band, narratives,
+// recommendations — in one JSON column, which is exactly why redaction is the single operation
+// `answers = null`: no field-picking inside the JSON, and no way to leak one field by forgetting
+// it. Withheld by default. This is the INTERIM gate; Phase 8 adds the HR release check that
+// decides when the subject may finally see it.
+//
+// `selfAssessment` and `employeeComments` are employee-authored, live in their own columns, and
+// are never touched here.
 export function redactHrAuthored<
-	T extends { managerComments: string | null; overallRating: number | null }
+	T extends { managerComments: string | null; overallRating: number | null; answers: unknown }
 >(review: T): T {
-	return { ...review, managerComments: null, overallRating: null }
+	return { ...review, managerComments: null, overallRating: null, answers: null }
 }
 
 export async function listReviewsForEmployee(employeeId: string) {
@@ -97,25 +106,43 @@ export async function saveSelfAssessment(
 	return updated
 }
 
-export async function submitManagerReview(
+/**
+ * The evaluator submits what they TYPED (#178 item 123). Capture only — see plan §0: this
+ * function stores verbatim and never sums, weights or derives anything.
+ *
+ * Replaces the deleted `submitManagerReview`, which wrote `managerComments`/`overallRating` and
+ * jumped straight to COMPLETED. Those two columns stay on the model because existing rows hold
+ * data, but nothing writes them again; the new lifecycle stops at SCORED and routes through
+ * SIGNING.
+ */
+export async function submitScores(
 	id: string,
 	reviewerId: string,
-	data: { managerComments?: string; overallRating?: number },
+	answers: unknown,
 	ctx: AuditContext
 ) {
 	const review = await db.performanceReview.findUnique({ where: { id } })
 	if (!review) error(404, 'Performance review not found')
 	if (review.reviewerId !== reviewerId) {
-		error(409, 'Only the assigned reviewer can submit a manager review')
+		error(409, 'Only the assigned reviewer can submit scores')
 	}
+
+	// RE-VALIDATED HERE, server-side, against THIS review's OWN SNAPSHOT — not the live template
+	// and not the caller's word. The page action parses the same answers, but a direct POST
+	// bypasses the action entirely, so the service is the last line of defence; and the snapshot
+	// is the form the review was opened against, so it is the only correct contract to check.
+	const snapshot = review.templateSnapshot as { structure?: unknown } | null
+	const structure = templateStructureSchema.safeParse(snapshot?.structure)
+	if (!structure.success) error(409, 'This review has no readable form template')
+
+	const parsed = answersSchemaFor(structure.data).safeParse(answers)
+	if (!parsed.success) error(422, parsed.error.issues[0]?.message ?? 'Invalid scores')
 
 	const updated = await db.performanceReview.update({
 		where: { id },
 		data: {
-			managerComments: data.managerComments,
-			overallRating: data.overallRating,
-			status: 'COMPLETED',
-			completedAt: new Date()
+			answers: parsed.data as unknown as Prisma.InputJsonValue,
+			status: 'SCORED'
 		}
 	})
 
@@ -123,11 +150,43 @@ export async function submitManagerReview(
 		action: 'UPDATE',
 		entityType: 'PerformanceReview',
 		entityId: id,
-		newValue: {
-			status: updated.status,
-			overallRating: updated.overallRating,
-			completedAt: updated.completedAt
-		}
+		// STATUS ONLY. The answers must NEVER go in here: the audit log is readable by more people
+		// than the review is, so logging them would hand every rating to readers the release gate
+		// is meant to hold back. #242 already burned this codebase in exactly this way.
+		newValue: { status: updated.status }
+	})
+
+	return updated
+}
+
+/**
+ * The paper form's "Employee Comments" (#178 item 124) — employee-authored, its OWN column, and
+ * ALWAYS visible to the employee. Distinct from `selfAssessment`, which is the pre-scoring stage.
+ * Never written into `answers`, which redaction nulls wholesale.
+ */
+export async function saveEmployeeComments(
+	id: string,
+	employeeId: string,
+	text: string,
+	ctx: AuditContext
+) {
+	const review = await db.performanceReview.findUnique({ where: { id } })
+	if (!review) error(404, 'Performance review not found')
+	if (review.employeeId !== employeeId) {
+		error(409, 'Only the review subject can leave employee comments')
+	}
+
+	const updated = await db.performanceReview.update({
+		where: { id },
+		data: { employeeComments: text }
+	})
+
+	await writeAuditLog(ctx, {
+		action: 'UPDATE',
+		entityType: 'PerformanceReview',
+		entityId: id,
+		// That it happened and when — not the text. Same reason as `submitScores`.
+		newValue: { employeeCommentsAt: updated.updatedAt }
 	})
 
 	return updated
