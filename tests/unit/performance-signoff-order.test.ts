@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { nextSignatorySlot, isFullySigned } from '$lib/server/performance/signoff-plan'
 import type { SignatorySlot } from '$lib/server/performance/types'
+import type { AuditContext } from '$lib/server/services/types'
 
 // #178 plan item 139 — the pure sign-off order module. SPEC AC11: signing is sequential, and
 // the same function answers "whose turn is it" for the UI affordance AND for the server's
@@ -114,5 +115,118 @@ describe('isFullySigned', () => {
 	it('is not fooled by a stray row for a slot outside the order', () => {
 		// Four rows against a four-slot order, but one of them belongs to no slot.
 		expect(isFullySigned(ORDER, signed('sig_1', 'sig_2', 'sig_3', 'sig_gone'))).toBe(false)
+	})
+})
+
+// ── The same rule, at the SERVICE level (#178 plan item 148) ─────────────────
+//
+// Everything above proves the pure function. This proves the SERVER ENFORCES it: SPEC AC11's
+// out-of-turn rejection has to live in `attestSignoff`, because the page's Attest button is a
+// convenience and a direct POST skips the page entirely. A UI-only check is not a guard.
+//
+// The negative control is the point of this block. Asserting only that the call throws would
+// still pass if the row had been written first and the throw came afterwards — so the review's
+// status must be unchanged AND no ReviewSignoff row may exist.
+
+const { dbMock, writeAuditLog } = vi.hoisted(() => ({
+	dbMock: {
+		performanceReview: { findUnique: vi.fn(), update: vi.fn() },
+		user: { findMany: vi.fn() },
+		$transaction: vi.fn()
+	},
+	writeAuditLog: vi.fn()
+}))
+vi.mock('$lib/server/db', () => ({ db: dbMock }))
+vi.mock('$lib/server/audit', () => ({ writeAuditLog }))
+
+const { attestSignoff } = await import('$lib/server/services/performance')
+const { blankTemplateStructure } = await import('$lib/server/performance/schemas')
+
+const SERVICE_ORG = 'org_1'
+const SERVICE_REVIEW = 'rev_1'
+const SUPERVISOR = 'usr_supervisor'
+const HR = 'usr_hr'
+const HEAD = 'usr_head'
+const EMPLOYEE = 'usr_employee'
+
+const serviceCtx: AuditContext = {
+	organizationId: SERVICE_ORG,
+	actorId: HEAD,
+	actorRoles: ['HR_ADMIN']
+}
+
+const REVIEW = {
+	id: SERVICE_REVIEW,
+	status: 'SCORED',
+	templateSnapshot: {
+		version: 1,
+		templateId: 'tmpl_1',
+		templateName: 'Admin Staff',
+		snapshotAt: '2026-08-01T00:00:00.000Z',
+		structure: { ...blankTemplateStructure(), signatoryOrder: ORDER }
+	},
+	cycle: { organizationId: SERVICE_ORG, name: 'Jul-Aug 2026' },
+	employee: {
+		id: 'emp_subject',
+		firstName: 'Ana',
+		lastName: 'Reyes',
+		userId: EMPLOYEE,
+		department: { name: 'Operations', head: { userId: HEAD } }
+	},
+	reviewer: { userId: SUPERVISOR },
+	// NOTHING signed: the turn belongs to slot 0, the Immediate Supervisor.
+	signoffs: [] as { slotId: string }[]
+}
+
+const serviceTx = {
+	reviewSignoff: { create: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
+	performanceReview: { update: vi.fn() }
+}
+
+describe('attestSignoff — the server rejects an out-of-turn signature (AC11)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+		dbMock.$transaction.mockImplementation((fn: (client: typeof serviceTx) => unknown) =>
+			fn(serviceTx)
+		)
+		dbMock.user.findMany.mockResolvedValue([{ id: HR }])
+		dbMock.performanceReview.findUnique.mockResolvedValue(REVIEW)
+		serviceTx.reviewSignoff.create.mockResolvedValue({ id: 'so_1' })
+		serviceTx.reviewSignoff.findMany.mockResolvedValue([])
+		serviceTx.performanceReview.update.mockResolvedValue({ id: SERVICE_REVIEW, status: 'SIGNING' })
+	})
+
+	// Each of these three is a legitimate signatory on this review — just not yet.
+	it.each([
+		['the Department Head', HEAD],
+		['HR', HR],
+		['the Employee', EMPLOYEE]
+	])('throws 409 when %s tries to jump ahead of the Immediate Supervisor', async (_who, userId) => {
+		await expect(
+			attestSignoff(SERVICE_REVIEW, userId, 'Jumped The Queue', serviceCtx)
+		).rejects.toMatchObject({ status: 409 })
+
+		// THE NEGATIVE CONTROL — no row, no status change, no audit entry.
+		expect(serviceTx.reviewSignoff.create).not.toHaveBeenCalled()
+		expect(serviceTx.performanceReview.update).not.toHaveBeenCalled()
+		expect(dbMock.performanceReview.update).not.toHaveBeenCalled()
+		expect(writeAuditLog).not.toHaveBeenCalled()
+		// The transaction is never even opened: the rejection happens before any write.
+		expect(dbMock.$transaction).not.toHaveBeenCalled()
+	})
+
+	// POSITIVE CONTROL. Without this, dropping the whole `attestSignoff` body would still make
+	// the three cases above pass.
+	it('accepts the signatory whose turn it actually is', async () => {
+		await attestSignoff(SERVICE_REVIEW, SUPERVISOR, 'Sup Ervisor', serviceCtx)
+
+		expect(serviceTx.reviewSignoff.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ slotId: 'sig_1', attestedByUserId: SUPERVISOR })
+			})
+		)
+		expect(serviceTx.performanceReview.update).toHaveBeenCalledWith(
+			expect.objectContaining({ data: { status: 'SIGNING' } })
+		)
 	})
 })

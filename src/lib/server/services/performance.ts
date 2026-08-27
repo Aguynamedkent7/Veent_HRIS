@@ -1,7 +1,10 @@
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
-import type { Prisma } from '@prisma/client'
+// A VALUE import, not `import type`: `Prisma.PrismaClientKnownRequestError` is needed at
+// runtime by the P2002 catch in `attestSignoff`.
+import { Prisma } from '@prisma/client'
+import { CAPABILITIES } from '$lib/rbac'
 import {
 	DEFAULT_INTERVAL_MONTHS,
 	planReviewsForCycle,
@@ -9,6 +12,8 @@ import {
 	type UnreviewableEmployee
 } from '$lib/server/performance/cycle-plan'
 import { answersSchemaFor, templateStructureSchema } from '$lib/server/performance/schemas'
+import { isFullySigned, nextSignatorySlot } from '$lib/server/performance/signoff-plan'
+import type { SignatorySlot } from '$lib/server/performance/types'
 import type { AuditContext } from './types'
 
 // ── Review Cycles (org-scoped) ──────────────────────────────────────────────
@@ -448,6 +453,258 @@ export async function listUnreviewable(
 
 	const { unreviewable } = await planCycleRoster(organizationId, cycleId)
 	return unreviewable
+}
+
+// ── Sequential sign-off (#178, plan items 140-142) ───────────────────────────
+
+/**
+ * The review shape `resolveSlotHolders` reads, declared STRUCTURALLY rather than as a Prisma
+ * payload type so the same function serves `attestSignoff` and `listStalledSignoffs` without
+ * either being forced to select exactly the other's columns.
+ */
+export interface SignoffReview {
+	cycle: { organizationId: string }
+	employee: {
+		userId: string | null
+		department: { head: { userId: string | null } | null } | null
+	}
+	reviewer: { userId: string | null }
+}
+
+/**
+ * The one include both sign-off readers use. Shared rather than written twice, because two
+ * slightly different selects are two slightly different answers to "whose turn is it".
+ */
+const SIGNOFF_REVIEW_INCLUDE = {
+	cycle: { select: { organizationId: true, name: true } },
+	employee: {
+		select: {
+			id: true,
+			firstName: true,
+			lastName: true,
+			userId: true,
+			department: { select: { name: true, head: { select: { userId: true } } } }
+		}
+	},
+	reviewer: { select: { userId: true } },
+	signoffs: { select: { slotId: true } }
+} satisfies Prisma.PerformanceReviewInclude
+
+/**
+ * The ordered signatory list for ONE review, read from ITS OWN immutable `templateSnapshot`.
+ *
+ * NEVER from `PerformanceTemplate.structure`: reordering a template must change the reviews
+ * opened afterwards and leave every review already opened exactly as it was. Reading the live
+ * template here would silently rewrite the signature order of work in progress.
+ *
+ * `null` = the snapshot is missing or no longer parses. The caller reports that rather than
+ * guessing an order.
+ */
+function snapshotSignatoryOrder(templateSnapshot: unknown): SignatorySlot[] | null {
+	const parsed = templateStructureSchema.safeParse(
+		(templateSnapshot as { structure?: unknown } | null)?.structure
+	)
+	return parsed.success ? parsed.data.signatoryOrder : null
+}
+
+/**
+ * The USER ids allowed to attest one slot (plan item 140).
+ *
+ * AN EMPTY ARRAY MEANS STALLED (SPEC AC12) — it is a reportable state, not an error, so this
+ * must never throw. A department with no head, in particular, is the ordinary case this
+ * feature was asked to surface to HR rather than crash on.
+ *
+ * HR_REPRESENTATIVE is read from the CAPABILITY TABLE, never from role literals: hard-coding
+ * `['HR_ADMIN','SUPER_ADMIN']` duplicates `src/lib/rbac.ts` and silently misses any role added
+ * there later. Same shape as `notifyAdmins` in `backup/run.ts`.
+ *
+ * A null `userId` (an employee with no login) filters OUT. It must not become `[null]`, which
+ * would make a stalled slot look staffed and let `holders.includes(userId)` pass on a nullish
+ * caller id.
+ */
+export async function resolveSlotHolders(
+	slot: SignatorySlot,
+	review: SignoffReview
+): Promise<string[]> {
+	const only = (userId: string | null | undefined) => (userId ? [userId] : [])
+
+	switch (slot.role) {
+		case 'EMPLOYEE':
+			return only(review.employee.userId)
+		case 'IMMEDIATE_SUPERVISOR':
+			return only(review.reviewer.userId)
+		case 'DEPARTMENT_HEAD':
+			return only(review.employee.department?.head?.userId)
+		case 'HR_REPRESENTATIVE': {
+			const users = await db.user.findMany({
+				where: {
+					organizationId: review.cycle.organizationId,
+					isActive: true,
+					roles: { hasSome: [...CAPABILITIES.ADMINISTER_HR_RECORDS] }
+				},
+				select: { id: true }
+			})
+			return users.map((u) => u.id)
+		}
+	}
+}
+
+/**
+ * One signatory attests one slot (plan item 141).
+ *
+ * THE OUT-OF-TURN REJECTION SPEC AC11 REQUIRES LIVES HERE, in the service — not only in the
+ * UI. The page hides the Attest button for anyone whose turn it is not, but a direct POST
+ * skips the page entirely, so a UI-only check is not a guard at all.
+ *
+ * THERE IS DELIBERATELY NO SAME-SIGNER CHECK. One person may legitimately hold several slots
+ * on the same review (in a small org the immediate supervisor is often also the department
+ * head). `@@unique([reviewId, slotId])` is on the SLOT only, for exactly this reason.
+ *
+ * `isFullySigned` is recomputed INSIDE the transaction from the rows that exist AFTER the
+ * insert. Computing it on the pre-insert list is the drift `signoff-plan.ts` exists to
+ * prevent: the last signatory's own row would not be counted and the review would never reach
+ * COMPLETED.
+ */
+export async function attestSignoff(
+	id: string,
+	userId: string,
+	typedName: string,
+	ctx: AuditContext
+) {
+	// Trust boundary: the typed name arrives from a form post and lands in a VarChar(200).
+	const name = typedName.trim()
+	if (!name) error(400, 'Type your full name to attest')
+	if (name.length > 200) error(400, 'Typed name must be 200 characters or fewer')
+
+	const review = await db.performanceReview.findUnique({
+		where: { id },
+		include: SIGNOFF_REVIEW_INCLUDE
+	})
+	if (!review) error(404, 'Performance review not found')
+
+	const signatoryOrder = snapshotSignatoryOrder(review.templateSnapshot)
+	if (!signatoryOrder) error(409, 'This review has no readable form template')
+
+	const slot = nextSignatorySlot(signatoryOrder, review.signoffs)
+	if (!slot) error(400, 'This review is already fully signed')
+
+	const holders = await resolveSlotHolders(slot, review)
+	if (!holders.includes(userId)) {
+		error(409, `This review is waiting on the ${slot.label} — it is not your turn to sign`)
+	}
+
+	// Denormalized from the SNAPSHOT slot at attest time, per the column comments on
+	// ReviewSignoff. The turn check above still derives from the order, never from `order`.
+	const order = signatoryOrder.findIndex((s) => s.id === slot.id)
+
+	try {
+		return await db.$transaction(async (tx) => {
+			const signoff = await tx.reviewSignoff.create({
+				data: {
+					reviewId: id,
+					slotId: slot.id,
+					roleLabel: slot.label,
+					order,
+					attestedByUserId: userId,
+					typedName: name
+				},
+				select: { id: true }
+			})
+
+			// POST-INSERT rows, read back inside the same transaction — see the note above.
+			const signed = await tx.reviewSignoff.findMany({
+				where: { reviewId: id },
+				select: { slotId: true }
+			})
+			const complete = isFullySigned(signatoryOrder, signed)
+
+			const updated = await tx.performanceReview.update({
+				where: { id },
+				data: complete ? { status: 'COMPLETED', completedAt: new Date() } : { status: 'SIGNING' }
+			})
+
+			// #324 — `tx` as the third argument, so the audit row shares the fate of the signature
+			// it describes. The typed name is not logged: it is on the signoff row, and the audit
+			// log is readable by more people than the review is.
+			await writeAuditLog(
+				ctx,
+				{
+					action: 'CREATE',
+					entityType: 'ReviewSignoff',
+					entityId: signoff.id,
+					newValue: {
+						reviewId: id,
+						slotId: slot.id,
+						roleLabel: slot.label,
+						order,
+						status: updated.status
+					}
+				},
+				tx
+			)
+
+			return updated
+		})
+	} catch (e) {
+		// THE RACE THE RELATIONAL TABLE EXISTS FOR: two valid holders of one slot attesting at
+		// the same instant. The unique constraint is the arbiter — a pre-read cannot be, because
+		// both readers would see the slot unsigned.
+		if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+			error(409, 'That signature was just recorded by someone else')
+		}
+		throw e
+	}
+}
+
+export interface StalledSignoff {
+	reviewId: string
+	employeeId: string
+	employeeName: string
+	departmentName: string
+	cycleName: string
+	slot: SignatorySlot
+}
+
+/**
+ * Reviews in SCORED/SIGNING whose next slot resolves to NOBODY (plan item 142, SPEC AC12).
+ *
+ * A SEPARATE VIEW FROM `listUnreviewable`, deliberately: unreviewable means the review was
+ * never created; stalled means it exists, is part-way through, and cannot advance. Merging
+ * them would hide one behind the other.
+ *
+ * RECOMPUTED ON READ, with no stored flag — the same reasoning as `listUnreviewable`. A
+ * persisted "stalled" boolean goes stale the moment HR assigns a department head, and would
+ * keep naming reviews that are already unblocked.
+ *
+ * Org-scoped through `cycle.organizationId` because PerformanceReview carries no
+ * `organizationId` column of its own — the same scoping `getReview` uses.
+ */
+export async function listStalledSignoffs(organizationId: string): Promise<StalledSignoff[]> {
+	const reviews = await db.performanceReview.findMany({
+		where: { status: { in: ['SCORED', 'SIGNING'] }, cycle: { organizationId } },
+		include: SIGNOFF_REVIEW_INCLUDE
+	})
+
+	const stalled = await Promise.all(
+		reviews.map(async (review) => {
+			const signatoryOrder = snapshotSignatoryOrder(review.templateSnapshot)
+			if (!signatoryOrder) return null
+			const slot = nextSignatorySlot(signatoryOrder, review.signoffs)
+			if (!slot) return null
+			const holders = await resolveSlotHolders(slot, review)
+			if (holders.length) return null
+			return {
+				reviewId: review.id,
+				employeeId: review.employee.id,
+				employeeName: `${review.employee.firstName} ${review.employee.lastName}`,
+				departmentName: review.employee.department.name,
+				cycleName: review.cycle.name,
+				slot
+			}
+		})
+	)
+
+	return stalled.filter((s): s is StalledSignoff => s !== null)
 }
 
 // ── Cadence config (#178) ────────────────────────────────────────────────────
