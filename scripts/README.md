@@ -296,6 +296,70 @@ cron mail even before anyone opens the app.
 `files/` back under `UPLOAD_DIR` preserving relative paths, and reconcile the rows using
 `manifest.json`, whose `path` field is always `files/` + the row's `storageKey`.
 
+## Automatic review cycles — `generate-review-cycles.ts`
+
+Performance evaluation runs on a per-organization cadence (#178). There is no manual "create
+cycle" screen any more — this script creates the next `ReviewCycle` as `ACTIVE`, opens a
+`PerformanceReview` for every active employee that has both an assigned template and a
+manager, snapshots that template onto each review, and notifies each employee with a link to
+their review.
+
+Cadence (interval in months, due days, on/off) is per organization and edited in the app at
+**Settings → Performance**. This cron entry only _offers_ the script a chance to generate each
+night; the script exits doing nothing when the org's interval has not elapsed. An org with no
+config row uses the defaults and is never written to by this script.
+
+```text
+0 2 * * *  cd ~/repos/Veent_HRIS && docker compose run --rm app pnpm exec tsx scripts/generate-review-cycles.ts >> /var/log/veent-review-cycles.log 2>&1
+```
+
+> **`deploy.yml` does NOT create this crontab entry.** As stated for this file as a whole, the
+> deploy does `git reset --hard origin/main` and never touches the droplet's crontab. This
+> line must be installed once, by hand, with `crontab -e`. If it is missing, no review cycle
+> is ever generated and nothing in the app complains — the only symptom is an empty cycle list.
+
+Runs 02:00 droplet time, **daily** even though a cycle is due only every couple of months, so
+a cadence boundary is never missed by more than a day. It sits between the 01:00 regularization
+sweep and the 02:30 document backup, so the three never contend for the 512MB box.
+
+Dry run first when testing (lists the cycle and reviews it _would_ create, writes nothing):
+
+```bash
+docker compose run --rm app pnpm exec tsx scripts/generate-review-cycles.ts --dry-run
+```
+
+Force a run outside the configured cadence:
+
+```bash
+docker compose run --rm app pnpm exec tsx scripts/generate-review-cycles.ts --force
+```
+
+Idempotent at the **database**, not by the script's own care:
+`ReviewCycle @@unique([organizationId, startDate, endDate])` makes a second create for the same
+period raise `P2002`, which the script reports as "already generated — skipped" rather than as
+a failure. There is deliberately **no advisory lock** — generation fires at most once every
+`intervalMonths` from one crontab line, and the unique constraint plus a single transaction
+turns any genuine overlap into that caught `P2002` instead of a duplicate row. A lock would add
+the connection-pinning trap `backup-documents.ts` has to live with, for a race that cannot
+produce a bad row.
+
+All month arithmetic lives in `src/lib/server/performance/cycle-plan.ts`, never in the script:
+"is a cycle due?" is answered on a **Manila** basis (a wall-clock business question) and "what
+are the period's dates?" on a **UTC month-stepping** basis (the day-of-month must survive the
+step). The two disagree on purpose — see the file's header.
+
+Like `promote-probationary.ts` and unlike `backup-documents.ts`, it writes an `AuditLog` entry
+and therefore requires the seeded `system@veent.ph` user (`AuditLog.actorId` is a non-nullable
+FK); the script exits 1 with a clear message if it is missing. A cycle appearing in HR's list
+with no actor would be unexplainable.
+
+Employees who get no review are **reported, never silent**: the run prints each one with its
+reasons (`no-template-assigned`, `no-manager`, `template-invalid`), and the same list is
+recomputed on demand in the app.
+
+Exits 1 if any org failed, so a failure is visible in `/var/log/veent-review-cycles.log` and in
+cron mail before anyone opens the app.
+
 ### Type-checking scripts
 
 `pnpm check` does **not** cover `scripts/**` or `prisma/**` — one site has already shipped
