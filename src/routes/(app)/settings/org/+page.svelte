@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
+	import PageHeader from '$lib/components/ui/PageHeader.svelte'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
@@ -34,11 +35,11 @@
 </svelte:head>
 
 <div class="space-y-8">
-	<BackButton fallback="/settings" label="Settings" preferFallback />
-
-	<div class="flex items-center justify-between">
-		<h1 class="text-2xl font-bold tracking-tight">Organization Structure</h1>
-		<div class="flex gap-2">
+	<PageHeader title="Organization Structure">
+		{#snippet back()}
+			<BackButton fallback="/settings" label="Settings" preferFallback />
+		{/snippet}
+		{#snippet actions()}
 			<a
 				href="/settings/org-chart"
 				class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">View Org Chart</a
@@ -49,8 +50,8 @@
 			>
 				Add Position
 			</button>
-		</div>
-	</div>
+		{/snippet}
+	</PageHeader>
 
 	{#if form?.error}
 		<div

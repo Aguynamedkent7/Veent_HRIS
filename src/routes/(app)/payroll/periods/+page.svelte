@@ -3,6 +3,7 @@
 	import { formatCurrency, formatShortDate } from '$lib/utils/format'
 	import PeriodPicker from '$lib/components/ui/PeriodPicker.svelte'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
+	import PageHeader from '$lib/components/ui/PageHeader.svelte'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
@@ -38,18 +39,19 @@
 </svelte:head>
 
 <div class="space-y-6">
-	<div class="flex items-center justify-between">
-		<div class="flex items-center gap-3">
+	<PageHeader title="Payroll Periods">
+		{#snippet back()}
 			<BackButton fallback="/payroll" label="Payroll" />
-			<h1 class="text-2xl font-bold tracking-tight">Payroll Periods</h1>
-		</div>
-		<button
-			onclick={() => (showOpen = !showOpen)}
-			class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-		>
-			Open Period
-		</button>
-	</div>
+		{/snippet}
+		{#snippet actions()}
+			<button
+				onclick={() => (showOpen = !showOpen)}
+				class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+			>
+				Open Period
+			</button>
+		{/snippet}
+	</PageHeader>
 
 	{#if form?.error}
 		<div

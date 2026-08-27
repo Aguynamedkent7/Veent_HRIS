@@ -1,5 +1,6 @@
 <script lang="ts">
 	import BackButton from '$lib/components/ui/BackButton.svelte'
+	import PageHeader from '$lib/components/ui/PageHeader.svelte'
 	import type { PageData } from './$types'
 
 	let { data }: { data: PageData } = $props()
@@ -92,19 +93,20 @@
 {/snippet}
 
 <div class="space-y-6">
-	<BackButton fallback="/settings" label="Settings" preferFallback />
-
-	<div class="flex items-center justify-between">
-		<div>
-			<h1 class="text-2xl font-bold tracking-tight">Org Chart</h1>
-			<p class="text-sm text-muted-foreground">
-				Reporting hierarchy built from each employee's manager.
-			</p>
-		</div>
-		<a href="/settings/org" class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent"
-			>Manage Positions</a
-		>
-	</div>
+	<PageHeader
+		title="Org Chart"
+		description="Reporting hierarchy built from each employee's manager."
+	>
+		{#snippet back()}
+			<BackButton fallback="/settings" label="Settings" preferFallback />
+		{/snippet}
+		{#snippet actions()}
+			<a
+				href="/settings/org"
+				class="rounded-md border px-4 py-2 text-sm font-medium hover:bg-accent">Manage Positions</a
+			>
+		{/snippet}
+	</PageHeader>
 
 	<input
 		bind:value={query}

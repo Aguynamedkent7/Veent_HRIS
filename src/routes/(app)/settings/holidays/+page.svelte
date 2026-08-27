@@ -3,6 +3,7 @@
 	import { formatShortDate } from '$lib/utils/format'
 	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
+	import PageHeader from '$lib/components/ui/PageHeader.svelte'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
@@ -44,23 +45,22 @@
 </svelte:head>
 
 <div class="space-y-6">
-	<BackButton fallback="/settings" label="Settings" preferFallback />
-
-	<div class="flex items-center justify-between">
-		<div>
-			<h1 class="text-2xl font-bold tracking-tight">Public Holidays</h1>
-			<p class="text-sm text-muted-foreground">Manage public holidays for payroll computation.</p>
-		</div>
-		<button
-			onclick={() => {
-				showAddForm = !showAddForm
-				editingId = null
-			}}
-			class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-		>
-			{showAddForm ? 'Cancel' : 'Add Holiday'}
-		</button>
-	</div>
+	<PageHeader title="Public Holidays" description="Manage public holidays for payroll computation.">
+		{#snippet back()}
+			<BackButton fallback="/settings" label="Settings" preferFallback />
+		{/snippet}
+		{#snippet actions()}
+			<button
+				onclick={() => {
+					showAddForm = !showAddForm
+					editingId = null
+				}}
+				class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+			>
+				{showAddForm ? 'Cancel' : 'Add Holiday'}
+			</button>
+		{/snippet}
+	</PageHeader>
 
 	{#if form?.error}
 		<div

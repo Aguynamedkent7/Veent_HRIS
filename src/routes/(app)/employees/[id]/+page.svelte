@@ -133,19 +133,25 @@
 </svelte:head>
 
 <div class="space-y-6">
-	<div class="flex items-center gap-4">
-		<BackButton
-			fallback={canManage ? '/employees' : '/team'}
-			label={canManage ? 'Employees' : 'Team'}
-		/>
-		<h1 class="text-2xl font-bold">{employee.lastName}, {employee.firstName}</h1>
-		<span
-			class="rounded-full px-2.5 py-1 text-xs font-medium {employee.employmentStatus === 'ACTIVE'
-				? 'bg-green-500/15 text-green-400'
-				: 'bg-gray-500/15 text-gray-400'}"
+	<div class="flex flex-wrap items-start justify-between gap-3">
+		<div class="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+			<h1 class="text-2xl font-bold">{employee.lastName}, {employee.firstName}</h1>
+			<span
+				class="rounded-full px-2.5 py-1 text-xs font-medium {employee.employmentStatus === 'ACTIVE'
+					? 'bg-green-500/15 text-green-400'
+					: 'bg-gray-500/15 text-gray-400'}"
+			>
+				{employee.employmentStatus}
+			</span>
+		</div>
+		<div
+			class="ml-auto flex basis-full shrink-0 flex-wrap items-center justify-end gap-2 sm:basis-auto"
 		>
-			{employee.employmentStatus}
-		</span>
+			<BackButton
+				fallback={canManage ? '/employees' : '/team'}
+				label={canManage ? 'Employees' : 'Team'}
+			/>
+		</div>
 	</div>
 
 	<div class="grid gap-6 lg:grid-cols-2">

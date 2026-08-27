@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms'
 	import { fade, scale } from 'svelte/transition'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
+	import PageHeader from '$lib/components/ui/PageHeader.svelte'
 	import { ROLE_DESCRIPTIONS, ROLE_GROUPS, ROLE_LABELS, canAny } from '$lib/rbac'
 	import Check from 'lucide-svelte/icons/check'
 	import Info from 'lucide-svelte/icons/info'
@@ -168,16 +169,14 @@
 </svelte:head>
 
 <div class="space-y-6">
-	<BackButton fallback="/settings" label="Settings" preferFallback />
-
-	<div>
-		<h1 class="text-2xl font-bold tracking-tight">Roles &amp; Permissions</h1>
-		<p class="text-sm text-muted-foreground">
-			Manage each user's access level and account status. You cannot change your own role or
-			deactivate yourself, and the last active super admin and CEO are protected. Assigning a role
-			replaces the user's full role set.
-		</p>
-	</div>
+	<PageHeader
+		title="Roles & Permissions"
+		description="Manage each user's access level and account status. You cannot change your own role or deactivate yourself, and the last active super admin and CEO are protected. Assigning a role replaces the user's full role set."
+	>
+		{#snippet back()}
+			<BackButton fallback="/settings" label="Settings" preferFallback />
+		{/snippet}
+	</PageHeader>
 
 	<!-- `?/setActive` errors only: a rejected role save renders inside the dialog, where the person
 	     who pressed Save is looking. -->

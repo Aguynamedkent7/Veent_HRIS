@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
+	import PageHeader from '$lib/components/ui/PageHeader.svelte'
 	import ConfirmButton from '$lib/components/ui/ConfirmButton.svelte'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import { CLEARANCE_AREA_OPTIONS } from '$lib/utils/clearance-area'
@@ -25,16 +26,14 @@
 </svelte:head>
 
 <div class="mx-auto max-w-4xl space-y-6">
-	<div>
-		<BackButton fallback="/settings" label="Settings" preferFallback />
-		<h1 class="mt-1 text-2xl font-bold tracking-tight">Offboarding Checklist</h1>
-		<p class="text-sm text-muted-foreground">
-			The clearance steps every separation case starts with. Each names a task and the clearance
-			area that signs it off, optionally pinned to a specific department. Opening a separation
-			copies the active steps into the case, and the departing employee is emailed a transition
-			notice listing them.
-		</p>
-	</div>
+	<PageHeader
+		title="Offboarding Checklist"
+		description="The clearance steps every separation case starts with. Each names a task and the clearance area that signs it off, optionally pinned to a specific department. Opening a separation copies the active steps into the case, and the departing employee is emailed a transition notice listing them."
+	>
+		{#snippet back()}
+			<BackButton fallback="/settings" label="Settings" preferFallback />
+		{/snippet}
+	</PageHeader>
 
 	{#if form?.error}
 		<div

@@ -24,10 +24,8 @@
 </svelte:head>
 
 <div class="mx-auto max-w-2xl space-y-6">
-	<BackButton fallback="/performance" label="Performance" />
-
-	<div class="flex items-center justify-between">
-		<div>
+	<div class="flex flex-wrap items-start justify-between gap-3">
+		<div class="min-w-0 flex-1 space-y-1">
 			<h1 class="text-2xl font-bold tracking-tight">
 				{r.employee.firstName}
 				{r.employee.lastName}
@@ -37,9 +35,14 @@
 				{r.reviewer.lastName}
 			</p>
 		</div>
-		<span class="rounded-full px-2.5 py-1 text-xs font-medium {statusClass(r.status)}"
-			>{r.status.replace('_', ' ')}</span
+		<div
+			class="ml-auto flex basis-full shrink-0 flex-wrap items-center justify-end gap-2 sm:basis-auto"
 		>
+			<BackButton fallback="/performance" label="Performance" />
+			<span class="rounded-full px-2.5 py-1 text-xs font-medium {statusClass(r.status)}"
+				>{r.status.replace('_', ' ')}</span
+			>
+		</div>
 	</div>
 
 	{#if form?.error}
