@@ -1,15 +1,31 @@
 import { fail, isHttpError } from '@sveltejs/kit'
-import { z } from 'zod'
 import { db } from '$lib/server/db'
 import { assertCanTouchEmployee } from '$lib/server/services/employee-access'
+import {
+	answersSchemaFor,
+	employeeCommentsSchema,
+	templateStructureSchema
+} from '$lib/server/performance/schemas'
 import {
 	getReview,
 	redactHrAuthored,
 	saveSelfAssessment,
-	submitManagerReview,
+	saveEmployeeComments,
+	submitScores,
 	acknowledgeReview
 } from '$lib/server/services/performance'
 import type { Actions, PageServerLoad } from './$types'
+
+function issuesOf(error: { issues: { path: (string | number)[]; message: string }[] }) {
+	return error.issues.map((i) => ({ path: i.path.join('.'), message: i.message }))
+}
+
+/** The review's own snapshotted form, or `null` when it is missing/unreadable (#178 item 130). */
+function structureOf(templateSnapshot: unknown) {
+	const snapshot = templateSnapshot as { structure?: unknown } | null
+	const parsed = templateStructureSchema.safeParse(snapshot?.structure)
+	return parsed.success ? parsed.data : null
+}
 
 export const load: PageServerLoad = async ({ locals, params }) => {
 	const user = locals.user!
@@ -31,11 +47,28 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		await assertCanTouchEmployee(user, review.employee.id)
 	}
 
-	// #179: the reviewed employee never sees the HR-authored review — redact the manager
-	// comments and rating before they leave the server. The reviewer and HR still get them.
+	// #178 (was #179): the reviewed employee never sees the evaluator-authored review — redact
+	// the manager comments, the rating and the whole `answers` blob before they leave the server.
+	// The reviewer and HR still get them.
 	const visibleReview = isSubject && !isReviewer ? redactHrAuthored(review) : review
 
-	return { review: visibleReview, isSubject, isReviewer }
+	// #178 item 130 — DEFENSIVE READ. Postgres validates nothing inside the JSON, so a snapshot
+	// that is missing or stored in a shape this code cannot read must render an error banner, NOT
+	// a half-built evaluation form. A silently empty form would be signed as if it were complete.
+	//
+	// The banner text is fixed on purpose: the zod issue can name criterion ids from the form, and
+	// this page is also served to the review's subject.
+	const structure = structureOf(review.templateSnapshot)
+
+	return {
+		review: visibleReview,
+		isSubject,
+		isReviewer,
+		structure,
+		structureError: structure
+			? null
+			: 'This review has no readable evaluation form — its stored template is missing or in an unreadable shape. Ask HR to reopen the review.'
+	}
 }
 
 function ctxOf(locals: App.Locals, ip: string) {
@@ -69,18 +102,69 @@ export const actions: Actions = {
 		)
 	},
 
-	submitReview: async ({ request, locals, params, getClientAddress }) => {
+	/**
+	 * The evaluator submits what they TYPED (#178 item 128). CAPTURE ONLY — plan §0: nothing here
+	 * sums criteria into a subtotal, weights subtotals into a total, or derives a band. It parses
+	 * and hands the object to the service verbatim.
+	 *
+	 * ONE form field, `answers`, carrying the whole §4.2 object as a JSON string — the same
+	 * decision as the template builder's single `structure` field (plan §8.2): one field, one
+	 * parse, one failure mode, instead of index-encoded names and a bespoke parser.
+	 *
+	 * Parsed against THIS review's own snapshot, never the live template — the snapshot is the
+	 * form the review was opened against. The service re-runs the identical parse: this copy is
+	 * for the form's error messages, and a direct POST that skipped the page would skip it, so
+	 * neither copy replaces the other.
+	 */
+	submitScores: async ({ request, locals, params, getClientAddress }) => {
 		const data = await request.formData()
-		const parsed = z
-			.object({
-				managerComments: z.string().optional(),
-				overallRating: z.coerce.number().int().min(1).max(5).optional()
-			})
-			.safeParse(Object.fromEntries(data))
-		if (!parsed.success) return fail(422, { error: 'Invalid review' })
 		const reviewerId = await myEmployeeId(locals.user!.id)
+		const review = await getReview(params.id, locals.user!.organizationId)
+
+		// IDENTITY BEFORE CONTENT, matching the service's own guard order: a non-reviewer never
+		// learns whether their payload would have been valid, and never learns the shape of
+		// someone else's form. The service re-checks this independently.
+		if (review.reviewer.id !== reviewerId) {
+			return fail(409, { error: 'Only the assigned reviewer can submit scores' })
+		}
+
+		const structure = structureOf(review.templateSnapshot)
+		if (!structure) return fail(409, { error: 'This review has no readable form template' })
+
+		let raw: unknown
+		try {
+			raw = JSON.parse(String(data.get('answers') ?? ''))
+		} catch {
+			return fail(422, { error: 'The submitted scores are not valid JSON', issues: [] })
+		}
+
+		const parsed = answersSchemaFor(structure).safeParse(raw)
+		if (!parsed.success) {
+			return fail(422, {
+				error: parsed.error.issues[0]?.message ?? 'Invalid scores',
+				issues: issuesOf(parsed.error)
+			})
+		}
+
 		return run(() =>
-			submitManagerReview(params.id, reviewerId, parsed.data, ctxOf(locals, getClientAddress()))
+			submitScores(params.id, reviewerId, parsed.data, ctxOf(locals, getClientAddress()))
+		)
+	},
+
+	/** The paper form's "Employee Comments" (#178 item 129) — employee-authored, always theirs. */
+	saveEmployeeComments: async ({ request, locals, params, getClientAddress }) => {
+		const parsed = employeeCommentsSchema.safeParse(Object.fromEntries(await request.formData()))
+		if (!parsed.success) {
+			return fail(422, { error: parsed.error.issues[0]?.message ?? 'Comments cannot be empty' })
+		}
+		const employeeId = await myEmployeeId(locals.user!.id)
+		return run(() =>
+			saveEmployeeComments(
+				params.id,
+				employeeId,
+				parsed.data.employeeComments,
+				ctxOf(locals, getClientAddress())
+			)
 		)
 	},
 
