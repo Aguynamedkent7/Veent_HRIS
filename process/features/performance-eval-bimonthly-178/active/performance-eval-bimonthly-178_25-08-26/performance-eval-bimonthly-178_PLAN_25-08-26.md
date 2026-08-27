@@ -1328,6 +1328,21 @@ Slot resolution:
      `ADMINISTER_HR_ORGWIDE`. The service must verify `head.departmentId === department.id` and
      `head.organizationId === department.organizationId` on write (Postgres cannot express it —
      the same rule `Employee.reportsToId` carries at `schema.prisma:446-448`).
+     **AMENDMENT (EXECUTE, 27-08-26).** Three corrections, all found by the grep this item asked
+     for:
+     - **The path is wrong.** `src/routes/(app)/settings/departments` does not exist. The real
+       edit surface is `src/routes/(app)/departments`, whose Members panel (#71) already lists
+       the people a head must be drawn from. The `headOf`-on-the-employee-page fallback was not
+       needed. Shipped as the `setHead` action there.
+     - **The `reportsToId` citation drifted** — that rule is at `schema.prisma:454-456`, not
+       446-448.
+     - **The plan did not anticipate the ACTIVE-only roster.** The page filters employees to
+       `employmentStatus: 'ACTIVE'`, so a sitting head who goes `ON_LEAVE` would vanish from the
+       picker and the next save would silently clear the column. `listDepartments` now includes
+       the head, and the picker keeps them as an option when they are off the active roster.
+     The page `load` keeps its existing `MANAGE_HR` (raising it would take the Members panel away
+     from MANAGER, out of scope) and returns `canSetHead` so a MANAGER never sees a control that
+     always 403s.
 147. Create `tests/unit/performance-signoff.test.ts` — SPEC AC10, AC12, AC13: COMPLETED is blocked
      while any required signatory is missing; reordering a template's list changes future reviews
      and not past ones (against the snapshot); the missing-role case appears in
