@@ -1014,7 +1014,7 @@ Manila, `regularizationDate:166` UTC). Both bases are used here, for different q
 | Question | Basis | Why | Helper |
 |---|---|---|---|
 | "Is a cycle due yet?" | **Manila** | it is a wall-clock business question — HR in PHT decides whether today is past the boundary; a UTC answer is 8 hours out and can flip the day | `manilaDayKey` (`dates.ts:62`) |
-| "What are this period's start and end dates?" | **UTC month-stepping** | the day-of-month must stay stable across the step; local-time month math drifts a day for PHT — the exact reason `regularizationDate:166` is UTC | new `addUTCMonths` |
+| "What are this period's start and end dates?" | **UTC month-stepping** | the day-of-month must stay stable across the step; local-time month math drifts a day for PHT — the exact reason `regularizationDate` (now `dates.ts:191`, not `:166`) is UTC | `addUTCMonths`, shipped in 0075272 |
 
 90. `src/lib/utils/dates.ts` — add `addUTCMonths(date: Date, months: number): Date`, using
     `d.setUTCMonth(d.getUTCMonth() + months)`, with a doc comment that names the UTC basis and
@@ -1037,8 +1037,15 @@ Pure planner:
     - `nextCyclePeriod(lastCycleEnd: Date|null, intervalMonths: number, now: Date): {startDate: Date; endDate: Date; name: string}`
       — UTC month-stepping via `addUTCMonths`. `name` is generated, e.g. `"Aug–Sep 2026"`.
     - `planReviewsForCycle(employees, existingEmployeeIds): {toCreate, unreviewable}` where
-      `unreviewable` entries carry `reason: 'no-template-assigned' | 'no-manager' | 'template-invalid'`
-      and an employee missing both reasons reports both.
+      `unreviewable` entries carry `reasons: ('no-template-assigned' | 'no-manager' |
+      'template-invalid')[]` and an employee missing both reasons reports both.
+      **CORRECTED 2026-08-27 during EXECUTE — the plan said singular `reason:` while also
+      requiring both reasons for one employee. Those contradict.** The shipped shape is an
+      ARRAY, one entry per employee, reasons ordered. **Items 94 and 95 must consume the array.**
+      Also note `template-invalid` cannot be decided by the pure planner — the `safeParse` lives
+      in the service (item 94), which needs the parsed structure for `templateSnapshot` anyway —
+      so `PlannableEmployee` carries `templateStructureValid?: boolean`, defaulting to `true` and
+      read only when a template is assigned.
     Every exported function carries a comment naming its timezone basis **at the point of use**.
 93. Create `tests/unit/performance-cycle-plan.test.ts` — SPEC AC3, AC14, AC15:
     default interval (no config row → 2 months); a changed setting affecting only future cycles;
