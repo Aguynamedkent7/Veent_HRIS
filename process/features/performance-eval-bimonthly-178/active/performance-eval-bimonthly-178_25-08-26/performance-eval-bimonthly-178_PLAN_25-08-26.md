@@ -1190,7 +1190,25 @@ Remove the manual cycle UI (SPEC: "that whole manual HR UI is gone"):
      (`templateStructureSchema.safeParse`); on failure return a flag that renders an error banner
      rather than a half-rendered form.
 131. `src/routes/(app)/performance/reviews/[id]/+page.svelte` — **rewrite** to render from the
-     snapshot: rating-scale table, each section with its `weightLabel` and criteria rows
+     snapshot.
+
+     **AMENDED 2026-08-27 during EXECUTE Phase 3 — do NOT hand-roll this form.**
+     `src/lib/components/performance/ReviewFormRender.svelte` already exists, built in Phase 3,
+     and renders exactly the field list below from a `TemplateStructure`. It takes a `mode` prop:
+     `'preview'` (read-only, used by the template builder's preview pane) and `'fill'` (live
+     inputs, which THIS item owns and completes). **Item 131 consumes that component and binds
+     answers to it; it does not write a second renderer.**
+
+     The reason is the design brief's hard requirement (§3, and failure #1 in §9): the builder's
+     preview must render through the same component as the real review form, or the two drift and
+     the preview teaches HR a lie. The original wording of this item created that drift by
+     construction. One component, two modes.
+
+     Note the mode asymmetry that carries the no-arithmetic rule: in `'preview'` the subtotal and
+     total lines render as **empty boxes, never computed zeroes**. In `'fill'` they are inputs the
+     evaluator types into. Neither mode ever computes.
+
+     The field list this item is responsible for completing in `'fill'` mode: rating-scale table, each section with its `weightLabel` and criteria rows
      (rating input + remark input), the subtotal input **only when `section.maximum !== null`**,
      the overall-summary label block, the total input, the band `<select>`, the narrative blocks,
      the recommendation checklist, the KPI table when present, the self-assessment box, and the
