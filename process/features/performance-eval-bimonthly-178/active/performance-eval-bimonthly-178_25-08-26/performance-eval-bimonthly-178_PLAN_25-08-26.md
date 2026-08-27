@@ -1230,8 +1230,14 @@ Remove the manual cycle UI (SPEC: "that whole manual HR UI is gone"):
      The field list this item is responsible for completing in `'fill'` mode: rating-scale table, each section with its `weightLabel` and criteria rows
      (rating input + remark input), the subtotal input **only when `section.maximum !== null`**,
      the overall-summary label block, the total input, the band `<select>`, the narrative blocks,
-     the recommendation checklist, the KPI table when present, the self-assessment box, and the
-     employee-comments box. Svelte 5 runes. `{@const}` only as an immediate child of `{#each}` /
+     the recommendation checklist, and the KPI table when present.
+
+     **CORRECTED 2026-08-27 during EXECUTE — the self-assessment box and the employee-comments
+     box are NOT part of this component.** Both are employee-authored, live in their own columns,
+     and must never enter `answers`; putting them inside the shared renderer would push
+     employee-authored text through the evaluator's answer blob and past §4.2's redaction rule.
+     They stay on the page, outside `ReviewFormRender`. Phase 3 already built it that way; only
+     this field list was wrong. Svelte 5 runes. `{@const}` only as an immediate child of `{#each}` /
      `{#if}` (CLAUDE.md).
      **No `$derived` that sums anything.** If a later reader adds `$derived(() => ratings.reduce(...))`
      to "helpfully" show a running subtotal, that is the scoring engine arriving through the front
