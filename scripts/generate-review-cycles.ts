@@ -32,14 +32,12 @@
 import 'dotenv/config'
 import { Prisma } from '@prisma/client'
 import { db } from '../src/lib/server/db'
-import { writeAuditLog } from '../src/lib/server/audit'
+import { isCycleDue, nextCyclePeriod } from '../src/lib/server/performance/cycle-plan'
 import {
-	isCycleDue,
-	nextCyclePeriod,
-	planReviewsForCycle
-} from '../src/lib/server/performance/cycle-plan'
-import { templateStructureSchema } from '../src/lib/server/performance/schemas'
-import { getPerformanceConfig, openReviewsForCycle } from '../src/lib/server/services/performance'
+	createCycleAndOpenReviews,
+	getPerformanceConfig,
+	planCycleRoster
+} from '../src/lib/server/services/performance'
 import { notify } from '../src/lib/server/services/notifications'
 import type { AuditContext } from '../src/lib/server/services/types'
 
@@ -51,37 +49,6 @@ const force = args.includes('--force')
 
 function isDuplicateCycle(e: unknown): boolean {
 	return e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002'
-}
-
-/**
- * What a real run WOULD open, without writing anything.
- *
- * It re-runs the exported pure planner over the org's roster with an empty "already reviewed"
- * set, which is exact: the cycle does not exist yet, so nobody holds a review in it. The
- * service's own `planCycleRoster` is not exported, so the roster query is repeated here; the
- * real run's numbers always come from the service, never from this preview.
- */
-async function previewOrg(organizationId: string) {
-	const employees = await db.employee.findMany({
-		where: { organizationId, employmentStatus: 'ACTIVE' },
-		select: {
-			id: true,
-			reportsToId: true,
-			assignedTemplateId: true,
-			assignedTemplate: { select: { structure: true } }
-		}
-	})
-	return planReviewsForCycle(
-		employees.map((e) => ({
-			id: e.id,
-			reportsToId: e.reportsToId,
-			assignedTemplateId: e.assignedTemplateId,
-			templateStructureValid: e.assignedTemplate
-				? templateStructureSchema.safeParse(e.assignedTemplate.structure).success
-				: undefined
-		})),
-		[]
-	)
 }
 
 async function main() {
@@ -132,7 +99,9 @@ async function main() {
 			const period = nextCyclePeriod(lastCycleEnd, config.intervalMonths, now)
 
 			if (dryRun) {
-				const { toCreate, unreviewable } = await previewOrg(org.id)
+				// The SAME read+plan the real run uses, with `null` for "no cycle exists yet" —
+				// a preview computed a second way is a preview that can lie.
+				const { toCreate, unreviewable } = await planCycleRoster(org.id, null)
 				console.log(
 					`  org ${org.id}: DRY RUN — would create cycle "${period.name}" ` +
 						`(${period.startDate.toISOString().slice(0, 10)} – ${period.endDate.toISOString().slice(0, 10)}) ` +
@@ -144,21 +113,19 @@ async function main() {
 				continue
 			}
 
-			let cycleId: string
+			const ctx: AuditContext = {
+				organizationId: org.id,
+				actorId: systemUser.id,
+				actorRoles: systemUser.roles
+			}
+
+			// The cycle row, its reviews and the audit row all commit in ONE $transaction inside
+			// the service. There is nothing to compensate for: a failure anywhere — including a
+			// hard kill mid-write — leaves no cycle behind, which matters because an ACTIVE cycle
+			// with zero reviews is unrecoverable now that no UI opens reviews by hand.
+			let opened: Awaited<ReturnType<typeof createCycleAndOpenReviews>>
 			try {
-				const cycle = await db.reviewCycle.create({
-					data: {
-						organizationId: org.id,
-						name: period.name,
-						startDate: period.startDate,
-						endDate: period.endDate,
-						// ACTIVE, not DRAFT: nothing activates a cycle by hand any more — the manual HR
-						// cycle UI is gone, so a DRAFT cycle would never be opened by anybody.
-						status: 'ACTIVE'
-					},
-					select: { id: true }
-				})
-				cycleId = cycle.id
+				opened = await createCycleAndOpenReviews(org.id, period, ctx)
 			} catch (e) {
 				// The @@unique doing its job: a second invocation for the same period is not an
 				// error, it is the idempotency guarantee.
@@ -169,43 +136,10 @@ async function main() {
 				throw e
 			}
 
-			const ctx: AuditContext = {
-				organizationId: org.id,
-				actorId: systemUser.id,
-				actorRoles: systemUser.roles
-			}
-
-			let opened: Awaited<ReturnType<typeof openReviewsForCycle>>
-			try {
-				// The reviews and their audit row commit together inside the service's own
-				// $transaction. The cycle row itself cannot join that transaction without a service
-				// change (`openReviewsForCycle` takes a cycleId and opens its own tx), so the cycle
-				// is removed again if opening fails — an ACTIVE cycle with zero reviews would be
-				// unrecoverable, because no UI opens reviews by hand any more. No audit row has
-				// been written at this point, so nothing dangles.
-				opened = await openReviewsForCycle(cycleId, org.id, ctx)
-			} catch (e) {
-				await db.reviewCycle.delete({ where: { id: cycleId } })
-				throw e
-			}
-
-			await writeAuditLog(ctx, {
-				action: 'CREATE',
-				entityType: 'ReviewCycle',
-				entityId: cycleId,
-				newValue: {
-					name: period.name,
-					startDate: period.startDate,
-					endDate: period.endDate,
-					status: 'ACTIVE',
-					reviewsOpened: opened.opened
-				}
-			})
-
 			// Every review in a cycle created moments ago is new, so this notifies exactly the
 			// employees this run affected and nobody twice.
 			const reviews = await db.performanceReview.findMany({
-				where: { cycleId },
+				where: { cycleId: opened.cycle.id },
 				select: { id: true, employee: { select: { userId: true } } }
 			})
 			for (const review of reviews) {

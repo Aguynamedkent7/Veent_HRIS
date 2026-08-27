@@ -5,6 +5,7 @@ import type { Prisma } from '@prisma/client'
 import {
 	DEFAULT_INTERVAL_MONTHS,
 	planReviewsForCycle,
+	type CyclePeriod,
 	type UnreviewableEmployee
 } from '$lib/server/performance/cycle-plan'
 import { templateStructureSchema } from '$lib/server/performance/schemas'
@@ -155,7 +156,14 @@ export async function acknowledgeReview(id: string, employeeId: string, ctx: Aud
 // ── Automatic cycle generation (#178) ────────────────────────────────────────
 
 /**
- * The shared read + plan behind both `openReviewsForCycle` and `listUnreviewable`.
+ * The shared read + plan behind `openReviewsForCycle`, `listUnreviewable` and
+ * `createCycleAndOpenReviews` — and behind the generator script's `--dry-run` preview, which
+ * is why it is exported rather than module-private.
+ *
+ * `cycleId: null` means "no cycle exists yet" (the generator planning a cycle it is about to
+ * create). Nobody can already hold a review in a cycle that does not exist, so the
+ * already-reviewed set is empty and the query is skipped entirely. That makes a `--dry-run`
+ * preview and the real run the SAME code path, so the preview cannot drift from the truth.
  *
  * ORG SCOPING (#323): employees are scoped on the model's OWN `organizationId` column, never
  * through `user: { organizationId }`. A join through the parent asks a different question and
@@ -166,7 +174,7 @@ export async function acknowledgeReview(id: string, employeeId: string, ctx: Aud
  * stored `structure` no longer parses makes its employees `template-invalid` — they are
  * reported to HR, and every other employee's review is still created.
  */
-async function planCycleRoster(cycleId: string, organizationId: string) {
+export async function planCycleRoster(organizationId: string, cycleId: string | null) {
 	const [employees, existing] = await Promise.all([
 		db.employee.findMany({
 			where: { organizationId, employmentStatus: 'ACTIVE' },
@@ -177,7 +185,9 @@ async function planCycleRoster(cycleId: string, organizationId: string) {
 				assignedTemplate: { select: { id: true, name: true, structure: true } }
 			}
 		}),
-		db.performanceReview.findMany({ where: { cycleId }, select: { employeeId: true } })
+		cycleId
+			? db.performanceReview.findMany({ where: { cycleId }, select: { employeeId: true } })
+			: []
 	])
 
 	// One parse per template, not per employee — a 300-person org shares a handful of templates.
@@ -207,6 +217,42 @@ async function planCycleRoster(cycleId: string, organizationId: string) {
 }
 
 /**
+ * The `performanceReview.createMany` rows for a planned roster — shared VERBATIM by
+ * `openReviewsForCycle` and `createCycleAndOpenReviews`, because a snapshot written two
+ * slightly different ways is a snapshot that disagrees with itself.
+ *
+ * One `snapshotAt` instant for the whole batch, so every review opened by this run agrees on
+ * when it was snapshotted.
+ */
+function reviewRows(
+	cycleId: string,
+	toCreate: Awaited<ReturnType<typeof planCycleRoster>>['toCreate'],
+	templateById: Awaited<ReturnType<typeof planCycleRoster>>['templateById']
+) {
+	const snapshotAt = new Date().toISOString()
+	return toCreate.map((r) => {
+		const t = templateById.get(r.templateId)!
+		return {
+			cycleId,
+			employeeId: r.employeeId,
+			reviewerId: r.reviewerId,
+			templateId: r.templateId,
+			// §4.3 — `structure` copied VERBATIM off the template row. Written inside the caller's
+			// transaction and never refreshed: editing the template later must not change what an
+			// opened review shows.
+			templateSnapshot: {
+				version: 1,
+				templateId: t.id,
+				templateName: t.name,
+				snapshotAt,
+				structure: t.structure as Prisma.InputJsonValue
+			},
+			status: 'PENDING' as const
+		}
+	})
+}
+
+/**
  * Open a review for every active employee the cycle can plan one for.
  *
  * Idempotent: an employee already holding a review in this cycle is neither re-created nor
@@ -228,36 +274,11 @@ export async function openReviewsForCycle(
 	})
 	if (!cycle) error(404, 'Review cycle not found')
 
-	const { toCreate, unreviewable, templateById } = await planCycleRoster(cycleId, organizationId)
-
-	// One instant for the whole batch, so every review opened by this run agrees on when it was
-	// snapshotted.
-	const snapshotAt = new Date().toISOString()
+	const { toCreate, unreviewable, templateById } = await planCycleRoster(organizationId, cycleId)
 
 	await db.$transaction(async (tx) => {
 		if (toCreate.length) {
-			await tx.performanceReview.createMany({
-				data: toCreate.map((r) => {
-					const t = templateById.get(r.templateId)!
-					return {
-						cycleId,
-						employeeId: r.employeeId,
-						reviewerId: r.reviewerId,
-						templateId: r.templateId,
-						// §4.3 — `structure` copied VERBATIM off the template row. Written inside this
-						// transaction and never refreshed: editing the template later must not change
-						// what an opened review shows.
-						templateSnapshot: {
-							version: 1,
-							templateId: t.id,
-							templateName: t.name,
-							snapshotAt,
-							structure: t.structure as Prisma.InputJsonValue
-						},
-						status: 'PENDING' as const
-					}
-				})
-			})
+			await tx.performanceReview.createMany({ data: reviewRows(cycleId, toCreate, templateById) })
 		}
 
 		await writeAuditLog(
@@ -273,6 +294,78 @@ export async function openReviewsForCycle(
 	})
 
 	return { opened: toCreate.length, unreviewable }
+}
+
+/**
+ * Create the next cycle as ACTIVE **and** open its reviews in ONE `$transaction` (plan item 98).
+ *
+ * WHY THIS EXISTS AT ALL. The generator used to create the cycle, then call
+ * `openReviewsForCycle`, which opens its own transaction — a nested transaction runs on a
+ * different pooled connection and cannot see the uncommitted cycle, so the two writes could
+ * never share one. The script compensated by deleting the cycle again on any throw, which is
+ * correct on every *exception* path but not on a hard process kill between the two writes:
+ * that left an ACTIVE cycle with zero reviews, and since the manual "Open reviews" button was
+ * removed there is no way back from that state. Here the cycle row, every review row and the
+ * audit row commit together or not at all, so the orphan is not reachable.
+ *
+ * P2002 ON THE `@@unique([organizationId, startDate, endDate])` IS DELIBERATELY NOT CAUGHT.
+ * A second invocation for the same period is the idempotency guarantee, not a failure, and
+ * only the caller knows how to report it — the script prints "already generated — skipped"
+ * and carries on. Swallowing it here would hide a real duplicate from every other caller.
+ *
+ * The roster read happens BEFORE the transaction opens, the same way `openReviewsForCycle`
+ * does it: reads do not need to be in the write transaction, and holding one open across them
+ * would stretch the transaction window for nothing.
+ */
+export async function createCycleAndOpenReviews(
+	organizationId: string,
+	period: CyclePeriod,
+	ctx: AuditContext
+) {
+	// `null` — the cycle does not exist yet, so nobody can already hold a review in it.
+	const { toCreate, unreviewable, templateById } = await planCycleRoster(organizationId, null)
+
+	return db.$transaction(async (tx) => {
+		const cycle = await tx.reviewCycle.create({
+			data: {
+				organizationId,
+				name: period.name,
+				startDate: period.startDate,
+				endDate: period.endDate,
+				// ACTIVE, not DRAFT: nothing activates a cycle by hand any more — the manual HR cycle
+				// UI is gone, so a DRAFT cycle would never be opened by anybody.
+				status: 'ACTIVE'
+			},
+			select: { id: true, name: true }
+		})
+
+		if (toCreate.length) {
+			await tx.performanceReview.createMany({
+				data: reviewRows(cycle.id, toCreate, templateById)
+			})
+		}
+
+		// #324 — `tx` as the third argument, so the audit row shares the fate of the writes it
+		// describes.
+		await writeAuditLog(
+			ctx,
+			{
+				action: 'CREATE',
+				entityType: 'ReviewCycle',
+				entityId: cycle.id,
+				newValue: {
+					name: period.name,
+					startDate: period.startDate,
+					endDate: period.endDate,
+					status: 'ACTIVE',
+					reviewsOpened: toCreate.length
+				}
+			},
+			tx
+		)
+
+		return { cycle, opened: toCreate.length, unreviewable }
+	})
 }
 
 /**
@@ -294,7 +387,7 @@ export async function listUnreviewable(
 	})
 	if (!cycle) error(404, 'Review cycle not found')
 
-	const { unreviewable } = await planCycleRoster(cycleId, organizationId)
+	const { unreviewable } = await planCycleRoster(organizationId, cycleId)
 	return unreviewable
 }
 
