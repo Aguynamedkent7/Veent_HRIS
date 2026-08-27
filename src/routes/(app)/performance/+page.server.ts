@@ -3,7 +3,8 @@ import {
 	listReviewsForEmployee,
 	listReviewsForReviewer,
 	redactHrAuthored,
-	listReviewCycles
+	listReviewCycles,
+	listStalledSignoffs
 } from '$lib/server/services/performance'
 import { countEmployeesWithoutTemplate } from '$lib/server/services/performance-templates'
 import { db } from '$lib/server/db'
@@ -18,9 +19,17 @@ export const load: PageServerLoad = async ({ locals }) => {
 	// #178: the template-readiness count is org-wide configuration, so it reads
 	// ADMINISTER_HR_ORGWIDE — not MANAGE_HR, which includes MANAGER (#133). A manager or an
 	// employee never runs the query, and reads 0. Informational only: nothing gates on it.
-	const templateBackfill = canAny(user.roles, 'ADMINISTER_HR_ORGWIDE')
+	// #178 item 145: the stalled sign-off list is org-wide HR work, so it reads the same
+	// ADMINISTER_HR_ORGWIDE. The gate holds twice, on purpose: the query never runs for anyone
+	// without the capability, AND `canHrOrgwide` goes to the page so the section is not rendered
+	// for them. The empty list is a legitimate state for HR (nothing is stalled), so emptiness
+	// cannot double as the visibility test — the flag has to be its own answer.
+	const canHrOrgwide = canAny(user.roles, 'ADMINISTER_HR_ORGWIDE')
+
+	const templateBackfill = canHrOrgwide
 		? await countEmployeesWithoutTemplate(user.organizationId)
 		: 0
+	const stalledSignoffs = canHrOrgwide ? await listStalledSignoffs(user.organizationId) : []
 
 	const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
 	if (!myEmployee) {
@@ -29,7 +38,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 			reviewsToGive: [],
 			isAdmin,
 			cycles,
-			templateBackfill
+			templateBackfill,
+			canHrOrgwide,
+			stalledSignoffs
 		}
 	}
 
@@ -45,6 +56,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 		reviewsToGive,
 		isAdmin,
 		cycles,
-		templateBackfill
+		templateBackfill,
+		canHrOrgwide,
+		stalledSignoffs
 	}
 }

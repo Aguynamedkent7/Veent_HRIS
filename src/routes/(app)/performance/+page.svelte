@@ -1,4 +1,5 @@
 <script lang="ts">
+	import EmptyState from '$lib/components/ui/EmptyState.svelte'
 	import { formatShortDate } from '$lib/utils/format'
 	import type { PageData } from './$types'
 
@@ -67,6 +68,65 @@
 					</tbody>
 				</table>
 			</div>
+		</section>
+	{/if}
+
+	<!-- Stalled Sign-offs (HR) — #178 item 145 / SPEC AC12. A DIFFERENT LIST from the
+	     unreviewable one on purpose: unreviewable means the review was never created; stalled
+	     means it exists, is part-way signed, and its next signatory resolves to nobody. They need
+	     different fixes, so they must not be merged into one section.
+
+	     `canHrOrgwide` comes from the load, which is where the capability is really checked. The
+	     flag exists so this section is never rendered for someone who would only get a 403 — and
+	     so an empty list still shows HR the good, all-clear state. -->
+	{#if data.canHrOrgwide}
+		<section class="space-y-3">
+			<div class="flex items-center justify-between gap-3">
+				<h2 class="text-lg font-semibold">Stalled Sign-offs</h2>
+				<a href="/departments" class="text-sm font-medium text-primary hover:underline"
+					>Assign department heads</a
+				>
+			</div>
+			<p class="text-sm text-muted-foreground">
+				Reviews that are already under way but cannot move: the next person to sign is not assigned.
+				This is not the same as a review that was never created.
+			</p>
+			{#if data.stalledSignoffs.length}
+				<div class="overflow-x-auto rounded-lg border">
+					<table class="w-full text-sm">
+						<thead class="border-b bg-muted/50">
+							<tr>
+								<th class="px-4 py-3 text-left font-medium text-muted-foreground">Employee</th>
+								<th class="px-4 py-3 text-left font-medium text-muted-foreground">Department</th>
+								<th class="px-4 py-3 text-left font-medium text-muted-foreground">Cycle</th>
+								<th class="px-4 py-3 text-left font-medium text-muted-foreground">Waiting on</th>
+							</tr>
+						</thead>
+						<tbody class="divide-y">
+							{#each data.stalledSignoffs as s (s.reviewId)}
+								<tr class="hover:bg-muted/30">
+									<td class="px-4 py-3"
+										><a
+											href="/performance/reviews/{s.reviewId}"
+											class="font-medium text-primary hover:underline">{s.employeeName}</a
+										></td
+									>
+									<td class="px-4 py-3 text-muted-foreground">{s.departmentName}</td>
+									<td class="px-4 py-3 text-muted-foreground">{s.cycleName}</td>
+									<td class="px-4 py-3">{s.slot.label} — no one is assigned</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{:else}
+				<div class="rounded-lg border">
+					<EmptyState
+						title="No sign-off is stalled"
+						description="Every review under way has someone who can sign it next."
+					/>
+				</div>
+			{/if}
 		</section>
 	{/if}
 
