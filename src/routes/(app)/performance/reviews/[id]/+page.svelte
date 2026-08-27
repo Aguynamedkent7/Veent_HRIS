@@ -60,6 +60,13 @@
 		await update()
 		if (result.type === 'success') addToast('Signature recorded.', { kind: 'success' })
 	})
+	// #108: a double-click must not fire a second release. The service is idempotent anyway, so the
+	// worst case was already harmless — this is the affordance, not the guarantee.
+	const release = createSubmitGuard(() => async ({ result, update }) => {
+		await update()
+		if (result.type === 'success')
+			addToast('Evaluation released to the employee.', { kind: 'success' })
+	})
 	const submitScores = createSubmitGuard(() => async ({ result, update }) => {
 		// `reset: false` — the inputs are bound to `draft`, and a native form reset would blank the
 		// DOM without telling Svelte, leaving what is shown and what would be posted disagreeing.
@@ -73,9 +80,11 @@
 	const canScore = $derived(
 		data.isReviewer && r.status !== 'COMPLETED' && r.status !== 'ACKNOWLEDGED'
 	)
-	// The subject sees nothing evaluator-authored: `redactHrAuthored` nulls `answers` before it
-	// leaves the server, so there is nothing to render even if this branch were wrong.
+	// The subject sees nothing evaluator-authored until HR releases: `redactForSubject` nulls
+	// `answers` before it leaves the server, so there is nothing to render even if this branch were
+	// wrong. `releasedAt` is the switch — the same field the server gate reads.
 	const subjectOnly = $derived(data.isSubject && !data.isReviewer)
+	const released = $derived(r.releasedAt != null)
 
 	function statusClass(s: string) {
 		if (s === 'ACKNOWLEDGED') return 'bg-green-500/15 text-green-400'
@@ -148,7 +157,29 @@
 
 	<!-- The evaluation itself. -->
 	<section class="space-y-3 rounded-lg border bg-card p-4">
-		<h2 class="font-semibold">Evaluation</h2>
+		<!--
+			#178 item 153 — the Release control sits on THIS section's heading row, not in the page
+			title row. The title row carries the title, the description and Back only; a page action
+			belongs on the heading of the section it acts on, and Release acts on the evaluation.
+		-->
+		<div class="flex flex-wrap items-center justify-between gap-2">
+			<h2 class="font-semibold">Evaluation</h2>
+			{#if r.releasedAt}
+				<p class="text-sm text-muted-foreground">
+					Released{#if r.releasedBy}
+						by {r.releasedBy.firstName}
+						{r.releasedBy.lastName}{/if} on {formatDate(r.releasedAt)}
+				</p>
+			{:else if data.canRelease}
+				<form method="POST" action="?/release" use:enhance={release.enhance}>
+					<button
+						disabled={release.busy}
+						class="rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+						>{release.busy ? 'Releasing…' : 'Release to employee'}</button
+					>
+				</form>
+			{/if}
+		</div>
 
 		<!--
 			ITEM 130's FLAG, BRANCHED ON FIRST. A review whose snapshot is missing or unreadable gets
@@ -188,14 +219,15 @@
 					</p>
 				</div>
 			</form>
-		{:else if subjectOnly}
+		{:else if subjectOnly && !released}
 			<!--
-				The redacted case: `answers` arrives as `null` for the subject, so there is nothing to
-				render. Say so plainly rather than showing an empty form that reads as "not scored".
+				THE REDACTED CASE (#178 item 153). `answers` arrives as `null` for an unreleased
+				subject, so there is nothing to render. Say WHY plainly: an empty form is
+				indistinguishable from a bug, and would read as "nobody has evaluated me".
 			-->
 			<p class="text-sm text-muted-foreground">
-				This evaluation is confidential while it is being completed. HR releases it to you once it
-				is finished, and you can leave your comments below.
+				Your evaluator's entries are not yet released by HR. You will be able to read this
+				evaluation once HR releases it. Your own comments below are always yours to write.
 			</p>
 		{:else if r.answers}
 			<!-- Read-back: the same form, the stored values, no typing. -->

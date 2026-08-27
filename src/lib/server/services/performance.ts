@@ -14,6 +14,7 @@ import {
 import { answersSchemaFor, templateStructureSchema } from '$lib/server/performance/schemas'
 import { isFullySigned, nextSignatorySlot } from '$lib/server/performance/signoff-plan'
 import type { SignatorySlot } from '$lib/server/performance/types'
+import { notify } from './notifications'
 import type { AuditContext } from './types'
 
 // ── Review Cycles (org-scoped) ──────────────────────────────────────────────
@@ -27,21 +28,34 @@ export async function listReviewCycles(organizationId: string) {
 
 // ── Performance Reviews (scoped by employee / reviewer) ──────────────────────
 
-// #178 (was #179): the evaluator/HR-authored parts of a review are confidential to the reviewer
-// and HR. The reviewed employee must never receive them, so strip them before a review is
-// returned to a subject-only view (their list row or their detail page).
+// #178 AC6 (was #179): the employee sees NOTHING the evaluator or HR authored until HR RELEASES
+// the review. `releasedAt` is that release, and it is the only thing this gate reads — not the
+// status, which advances for reasons of its own and would let a workflow change quietly open the
+// evaluation.
 //
 // `answers` holds EVERY evaluator-authored value — ratings, subtotals, total, band, narratives,
 // recommendations — in one JSON column, which is exactly why redaction is the single operation
 // `answers = null`: no field-picking inside the JSON, and no way to leak one field by forgetting
-// it. Withheld by default. This is the INTERIM gate; Phase 8 adds the HR release check that
-// decides when the subject may finally see it.
+// it. `managerComments` and `overallRating` are the pre-#178 columns holding the same class of
+// content on old rows, so they ride the same gate.
+//
+// Withheld by DEFAULT: a review with no `releasedAt` — including one whose caller forgot to
+// select the column, which arrives as `undefined` — redacts. Only an explicit release opens it.
 //
 // `selfAssessment` and `employeeComments` are employee-authored, live in their own columns, and
-// are never touched here.
-export function redactHrAuthored<
-	T extends { managerComments: string | null; overallRating: number | null; answers: unknown }
+// are never touched in either state.
+//
+// Renamed from `redactHrAuthored` (#179's unconditional two-field version): the name described
+// what it stripped, and the thing that matters now is WHO it strips it for and WHEN.
+export function redactForSubject<
+	T extends {
+		managerComments: string | null
+		overallRating: number | null
+		answers: unknown
+		releasedAt: Date | null
+	}
 >(review: T): T {
+	if (review.releasedAt) return review
 	return { ...review, managerComments: null, overallRating: null, answers: null }
 }
 
@@ -73,7 +87,10 @@ export async function getReview(id: string, organizationId: string) {
 		include: {
 			cycle: { select: { id: true, name: true, status: true } },
 			employee: { select: { id: true, firstName: true, lastName: true } },
-			reviewer: { select: { id: true, firstName: true, lastName: true } }
+			reviewer: { select: { id: true, firstName: true, lastName: true } },
+			// #178 item 153 — who released it, for the "released by X on Y" line. Names only; the
+			// row already carries `releasedAt` and `releasedByUserId`.
+			releasedBy: { select: { firstName: true, lastName: true } }
 		}
 	})
 	if (!review) error(404, 'Performance review not found')
@@ -195,6 +212,85 @@ export async function saveEmployeeComments(
 	})
 
 	return updated
+}
+
+/**
+ * HR RELEASES the review to its subject (#178 item 151, SPEC AC7).
+ *
+ * This is the switch `redactForSubject` reads. Until it is thrown the employee's copy of their
+ * own review arrives with `answers` nulled; after it, they see what was written about them.
+ *
+ * THE CAPABILITY IS ENFORCED AT THE ACTION (`ADMINISTER_HR_ORGWIDE`), not here, matching every
+ * other route-guarded surface in this feature. What lives here is the ORG SCOPE, through
+ * `cycle.organizationId` — the only path, because `PerformanceReview` carries no
+ * `organizationId` column of its own. Same scoping as `getReview` and `attestSignoff`.
+ *
+ * IDEMPOTENT. A second Release is a no-op: it must not restamp `releasedAt` or overwrite
+ * `releasedByUserId`. The first release is the moment the employee became entitled to see the
+ * evaluation, and re-stamping it would falsify that record. No audit row and no notification
+ * either — nothing changed, so nothing is claimed to have.
+ *
+ * `userId` is the ACTOR'S USER ID, as every other action in this feature passes. The column is
+ * named `releasedByUserId` but its foreign key points at `employees(id)` (schema.prisma:1716) —
+ * a naming defect inherited from the plan's §3.4 diff, NOT something to paper over by writing a
+ * user id into an employee column. It is resolved to the actor's employee row here. An HR user
+ * with no employee record still releases; the attribution column is left null (the FK is already
+ * `ON DELETE SET NULL`, so absent attribution is a state the schema allows) and the audit row
+ * still names the actor in its own `actorId`.
+ */
+export async function releaseReview(
+	id: string,
+	organizationId: string,
+	userId: string,
+	ctx: AuditContext
+) {
+	const outcome = await db.$transaction(async (tx) => {
+		const review = await tx.performanceReview.findFirst({
+			where: { id, cycle: { organizationId } },
+			include: { employee: { select: { userId: true } } }
+		})
+		if (!review) error(404, 'Performance review not found')
+
+		if (review.releasedAt) return { review, released: false as const }
+
+		const releaser = await tx.employee.findUnique({ where: { userId }, select: { id: true } })
+		const updated = await tx.performanceReview.update({
+			where: { id },
+			data: { releasedAt: new Date(), releasedByUserId: releaser?.id ?? null }
+		})
+
+		// #324 — `tx` as the third argument, so the audit row shares the fate of the release it
+		// describes. A release standing unrecorded is exactly the gap that rule exists to close.
+		await writeAuditLog(
+			ctx,
+			{
+				action: 'UPDATE',
+				entityType: 'PerformanceReview',
+				entityId: id,
+				newValue: {
+					releasedAt: updated.releasedAt,
+					releasedByUserId: updated.releasedByUserId
+				}
+			},
+			tx
+		)
+
+		return { review: { ...updated, employee: review.employee }, released: true as const }
+	})
+
+	// AFTER the commit, and only on a real release. Notifying inside the transaction would send a
+	// "your review is ready" the rollback then unsends, and notifying on the idempotent path would
+	// let a second click re-nudge the employee about nothing.
+	if (outcome.released && outcome.review.employee.userId) {
+		await notify(
+			outcome.review.employee.userId,
+			'Your performance evaluation has been released. You can now read it.',
+			`/performance/reviews/${id}`,
+			'PERFORMANCE'
+		)
+	}
+
+	return outcome.review
 }
 
 // Employee acknowledges a completed review (final step of the cycle).

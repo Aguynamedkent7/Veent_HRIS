@@ -1,5 +1,6 @@
 import { fail, isHttpError } from '@sveltejs/kit'
 import { db } from '$lib/server/db'
+import { canAny, requireAnyCapability } from '$lib/server/rbac'
 import { assertCanTouchEmployee } from '$lib/server/services/employee-access'
 import {
 	answersSchemaFor,
@@ -8,12 +9,13 @@ import {
 } from '$lib/server/performance/schemas'
 import {
 	getReview,
-	redactHrAuthored,
+	redactForSubject,
 	saveSelfAssessment,
 	saveEmployeeComments,
 	submitScores,
 	acknowledgeReview,
 	attestSignoff,
+	releaseReview,
 	resolveSlotHolders
 } from '$lib/server/services/performance'
 import { nextSignatorySlot } from '$lib/server/performance/signoff-plan'
@@ -50,10 +52,11 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		await assertCanTouchEmployee(user, review.employee.id)
 	}
 
-	// #178 (was #179): the reviewed employee never sees the evaluator-authored review — redact
-	// the manager comments, the rating and the whole `answers` blob before they leave the server.
-	// The reviewer and HR still get them.
-	const visibleReview = isSubject && !isReviewer ? redactHrAuthored(review) : review
+	// #178 AC6 (was #179): the reviewed employee never sees the evaluator-authored review — the
+	// manager comments, the rating and the whole `answers` blob — UNTIL HR releases it. The gate
+	// is `releasedAt`, read inside `redactForSubject`; this line only decides who it applies to.
+	// The reviewer and HR always get the whole thing.
+	const visibleReview = isSubject && !isReviewer ? redactForSubject(review) : review
 
 	// #178 item 130 — DEFENSIVE READ. Postgres validates nothing inside the JSON, so a snapshot
 	// that is missing or stored in a shape this code cannot read must render an error banner, NOT
@@ -109,10 +112,17 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	const nextSlotIndex = nextSlot ? signatoryOrder.findIndex((s) => s.id === nextSlot.id) : -1
 	const mayIAttest = nextSlotIndex >= 0 && holders[nextSlotIndex].includes(user.id)
 
+	// #178 item 153 — the affordance for the Release button, and ONLY the affordance. The
+	// `release` action re-runs the identical capability check, because a direct POST never passes
+	// through this page. ADMINISTER_HR_ORGWIDE, never MANAGE_HR: MANAGE_HR holds MANAGER (#133),
+	// and a team lead must not be able to release an evaluation to the person they evaluated.
+	const canRelease = canAny(user.roles, 'ADMINISTER_HR_ORGWIDE')
+
 	return {
 		review: visibleReview,
 		isSubject,
 		isReviewer,
+		canRelease,
 		structure,
 		structureError: structure
 			? null
@@ -234,6 +244,29 @@ export const actions: Actions = {
 	 * the duplicate-row race all live in `attestSignoff`, where a direct POST cannot skip them.
 	 * Re-checking any of them here would be a second answer that can drift from the first.
 	 */
+	/**
+	 * HR releases the review to its subject (#178 item 152, SPEC AC7).
+	 *
+	 * THE CAPABILITY CHECK IS THE FIRST LINE, before any form read or parse. There is no form body
+	 * to read here, and there must never be one added above this line: a caller who is refused
+	 * must be refused before anything they sent is touched.
+	 *
+	 * It THROWS rather than returning `fail(403)`, matching every other capability guard in this
+	 * feature (`performance/templates/[id]/+page.server.ts:57`): a 403 is not a form error the
+	 * user can correct.
+	 */
+	release: async ({ locals, params, getClientAddress }) => {
+		requireAnyCapability(locals.user!.roles, 'ADMINISTER_HR_ORGWIDE')
+		return run(() =>
+			releaseReview(
+				params.id,
+				locals.user!.organizationId,
+				locals.user!.id,
+				ctxOf(locals, getClientAddress())
+			)
+		)
+	},
+
 	attest: async ({ request, locals, params, getClientAddress }) => {
 		const typedName = String((await request.formData()).get('typedName') ?? '')
 		return run(() =>

@@ -2,7 +2,7 @@ import { canAny } from '$lib/server/rbac'
 import {
 	listReviewsForEmployee,
 	listReviewsForReviewer,
-	redactHrAuthored,
+	redactForSubject,
 	listReviewCycles,
 	listStalledSignoffs
 } from '$lib/server/services/performance'
@@ -52,7 +52,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	// #179: My Reviews are the viewer's own reviews as the subject — strip the HR-authored
 	// comments and rating so the confidential review never reaches the reviewed employee.
 	return {
-		myReviews: myReviews.map(redactHrAuthored),
+		myReviews: myReviews.map(redactForSubject),
 		reviewsToGive,
 		isAdmin,
 		cycles,

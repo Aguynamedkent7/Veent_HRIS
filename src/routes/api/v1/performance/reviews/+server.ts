@@ -3,7 +3,7 @@ import { db } from '$lib/server/db'
 import {
 	listReviewsForEmployee,
 	listReviewsForReviewer,
-	redactHrAuthored
+	redactForSubject
 } from '$lib/server/services/performance'
 import type { RequestHandler } from './$types'
 
@@ -24,5 +24,5 @@ export const GET: RequestHandler = async ({ locals }) => {
 	// evaluator typed, so returning this arm raw leaks the whole evaluation to its subject before
 	// HR releases it. Withheld by default. The reviewer arm is the evaluator's own view and stays
 	// whole.
-	return json({ asSubject: asSubject.map(redactHrAuthored), asReviewer })
+	return json({ asSubject: asSubject.map(redactForSubject), asReviewer })
 }

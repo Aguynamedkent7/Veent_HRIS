@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
  * before HR released anything. Withheld by default.
  *
  * Only `$lib/server/db` and the audit writer are mocked, so the real route calls the real
- * `listReviewsForEmployee` and the real `redactHrAuthored`. Deleting `.map(redactHrAuthored)` from
+ * `listReviewsForEmployee` and the real `redactForSubject`. Deleting `.map(redactForSubject)` from
  * the route turns this file red.
  */
 
