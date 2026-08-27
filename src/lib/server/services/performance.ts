@@ -19,30 +19,6 @@ export async function listReviewCycles(organizationId: string) {
 	})
 }
 
-export async function createReviewCycle(
-	organizationId: string,
-	data: { name: string; startDate: Date; endDate: Date },
-	ctx: AuditContext
-) {
-	const cycle = await db.reviewCycle.create({
-		data: {
-			organizationId,
-			name: data.name,
-			startDate: data.startDate,
-			endDate: data.endDate
-		}
-	})
-
-	await writeAuditLog(ctx, {
-		action: 'CREATE',
-		entityType: 'ReviewCycle',
-		entityId: cycle.id,
-		newValue: { name: cycle.name, startDate: cycle.startDate, endDate: cycle.endDate }
-	})
-
-	return cycle
-}
-
 // ── Performance Reviews (scoped by employee / reviewer) ──────────────────────
 
 // #179: the HR-authored parts of a review (manager comments + overall rating) are confidential
@@ -172,29 +148,6 @@ export async function acknowledgeReview(id: string, employeeId: string, ctx: Aud
 		entityType: 'PerformanceReview',
 		entityId: id,
 		newValue: { status: 'ACKNOWLEDGED' }
-	})
-	return updated
-}
-
-// ── Cycle lifecycle (HR) ─────────────────────────────────────────────────────
-
-export async function updateReviewCycleStatus(
-	id: string,
-	organizationId: string,
-	status: 'DRAFT' | 'ACTIVE' | 'CLOSED',
-	ctx: AuditContext
-) {
-	const cycle = await db.reviewCycle.findFirst({
-		where: { id, organizationId },
-		select: { id: true }
-	})
-	if (!cycle) error(404, 'Review cycle not found')
-	const updated = await db.reviewCycle.update({ where: { id }, data: { status } })
-	await writeAuditLog(ctx, {
-		action: 'UPDATE',
-		entityType: 'ReviewCycle',
-		entityId: id,
-		newValue: { status }
 	})
 	return updated
 }
