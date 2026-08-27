@@ -567,6 +567,7 @@ export async function resolveSlotHolders(
  */
 export async function attestSignoff(
 	id: string,
+	organizationId: string,
 	userId: string,
 	typedName: string,
 	ctx: AuditContext
@@ -576,8 +577,12 @@ export async function attestSignoff(
 	if (!name) error(400, 'Type your full name to attest')
 	if (name.length > 200) error(400, 'Typed name must be 200 characters or fewer')
 
-	const review = await db.performanceReview.findUnique({
-		where: { id },
+	// Org-scoped through `cycle.organizationId`, exactly as `getReview` does. Cross-tenant
+	// WRITING was already closed by the holder check below, but an unscoped lookup still let a
+	// caller in another org tell "this review exists" from "it does not" by the 409-vs-404 it
+	// got back. Every other reader in this file scopes; this one now does too.
+	const review = await db.performanceReview.findFirst({
+		where: { id, cycle: { organizationId } },
 		include: SIGNOFF_REVIEW_INCLUDE
 	})
 	if (!review) error(404, 'Performance review not found')

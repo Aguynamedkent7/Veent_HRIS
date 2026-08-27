@@ -12,8 +12,11 @@ import {
 	saveSelfAssessment,
 	saveEmployeeComments,
 	submitScores,
-	acknowledgeReview
+	acknowledgeReview,
+	attestSignoff,
+	resolveSlotHolders
 } from '$lib/server/services/performance'
+import { nextSignatorySlot } from '$lib/server/performance/signoff-plan'
 import type { Actions, PageServerLoad } from './$types'
 
 function issuesOf(error: { issues: { path: (string | number)[]; message: string }[] }) {
@@ -60,6 +63,52 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	// this page is also served to the review's subject.
 	const structure = structureOf(review.templateSnapshot)
 
+	// #178 item 143 — the signature block's data.
+	//
+	// The ORDER comes from THIS review's own snapshot (`structure.signatoryOrder`), never from the
+	// live `PerformanceTemplate.structure`: reordering a template must leave work already in
+	// progress exactly as it was.
+	//
+	// WHOSE TURN IT IS comes from `nextSignatorySlot` — the SAME function `attestSignoff` calls.
+	// A page that decided the turn its own way would eventually show an Attest button the service
+	// refuses, or hide one it would have accepted.
+	//
+	// The relations `resolveSlotHolders` reads are not on `getReview`'s include, so they are
+	// fetched here. Scoped through `cycle.organizationId` like every other reader.
+	const signoffContext = await db.performanceReview.findFirst({
+		where: { id: params.id, cycle: { organizationId: user.organizationId } },
+		select: {
+			cycle: { select: { organizationId: true } },
+			employee: {
+				select: { userId: true, department: { select: { head: { select: { userId: true } } } } }
+			},
+			reviewer: { select: { userId: true } },
+			signoffs: {
+				select: { slotId: true, roleLabel: true, typedName: true, attestedAt: true },
+				orderBy: { order: 'asc' }
+			}
+		}
+	})
+
+	const signatoryOrder = structure?.signatoryOrder ?? []
+	const signoffs = signoffContext?.signoffs ?? []
+	const nextSlot = signoffContext ? nextSignatorySlot(signatoryOrder, signoffs) : null
+
+	// Holders for EVERY slot, not just the next one, so a slot that nobody can ever sign is named
+	// as stalled where it sits instead of looking like it is merely waiting its turn. Only
+	// HR_REPRESENTATIVE costs a query; the other three roles are field reads on the row above.
+	const holders = signoffContext
+		? await Promise.all(signatoryOrder.map((slot) => resolveSlotHolders(slot, signoffContext)))
+		: []
+	const unstaffedSlotIds = signatoryOrder
+		.filter((_, i) => holders[i].length === 0)
+		.map((slot) => slot.id)
+
+	// The affordance, and ONLY the affordance. The service re-runs both checks itself, because a
+	// direct POST never passes through this page.
+	const nextSlotIndex = nextSlot ? signatoryOrder.findIndex((s) => s.id === nextSlot.id) : -1
+	const mayIAttest = nextSlotIndex >= 0 && holders[nextSlotIndex].includes(user.id)
+
 	return {
 		review: visibleReview,
 		isSubject,
@@ -67,7 +116,12 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 		structure,
 		structureError: structure
 			? null
-			: 'This review has no readable evaluation form — its stored template is missing or in an unreadable shape. Ask HR to reopen the review.'
+			: 'This review has no readable evaluation form — its stored template is missing or in an unreadable shape. Ask HR to reopen the review.',
+		signatoryOrder,
+		signoffs,
+		nextSlot,
+		unstaffedSlotIds,
+		mayIAttest
 	}
 }
 
@@ -171,5 +225,25 @@ export const actions: Actions = {
 	acknowledge: async ({ locals, params, getClientAddress }) => {
 		const employeeId = await myEmployeeId(locals.user!.id)
 		return run(() => acknowledgeReview(params.id, employeeId, ctxOf(locals, getClientAddress())))
+	},
+
+	/**
+	 * One signatory signs one slot (#178 item 143).
+	 *
+	 * Deliberately thin: the turn check, the holder check, the range check on the typed name and
+	 * the duplicate-row race all live in `attestSignoff`, where a direct POST cannot skip them.
+	 * Re-checking any of them here would be a second answer that can drift from the first.
+	 */
+	attest: async ({ request, locals, params, getClientAddress }) => {
+		const typedName = String((await request.formData()).get('typedName') ?? '')
+		return run(() =>
+			attestSignoff(
+				params.id,
+				locals.user!.organizationId,
+				locals.user!.id,
+				typedName,
+				ctxOf(locals, getClientAddress())
+			)
+		)
 	}
 }

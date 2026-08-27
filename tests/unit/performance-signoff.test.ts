@@ -19,7 +19,7 @@ import type { SignatorySlot, TemplateStructure } from '$lib/server/performance/t
 
 const { dbMock, writeAuditLog } = vi.hoisted(() => ({
 	dbMock: {
-		performanceReview: { findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn() },
+		performanceReview: { findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
 		user: { findMany: vi.fn() },
 		$transaction: vi.fn()
 	},
@@ -113,8 +113,13 @@ beforeEach(() => {
 
 	dbMock.$transaction.mockImplementation((fn: (client: typeof tx) => unknown) => fn(tx))
 	dbMock.user.findMany.mockResolvedValue([{ id: USR_HR }])
-	dbMock.performanceReview.findUnique.mockImplementation(({ where }: { where: { id: string } }) =>
-		Promise.resolve(where.id === REVIEW_ID ? reviewRow({}) : null)
+	// Honours the org scope too — `attestSignoff` reads through `cycle.organizationId`, so a
+	// mock that ignored it could not tell a scoped lookup from an unscoped one.
+	dbMock.performanceReview.findFirst.mockImplementation(
+		({ where }: { where: { id: string; cycle: { organizationId: string } } }) =>
+			Promise.resolve(
+				where.id === REVIEW_ID && where.cycle.organizationId === ORG ? reviewRow({}) : null
+			)
 	)
 
 	// Honours @@unique([reviewId, slotId]) — the constraint IS the arbiter of the race.
@@ -148,40 +153,42 @@ beforeEach(() => {
 
 describe('AC10 — COMPLETED is blocked while any required signatory is missing', () => {
 	it('stays SIGNING through every slot but the last, then flips to COMPLETED on it', async () => {
-		await attestSignoff(REVIEW_ID, USR_SUPERVISOR, 'Sup Ervisor', ctx)
+		await attestSignoff(REVIEW_ID, ORG, USR_SUPERVISOR, 'Sup Ervisor', ctx)
 		expect(reviewState.status).toBe('SIGNING')
 		expect(reviewState.completedAt).toBeNull()
 
-		await attestSignoff(REVIEW_ID, USR_HR, 'H R Admin', ctx)
+		await attestSignoff(REVIEW_ID, ORG, USR_HR, 'H R Admin', ctx)
 		expect(reviewState.status).toBe('SIGNING')
 
-		await attestSignoff(REVIEW_ID, USR_HEAD, 'Dept Head', ctx)
+		await attestSignoff(REVIEW_ID, ORG, USR_HEAD, 'Dept Head', ctx)
 		expect(reviewState.status).toBe('SIGNING')
 		expect(reviewState.completedAt).toBeNull()
 
 		// THE LAST SIGNATURE. This only flips if `isFullySigned` is recomputed from the rows that
 		// exist AFTER the insert — on the pre-insert list, slot 4 is still unsigned here.
-		await attestSignoff(REVIEW_ID, USR_EMPLOYEE, 'Ana Reyes', ctx)
+		await attestSignoff(REVIEW_ID, ORG, USR_EMPLOYEE, 'Ana Reyes', ctx)
 		expect(reviewState.status).toBe('COMPLETED')
 		expect(reviewState.completedAt).toBeInstanceOf(Date)
 		expect(rows).toHaveLength(4)
 	})
 
 	it('cannot reach COMPLETED when the department head slot has no holder', async () => {
-		dbMock.performanceReview.findUnique.mockImplementation(() =>
+		dbMock.performanceReview.findFirst.mockImplementation(() =>
 			Promise.resolve(reviewRow({ headUserId: null }))
 		)
 
-		await attestSignoff(REVIEW_ID, USR_SUPERVISOR, 'Sup Ervisor', ctx)
-		await attestSignoff(REVIEW_ID, USR_HR, 'H R Admin', ctx)
+		await attestSignoff(REVIEW_ID, ORG, USR_SUPERVISOR, 'Sup Ervisor', ctx)
+		await attestSignoff(REVIEW_ID, ORG, USR_HR, 'H R Admin', ctx)
 		expect(reviewState.status).toBe('SIGNING')
 
 		// Nobody holds slot 3, so nobody can pass the holder check — not even the employee whose
 		// own slot is next in the list. The queue does not skip the hole.
-		await expect(attestSignoff(REVIEW_ID, USR_EMPLOYEE, 'Ana Reyes', ctx)).rejects.toMatchObject({
+		await expect(
+			attestSignoff(REVIEW_ID, ORG, USR_EMPLOYEE, 'Ana Reyes', ctx)
+		).rejects.toMatchObject({
 			status: 409
 		})
-		await expect(attestSignoff(REVIEW_ID, USR_HEAD, 'Dept Head', ctx)).rejects.toMatchObject({
+		await expect(attestSignoff(REVIEW_ID, ORG, USR_HEAD, 'Dept Head', ctx)).rejects.toMatchObject({
 			status: 409
 		})
 
@@ -192,12 +199,12 @@ describe('AC10 — COMPLETED is blocked while any required signatory is missing'
 	})
 
 	it('refuses a further attestation once every slot is signed', async () => {
-		await attestSignoff(REVIEW_ID, USR_SUPERVISOR, 'Sup Ervisor', ctx)
-		await attestSignoff(REVIEW_ID, USR_HR, 'H R Admin', ctx)
-		await attestSignoff(REVIEW_ID, USR_HEAD, 'Dept Head', ctx)
-		await attestSignoff(REVIEW_ID, USR_EMPLOYEE, 'Ana Reyes', ctx)
+		await attestSignoff(REVIEW_ID, ORG, USR_SUPERVISOR, 'Sup Ervisor', ctx)
+		await attestSignoff(REVIEW_ID, ORG, USR_HR, 'H R Admin', ctx)
+		await attestSignoff(REVIEW_ID, ORG, USR_HEAD, 'Dept Head', ctx)
+		await attestSignoff(REVIEW_ID, ORG, USR_EMPLOYEE, 'Ana Reyes', ctx)
 
-		await expect(attestSignoff(REVIEW_ID, USR_HR, 'H R Admin', ctx)).rejects.toMatchObject({
+		await expect(attestSignoff(REVIEW_ID, ORG, USR_HR, 'H R Admin', ctx)).rejects.toMatchObject({
 			status: 400
 		})
 		expect(rows).toHaveLength(4)
@@ -206,17 +213,17 @@ describe('AC10 — COMPLETED is blocked while any required signatory is missing'
 	it('reports the P2002 race as a 409 rather than a 500', async () => {
 		// Two valid holders of one slot attesting at the same instant: both pass the turn check
 		// against the same pre-insert view, and the unique constraint decides.
-		dbMock.performanceReview.findUnique.mockImplementation(() =>
+		dbMock.performanceReview.findFirst.mockImplementation(() =>
 			// The supervisor is also the department head here, so both reads see slot 1 unsigned.
 			Promise.resolve(reviewRow({ headUserId: USR_SUPERVISOR }))
 		)
 		const stale = reviewRow({ headUserId: USR_SUPERVISOR })
-		await attestSignoff(REVIEW_ID, USR_SUPERVISOR, 'Sup Ervisor', ctx)
+		await attestSignoff(REVIEW_ID, ORG, USR_SUPERVISOR, 'Sup Ervisor', ctx)
 		// Replay the FIRST caller's stale read — slot 1 still looks unsigned to it.
-		dbMock.performanceReview.findUnique.mockResolvedValueOnce(stale)
+		dbMock.performanceReview.findFirst.mockResolvedValueOnce(stale)
 
 		await expect(
-			attestSignoff(REVIEW_ID, USR_SUPERVISOR, 'Sup Ervisor', ctx)
+			attestSignoff(REVIEW_ID, ORG, USR_SUPERVISOR, 'Sup Ervisor', ctx)
 		).rejects.toMatchObject({ status: 409 })
 		expect(rows).toHaveLength(1)
 	})
@@ -229,33 +236,58 @@ describe('AC13 — the snapshot is what orders the signatures, not the live temp
 		expect(reordered[0].id).toBe('sig_4')
 
 		// The review still carries the ORIGINAL order in its immutable snapshot.
-		dbMock.performanceReview.findUnique.mockImplementation(() =>
+		dbMock.performanceReview.findFirst.mockImplementation(() =>
 			Promise.resolve(reviewRow({ snapshot: snapshotOf(ORDER) }))
 		)
 
-		await expect(attestSignoff(REVIEW_ID, USR_EMPLOYEE, 'Ana Reyes', ctx)).rejects.toMatchObject({
+		await expect(
+			attestSignoff(REVIEW_ID, ORG, USR_EMPLOYEE, 'Ana Reyes', ctx)
+		).rejects.toMatchObject({
 			status: 409
 		})
 		expect(rows).toEqual([])
 
 		// The supervisor — first in the SNAPSHOT's order — still signs first.
-		await attestSignoff(REVIEW_ID, USR_SUPERVISOR, 'Sup Ervisor', ctx)
+		await attestSignoff(REVIEW_ID, ORG, USR_SUPERVISOR, 'Sup Ervisor', ctx)
 		expect(rows.map((r) => r.slotId)).toEqual(['sig_1'])
 	})
 
 	it('applies the new order to a review opened AFTER the reorder', async () => {
 		const reordered = [ORDER[3], ORDER[0], ORDER[1], ORDER[2]]
-		dbMock.performanceReview.findUnique.mockImplementation(() =>
+		dbMock.performanceReview.findFirst.mockImplementation(() =>
 			Promise.resolve(reviewRow({ snapshot: snapshotOf(reordered) }))
 		)
 
 		// Positive control for the test above: same actor, same service, different snapshot.
-		await attestSignoff(REVIEW_ID, USR_EMPLOYEE, 'Ana Reyes', ctx)
+		await attestSignoff(REVIEW_ID, ORG, USR_EMPLOYEE, 'Ana Reyes', ctx)
 		expect(rows.map((r) => r.slotId)).toEqual(['sig_4'])
 
 		// And the supervisor, who signed first under the old order, is now second.
-		await attestSignoff(REVIEW_ID, USR_SUPERVISOR, 'Sup Ervisor', ctx)
+		await attestSignoff(REVIEW_ID, ORG, USR_SUPERVISOR, 'Sup Ervisor', ctx)
 		expect(rows.map((r) => r.slotId)).toEqual(['sig_4', 'sig_1'])
+	})
+})
+
+describe('the attest lookup is org-scoped (#323)', () => {
+	// Cross-tenant WRITING was already closed by the holder check — holders are derived from the
+	// review's own relations. What was open was DISCLOSURE: an unscoped lookup answered a caller
+	// in another org with 409 ("not your turn") for a review that exists and 404 for one that
+	// does not, which is an existence oracle over every review id in the product.
+	it('returns 404, not 409, for a caller in another organisation', async () => {
+		await expect(
+			attestSignoff(REVIEW_ID, 'org_other', USR_SUPERVISOR, 'Sup Ervisor', {
+				...ctx,
+				organizationId: 'org_other'
+			})
+		).rejects.toMatchObject({ status: 404 })
+		expect(rows).toEqual([])
+	})
+
+	// POSITIVE CONTROL: the same call from the owning org still succeeds, so the test above is
+	// not passing because the id is simply wrong.
+	it('still accepts the same signatory from the owning organisation', async () => {
+		await attestSignoff(REVIEW_ID, ORG, USR_SUPERVISOR, 'Sup Ervisor', ctx)
+		expect(rows.map((r) => r.slotId)).toEqual(['sig_1'])
 	})
 })
 
@@ -353,7 +385,7 @@ describe('resolveSlotHolders — an empty array means stalled, never a throw', (
 
 describe('AC13 — the attestation row is a typed name and a timestamp, nothing more', () => {
 	it('writes exactly the six columns, and no signature blob', async () => {
-		await attestSignoff(REVIEW_ID, USR_SUPERVISOR, '  Sup Ervisor  ', ctx)
+		await attestSignoff(REVIEW_ID, ORG, USR_SUPERVISOR, '  Sup Ervisor  ', ctx)
 
 		const { data } = tx.reviewSignoff.create.mock.calls[0][0]
 		expect(Object.keys(data).sort()).toEqual([
@@ -371,14 +403,14 @@ describe('AC13 — the attestation row is a typed name and a timestamp, nothing 
 	})
 
 	it('rejects an empty or oversized typed name before touching the database', async () => {
-		await expect(attestSignoff(REVIEW_ID, USR_SUPERVISOR, '   ', ctx)).rejects.toMatchObject({
+		await expect(attestSignoff(REVIEW_ID, ORG, USR_SUPERVISOR, '   ', ctx)).rejects.toMatchObject({
 			status: 400
 		})
 		await expect(
-			attestSignoff(REVIEW_ID, USR_SUPERVISOR, 'x'.repeat(201), ctx)
+			attestSignoff(REVIEW_ID, ORG, USR_SUPERVISOR, 'x'.repeat(201), ctx)
 		).rejects.toMatchObject({ status: 400 })
 		// The column is VarChar(200): 200 is the boundary that must still be accepted.
-		await attestSignoff(REVIEW_ID, USR_SUPERVISOR, 'x'.repeat(200), ctx)
+		await attestSignoff(REVIEW_ID, ORG, USR_SUPERVISOR, 'x'.repeat(200), ctx)
 		expect(rows).toHaveLength(1)
 	})
 

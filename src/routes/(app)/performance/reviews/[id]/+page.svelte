@@ -5,6 +5,7 @@
 	import { answerDraft, serialiseAnswers } from '$lib/components/performance/answer-draft'
 	import { addToast } from '$lib/stores/toast.svelte'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
+	import { formatDate } from '$lib/utils/format'
 	import type { PageData, ActionData } from './$types'
 
 	/**
@@ -53,6 +54,12 @@
 	// #108: double-submitting these re-writes the review.
 	const saveSelf = createSubmitGuard()
 	const saveComments = createSubmitGuard()
+	// Only ONE attest form is ever rendered (the slot whose turn it is, and only for a holder of
+	// it), so one guard covers it.
+	const attest = createSubmitGuard(() => async ({ result, update }) => {
+		await update()
+		if (result.type === 'success') addToast('Signature recorded.', { kind: 'success' })
+	})
 	const submitScores = createSubmitGuard(() => async ({ result, update }) => {
 		// `reset: false` — the inputs are bound to `draft`, and a native form reset would blank the
 		// DOM without telling Svelte, leaving what is shown and what would be posted disagreeing.
@@ -228,6 +235,104 @@
 			<p class="text-sm text-muted-foreground">None yet.</p>
 		{/if}
 	</section>
+
+	<!--
+		#178 item 144 — THE SIGNATURE BLOCK.
+
+		Every slot in the SNAPSHOT's order, always all of them, so the employee and HR can see who
+		this review is waiting on. Whose turn it is was decided on the server by
+		`nextSignatorySlot` — the same function the service rejects out-of-turn posts with — so the
+		Attest button and the server cannot disagree. Nothing here recomputes the turn.
+
+		A SIGNATURE IS A TYPED NAME AND A TIMESTAMP, deliberately. There is no drawn-signature
+		image and no blob: capturing one is a compliance decision nobody has made, and the schema
+		gate in `tests/unit/performance-signoff.test.ts` fails the build if a column for one ever
+		appears.
+
+		NO ARITHMETIC (plan §0). The count below is `signoffs.length` against `signatoryOrder.length`
+		— two lengths, not a fold. Nothing on this page sums anything.
+	-->
+	{#if data.signatoryOrder.length > 0}
+		<section class="space-y-3 rounded-lg border bg-card p-4">
+			<div class="flex flex-wrap items-center justify-between gap-2">
+				<h2 class="font-semibold">Signatures</h2>
+				<p class="text-sm text-muted-foreground">
+					{data.signoffs.length} of {data.signatoryOrder.length} signed
+				</p>
+			</div>
+
+			<ol class="divide-y">
+				{#each data.signatoryOrder as slot, i (slot.id)}
+					{@const signed = data.signoffs.find((s) => s.slotId === slot.id)}
+					{@const isTurn = data.nextSlot?.id === slot.id}
+					{@const unstaffed = data.unstaffedSlotIds.includes(slot.id)}
+					<li class="space-y-2 py-3">
+						<div class="flex flex-wrap items-baseline justify-between gap-2">
+							<p class="text-sm font-medium">
+								<span class="text-muted-foreground">{i + 1}.</span>
+								{slot.label}
+							</p>
+							{#if signed}
+								<span
+									class="rounded-full bg-green-500/15 px-2.5 py-1 text-xs font-medium text-green-600 dark:text-green-400"
+									>Signed</span
+								>
+							{:else if unstaffed}
+								<span
+									class="rounded-full bg-destructive/15 px-2.5 py-1 text-xs font-medium text-destructive"
+									>Nobody assigned</span
+								>
+							{:else if isTurn}
+								<span
+									class="rounded-full bg-yellow-500/15 px-2.5 py-1 text-xs font-medium text-yellow-600 dark:text-yellow-400"
+									>Waiting for signature</span
+								>
+							{:else}
+								<span class="text-xs text-muted-foreground">Not yet their turn</span>
+							{/if}
+						</div>
+
+						{#if signed}
+							<p class="text-sm">
+								<span class="font-medium">{signed.typedName}</span>
+								<span class="text-muted-foreground"> · {formatDate(signed.attestedAt)}</span>
+							</p>
+						{:else if unstaffed}
+							<p class="text-sm text-muted-foreground">
+								No one is assigned to this role — HR must resolve this.
+							</p>
+						{:else if isTurn && data.mayIAttest}
+							<form
+								method="POST"
+								action="?/attest"
+								use:enhance={attest.enhance}
+								class="space-y-2 rounded-md border border-primary/30 bg-primary/5 p-3"
+							>
+								<label class="block text-sm" for="typedName-{slot.id}">
+									Type your full name to sign as {slot.label}. Your typed name is your signature on
+									this evaluation and is recorded with the date.
+								</label>
+								<input
+									id="typedName-{slot.id}"
+									name="typedName"
+									type="text"
+									required
+									maxlength="200"
+									autocomplete="name"
+									class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+								/>
+								<button
+									disabled={attest.busy}
+									class="rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+									>{attest.busy ? 'Signing…' : `Attest as ${slot.label}`}</button
+								>
+							</form>
+						{/if}
+					</li>
+				{/each}
+			</ol>
+		</section>
+	{/if}
 
 	<!--
 		Reviews written before #178 still hold their old two columns. Nothing writes them any more

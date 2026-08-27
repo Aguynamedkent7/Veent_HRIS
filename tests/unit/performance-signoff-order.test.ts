@@ -130,7 +130,7 @@ describe('isFullySigned', () => {
 
 const { dbMock, writeAuditLog } = vi.hoisted(() => ({
 	dbMock: {
-		performanceReview: { findUnique: vi.fn(), update: vi.fn() },
+		performanceReview: { findFirst: vi.fn(), update: vi.fn() },
 		user: { findMany: vi.fn() },
 		$transaction: vi.fn()
 	},
@@ -190,7 +190,7 @@ describe('attestSignoff — the server rejects an out-of-turn signature (AC11)',
 			fn(serviceTx)
 		)
 		dbMock.user.findMany.mockResolvedValue([{ id: HR }])
-		dbMock.performanceReview.findUnique.mockResolvedValue(REVIEW)
+		dbMock.performanceReview.findFirst.mockResolvedValue(REVIEW)
 		serviceTx.reviewSignoff.create.mockResolvedValue({ id: 'so_1' })
 		serviceTx.reviewSignoff.findMany.mockResolvedValue([])
 		serviceTx.performanceReview.update.mockResolvedValue({ id: SERVICE_REVIEW, status: 'SIGNING' })
@@ -203,7 +203,7 @@ describe('attestSignoff — the server rejects an out-of-turn signature (AC11)',
 		['the Employee', EMPLOYEE]
 	])('throws 409 when %s tries to jump ahead of the Immediate Supervisor', async (_who, userId) => {
 		await expect(
-			attestSignoff(SERVICE_REVIEW, userId, 'Jumped The Queue', serviceCtx)
+			attestSignoff(SERVICE_REVIEW, SERVICE_ORG, userId, 'Jumped The Queue', serviceCtx)
 		).rejects.toMatchObject({ status: 409 })
 
 		// THE NEGATIVE CONTROL — no row, no status change, no audit entry.
@@ -218,7 +218,7 @@ describe('attestSignoff — the server rejects an out-of-turn signature (AC11)',
 	// POSITIVE CONTROL. Without this, dropping the whole `attestSignoff` body would still make
 	// the three cases above pass.
 	it('accepts the signatory whose turn it actually is', async () => {
-		await attestSignoff(SERVICE_REVIEW, SUPERVISOR, 'Sup Ervisor', serviceCtx)
+		await attestSignoff(SERVICE_REVIEW, SERVICE_ORG, SUPERVISOR, 'Sup Ervisor', serviceCtx)
 
 		expect(serviceTx.reviewSignoff.create).toHaveBeenCalledWith(
 			expect.objectContaining({

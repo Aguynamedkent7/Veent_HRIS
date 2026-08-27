@@ -20,7 +20,10 @@ const { dbMock, listReportIdsFor, getReview, redactHrAuthored } = vi.hoisted(() 
 	redactHrAuthored: vi.fn((r) => r),
 	dbMock: {
 		employee: { findUnique: vi.fn(), findFirst: vi.fn() },
-		branch: { findMany: vi.fn() }
+		branch: { findMany: vi.fn() },
+		// #178 item 143 — the load also reads the sign-off relations. Not what this file guards,
+		// so it resolves to nothing: no snapshot, no slots, no signature block.
+		performanceReview: { findFirst: vi.fn() }
 	}
 }))
 
@@ -32,7 +35,9 @@ vi.mock('$lib/server/services/performance', () => ({
 	saveSelfAssessment: vi.fn(),
 	submitScores: vi.fn(),
 	saveEmployeeComments: vi.fn(),
-	acknowledgeReview: vi.fn()
+	acknowledgeReview: vi.fn(),
+	attestSignoff: vi.fn(),
+	resolveSlotHolders: vi.fn()
 }))
 
 const { load } = await import('../../src/routes/(app)/performance/reviews/[id]/+page.server')
@@ -66,6 +71,7 @@ beforeEach(() => {
 	dbMock.employee.findUnique.mockResolvedValue({ id: ME })
 	dbMock.employee.findFirst.mockResolvedValue({ branchId: null })
 	dbMock.branch.findMany.mockResolvedValue([])
+	dbMock.performanceReview.findFirst.mockResolvedValue(null)
 	listReportIdsFor.mockResolvedValue([])
 })
 
