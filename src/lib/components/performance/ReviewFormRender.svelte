@@ -47,7 +47,9 @@
 	 * only so `preview`, which has no answers and no enabled control, still type-checks.
 	 */
 	// svelte-ignore state_referenced_locally
-	const draft = answers ?? answerDraft(structure, null)
+	let fallback = $state(answerDraft(structure, null))
+	// svelte-ignore state_referenced_locally
+	const draft = answers ?? fallback
 
 	/** Inert = no typing. `preview` is always inert; `fill` is inert when read back. */
 	const inert = $derived(mode === 'preview' || disabled)
