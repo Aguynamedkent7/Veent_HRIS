@@ -48,6 +48,17 @@
 		</div>
 	{/if}
 
+	<!-- #178 readiness note. Informational, never a gate: it disables nothing and blocks no
+	     action. The count is 0 for anyone without ADMINISTER_HR_ORGWIDE (see the load), so the
+	     capability check is the server's and `> 0` is the whole client-side condition. -->
+	{#if data.templateBackfill > 0}
+		<p class="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-sm">
+			{data.templateBackfill} active
+			{data.templateBackfill === 1 ? 'employee has' : 'employees have'} no assigned template. This is
+			a readiness note, not a blocker.
+		</p>
+	{/if}
+
 	<!-- Review Cycles (HR) -->
 	{#if data.isAdmin}
 		<section class="space-y-3">

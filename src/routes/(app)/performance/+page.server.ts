@@ -9,6 +9,7 @@ import {
 	updateReviewCycleStatus,
 	openReviewsForCycle
 } from '$lib/server/services/performance'
+import { countEmployeesWithoutTemplate } from '$lib/server/services/performance-templates'
 import { db } from '$lib/server/db'
 import { z } from 'zod'
 import type { Actions, PageServerLoad } from './$types'
@@ -19,13 +20,21 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	const cycles = isAdmin ? await listReviewCycles(user.organizationId) : []
 
+	// #178: the template-readiness count is org-wide configuration, so it reads
+	// ADMINISTER_HR_ORGWIDE — not MANAGE_HR, which includes MANAGER (#133). A manager or an
+	// employee never runs the query, and reads 0. Informational only: nothing gates on it.
+	const templateBackfill = canAny(user.roles, 'ADMINISTER_HR_ORGWIDE')
+		? await countEmployeesWithoutTemplate(user.organizationId)
+		: 0
+
 	const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
 	if (!myEmployee) {
 		return {
 			myReviews: [],
 			reviewsToGive: [],
 			isAdmin,
-			cycles
+			cycles,
+			templateBackfill
 		}
 	}
 
@@ -40,7 +49,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 		myReviews: myReviews.map(redactHrAuthored),
 		reviewsToGive,
 		isAdmin,
-		cycles
+		cycles,
+		templateBackfill
 	}
 }
 
