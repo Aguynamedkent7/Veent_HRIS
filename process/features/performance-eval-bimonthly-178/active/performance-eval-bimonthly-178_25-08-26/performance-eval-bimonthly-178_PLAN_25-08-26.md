@@ -1173,6 +1173,11 @@ Remove the manual cycle UI (SPEC: "that whole manual HR UI is gone"):
 **Read §0 again before writing any code in this phase.**
 
 122. `src/lib/server/performance/schemas.ts` — add `answersSchemaFor(structure)` exactly as
+
+**CORRECTED 2026-08-27 during EXECUTE — `ZodType<Answers>` does not compile.** §5 also mandates `z.coerce.number().int()`, and a coerced schema's INPUT type is `unknown`, not `Answers`. The shipped signature is the three-generic form `ZodType<Answers, ZodTypeDef, unknown>` — same output contract, honest input generic.
+
+**TRAP found while testing this, worth knowing before writing any nullable-bound test here:** a subtotal submitted against a `maximum: null` section must be rejected, and the obvious test passes even when the `maximum === null` guard is deleted — because the code falls through to `subtotal > maximum` and JS coerces `null` to `0`, so `1 > null` is still true. Test that case with **`0`**, the one value that slips past every comparison-based fallback.
+
      specified in §5, including the "DOES NOT and MUST NOT" comment verbatim.
 123. `src/lib/server/services/performance.ts` — add `submitScores(id, reviewerId, answers, ctx)`:
      - 409 unless `review.reviewerId === reviewerId` (matching `submitManagerReview:125`).

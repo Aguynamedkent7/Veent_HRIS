@@ -1,6 +1,6 @@
-import { z } from 'zod'
+import { z, type ZodType, type ZodTypeDef } from 'zod'
 import { newId } from '../../performance/ids'
-import { SIGNATORY_ROLES, type TemplateStructure } from './types'
+import { SIGNATORY_ROLES, type Answers, type TemplateStructure } from './types'
 
 /**
  * Every write boundary for the evaluation feature (#178, plan §5), in ONE module. Pure — no DB
@@ -204,8 +204,118 @@ export function blankTemplateStructure(): TemplateStructure {
 	}
 }
 
+// ── Capture-time answers (plan §5, boundary #6) ──────────────────────────────
+
+// answersSchemaFor(snapshot) builds a zod schema BOUND to one review's snapshot. It is the
+// only place the "validate but never calculate" line is enforced, and it must not be
+// duplicated at any call site.
+//
+// It enforces exactly four things:
+//   1. every criterion key exists in the snapshot (unknown key → reject)
+//   2. each rating is an integer within [ratingScale.min, ratingScale.max]
+//   3. each section subtotal is a non-negative integer <= that section's `maximum`
+//      (a section with maximum === null accepts NO subtotal at all)
+//   4. totalScore is a non-negative integer <= structure.totalCeiling
+// and that interpretationBandId / recommendationIds / narrative keys / kpi keys all exist in
+// the snapshot.
+//
+// It DOES NOT and MUST NOT: sum criteria, compare a subtotal to the sum of its criteria,
+// compare the total to the sum of the subtotals, or check that the picked band matches the
+// typed total. HR calculates; a mismatch is HR's number to own, not the app's to reject.
+// The third generic is `unknown` because the numeric fields are `z.coerce` — form posts arrive
+// as strings. The output type is `Answers` exactly.
+export function answersSchemaFor(
+	structure: TemplateStructure
+): ZodType<Answers, ZodTypeDef, unknown> {
+	const { min, max } = structure.ratingScale
+	// Section id → its declared maximum. `null` means the section captures no subtotal at all.
+	const sectionMaxima = new Map(structure.sections.map((s) => [s.id, s.maximum]))
+	const criterionIds = new Set(structure.sections.flatMap((s) => s.criteria.map((c) => c.id)))
+	const bandIds = new Set(structure.interpretationBands.map((b) => b.id))
+	const narrativeIds = new Set(structure.narrativeBlocks.map((n) => n.id))
+	const recommendationIds = new Set(structure.recommendationOptions.map((r) => r.id))
+	const kpiIds = new Set((structure.kpiRows ?? []).map((k) => k.id))
+
+	return z
+		.object({
+			version: z.literal(1),
+			criteria: z.record(
+				z
+					.object({
+						// Ints only. No `.multipleOf(0.5)`, no Decimal — fractions are not a thing here.
+						rating: z.coerce
+							.number()
+							.int('A rating must be a whole number')
+							.min(min, `A rating cannot be below ${min}`)
+							.max(max, `A rating cannot be above ${max}`),
+						remark: z.string().optional()
+					})
+					.strict()
+			),
+			// The per-section ceiling is keyed by section id, so it is checked in the refine below.
+			sectionSubtotals: z.record(
+				z.coerce.number().int('A subtotal must be a whole number').nonnegative()
+			),
+			totalScore: z.coerce
+				.number()
+				.int('The total must be a whole number')
+				.nonnegative()
+				.max(structure.totalCeiling, `The total cannot exceed ${structure.totalCeiling}`),
+			interpretationBandId: z.string(),
+			narratives: z.record(z.string()),
+			recommendationIds: z.array(z.string()),
+			recommendationOther: z.string().optional(),
+			kpiActuals: z.record(z.string()).optional()
+		})
+		.strict()
+		.superRefine((answers, ctx) => {
+			const reject = (path: (string | number)[], message: string) =>
+				ctx.addIssue({ code: z.ZodIssueCode.custom, path, message })
+
+			for (const id of Object.keys(answers.criteria)) {
+				if (!criterionIds.has(id)) {
+					reject(['criteria', id], `"${id}" is not a criterion on this review's form`)
+				}
+			}
+
+			for (const [id, subtotal] of Object.entries(answers.sectionSubtotals)) {
+				if (!sectionMaxima.has(id)) {
+					reject(['sectionSubtotals', id], `"${id}" is not a category on this review's form`)
+					continue
+				}
+				const maximum = sectionMaxima.get(id) ?? null
+				if (maximum === null) {
+					reject(['sectionSubtotals', id], 'This category has no subtotal line')
+				} else if (subtotal > maximum) {
+					reject(['sectionSubtotals', id], `This subtotal cannot exceed ${maximum}`)
+				}
+			}
+
+			if (!bandIds.has(answers.interpretationBandId)) {
+				reject(['interpretationBandId'], 'Pick an interpretation band from this form')
+			}
+
+			for (const id of Object.keys(answers.narratives)) {
+				if (!narrativeIds.has(id)) {
+					reject(['narratives', id], `"${id}" is not a narrative block on this review's form`)
+				}
+			}
+
+			answers.recommendationIds.forEach((id, i) => {
+				if (!recommendationIds.has(id)) {
+					reject(['recommendationIds', i], `"${id}" is not a recommendation on this review's form`)
+				}
+			})
+
+			for (const id of Object.keys(answers.kpiActuals ?? {})) {
+				if (!kpiIds.has(id)) {
+					reject(['kpiActuals', id], `"${id}" is not a KPI row on this review's form`)
+				}
+			}
+		})
+}
+
 // ── The remaining write boundaries (plan §5) ─────────────────────────────────
-// `answersSchemaFor(snapshot)` — the capture-time range validator — lands in Phase 6.
 // `releaseSchema` is deliberately absent: the RELEASE action's only input is the route param,
 // and inventing a body shape now would be a guess Phase 8 has to undo.
 
