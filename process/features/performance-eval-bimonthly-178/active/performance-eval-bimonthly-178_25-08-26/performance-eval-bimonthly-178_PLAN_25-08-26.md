@@ -2295,3 +2295,86 @@ going to 0 at the same time is the only thing that exposed it.
 - **`tests/e2e/form-errors.spec.ts` "performance surfaces cycle errors in the page-level banner"
   fails.** Phase 5 deleted every action on `/performance`, so nothing populates that banner any
   more. Almost certainly ours; unexamined.
+
+---
+
+## 22. STATE OF PLAY — handoff, end of 27-08-26
+
+**EXECUTE is finished. Every phase is built, committed and pushed. The next session tests; it does
+not build.** Read this section before anything else in this file — the items above are the
+contract, this is where that contract actually landed.
+
+### Phase status
+
+| Phase | What it is | State | Key commits |
+|---|---|---|---|
+| 1 | Goals removal | DONE | `512a8e7` |
+| 2 | Schema foundation | DONE | `c2f6db4` |
+| 3 | Template CRUD, seeds, shared render component | DONE | `c6f1dc9`, `a4643fe` |
+| 4 | Template assignment + the app-wide back-button sweep | DONE | `0bf07b5`, `e325865`, `0ca5121`, `02d95dc` |
+| 5 | Cycle planner, snapshot-on-open, cadence config, cron | DONE | `b06e236`, `960fc11`, `a49ad0a`, `f07b056` |
+| 6 | The evaluator's review form + no-scoring gate | DONE | `c8c349e`, `52a4269`, `03b31b2` |
+| 7 | Sequential sign-off + department head | DONE | `85ebc6a`, `072756e`, `63f3401`, `fc1331d`, `1094741` |
+| 8 | Release gate and API redaction | DONE | `6c5f73b`, `455e84a` |
+| 9 | Email seam and reminders cron | DONE | `9d885e8`, `e6a78bd` |
+
+Gates at handoff: `pnpm test` **175 files / 2042 tests green**; `pnpm check` **0 errors**, 1
+pre-existing a11y warning at `CalculatorWindow.svelte:82` which is NOT ours.
+
+### What is proven, and how
+
+| Claim | Evidence | Strength |
+|---|---|---|
+| No arithmetic reaches a review | `performance-no-scoring.test.ts`, both detection paths mutation-checked | structural, build-failing |
+| The signing turn cannot disagree between UI and server | one pure function called by both; 13 tests incl. duplicate rows and out-of-order arrival | strong |
+| Out-of-turn signing is refused server-side | mutation M2 → 5 tests RED | strong |
+| Two holders racing one slot cannot double-sign | `@@unique([reviewId, slotId])` → P2002 → 409; mutation M3 → 1 test RED | unit only, never raced live |
+| The employee sees nothing until release | **live**, before/after, both API and page, with a positive control | strongest evidence on the branch |
+| MANAGER cannot release | **live 403**, and MANAGER holds `MANAGE_HR` — the #133 trap failing closed | strong |
+| The renamed FK accepts a real write | **live**, rendered "Released by Cielo Executive" | strong |
+| Reminder de-duplication holds | unit mutation + **a live repeat run printing "nothing due"** | strong |
+| Unconfigured email never throws | proven three ways incl. a live probe against an unreachable host | strong |
+| **The GUI works end to end** | **NOTHING. The owner has not tested it.** | **none** |
+
+### Next session, in order
+
+1. **The owner's GUI pass.** Ask what broke; fix that before anything else.
+2. **The `impeccable` audit of the template builder.** The planning pass produced
+   `template-builder_DESIGN-BRIEF_26-08-26.md`; the audit pass never ran. It needs a real browser,
+   so ask them to start Playwright first.
+3. **`tests/e2e/form-errors.spec.ts` — "performance surfaces cycle errors in the page-level
+   banner" FAILS and is almost certainly ours.** Phase 5 deleted every action on `/performance`,
+   so nothing populates that banner. VALIDATE finding V-1 predicted this exactly and nobody went
+   back for it. Unexamined — do not assume it is a small fix.
+4. **The PR.** A staging-targeted PR will not auto-close #178; close it by hand and name the gaps.
+
+**Two e2e failures are NOT ours — leave them alone.** `inventory.spec.ts` (#114) and
+`payroll-custom-range-overlap.spec.ts` (#163).
+
+### How to run the pieces
+
+```
+./start.sh                                   # owner starts this, never the assistant
+pnpm exec tsx scripts/generate-review-cycles.ts --dry-run
+pnpm exec tsx scripts/send-review-reminders.ts --dry-run
+```
+
+The dev DB was left clean: no released reviews, no reminder stamps, no planted answers. The seeded
+reviews are all `PENDING` with no template answers, so **a GUI test of the review form needs a
+cycle generated first**.
+
+`SMTP_HOST` is empty in `.env.dev`, which is the intended local state — mail logs a `[NOTIFY]`
+line instead of sending, and nothing throws.
+
+### Traps that will bite the next session
+
+- **`db push` leaves a running dev server on a stale Prisma client.** Every
+  `/performance/reviews/*` page 500'd after the `releasedByEmployeeId` rename until the server was
+  restarted. Check process age before hunting a code bug.
+- **`review-privacy.test.ts` hand-mocks the whole performance service with a partial `vi.mock`
+  factory.** It broke three separate times this issue from unrelated imports into
+  `reviews/[id]/+page.server.ts`, and because the factory is partial it can go green while proving
+  nothing.
+- **A 401 makes a leak probe look clean.** Item 158's live check nearly passed for that reason;
+  only the positive control going silent at the same time exposed it. Never assert absence without
+  a control that must be present.
