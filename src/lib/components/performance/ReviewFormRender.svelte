@@ -75,39 +75,6 @@
 		</ul>
 	</section>
 
-	<!-- KPI table — present on Admin Staff, absent on Account Executive. `target` is a label. -->
-	{#if structure.kpiRows && structure.kpiRows.length > 0}
-		<section class="space-y-2">
-			<h3 class="text-sm font-semibold">Key Performance Indicators</h3>
-			<table class="w-full border-collapse text-sm">
-				<thead>
-					<tr class="border-b text-left text-xs uppercase text-muted-foreground">
-						<th class="py-1.5 pr-3 font-medium">Indicator</th>
-						<th class="py-1.5 pr-3 font-medium">Target</th>
-						<th class="py-1.5 font-medium">Actual</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each structure.kpiRows as kpi (kpi.id)}
-						<tr class="border-b last:border-0 align-top">
-							<td class="py-1.5 pr-3">{kpi.indicator}</td>
-							<td class="py-1.5 pr-3 text-muted-foreground">{kpi.target}</td>
-							<td class="py-1.5">
-								<!-- Free text, typed. NEVER compared to `target`. -->
-								<input
-									type="text"
-									disabled={readonly}
-									aria-label="Actual for {kpi.indicator}"
-									class={inputClass}
-								/>
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</section>
-	{/if}
-
 	<!-- The categories and their criteria. -->
 	{#each structure.sections as section, si (section.id)}
 		<section class="space-y-2 rounded-lg border p-3">
@@ -248,4 +215,37 @@
 			{/each}
 		</ul>
 	</section>
+
+	<!-- KPI table — present on Admin Staff, absent on Account Executive. `target` is a label. -->
+	{#if structure.kpiRows && structure.kpiRows.length > 0}
+		<section class="space-y-2">
+			<h3 class="text-sm font-semibold">Key Performance Indicators</h3>
+			<table class="w-full border-collapse text-sm">
+				<thead>
+					<tr class="border-b text-left text-xs uppercase text-muted-foreground">
+						<th class="py-1.5 pr-3 font-medium">Indicator</th>
+						<th class="py-1.5 pr-3 font-medium">Target</th>
+						<th class="py-1.5 font-medium">Actual</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each structure.kpiRows as kpi (kpi.id)}
+						<tr class="border-b last:border-0 align-top">
+							<td class="py-1.5 pr-3">{kpi.indicator}</td>
+							<td class="py-1.5 pr-3 text-muted-foreground">{kpi.target}</td>
+							<td class="py-1.5">
+								<!-- Free text, typed. NEVER compared to `target`. -->
+								<input
+									type="text"
+									disabled={readonly}
+									aria-label="Actual for {kpi.indicator}"
+									class={inputClass}
+								/>
+							</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</section>
+	{/if}
 </div>
