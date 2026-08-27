@@ -1309,6 +1309,25 @@ Slot resolution:
        Audit with `tx`.
      - catch `P2002` on `@@unique([reviewId, slotId])` → 409 "that signature was just recorded
        by someone else". This is the race the relational table exists for.
+     **AMENDMENT (EXECUTE, 27-08-26).** "recompute `isFullySigned`" above is ambiguous and reads
+     naturally as "on the list you already loaded" — which is the bug this module exists to
+     prevent: the last signatory would never flip the review to `COMPLETED`. It must be
+     recomputed from the rows RE-READ inside the transaction, AFTER the insert. Shipped that
+     way, and the mutation check that proves it is
+     `AC10 … > stays SIGNING through every slot but the last, then flips to COMPLETED on it`.
+
+     Three cases item 141 omits, all built as trust-boundary work: a `404` for a missing review,
+     a `409` for an unparseable `templateSnapshot`, and `typedName` validation (trimmed,
+     non-empty, ≤200 — the column is `VarChar(200)`). Item 140's citation of
+     `backup/run.ts:228-243` has drifted to **231-244**. Item 142's return shape was unspecified;
+     it returns `{ reviewId, employeeId, employeeName, departmentName, cycleName, slot }`, and
+     `resolveSlotHolders`' `review` argument is an exported structural `SignoffReview` type
+     rather than a Prisma payload type, so its two callers are not forced into identical selects.
+
+     `attestSignoff` gained an `organizationId` parameter in section 7C. Cross-tenant writing was
+     already closed by the holder check, but the unscoped lookup let a cross-org caller tell
+     "exists" from "does not exist" by 409-vs-404, and every other reader in the file scopes.
+
 142. `src/lib/server/services/performance.ts` — add
      `listStalledSignoffs(organizationId)`: reviews in `SCORED`/`SIGNING` whose next slot
      resolves to zero holders. **A separate view from the unreviewable list, deliberately**
