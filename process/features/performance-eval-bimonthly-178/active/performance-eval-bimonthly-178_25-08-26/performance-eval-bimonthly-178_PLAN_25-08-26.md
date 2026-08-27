@@ -1848,6 +1848,18 @@ plan's own reads, at branch tip `db04eb6`; re-verify each one.**
 | `src/routes/(app)/employees/[id]/+page.svelte` | HR section | P4 |
 | `src/routes/(app)/+layout.svelte` | 171-175 | P3 |
 | `src/lib/utils/dates.ts` | 159-170, new export | P5 |
+| `src/lib/components/dashboard/ActivityIcon.svelte` | the `Record<NotificationKind, …>` map | P2 |
+
+**Added 2026-08-27 during EXECUTE Phase 2 — the plan missed this file.** `ActivityIcon.svelte`
+holds an **exhaustive** `Record<NotificationKind, …>` icon map, so item 51's pure enum addition
+breaks `pnpm check` until the map gains a `PERFORMANCE` entry. Any future `NotificationKind`
+value has the same requirement. `NotificationKind` appears in only two files; the other
+(`services/notifications.ts`) uses it as a parameter type and needs nothing.
+
+**Also note: every line number in §3.2–§3.4 is stale.** Phase 1 deleted `model Goal` and
+`enum GoalStatus`, shifting everything after ~line 1670 upward, and Phase 2 added ~150 lines.
+Locate targets by content, not by number.
+
 | `src/lib/server/notifications.ts` | 7, 32, 40, 44, 156, 165, + new builder | P9 |
 | `scripts/prod-delete.ts` | 200, 223, 265, 335 | P1 |
 | `scripts/clean-e2e-employees.ts` | 86 | P1 |
