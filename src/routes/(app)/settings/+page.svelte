@@ -54,6 +54,12 @@
 			super: false
 		},
 		{
+			href: '/settings/performance',
+			title: 'Review Schedule',
+			desc: 'How often reviews open, and time to complete',
+			hrOrgwide: true
+		},
+		{
 			href: '/settings/posting-approvers',
 			title: 'Posting Approvers',
 			desc: 'Who approves each department’s job postings',
@@ -95,6 +101,8 @@
 		cards.filter((c) => {
 			if ('statutory' in c && c.statutory) return data.canStatutory
 			if ('roles' in c && c.roles) return data.canRoles
+			// Narrower than this page's own MANAGE_HR guard, so it cannot ride on the default (#178).
+			if ('hrOrgwide' in c && c.hrOrgwide) return data.canHrOrgwide
 			return !('super' in c && c.super) || data.isSuperAdmin
 		})
 	)
