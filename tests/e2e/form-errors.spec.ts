@@ -3,8 +3,8 @@ import { login, USERS } from './helpers'
 
 // #106: both pages returned fail(..., { error }) from their actions, but neither
 // rendered it — benefits never destructured `form` at all, and performance nested the
-// banner inside the collapsible create-goal form. Every validation failure was silent:
-// the user saw the form do nothing.
+// banner inside a collapsible form. Every validation failure was silent: the user saw
+// the form do nothing.
 //
 // Each test clears a required field (removing the attribute so the browser lets the
 // submit through) and asserts the server's complaint reaches the screen.
@@ -34,12 +34,12 @@ test('benefits surfaces a failed plan creation instead of silently doing nothing
 	await expect(page.getByRole('alert')).not.toContainText('[object Object]')
 })
 
-test('performance surfaces cycle errors without the goal form being open', async ({ page }) => {
+test('performance surfaces cycle errors in the page-level banner', async ({ page }) => {
 	await login(page, USERS.admin)
 	await page.goto('/performance', { waitUntil: 'domcontentloaded' })
 
-	// Deliberately do NOT open Create Goal — that is the point. The banner used to live
-	// inside it, so a cycle error was invisible unless that form happened to be open.
+	// The banner is top-level, not nested inside any collapsible form, so a cycle error is
+	// visible on arrival. That is what #106 fixed and what this pins.
 	const form = page.locator('form[action*="createCycle"]')
 	await expect(form).toBeVisible()
 
@@ -57,4 +57,12 @@ test('performance surfaces cycle errors without the goal form being open', async
 		await form.getByRole('button', { name: 'Create cycle' }).click()
 		await expect(page.getByRole('alert')).toBeVisible({ timeout: 2000 })
 	}).toPass({ timeout: 20000 })
+})
+
+// #178 AC17: the Goals REST route is deleted, not merely unlinked. A source grep proves the
+// file is gone; only a real request proves the URL no longer answers. Positive assertion on
+// the status code — "the page looks empty" would pass against a live route returning [].
+test('the removed Goals API route is gone', async ({ request }) => {
+	const res = await request.get('/api/v1/performance/goals')
+	expect(res.status()).toBe(404)
 })

@@ -259,13 +259,6 @@ enum ReviewStatus {
   ACKNOWLEDGED
 }
 
-enum GoalStatus {
-  DRAFT
-  ACTIVE
-  COMPLETED
-  CANCELLED
-}
-
 // ─── Attendance Enums ────────────────────────────────────────────────────────
 
 enum AttendanceStatus {
@@ -490,7 +483,6 @@ model Employee {
   benefitEnrollments    BenefitEnrollment[]
   performanceReviews    PerformanceReview[]       @relation("ReviewSubject")
   reviewsGiven          PerformanceReview[]       @relation("Reviewer")
-  goals                 Goal[]
   loans                 Loan[]
   cashAdvances          CashAdvance[]
   recurringEarnings     EmployeeEarning[]
@@ -1671,25 +1663,6 @@ model PerformanceReview {
 
   @@unique([cycleId, employeeId])
   @@map("performance_reviews")
-}
-
-model Goal {
-  id          String     @id @default(cuid())
-  employeeId  String
-  cycleId     String?
-  title       String
-  description String?    @db.Text
-  category    String?
-  status      GoalStatus @default(ACTIVE)
-  progress    Int        @default(0)
-  targetDate  DateTime?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-
-  employee Employee @relation(fields: [employeeId], references: [id])
-
-  @@index([employeeId])
-  @@map("goals")
 }
 
 // ─── Org Structure (Positions) ────────────────────────────────────────────────

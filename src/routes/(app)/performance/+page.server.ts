@@ -1,27 +1,20 @@
 import { fail, isHttpError } from '@sveltejs/kit'
 import { canAny, requireAnyCapability } from '$lib/server/rbac'
 import {
-	listGoalsForEmployee,
 	listReviewsForEmployee,
 	listReviewsForReviewer,
 	redactHrAuthored,
-	createGoal,
-	updateGoalProgress,
 	listReviewCycles,
 	createReviewCycle,
 	updateReviewCycleStatus,
-	openReviewsForCycle,
-	listGoalsForManager
+	openReviewsForCycle
 } from '$lib/server/services/performance'
 import { db } from '$lib/server/db'
 import { z } from 'zod'
 import type { Actions, PageServerLoad } from './$types'
 
-const GOAL_STATUS = ['DRAFT', 'ACTIVE', 'COMPLETED', 'CANCELLED'] as const
-
 export const load: PageServerLoad = async ({ locals }) => {
 	const user = locals.user!
-	const isManager = canAny(user.roles, 'VIEW_TEAM')
 	const isAdmin = canAny(user.roles, 'MANAGE_HR')
 
 	const cycles = isAdmin ? await listReviewCycles(user.organizationId) : []
@@ -29,31 +22,23 @@ export const load: PageServerLoad = async ({ locals }) => {
 	const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
 	if (!myEmployee) {
 		return {
-			myGoals: [],
 			myReviews: [],
 			reviewsToGive: [],
-			teamGoals: [],
-			isManager,
 			isAdmin,
 			cycles
 		}
 	}
 
-	const [myGoals, myReviews, reviewsToGive, teamGoals] = await Promise.all([
-		listGoalsForEmployee(myEmployee.id),
+	const [myReviews, reviewsToGive] = await Promise.all([
 		listReviewsForEmployee(myEmployee.id),
-		listReviewsForReviewer(myEmployee.id),
-		isManager ? listGoalsForManager(myEmployee.id) : Promise.resolve([])
+		listReviewsForReviewer(myEmployee.id)
 	])
 
 	// #179: My Reviews are the viewer's own reviews as the subject — strip the HR-authored
 	// comments and rating so the confidential review never reaches the reviewed employee.
 	return {
-		myGoals,
 		myReviews: myReviews.map(redactHrAuthored),
 		reviewsToGive,
-		teamGoals,
-		isManager,
 		isAdmin,
 		cycles
 	}
@@ -68,69 +53,7 @@ function ctxOf(locals: App.Locals, ip: string) {
 	}
 }
 
-const createGoalSchema = z.object({
-	title: z.string().min(1),
-	description: z.string().optional(),
-	category: z.string().optional(),
-	targetDate: z.coerce.date().optional()
-})
-
-const updateGoalSchema = z.object({
-	id: z.string().min(1),
-	progress: z.coerce.number().min(0).max(100),
-	status: z.enum(GOAL_STATUS)
-})
-
 export const actions: Actions = {
-	createGoal: async ({ request, locals, getClientAddress }) => {
-		const user = locals.user!
-		const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
-		if (!myEmployee) return fail(400, { error: 'No employee profile found' })
-
-		const raw = Object.fromEntries(await request.formData())
-		const parsed = createGoalSchema.safeParse(raw)
-		if (!parsed.success) return fail(400, { error: 'Invalid input' })
-
-		try {
-			await createGoal(myEmployee.id, parsed.data, {
-				organizationId: user.organizationId,
-				actorId: user.id,
-				actorRoles: user.roles,
-				ipAddress: getClientAddress()
-			})
-		} catch (e: unknown) {
-			if (e instanceof Error) return fail(400, { error: e.message })
-			throw e
-		}
-	},
-
-	updateGoal: async ({ request, locals, getClientAddress }) => {
-		const user = locals.user!
-		const myEmployee = await db.employee.findUnique({ where: { userId: user.id } })
-		if (!myEmployee) return fail(400, { error: 'No employee profile found' })
-
-		const raw = Object.fromEntries(await request.formData())
-		const parsed = updateGoalSchema.safeParse(raw)
-		if (!parsed.success) return fail(400, { error: 'Invalid input' })
-
-		try {
-			await updateGoalProgress(
-				parsed.data.id,
-				myEmployee.id,
-				{ progress: parsed.data.progress, status: parsed.data.status },
-				{
-					organizationId: user.organizationId,
-					actorId: user.id,
-					actorRoles: user.roles,
-					ipAddress: getClientAddress()
-				}
-			)
-		} catch (e: unknown) {
-			if (e instanceof Error) return fail(400, { error: e.message })
-			throw e
-		}
-	},
-
 	createCycle: async ({ request, locals, getClientAddress }) => {
 		requireAnyCapability(locals.user!.roles, 'MANAGE_HR')
 		const parsed = z

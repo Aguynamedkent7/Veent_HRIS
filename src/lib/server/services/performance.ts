@@ -1,7 +1,6 @@
 import { db } from '$lib/server/db'
 import { writeAuditLog } from '$lib/server/audit'
 import { error } from '@sveltejs/kit'
-import { listReportIdsFor } from './supervisors'
 import type { AuditContext } from './types'
 
 // ── Review Cycles (org-scoped) ──────────────────────────────────────────────
@@ -233,86 +232,4 @@ export async function openReviewsForCycle(
 		newValue: { reviewsOpened: toCreate.length }
 	})
 	return { opened: toCreate.length, skipped: employees.length - toCreate.length }
-}
-
-// ── Goals (scoped by owning employee) ────────────────────────────────────────
-
-// Goals of a manager's reports (T154) — primary or additional supervisor (#176).
-export async function listGoalsForManager(managerEmployeeId: string) {
-	const reportIds = await listReportIdsFor(managerEmployeeId)
-	if (!reportIds.length) return []
-	return db.goal.findMany({
-		where: { employeeId: { in: reportIds } },
-		include: { employee: { select: { firstName: true, lastName: true } } },
-		orderBy: [{ status: 'asc' }, { createdAt: 'desc' }]
-	})
-}
-
-export async function listGoalsForEmployee(employeeId: string) {
-	return db.goal.findMany({
-		where: { employeeId },
-		orderBy: { createdAt: 'desc' }
-	})
-}
-
-export async function createGoal(
-	employeeId: string,
-	data: {
-		title: string
-		description?: string
-		category?: string
-		cycleId?: string
-		targetDate?: Date
-	},
-	ctx: AuditContext
-) {
-	const goal = await db.goal.create({
-		data: {
-			employeeId,
-			title: data.title,
-			description: data.description,
-			category: data.category,
-			cycleId: data.cycleId,
-			targetDate: data.targetDate
-		}
-	})
-
-	await writeAuditLog(ctx, {
-		action: 'CREATE',
-		entityType: 'Goal',
-		entityId: goal.id,
-		newValue: { title: goal.title, category: goal.category, targetDate: goal.targetDate }
-	})
-
-	return goal
-}
-
-export async function updateGoalProgress(
-	id: string,
-	employeeId: string,
-	data: { progress: number; status: 'DRAFT' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' },
-	ctx: AuditContext
-) {
-	const goal = await db.goal.findUnique({ where: { id } })
-	if (!goal) error(404, 'Goal not found')
-	if (goal.employeeId !== employeeId) {
-		error(409, 'You can only update your own goals')
-	}
-	if (data.progress < 0 || data.progress > 100) {
-		error(409, 'Progress must be between 0 and 100')
-	}
-
-	const updated = await db.goal.update({
-		where: { id },
-		data: { progress: data.progress, status: data.status }
-	})
-
-	await writeAuditLog(ctx, {
-		action: 'UPDATE',
-		entityType: 'Goal',
-		entityId: id,
-		newValue: { progress: updated.progress, status: updated.status }
-	})
-
-	return updated
 }
