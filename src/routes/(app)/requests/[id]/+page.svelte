@@ -123,13 +123,18 @@
 </svelte:head>
 
 <div class="mx-auto max-w-2xl space-y-6">
-	<BackButton fallback="/requests" label="Requests" />
-
-	<div class="flex items-center justify-between">
-		<h1 class="text-2xl font-bold tracking-tight">{typeLabels[req.type] ?? req.type}</h1>
-		<span class="rounded-full px-2.5 py-1 text-xs font-medium {statusClass(req.status)}"
-			>{req.status}</span
+	<div class="flex flex-wrap items-start justify-between gap-3">
+		<h1 class="min-w-0 flex-1 text-2xl font-bold tracking-tight">
+			{typeLabels[req.type] ?? req.type}
+		</h1>
+		<div
+			class="ml-auto flex basis-full shrink-0 flex-wrap items-center justify-end gap-2 sm:basis-auto"
 		>
+			<BackButton fallback="/requests" label="Requests" />
+			<span class="rounded-full px-2.5 py-1 text-xs font-medium {statusClass(req.status)}"
+				>{req.status}</span
+			>
+		</div>
 	</div>
 
 	<div class="rounded-lg border bg-card p-4">

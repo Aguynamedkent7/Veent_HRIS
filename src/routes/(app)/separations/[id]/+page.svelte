@@ -60,10 +60,6 @@
 </svelte:head>
 
 <div class="mx-auto max-w-3xl space-y-6">
-	<div>
-		<BackButton fallback="/separations" label="Separations" />
-	</div>
-
 	{#if form?.error}
 		<div
 			class="rounded-md border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm text-red-600 dark:text-red-400"
@@ -108,8 +104,8 @@
 	{/if}
 
 	<!-- Header -->
-	<div class="flex items-start justify-between gap-4 rounded-lg border bg-card p-4">
-		<div>
+	<div class="flex flex-wrap items-start justify-between gap-4 rounded-lg border bg-card p-4">
+		<div class="min-w-0 flex-1">
 			<h1 class="text-xl font-bold tracking-tight">
 				{s.employee.lastName}, {s.employee.firstName}
 			</h1>
@@ -121,9 +117,14 @@
 			</p>
 			{#if s.reason}<p class="mt-1 text-sm text-muted-foreground">{s.reason}</p>{/if}
 		</div>
-		<span class="rounded-full px-2.5 py-1 text-xs font-medium {statusClass(s.status)}"
-			>{s.status}</span
+		<div
+			class="ml-auto flex basis-full shrink-0 flex-wrap items-center justify-end gap-2 sm:basis-auto"
 		>
+			<BackButton fallback="/separations" label="Separations" />
+			<span class="rounded-full px-2.5 py-1 text-xs font-medium {statusClass(s.status)}"
+				>{s.status}</span
+			>
+		</div>
 	</div>
 
 	<!-- Clearance checklist -->

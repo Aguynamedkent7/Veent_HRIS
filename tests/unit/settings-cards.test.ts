@@ -22,15 +22,27 @@ const run = (role: Role) =>
 
 describe('/settings index (#237)', () => {
 	// Longhand, not derived from CAPABILITIES — recomputing the table from the table proves nothing.
-	it.each<[Role, boolean, boolean, boolean]>([
-		// role,            isSuperAdmin, canRoles, canStatutory
-		['SUPER_ADMIN', true, true, true],
-		['CEO', true, true, true],
-		['HR_ADMIN', false, false, true],
-		['MANAGER', false, false, false]
-	])('%s gets the expected card flags', async (role, isSuperAdmin, canRoles, canStatutory) => {
-		await expect(run(role)).resolves.toEqual({ isSuperAdmin, canRoles, canStatutory })
-	})
+	it.each<[Role, boolean, boolean, boolean, boolean]>([
+		// role,            isSuperAdmin, canRoles, canStatutory, canHrOrgwide
+		['SUPER_ADMIN', true, true, true, true],
+		['CEO', true, true, true, true],
+		['HR_ADMIN', false, false, true, true],
+		// The whole point of `canHrOrgwide` (#178): MANAGER clears this page's MANAGE_HR guard but
+		// NOT /settings/performance's ADMINISTER_HR_ORGWIDE, so the card must stay hidden. Gate the
+		// Review Schedule card on anything wider and this row goes red.
+		['MANAGER', false, false, false, false]
+	])(
+		'%s gets the expected card flags',
+		async (role, isSuperAdmin, canRoles, canStatutory, canHrOrgwide) => {
+			// toEqual, not toMatchObject: a new flag must be added to this table, never slip in unseen.
+			await expect(run(role)).resolves.toEqual({
+				isSuperAdmin,
+				canRoles,
+				canStatutory,
+				canHrOrgwide
+			})
+		}
+	)
 
 	// The premise of the Holiday Calendar fix (#237): an ungated card IS a MANAGE_HR-gated card.
 	it.each<Role>(['MANAGER', 'HR_ADMIN', 'SUPER_ADMIN', 'CEO'])('opens for %s', async (role) => {

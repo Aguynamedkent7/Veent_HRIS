@@ -1,10 +1,12 @@
 import { fail } from '@sveltejs/kit'
 import { z } from 'zod'
 import { requireAnyCapability } from '$lib/server/rbac'
+import { canAny } from '$lib/rbac'
 import {
 	listDepartments,
 	createDepartment,
-	updateDepartment
+	updateDepartment,
+	setDepartmentHead
 } from '$lib/server/services/departments'
 import { updateEmployee } from '$lib/server/services/employees'
 import { db } from '$lib/server/db'
@@ -29,7 +31,13 @@ export const load: PageServerLoad = async ({ locals }) => {
 			orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }]
 		})
 	])
-	return { departments, employees }
+	// #178: naming a department head is an org-wide structural setting, so it is gated on
+	// ADMINISTER_HR_ORGWIDE — not the page's MANAGE_HR, which has included MANAGER since #133.
+	return {
+		departments,
+		employees,
+		canSetHead: canAny(locals.user!.roles, 'ADMINISTER_HR_ORGWIDE')
+	}
 }
 
 const nameSchema = z.object({
@@ -39,6 +47,12 @@ const nameSchema = z.object({
 const updateSchema = z.object({
 	id: z.string().min(1),
 	name: z.string().min(1, 'Name is required')
+})
+
+// An empty headEmployeeId clears the head — a department with no head is a valid state.
+const headSchema = z.object({
+	departmentId: z.string().min(1),
+	headEmployeeId: z.string()
 })
 
 const assignSchema = z.object({
@@ -104,6 +118,27 @@ export const actions: Actions = {
 			parsed.data.employeeId,
 			user.organizationId,
 			{ departmentId: department.id },
+			{
+				organizationId: user.organizationId,
+				actorId: user.id,
+				actorRoles: user.roles,
+				ipAddress: getClientAddress()
+			}
+		)
+	},
+
+	// #178: name or clear the department head who attests the DEPARTMENT_HEAD signatory slot.
+	setHead: async ({ request, locals, getClientAddress }) => {
+		requireAnyCapability(locals.user!.roles, 'ADMINISTER_HR_ORGWIDE')
+		const user = locals.user!
+
+		const parsed = headSchema.safeParse(Object.fromEntries(await request.formData()))
+		if (!parsed.success) return fail(400, { error: 'Invalid input' })
+
+		await setDepartmentHead(
+			parsed.data.departmentId,
+			user.organizationId,
+			parsed.data.headEmployeeId || null,
 			{
 				organizationId: user.organizationId,
 				actorId: user.id,

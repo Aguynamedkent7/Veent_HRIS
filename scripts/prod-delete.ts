@@ -197,7 +197,6 @@ async function deleteEmployee(employeeId: string) {
 		benefitEnrollments,
 		reviewsAbout,
 		reviewsGiven,
-		goals,
 		cashAdvances,
 		loanPayments,
 		emergencyContacts,
@@ -220,7 +219,6 @@ async function deleteEmployee(employeeId: string) {
 		db.benefitEnrollment.count({ where: { employeeId } }),
 		db.performanceReview.count({ where: { employeeId } }),
 		db.performanceReview.count({ where: { reviewerId: employeeId } }),
-		db.goal.count({ where: { employeeId } }),
 		db.cashAdvance.count({ where: { employeeId } }),
 		db.loanPayment.count({ where: { loanId: { in: loanIds } } }),
 		db.emergencyContact.count({ where: { employeeId } }),
@@ -262,7 +260,6 @@ async function deleteEmployee(employeeId: string) {
 		emergency_contacts: emergencyContacts,
 		benefit_enrollments: benefitEnrollments,
 		performance_reviews: reviewsAbout + reviewsGiven,
-		goals,
 		audit_logs: auditLogs,
 		sessions,
 		notifications,
@@ -332,7 +329,6 @@ async function deleteEmployee(employeeId: string) {
 			await tx.payrollEntry.deleteMany({ where: { employeeId } })
 			await tx.loan.deleteMany({ where: { employeeId } })
 			await tx.cashAdvance.deleteMany({ where: { employeeId } })
-			await tx.goal.deleteMany({ where: { employeeId } })
 			await tx.performanceReview.deleteMany({
 				where: { OR: [{ employeeId }, { reviewerId: employeeId }] }
 			})

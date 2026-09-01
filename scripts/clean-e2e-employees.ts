@@ -83,7 +83,6 @@ async function main() {
 	await step('employeeDocument', () => db.employeeDocument.deleteMany({ where }))
 	await step('emergencyContact', () => db.emergencyContact.deleteMany({ where }))
 	await step('benefitEnrollment', () => db.benefitEnrollment.deleteMany({ where }))
-	await step('goal', () => db.goal.deleteMany({ where }))
 	await step('separationRecord', () => db.separationRecord.deleteMany({ where }))
 	await step('performanceReview', () =>
 		db.performanceReview.deleteMany({

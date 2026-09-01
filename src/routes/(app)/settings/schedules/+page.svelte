@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms'
 	import BackButton from '$lib/components/ui/BackButton.svelte'
+	import PageHeader from '$lib/components/ui/PageHeader.svelte'
 	import { createSubmitGuard } from '$lib/utils/submit-guard.svelte'
 	import type { PageData, ActionData } from './$types'
 
@@ -31,17 +32,11 @@
 </svelte:head>
 
 <div class="space-y-6">
-	<div class="flex items-center justify-between">
-		<div class="flex items-center gap-3">
+	<PageHeader title="Work Schedules">
+		{#snippet back()}
 			<BackButton fallback="/settings" label="Settings" preferFallback />
-			<h1 class="text-2xl font-bold tracking-tight">Work Schedules</h1>
-		</div>
-		<button
-			onclick={() => (showCreate = !showCreate)}
-			class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-			>New Schedule</button
-		>
-	</div>
+		{/snippet}
+	</PageHeader>
 
 	<!-- A message tagged with a `field` belongs to that control and is rendered beside it, not
 	     here — a page-top banner cannot say which card it came from. -->
@@ -214,63 +209,77 @@
 		</form>
 	{/if}
 
-	<div class="overflow-x-auto rounded-lg border">
-		<table class="w-full text-sm">
-			<thead class="border-b bg-muted/50">
-				<tr>
-					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Name</th>
-					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Days</th>
-					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Shift</th>
-					<th class="px-4 py-3 text-left font-medium text-muted-foreground">Tardiness</th>
-					<th class="px-4 py-3 text-right font-medium text-muted-foreground">Employees</th>
-				</tr>
-			</thead>
-			<tbody class="divide-y">
-				{#each data.schedules as s (s.id)}
-					{@const shift = s.days[0]}
-					<tr class="hover:bg-muted/30">
-						<td class="px-4 py-3 font-medium"
-							>{s.name}
-							{#if s.isDefault}<span
-									class="ml-1 rounded-full bg-green-500/15 px-2 py-0.5 text-xs text-green-400"
-									>default</span
-								>{/if}</td
-						>
-						<td class="px-4 py-3 text-muted-foreground"
-							>{s.days.map((d) => label(d.weekday)).join(', ') || '—'}</td
-						>
-						<td class="px-4 py-3 text-muted-foreground"
-							>{shift
-								? `${toHHMM(shift.startMinutes)}–${toHHMM(shift.endMinutes)} · ${shift.breakMinutes}m break`
-								: '—'}</td
-						>
-						<td class="px-4 py-3">
-							<form method="POST" action="?/toggleTardiness" use:enhance>
-								<input type="hidden" name="id" value={s.id} />
-								<input type="hidden" name="enabled" value={(!s.trackTardiness).toString()} />
-								<button
-									type="submit"
-									disabled={!data.orgTracksTardiness}
-									title={data.orgTracksTardiness
-										? 'Toggle tardiness tracking for this schedule'
-										: 'Turn on the org-wide setting in Company Info first'}
-									class="rounded-full px-2 py-0.5 text-xs font-medium disabled:opacity-50 {s.trackTardiness
-										? 'bg-green-500/15 text-green-400'
-										: 'bg-muted text-muted-foreground'}">{s.trackTardiness ? 'On' : 'Off'}</button
-								>
-							</form>
-						</td>
-						<td class="px-4 py-3 text-right">{s._count.employees}</td>
+	<section class="space-y-3">
+		<div class="flex flex-wrap items-center justify-between gap-3">
+			<h2 class="text-lg font-semibold">Schedules</h2>
+			<div
+				class="ml-auto flex basis-full shrink-0 flex-wrap items-center justify-end gap-2 sm:basis-auto"
+			>
+				<button
+					onclick={() => (showCreate = !showCreate)}
+					class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+					>New Schedule</button
+				>
+			</div>
+		</div>
+		<div class="overflow-x-auto rounded-lg border">
+			<table class="w-full text-sm">
+				<thead class="border-b bg-muted/50">
+					<tr>
+						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Name</th>
+						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Days</th>
+						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Shift</th>
+						<th class="px-4 py-3 text-left font-medium text-muted-foreground">Tardiness</th>
+						<th class="px-4 py-3 text-right font-medium text-muted-foreground">Employees</th>
 					</tr>
-				{:else}
-					<tr
-						><td colspan="5" class="px-4 py-8 text-center text-muted-foreground"
-							>No schedules yet. Until one is marked the organization default, unassigned employees
-							fall back to Mon–Fri 8:00–17:00.</td
-						></tr
-					>
-				{/each}
-			</tbody>
-		</table>
-	</div>
+				</thead>
+				<tbody class="divide-y">
+					{#each data.schedules as s (s.id)}
+						{@const shift = s.days[0]}
+						<tr class="hover:bg-muted/30">
+							<td class="px-4 py-3 font-medium"
+								>{s.name}
+								{#if s.isDefault}<span
+										class="ml-1 rounded-full bg-green-500/15 px-2 py-0.5 text-xs text-green-400"
+										>default</span
+									>{/if}</td
+							>
+							<td class="px-4 py-3 text-muted-foreground"
+								>{s.days.map((d) => label(d.weekday)).join(', ') || '—'}</td
+							>
+							<td class="px-4 py-3 text-muted-foreground"
+								>{shift
+									? `${toHHMM(shift.startMinutes)}–${toHHMM(shift.endMinutes)} · ${shift.breakMinutes}m break`
+									: '—'}</td
+							>
+							<td class="px-4 py-3">
+								<form method="POST" action="?/toggleTardiness" use:enhance>
+									<input type="hidden" name="id" value={s.id} />
+									<input type="hidden" name="enabled" value={(!s.trackTardiness).toString()} />
+									<button
+										type="submit"
+										disabled={!data.orgTracksTardiness}
+										title={data.orgTracksTardiness
+											? 'Toggle tardiness tracking for this schedule'
+											: 'Turn on the org-wide setting in Company Info first'}
+										class="rounded-full px-2 py-0.5 text-xs font-medium disabled:opacity-50 {s.trackTardiness
+											? 'bg-green-500/15 text-green-400'
+											: 'bg-muted text-muted-foreground'}">{s.trackTardiness ? 'On' : 'Off'}</button
+									>
+								</form>
+							</td>
+							<td class="px-4 py-3 text-right">{s._count.employees}</td>
+						</tr>
+					{:else}
+						<tr
+							><td colspan="5" class="px-4 py-8 text-center text-muted-foreground"
+								>No schedules yet. Until one is marked the organization default, unassigned
+								employees fall back to Mon–Fri 8:00–17:00.</td
+							></tr
+						>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+	</section>
 </div>

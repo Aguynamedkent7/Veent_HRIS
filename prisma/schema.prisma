@@ -254,16 +254,10 @@ enum ReviewCycleStatus {
 enum ReviewStatus {
   PENDING
   SELF_ASSESSMENT
-  MANAGER_REVIEW
+  SCORED
+  SIGNING
   COMPLETED
   ACKNOWLEDGED
-}
-
-enum GoalStatus {
-  DRAFT
-  ACTIVE
-  COMPLETED
-  CANCELLED
 }
 
 // ─── Attendance Enums ────────────────────────────────────────────────────────
@@ -343,6 +337,8 @@ model Organization {
   branches                  Branch[]
   backupConfig              BackupConfig?
   backupRuns                BackupRun[]
+  performanceTemplates      PerformanceTemplate[]
+  performanceConfig         PerformanceConfig?
 
   @@map("organizations")
 }
@@ -374,10 +370,20 @@ model Department {
   organizationId     String
   name               String   @db.VarChar(200)
   parentDepartmentId String?
+  // #178: who attests the DEPARTMENT_HEAD signatory slot. Postgres cannot express
+  // "head.departmentId == this department", so the service layer verifies it on write —
+  // the same rule Employee.reportsToId and Employee.branchId already carry.
+  //
+  // WHY THIS COLUMN EXISTS AT ALL: the paper forms require a Department Head signature and
+  // this schema had no way to name one. Without it, EVERY review under either seeded template
+  // would be permanently stalled and the "resolving the gap unblocks it" case would be
+  // untestable.
+  headEmployeeId     String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   organization     Organization @relation(fields: [organizationId], references: [id])
+  head             Employee?    @relation("DepartmentHead", fields: [headEmployeeId], references: [id])
   parentDepartment Department?  @relation("DeptHierarchy", fields: [parentDepartmentId], references: [id])
   subDepartments   Department[] @relation("DeptHierarchy")
   employees        Employee[]
@@ -405,18 +411,19 @@ model User {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  organization             Organization       @relation(fields: [organizationId], references: [id])
+  organization             Organization         @relation(fields: [organizationId], references: [id])
   memberships              UserOrganization[]
   sessions                 Session[]
   employee                 Employee?
   auditLogs                AuditLog[]
   approvalSteps            ApprovalStep[]
-  uploadedDocuments        EmployeeDocument[] @relation("DocumentUploader")
-  verifiedRequestDocuments RequestDocument[]  @relation("RequestDocumentVerifier")
+  uploadedDocuments        EmployeeDocument[]   @relation("DocumentUploader")
+  verifiedRequestDocuments RequestDocument[]    @relation("RequestDocumentVerifier")
   notifications            Notification[]
-  announcements            Announcement[]     @relation("AnnouncementAuthor")
+  announcements            Announcement[]       @relation("AnnouncementAuthor")
   complaintsOpened         HrComplaint[]        @relation("ComplaintOpenedBy")
   complaintMessages        HrComplaintMessage[] @relation("ComplaintMessageAuthor")
+  reviewSignoffs           ReviewSignoff[]
 
   @@map("users")
 }
@@ -471,6 +478,10 @@ model Employee {
   bankAccountName          String?
   bankAccountNumber        String?
   gcashNumber              String?
+  // #178: the template this employee is evaluated with. EXPLICIT and HR-set — never inferred
+  // from department, position, or role. Nullable: an unassigned employee lands on the HR
+  // "cannot be reviewed" list with a reason, rather than silently getting a default form.
+  assignedTemplateId       String?
   createdAt                DateTime         @default(now())
   updatedAt                DateTime         @updatedAt
 
@@ -490,7 +501,6 @@ model Employee {
   benefitEnrollments    BenefitEnrollment[]
   performanceReviews    PerformanceReview[]       @relation("ReviewSubject")
   reviewsGiven          PerformanceReview[]       @relation("Reviewer")
-  goals                 Goal[]
   loans                 Loan[]
   cashAdvances          CashAdvance[]
   recurringEarnings     EmployeeEarning[]
@@ -508,6 +518,9 @@ model Employee {
   assignedInventory     InventoryItem[]
   branch                Branch?                   @relation("BranchRoster", fields: [branchId], references: [id], onDelete: SetNull)
   managedBranches       Branch[]                  @relation("BranchManager")
+  assignedTemplate      PerformanceTemplate?      @relation("AssignedTemplate", fields: [assignedTemplateId], references: [id])
+  releasedReviews       PerformanceReview[]       @relation("ReviewReleasedBy")
+  headedDepartments     Department[]              @relation("DepartmentHead")
 
   @@unique([organizationId, employeeNumber])
   @@index([organizationId, branchId])
@@ -1157,6 +1170,7 @@ enum NotificationKind {
   PAYSLIP
   REQUEST
   RECRUITMENT
+  PERFORMANCE
 }
 
 // Per-user in-app notification. Surfaced as a toast on next load; readAt set once seen.
@@ -1647,49 +1661,161 @@ model ReviewCycle {
   organization Organization        @relation(fields: [organizationId], references: [id])
   reviews      PerformanceReview[]
 
+  // #178: the generator is offered a run by cron and decides for itself whether one is due.
+  // A double-create is prevented at the DATABASE, not by the script's own care — the cheapest
+  // correct option, and the same shape PayrollRun already uses. Column names are deliberately
+  // left as startDate/endDate rather than renamed to periodStart/periodEnd: a rename would
+  // touch every existing reader and both surviving unit tests for no gain.
+  @@unique([organizationId, startDate, endDate])
+  @@index([organizationId, status])
   @@map("review_cycles")
 }
 
 model PerformanceReview {
-  id              String       @id @default(cuid())
-  cycleId         String
-  employeeId      String
-  reviewerId      String
-  status          ReviewStatus @default(PENDING)
-  selfAssessment  String?      @db.Text
-  managerComments String?      @db.Text
-  overallRating   Int?
-  submittedAt     DateTime?
-  completedAt     DateTime?
-  acknowledgedAt  DateTime?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  id                   String       @id @default(cuid())
+  cycleId              String
+  employeeId           String
+  reviewerId           String
+  status               ReviewStatus @default(PENDING)
+  selfAssessment       String?      @db.Text
+  managerComments      String?      @db.Text
+  overallRating        Int?
+  submittedAt          DateTime?
+  completedAt          DateTime?
+  acknowledgedAt       DateTime?
+  // #178: the template's `structure`, copied verbatim inside the SAME transaction that creates
+  // this review, and NEVER re-read from PerformanceTemplate afterwards. Editing a template, or
+  // reassigning the employee, must not change what a resolved review shows. Precedent:
+  // SeparationRecord.preFinalizeState, also captured inside its own transaction.
+  templateSnapshot     Json?
+  // Kept alongside the snapshot for provenance/reporting only. NEVER read to render the form —
+  // reading it would defeat the snapshot.
+  templateId           String?
+  // Everything the EVALUATOR types or picks, keyed by the snapshot's criterion/section/band ids.
+  // Every value here is stored verbatim; none is derived. Nulled wholesale by the redaction gate
+  // — which is exactly why no employee-authored content may ever live in here.
+  answers              Json?
+  // Employee-authored, its OWN column, never inside `answers`. This is the paper form's
+  // "Employee Comments" field and it is ALWAYS visible to the employee. Distinct from
+  // `selfAssessment`, which is the app-only pre-scoring stage.
+  employeeComments     String?      @db.Text
+  // The explicit HR RELEASE. Null = the employee's view is redacted. Set = released.
+  // Attribution is on the row so the audit trail and the gate cannot disagree.
+  //
+  // The attribution is the releasing HR user's EMPLOYEE row, not their User row — the FK below
+  // points at `employees(id)`. It is an Employee because the UI renders "Released by
+  // {firstName} {lastName}" through the `releasedBy` relation, and `User` carries no name
+  // fields. Callers pass a User id and MUST resolve it to that user's employee row first
+  // (see `releaseReview` in src/lib/server/services/performance.ts). An HR user with no
+  // employee record releases with null attribution; the audit row still names the actor.
+  releasedAt           DateTime?
+  releasedByEmployeeId String?
+  // Reminder de-duplication. The reminder job runs several times a day; without these it would
+  // send the same nudge every run.
+  lastReminderAt       DateTime?
+  lastReminderKind     String?      @db.VarChar(40)
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
 
-  cycle    ReviewCycle @relation(fields: [cycleId], references: [id])
-  employee Employee    @relation("ReviewSubject", fields: [employeeId], references: [id])
-  reviewer Employee    @relation("Reviewer", fields: [reviewerId], references: [id])
+  cycle      ReviewCycle     @relation(fields: [cycleId], references: [id])
+  employee   Employee        @relation("ReviewSubject", fields: [employeeId], references: [id])
+  reviewer   Employee        @relation("Reviewer", fields: [reviewerId], references: [id])
+  releasedBy Employee?       @relation("ReviewReleasedBy", fields: [releasedByEmployeeId], references: [id])
+  signoffs   ReviewSignoff[]
 
   @@unique([cycleId, employeeId])
+  @@index([employeeId])
+  @@index([reviewerId])
+  @@index([status])
   @@map("performance_reviews")
 }
 
-model Goal {
-  id          String     @id @default(cuid())
-  employeeId  String
-  cycleId     String?
-  title       String
-  description String?    @db.Text
-  category    String?
-  status      GoalStatus @default(ACTIVE)
-  progress    Int        @default(0)
-  targetDate  DateTime?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+// ─── Performance Evaluation Templates (#178) ─────────────────────────────────
 
-  employee Employee @relation(fields: [employeeId], references: [id])
+// An HR-authored evaluation form, stored as one JSON document.
+//
+// JSON rather than a Template→Section→Criterion relational tree because the whole document
+// is read and written as a unit, is never queried by its interior, and must be snapshotted
+// verbatim onto a review. Precedent in this schema: StatutoryRateConfig.sssTable /
+// birTaxTable. The cost accepted in exchange: Postgres enforces NOTHING about
+// `structure`, so EVERY writer must go through the shared zod schema in
+// src/lib/server/performance/schemas.ts. A missed validation here is silent corruption with
+// no database backstop.
+//
+// NOTHING in `structure` is a calculation input. Section weights, section maxima and band
+// ranges are what the form PRINTS. `maximum` and `totalCeiling` are additionally read by the
+// range VALIDATOR (accept/reject only). No code sums, weights, or derives anything. See #178
+// SPEC acceptance criterion 4.
+model PerformanceTemplate {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String   @db.VarChar(200)
+  isActive       Boolean  @default(true)
+  structure      Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  @@index([employeeId])
-  @@map("goals")
+  organization      Organization @relation(fields: [organizationId], references: [id])
+  assignedEmployees Employee[]   @relation("AssignedTemplate")
+
+  @@unique([organizationId, name])
+  @@index([organizationId, isActive])
+  @@map("performance_templates")
+}
+
+// One signatory's attestation on one review. THE ONLY relational exception in this feature's
+// data model.
+//
+// Everything else about a review is one-writer-at-a-time and lives in JSON. Sign-off is not:
+// four different actors race to attest on the same review, and the sequential rule must be
+// enforced against a value two of them may be reading at the same instant. A JSON array on
+// PerformanceReview would need read-modify-write, which loses one of two concurrent
+// attestations. @@unique([reviewId, slotId]) makes the race a P2002 the service can report,
+// not a silently dropped signature.
+model ReviewSignoff {
+  id               String   @id @default(cuid())
+  reviewId         String
+  // Matches templateSnapshot.signatoryOrder[].id — NOT a foreign key, because the slot lives
+  // inside the snapshot JSON. The snapshot is immutable, so the id is stable for this review's
+  // whole life.
+  slotId           String
+  // Denormalized from the snapshot so a signature renders without re-reading the snapshot.
+  roleLabel        String   @db.VarChar(120)
+  // Position in the snapshot's signatoryOrder at attest time. Stored for rendering and for
+  // ordering the signature block; the turn CHECK still derives from the snapshot, never from
+  // this column.
+  order            Int
+  attestedByUserId String
+  typedName        String   @db.VarChar(200)
+  attestedAt       DateTime @default(now())
+
+  review     PerformanceReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  attestedBy User              @relation(fields: [attestedByUserId], references: [id])
+
+  @@unique([reviewId, slotId])
+  @@index([reviewId])
+  @@map("review_signoffs")
+}
+
+// Per-organization review cadence. Mirrors BackupConfig: a row is created lazily
+// by the settings page, and its absence means "use the defaults", so the cron never creates
+// configuration as a side effect of running.
+model PerformanceConfig {
+  id             String   @id @default(cuid())
+  organizationId String   @unique
+  // Master switch. Off → the generator skips this org entirely.
+  enabled        Boolean  @default(true)
+  // "Every # months". Default 2 = the bi-monthly cadence #178 asks for. Bounded 1-24 at every
+  // writer. Changing it NEVER rewrites an existing ReviewCycle row.
+  intervalMonths Int      @default(2)
+  // Days after a review opens before it counts as overdue. Drives the reminder job only.
+  dueDays        Int      @default(14)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("performance_configs")
 }
 
 // ─── Org Structure (Positions) ────────────────────────────────────────────────
@@ -2104,10 +2230,10 @@ model AttendanceDay {
   // pmTimeOut === timeOut whenever a PM block exists. Never read by payroll, reports, or the
   // payslip — those keep reading timeIn/timeOut (first punch / last punch of the day). Null on
   // every non-food-service row and on any day with no second work block.
-  amTimeIn   DateTime?
-  amTimeOut  DateTime?
-  pmTimeIn   DateTime?
-  pmTimeOut  DateTime?
+  amTimeIn  DateTime?
+  amTimeOut DateTime?
+  pmTimeIn  DateTime?
+  pmTimeOut DateTime?
 
   workedHours           Decimal @default(0) @db.Decimal(5, 2)
   regularHours          Decimal @default(0) @db.Decimal(5, 2)
