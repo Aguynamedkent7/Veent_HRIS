@@ -18,7 +18,7 @@
 
 	async function add() {
 		const index = scale.rows.length
-		scale.rows.push({ value: 0, description: '' })
+		scale.rows.push({ value: scale.min, description: '' })
 		await tick()
 		document.getElementById(`scale-row-${index}`)?.focus()
 	}

@@ -2,6 +2,9 @@
 	"name": "veent-hris",
 	"version": "0.1.0",
 	"private": true,
+	"engines": {
+		"node": ">=20.12"
+	},
 	"scripts": {
 		"postinstall": "prisma generate",
 		"dev": "dotenv -e .env.dev -- vite dev",
