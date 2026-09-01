@@ -168,7 +168,9 @@ Commit: `fix(performance): actually email the employee when a review opens (#178
   is `['in-app','email']` (`reminder-plan.ts:30`), so the email dies with it. No employee
   has ever received "your review is open" by email.
 - **Change (two edits, same block):**
-  1. Widen the existing select at `:148-155` so the employee carries a name and an address:
+  1. Widen the existing select so the employee carries an address. **VALIDATE note: `firstName`
+     and `lastName` are ALREADY selected on this branch — the only new field is
+     `user: { select: { email: true } }`.** The final shape:
      `employee: { select: { userId: true, firstName: true, lastName: true, user: { select: { email: true } } } }`.
      Leave `reviewer` selecting `userId` only.
   2. Immediately after the existing employee `notify(...)` call (`:157-162`), add one call:
@@ -220,7 +222,8 @@ the same three-line call at that time.
 | Item | Tier | Proof |
 |---|---|---|
 | D + D-test | Fully-Automated | `pnpm test tests/unit/performance-reminders.test.ts` green, and red when `Math.max` is reverted |
-| A | Hybrid | `pnpm check` cannot see `scripts/**`. Run `npx tsc --noEmit -p tsconfig.json --include scripts/generate-review-cycles.ts` **or** the cheaper real check: `pnpm dotenv -e .env.dev -- tsx scripts/generate-review-cycles.ts --dry-run` if the script supports it. Requires the DB the **user** starts. |
+| A | Fully-Automated | `pnpm check` cannot see `scripts/**`. **Corrected by VALIDATE — the previously written `--include` form is not a tsc CLI flag and errors with TS5023.** Write a throwaway root config, run it, delete it:<br>`printf '{"extends":"./tsconfig.json","include":[".svelte-kit/ambient.d.ts","scripts/generate-review-cycles.ts","src/**/*.ts"]}' > tsconfig.scripts.json && npx tsc --noEmit -p tsconfig.scripts.json; rm -f tsconfig.scripts.json`<br>Green = no output, exit 0. Verified working by VALIDATE, with a positive control (a deliberate `const x: number = 'a'` in the script produced `TS2322`). Needs no DB and no server. |
+| A | Hybrid (optional, needs the user-started DB) | `pnpm exec dotenv -e .env.dev -- tsx scripts/generate-review-cycles.ts --dry-run` — proves the widened select executes against the real schema. Dry-run creates nothing, so it does NOT prove the email fires. |
 | A | Manual-GUI (optional) | With `SMTP_HOST` unset, the generator run prints one `[NOTIFY] (no SMTP_HOST — not sent) <…>: Performance review open — …` line per new review. |
 
 Must stay green: `tests/unit/performance-reminders.test.ts`,
@@ -401,10 +404,14 @@ Commit: `docs(performance): correct the stale handoff, the phase5g TL;DR and the
   (`db push`)"; item 6 claims tip `db04eb6`, 0 commits ahead, only untracked docs.
 - **Why it matters:** a fresh compacted agent reading this would **re-run applied destructive
   steps** (the `db push`).
-- **Change:** replace items 5 and 6 with the true state — all nine phases code done, tip
-  `fd9c604`, 51+ commits ahead of `origin/staging`, working tree clean, PR #325 open against
-  `staging` and **not** a draft, schema already migrated locally, remaining gate is the owner
-  GUI pass.
+- **Change:** replace items 5 and 6 with the true state — all nine phases code done, 51+ commits
+  ahead of `origin/staging`, working tree clean apart from another session's untracked
+  `CODERABBIT_REVIEW_PR325.md`, PR #325 open against `staging` and **not** a draft, schema already
+  migrated locally, remaining gate is the owner GUI pass.
+- **Do NOT pin a commit SHA.** VALIDATE correction: the plan first said to write tip `fd9c604`,
+  which was already stale at validate time (tip is now `6489373`, the plan commit) and would be
+  stale again after every section commit. A pinned SHA is the exact staleness F9 exists to fix.
+  Write "see `git log --oneline -1` for the current tip" instead.
 - **Keep verbatim:** the "user starts the database and dev server" line. Still true.
 
 ### Item F13 — phase5g TL;DR
@@ -432,7 +439,7 @@ Commit: `docs(performance): correct the stale handoff, the phase5g TL;DR and the
 
 | Tier | Proof |
 |---|---|
-| Fully-Automated | `git log --oneline -1` matches the tip written into F9; `gh pr view 325 --json isDraft,state,baseRefName` matches the claim |
+| Fully-Automated | `gh pr view 325 --json isDraft,state,baseRefName` returns `OPEN` / `false` / `staging` — matches the claim. **Corrected by VALIDATE: do NOT gate on `git log --oneline -1` matching a SHA written into F9. The S6 commit itself moves the tip, so that gate can never pass.** F9 must describe the state without pinning a SHA. |
 | Fully-Automated | `pnpm lint` green (the F6 comment lives in a linted script) |
 | Manual | Read the corrected F9 block and confirm no instruction tells a reader to run `db push` or start at item 1 |
 
@@ -451,12 +458,12 @@ Commit: `docs(performance): correct the stale handoff, the phase5g TL;DR and the
 | Existing `load` list case at `:171-183` stays green | Fully-Automated | Item C did not widen the active-only list for unassigned employees |
 | `pnpm check` | Fully-Automated | Items B, C, E, F1, F10 typecheck (does NOT cover `scripts/**`) |
 | `pnpm lint` | Fully-Automated | All sections, incl. the F6 comment file |
-| `npx tsc --noEmit` scoped to `scripts/generate-review-cycles.ts` | Fully-Automated | Item A typechecks — `pnpm check` cannot see it |
+| Scoped tsc via a throwaway `tsconfig.scripts.json` (exact command in S1's table) | Fully-Automated | Item A typechecks — `pnpm check` cannot see it |
 | Generator run against the user-started DB, `SMTP_HOST` unset | Hybrid | Item A — one `[NOTIFY] … Performance review open` line per new review |
 | Employee opens a released review | Manual-GUI | Item B — stored answers render, not the local draft |
 | HR deactivates an assigned template, reloads the employee page | Manual-GUI | Item C — picker still shows it, labelled inactive |
 | `[NOTIFY]` console line after any send | Manual-GUI | Item E — local part masked, domain and subject intact |
-| `git log --oneline -1` + `gh pr view 325` | Fully-Automated | Item F9 handoff block is true when written |
+| `gh pr view 325 --json isDraft,state,baseRefName` | Fully-Automated | Item F9's PR claims are true (`OPEN`, not draft, base `staging`) |
 
 ### Gate notes
 
@@ -499,7 +506,107 @@ so keep them in the same commit.
 
 ## Validate Contract
 
-(placeholder — vc-validate-agent writes this section before EXECUTE)
+Status: CONDITIONAL
+Date: 01-09-26
+date: 2026-09-01
+generated-by: outer-pvl
+
+Parallel strategy: parallel-subagents
+Rationale: 3/7 signals — S3 (multiple independent sections), S7 (13 files in blast radius), S2/S6 partial (notification delivery + a data-loss-adjacent read filter, no auth/schema/money). Six sections are file-disjoint and need no cross-talk, so read-only parallel probes fit; EXECUTE itself is sequential, one commit per section.
+
+### Test gates
+
+| criterion id | behavior | strategy | proving test | gap-resolution |
+|---|---|---|---|---|
+| AC2 | `remindersDue` plans `opened`, not `due-soon`, on the open day when `dueDays <= 3` | Fully-Automated | `pnpm test tests/unit/performance-reminders.test.ts` — new `{ dueDays: 2 }` case; must go RED when `Math.max` is reverted | B |
+| AC2-reg | `dueDays > 3` behaviour is unchanged | Fully-Automated | Same file — the four existing `CFG = { dueDays: 14 }` cases stay green | A |
+| AC1 | Item A compiles against the real Prisma types (`pnpm check` cannot see `scripts/**`) | Fully-Automated | `printf '{"extends":"./tsconfig.json","include":[".svelte-kit/ambient.d.ts","scripts/generate-review-cycles.ts","src/**/*.ts"]}' > tsconfig.scripts.json && npx tsc --noEmit -p tsconfig.scripts.json; rm -f tsconfig.scripts.json` — exit 0, no output | B |
+| AC1 | A newly generated cycle actually emails the employee once | Agent-Probe | Generator run against the user-started DB with `SMTP_HOST` unset: exactly one `[NOTIFY] (no SMTP_HOST — not sent) <..***@domain>: Performance review open — <cycle>` line per new review, and no second line from the reminder cron | D |
+| AC3 | Read-back renders stored server answers; editable branch still renders the local draft | Fully-Automated | `pnpm check` + `pnpm lint` green (narrowing at `+page.svelte:189` must still hold) | A |
+| AC3 | The rendered read-back really shows the DB row | Agent-Probe | Open a released review as the employee; assert a positive marker — an answer string that exists only in the DB row | D |
+| AC4 | An inactive but assigned template stays on the picker, suffixed ` (inactive)` | Fully-Automated | New case in `tests/unit/performance-template-assignment.test.ts` — `assignedTemplateId: 'tpl-old'` yields `{ id: 'tpl-old', name: 'Retired Form (inactive)' }` | B |
+| AC4-reg | An unassigned employee still sees active rows only | Fully-Automated | Existing case at `tests/unit/performance-template-assignment.test.ts:171-183` stays green | A |
+| AC5 | `[NOTIFY]` lines mask the local part, keep domain and subject | Fully-Automated | `pnpm test` + `pnpm lint` green. VALIDATE verified no test, e2e spec or script asserts on a full address — the only two `[NOTIFY]` samples are `scripts/README.md:445` and `.env.dev.example:31`, both already in S4's diff | A |
+| AC6 | New rating rows seed at `scale.min`; `engines` declared | Fully-Automated | `pnpm check`, `pnpm lint`, `pnpm test` green. Local node is `v20.20.2` (>= 20.12), verified by VALIDATE — the `engines` field cannot break this machine's install | A |
+| AC7 | F9/F13/F6 doc corrections are true | Fully-Automated | `gh pr view 325 --json isDraft,state,baseRefName` returns `OPEN` / `false` / `staging` (verified by VALIDATE at contract time) + `pnpm lint` for the F6 comment file | A |
+| AC8 | No regression anywhere | Fully-Automated | `pnpm test` — baseline this session is 176 files / 2048 tests green; the same count plus the two new cases must pass | A |
+
+gap-resolution legend: A proven now · B gate added by this plan · C deferred to a named later phase · D named residual, backlog stub.
+
+Legacy line form:
+- reminder-plan: [Fully-automated: `pnpm test tests/unit/performance-reminders.test.ts`, plus the revert-the-`Math.max` mutation check]
+- generate-review-cycles.ts: [Fully-automated: scoped `tsc` via the throwaway `tsconfig.scripts.json` above] + [agent-probe: `[NOTIFY]` line count on a real generator run]
+- employees/[id] load: [Fully-automated: `tests/unit/performance-template-assignment.test.ts`, new case + existing regression case]
+- reviews/[id] read-back: [Fully-automated: `pnpm check`] + [agent-probe: released-review GUI read with a positive DB marker]
+- mailer: [Fully-automated: `pnpm test` + `pnpm lint`] + [agent-probe: one console line after any send]
+- docs (F9/F13/F6): [Fully-automated: `gh pr view 325` + `pnpm lint`]
+
+### Dimension findings
+
+- Infra fit: PASS — no step starts a server. `scripts/**` and `prisma/**` really are outside `pnpm check` (confirmed in `.svelte-kit/tsconfig.json` `include`), so S1 needs its own typecheck, and the corrected one is verified working with a positive control.
+- Test coverage: CONCERN — the plan's own S1 typecheck command was invalid and its S6 git gate was impossible; both are corrected in the plan body. Item A's actual email send has no fully-automated proof and stays a named residual.
+- Breaking changes: PASS — `sendReviewNoticeEmail` signature unchanged and the plan's `details` object exactly matches `ReviewNoticeDetails` (`recipientName`, `cycleName`, `reviewUrl`, `notifications.ts:201-247`). `remindersDue` changes only for `dueDays <= 3`. The only `performanceTemplates` consumer is `+page.svelte:461`, which renders `name` as option TEXT and posts `t.id` as the value — the ` (inactive)` suffix cannot round-trip as an identifier.
+- Security surface: PASS — no auth, secret or trust-boundary change. Item E reduces PII in unrotated container logs. Item C is a read-side filter; the org-scoped write guard at `+page.server.ts:524-540` is untouched.
+- Section 1 (reminder/email) feasibility: CONCERN — mechanically sound: `Employee.user` is a REQUIRED relation (`user User @relation(...)`, `userId String @unique`) and `User.email` is `String @unique` non-null, so `review.employee.user.email` needs no null guard. `firstName`/`lastName` are ALREADY in the select — the only new field is `user: { select: { email: true } }`. The pre-stamp at `performance.ts:415` plus `reminder-plan.ts:116` means the cron's `opened` kind can never fire, so no double-send. Highest-risk edit: the widened select, mitigated by the corrected scoped tsc gate.
+- Section 2 (read-back) feasibility: PASS — `answerDraft(structure: TemplateStructure, stored: unknown)` matches the call; `data.structure` is narrowed non-null by the `{#if data.structureError || !draft || !data.structure}` guard at `:189`, so the `{:else if r.answers}` branch typechecks; `draft` stays in use in the editable branch, so no unused-symbol drift.
+- Section 3 (template picker) feasibility: PASS — `employee` is in scope from `+page.server.ts:94` and its `assignedTemplateId` is returned at `:203`; `listTemplates` rows carry `isActive`. Both existing `load` cases stay green (one has `assignedTemplateId: null`, the other holds an ACTIVE template).
+- Section 4 (mailer) feasibility: PASS — grep of `tests/`, `scripts/` and `.env.dev.example` for `[NOTIFY]` found no assertion on a full address; the two documentation samples are already inside S4's diff.
+- Section 5 (trivia) feasibility: PASS — `scale.min` is in scope in `RatingScaleEditor.svelte`'s `add()`; local node `v20.20.2` clears the `>=20.12` floor.
+- Section 6 (docs) feasibility: CONCERN — the F9 instruction pinned tip `fd9c604`, which is ALREADY stale (tip is `6489373`, the plan commit) and would restale after every section commit; and the S6 gate asked for `git log -1` to match that SHA, which the S6 commit itself makes impossible. Both corrected in the plan: describe the state, do not pin a SHA.
+
+### Open gaps
+
+- Item A end-to-end email send: no fully-automated gate exists. `sendReviewNoticeEmail` calls `deliver`, which returns `void` and swallows errors, and the generator is a DB-writing script. Residual carried as an Agent-Probe (D), to be run by the user-started DB during the owner GUI pass.
+- Three Manual-GUI rows (B read-back, C picker, E masked log line) cannot be automated inside this plan's scope and ride the existing owner GUI pass. Not new debt.
+- `pnpm format:check` is red locally from the untracked `CODERABBIT_REVIEW_PR325.md`, owned by another session. **This is NOT a gate failure.** Do not run `prettier --write .`, do not stage that file, do not delete it. CI sees committed files only.
+
+### What this coverage does NOT prove
+
+- `pnpm test` does not prove any of `scripts/**` compiles — it never typechecks it. Only the scoped `tsconfig.scripts.json` run does.
+- The scoped tsc gate proves item A COMPILES. It does not prove an email is sent, that it is sent once, or that it reaches the right address.
+- The new `{ dueDays: 2 }` unit case proves the planner's decision, not that any reminder was ever delivered — the cron shell is not exercised.
+- The template-assignment unit test mocks `listTemplates` and `getEmployee`; it does not prove the browser preselects the `(inactive)` option, nor that pressing Save preserves the assignment. Only the GUI probe does.
+- `pnpm check` + `pnpm lint` for item B prove the expression typechecks and the branch narrows. They do not prove the read-back renders the DB row rather than the draft — nothing asserts the rendered values.
+- No gate covers the mask regex against an unusual local part (single character, plus-addressing, quoted local part). `mask('a@x.com')` yields `a***@x.com`, which is acceptable but untested.
+- `gh pr view 325` proves the PR claims at the moment it runs. It cannot prove the F9 block stays true afterwards.
+- The e2e suite is deliberately not a gate here; nothing in this plan touches navigation, auth redirects or hydration.
+
+Gate: CONDITIONAL (two plan gates were unrunnable and are now corrected; item A's send is a named Agent-Probe residual)
+Accepted by: session — accepted concerns: (1) "S1 typecheck command invalid (TS5023)" — corrected in plan, working command verified with a positive control; (2) "S6 git-SHA gate impossible" — corrected in plan, SHA pin removed; (3) "item A has no fully-automated send proof" — carried as Agent-Probe residual D for the owner GUI pass.
+
+## Autonomous Goal Block
+
+SESSION GOAL: execute the CodeRabbit PR #325 review response on branch
+feat/performance-eval-bimonthly-178 — six sections, eleven items, one commit per section,
+shortest working diff. Plan and contract:
+process/features/performance-eval-bimonthly-178/active/coderabbit-pr325-fixes_01-09-26/coderabbit-pr325-fixes_PLAN_01-09-26.md
+
+AUTONOMY RULES
+- Work section by section, S1 to S6. Commit each section before starting the next.
+- Run each section's Fully-Automated gates before its commit. Green means green.
+- Follow the Validate Contract's corrections, not the older prose: the S1 typecheck uses the
+  throwaway tsconfig.scripts.json command, and F9 must NOT pin a commit SHA.
+- Item A: only user: { select: { email: true } } is new in the select. firstName and lastName
+  are already there.
+- No new modules, no new abstractions. The only new function allowed is the 2-line mask() in S4.
+
+HARD STOPS
+- Never run ./start.sh, vite, or veent-db-5434. The user starts servers and the database.
+- Never touch, stage, format or delete CODERABBIT_REVIEW_PR325.md. It belongs to another session
+  and is the only reason local pnpm format:check is red. That red is NOT a gate failure.
+- Never run prisma db push or any migrate-*.ts. The local schema is already migrated.
+- Do not touch prisma/schema.prisma, .github/workflows/ci.yml, scripts/prestart.sh.
+- Do not add a Co-Authored-By trailer or any AI attribution to any commit.
+- Do not push and do not touch PR #325 unless the user asks.
+
+CONTRACT SUMMARY
+Gate CONDITIONAL. All six sections have Fully-Automated proof except item A's actual email send,
+which is a named Agent-Probe residual for the owner GUI pass. Three Manual-GUI rows (B, C, E)
+ride the existing owner GUI pass.
+
+NEXT PHASE: EXECUTE.
+START COMMAND: ENTER EXECUTE MODE with the plan path above, beginning at Implementation
+Checklist item 1.
 
 ## Resume and Execution Handoff
 
