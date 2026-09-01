@@ -94,6 +94,18 @@ describe('remindersDue — de-duplication and escalation', () => {
 	})
 })
 
+describe('remindersDue — short cycles (dueDays <= DUE_SOON_DAYS)', () => {
+	// `dueDays` is legal from 1 (PERFORMANCE_CONFIG_BOUNDS), so HR can set a cycle shorter than
+	// the 3-day due-soon window. Unfloored, `dueDays - DUE_SOON_DAYS` is negative and the nudge
+	// day lands BEFORE the open day, so `due-soon` wins on day zero and the employee never gets
+	// the `opened` reminder — the only kind that carries an email. Revert the `Math.max` in
+	// reminder-plan.ts and this case fails.
+	it('plans "opened", not "due-soon", on the open day of a 2-day cycle', () => {
+		const out = remindersDue([review()], { dueDays: 2 }, OPENED_AT)
+		expect(out).toEqual([{ reviewId: 'rev-1', kind: 'opened', channels: ['in-app', 'email'] }])
+	})
+})
+
 describe('remindersDue — Manila basis (#320 trap)', () => {
 	// The due instant is 2026-08-15T00:00:00Z, whose MANILA day is 2026-08-15. `now` below is
 	// 2026-08-15T16:30:00Z — still 15 Aug in UTC, but already 00:30 on 16 Aug in Manila. The

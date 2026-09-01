@@ -97,7 +97,10 @@ export function remindersDue(
 
 		const dueDay = manilaDayKey(new Date(r.createdAt.getTime() + cfg.dueDays * DAY_MS))
 		const nudgeDay = manilaDayKey(
-			new Date(r.createdAt.getTime() + (cfg.dueDays - DUE_SOON_DAYS) * DAY_MS)
+			// Floored at one day: `dueDays` is legal from 1, and an unfloored window puts the
+			// nudge day on or before the open day, so `due-soon` would win on day zero and the
+			// employee would never get `opened`.
+			new Date(r.createdAt.getTime() + Math.max(1, cfg.dueDays - DUE_SOON_DAYS) * DAY_MS)
 		)
 
 		const applies: Record<ReminderKind, boolean> = {

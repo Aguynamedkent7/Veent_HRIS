@@ -39,6 +39,7 @@ import {
 	planCycleRoster
 } from '../src/lib/server/services/performance'
 import { notify } from '../src/lib/server/services/notifications'
+import { sendReviewNoticeEmail } from '../src/lib/server/notifications'
 import type { AuditContext } from '../src/lib/server/services/types'
 
 const SYSTEM_EMAIL = 'system@veent.ph'
@@ -144,7 +145,14 @@ async function main() {
 				where: { cycleId: opened.cycle.id },
 				select: {
 					id: true,
-					employee: { select: { userId: true, firstName: true, lastName: true } },
+					employee: {
+						select: {
+							userId: true,
+							firstName: true,
+							lastName: true,
+							user: { select: { email: true } }
+						}
+					},
 					reviewer: { select: { userId: true } }
 				}
 			})
@@ -155,6 +163,14 @@ async function main() {
 					`/performance/reviews/${review.id}`,
 					'PERFORMANCE'
 				)
+				// The cron never sends this one: `reviewRows()` pre-stamps `lastReminderKind:
+				// 'opened'`, and `remindersDue` skips a kind it already stamped. That pre-stamp is
+				// what stops a duplicate in-app notice, so the email has to be sent from here.
+				sendReviewNoticeEmail(review.employee.user.email, 'opened', {
+					recipientName: `${review.employee.firstName} ${review.employee.lastName}`,
+					cycleName: period.name,
+					reviewUrl: `/performance/reviews/${review.id}`
+				})
 				// Self-review: one person can hold both roles in a small org, and two notifications
 				// about the same review would be noise.
 				if (review.reviewer.userId !== review.employee.userId) {
