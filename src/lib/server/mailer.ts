@@ -34,12 +34,16 @@ async function getTransport(host: string): Promise<Transporter> {
 	const pass = process.env.SMTP_PASS
 	transporter = createTransport({
 		host,
-		port: Number(process.env.SMTP_PORT ?? 587),
+		port: Number(process.env.SMTP_PORT || 587),
 		secure: process.env.SMTP_SECURE === 'true',
 		auth: user && pass ? { user, pass } : undefined
 	})
 	return transporter
 }
+
+// Keep the domain and the subject — that is the diagnostic the header above justifies — but
+// not the local part: docker-compose sets no `logging:` block, so these lines sit unrotated.
+const mask = (to: string) => to.replace(/^[^@]+/, (l) => l.slice(0, 2) + '***')
 
 /**
  * Deliver one plain-text message. Never throws, never returns a promise.
@@ -50,7 +54,7 @@ async function getTransport(host: string): Promise<Transporter> {
 export function deliver(to: string, subject: string, body: string): void {
 	const host = process.env.SMTP_HOST
 	if (!host) {
-		console.log(`[NOTIFY] (no SMTP_HOST — not sent) <${to}>: ${subject}`)
+		console.log(`[NOTIFY] (no SMTP_HOST — not sent) <${mask(to)}>: ${subject}`)
 		return
 	}
 	// Fire-and-forget. The catch is the whole point: a mail outage must not fail the request.
@@ -58,6 +62,6 @@ export function deliver(to: string, subject: string, body: string): void {
 		.then((t) =>
 			t.sendMail({ from: process.env.SMTP_FROM ?? process.env.SMTP_USER, to, subject, text: body })
 		)
-		.then(() => console.log(`[NOTIFY] sent <${to}>: ${subject}`))
+		.then(() => console.log(`[NOTIFY] sent <${mask(to)}>: ${subject}`))
 		.catch((e) => console.error('[NOTIFY] delivery failed:', (e as Error).message))
 }

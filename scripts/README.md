@@ -442,12 +442,14 @@ production env file the compose stack reads.
 **Unconfigured is the normal case, not an error.** With no `SMTP_HOST` every send logs
 
 ```text
-[NOTIFY] (no SMTP_HOST — not sent) <someone@example.com>: Performance review open — Aug–Sep 2026
+[NOTIFY] (no SMTP_HOST — not sent) <so***@example.com>: Performance review open — Aug–Sep 2026
 ```
 
-and returns. `deliver` is a synchronous `void` function and **never throws**: delivery is
-fire-and-forget, so a mail outage can never fail the HTTP request that triggered it. A real
-send that fails is logged as `[NOTIFY] delivery failed: <reason>` and nothing else happens.
+and returns. The recipient's local part is masked; the domain and the subject are kept, because
+those are the diagnostic. `deliver` is a synchronous `void` function and **never throws**:
+delivery is fire-and-forget, so a mail outage can never fail the HTTP request that triggered it.
+A real send that fails is logged as `[NOTIFY] delivery failed: <reason>` and nothing else
+happens.
 
 ### Type-checking scripts
 
