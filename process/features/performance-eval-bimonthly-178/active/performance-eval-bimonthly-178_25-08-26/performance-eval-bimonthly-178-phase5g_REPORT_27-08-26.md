@@ -17,7 +17,8 @@ metadata:
 
 **TL;DR** — item 117 done: the dead `/performance` cycle-banner test is replaced, not deleted,
 by a `/settings/performance` equivalent that asserts both halves (#106 guard survives). Gates
-119 and 120 green. The only e2e failures are the two known local-data ones.
+119 and 120 green. e2e is 8 failed — the two known local-data ones plus six #287
+parallel-run login flakes that pass at `--workers=1`; none is mine.
 
 ## What Was Done
 

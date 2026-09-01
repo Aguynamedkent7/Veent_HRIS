@@ -2092,15 +2092,17 @@ carries a backlog stub and keeps its gate CONDITIONAL.
    - `docs/references/Copy of Veent Tix Performance Evaluation_Admin Staff.md`
    - `process/context/tests/all-tests.md` (full routing chain; no deeper docs exist)
    - `CLAUDE.md`
-5. **Next step for a fresh agent:** VALIDATE is done and its fixes are applied (§20). Next is a UI
-   design pass through `impeccable` on the template builder — a standing rule, and the builder is
-   the whole product from HR's point of view. Then EXECUTE, beginning at **item 1** (Phase 1).
-   Before item 43 (`db push`), open risk **O-1** must be closed for the target database — the SQL
-   counts against staging and prod, which VALIDATE could not run.
+5. **Next step for a fresh agent: DO NOT RE-RUN EXECUTE.** All nine phases are code done and
+   committed. The local schema is **already migrated** — do not run `db push`, do not run any
+   `scripts/migrate-*` step, and do not start at item 1. Those items are applied and several are
+   destructive. Open risk **O-1** still stands for **staging and prod only**, before this branch
+   is deployed there. The remaining gates are the owner's manual GUI pass and the open CodeRabbit
+   findings on PR #325.
    **The user starts the database and the dev server; never run `./start.sh`, `veent-db-5434`,
    or `vite`.**
-6. **Branch:** `feat/performance-eval-bimonthly-178`, tip `db04eb6`, 0 commits ahead of
-   `origin/staging`. Only untracked docs so far.
+6. **Branch:** `feat/performance-eval-bimonthly-178`, many commits ahead of `origin/staging`.
+   PR #325 is **open against `staging` and is not a draft**. No SHA is pinned here on purpose —
+   run `git log --oneline -1` for the current tip; anything written down goes stale.
 7. **Commit discipline:** one issue, one PR, many commits. Phase 1 is its own commit series ahead
    of everything else. **Never** add `Co-Authored-By` or any co-author trailer.
 8. **If context is compacted mid-execution:** §7's item numbers are the resume index. §0 is the

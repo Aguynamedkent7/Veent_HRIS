@@ -170,7 +170,9 @@ async function main() {
 				}
 
 				// The de-duplication record. Written AFTER the fan-out, so a crash mid-send
-				// resends rather than silently swallowing the reminder.
+				// resends the in-app notice rather than silently swallowing it. For EMAIL it
+				// records an ATTEMPT, not a delivery: `deliver` (mailer.ts) returns void and
+				// swallows send failures, so a bounce or an SMTP outage is invisible here.
 				await db.performanceReview.update({
 					where: { id: review.id },
 					data: { lastReminderAt: now, lastReminderKind: p.kind }
