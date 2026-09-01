@@ -182,6 +182,26 @@ describe('the template is never inferred (SPEC AC2)', () => {
 		])
 	})
 
+	it('keeps an assigned template on the picker after it is deactivated', async () => {
+		// The data-loss trap: with the option missing the browser falls back to "— none —", so
+		// pressing Save on the standalone ?/assignTemplate card would clear a live assignment.
+		getEmployee.mockResolvedValue({
+			id: EMP,
+			branchId: null,
+			assignedTemplateId: 'tpl-old',
+			department: { id: 'dep-sales', name: 'Sales' },
+			position: { id: 'pos-ae', title: 'Account Executive' },
+			user: { email: 'ae@example.com', roles: ['EMPLOYEE'] }
+		})
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const res = (await load(event(['HR_ADMIN']))) as any
+		expect(res.performanceTemplates).toEqual([
+			{ id: 'tpl-ae', name: 'Account Executive' },
+			{ id: 'tpl-admin', name: 'Admin Staff' },
+			{ id: 'tpl-old', name: 'Retired Form (inactive)' }
+		])
+	})
+
 	it('load echoes the stored id verbatim once one is set', async () => {
 		getEmployee.mockResolvedValue({
 			id: EMP,

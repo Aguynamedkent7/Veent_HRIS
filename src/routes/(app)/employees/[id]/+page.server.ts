@@ -192,8 +192,8 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 	const canAssignTemplate = canAny(locals.user!.roles, 'ADMINISTER_HR_ORGWIDE')
 	const performanceTemplates = canAssignTemplate
 		? (await listTemplates(locals.user!.organizationId))
-				.filter((t) => t.isActive)
-				.map((t) => ({ id: t.id, name: t.name }))
+				.filter((t) => t.isActive || t.id === employee.assignedTemplateId)
+				.map((t) => ({ id: t.id, name: t.isActive ? t.name : `${t.name} (inactive)` }))
 		: []
 
 	return {
