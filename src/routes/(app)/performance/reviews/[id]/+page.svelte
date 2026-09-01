@@ -231,7 +231,13 @@
 			</p>
 		{:else if r.answers}
 			<!-- Read-back: the same form, the stored values, no typing. -->
-			<ReviewFormRender structure={data.structure} mode="fill" answers={draft} {errorAt} disabled />
+			<ReviewFormRender
+				structure={data.structure}
+				mode="fill"
+				answers={answerDraft(data.structure, r.answers)}
+				{errorAt}
+				disabled
+			/>
 		{:else}
 			<p class="text-sm text-muted-foreground">Not scored yet.</p>
 		{/if}
